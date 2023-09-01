@@ -146,14 +146,25 @@ class ExLlamaV2:
 
         self.cache_map = {}
 
-        sincos_size = self.config.head_dim * self.config.max_seq_len * 2
-        constant_size = sincos_size * 2                                                                     # Constants shared between layers
+        # Constant shared between layers
 
-        state_size = self.config.hidden_size * self.config.max_input_len * self.config.max_batch_size * 2   # Max size of hidden state
+        sincos_size = self.config.head_dim * self.config.max_seq_len * 2
+        constant_size = sincos_size * 2
+
+        # Max size of hidden state
+        # TODO: Test estimate of VRAM usage more thoroughly
+        # TODO: Option to reserve space for cache while loading model
+
+        state_size = self.config.hidden_size * self.config.max_input_len * self.config.max_batch_size * 2
         mask_size = self.config.max_input_len ** 2 * 2
 
-        allocation_bytes = [a * 1024**3 - state_size - mask_size - constant_size for a in allocation]       # Bytes remaining per device
-        reserve_bytes = [0 for a in allocation]                                                             # Scratch space required per device
+        # Bytes remaining per device
+
+        allocation_bytes =  [a * 1024**3 - (constant_size + state_size + mask_size) for a in allocation]
+
+        # Scratch space required per device
+
+        reserve_bytes = [0 for a in allocation]
 
         current_idx = 0
         for idx, module in enumerate(self.modules):
@@ -195,12 +206,12 @@ class ExLlamaV2:
 
         # Return unused space, in GB
 
-        return [ab / 1024**3 for ab in allocation_bytes]
+        return [(ab - rb) / 1024**3 for (ab, rb) in zip(allocation_bytes, reserve_bytes)]
 
 
-    def load(self, gpu_split = None, lazy = False):
+    def load(self, gpu_split = None, lazy = False, stats = False):
 
-        self.set_device_map(gpu_split or [99999])
+        stats = self.set_device_map(gpu_split or [99999])
 
         # Load module weights
 
@@ -212,7 +223,8 @@ class ExLlamaV2:
 
         self.set_cache_map()
 
-        return gpu_split
+        if stats: return gpu_split, stats
+        else: return gpu_split
 
 
     def set_cache_map(self):

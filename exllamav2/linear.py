@@ -102,12 +102,18 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def scratch_space(self):
 
-        return self.temp_dq_size()
+        return self.temp_dq_size() + \
+               self.temp_fwd_size()
 
 
     def temp_dq_size(self):
 
-        return self.in_features * self.out_features * 2
+        return self.in_features * self.out_features * 2 + 128
+
+
+    def temp_fwd_size(self):
+
+        return self.out_features * self.model.config.max_input_len * self.model.config.max_batch_size * 4 + 128
 
 
     def forward(self, hidden_states, cache = None, attn_mask = None, intermediates = False, test = False):

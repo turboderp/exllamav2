@@ -34,6 +34,17 @@ class ExLlamaV2Cache:
             self.value_states.append(p_value_states)
 
 
+    def footprint(self):
+
+        fp = []
+        for layer in self.key_states + self.value_states:
+            dev = layer.device.index
+            while len(fp) <= dev: fp.append(0)
+            fp[dev] += layer.numel() * 2
+
+        return fp
+
+
     def clone(self):
 
         new = ExLlamaV2Cache(self.model, batch_size = self.batch_size, max_seq_len = self.max_seq_len, copy_from = self)

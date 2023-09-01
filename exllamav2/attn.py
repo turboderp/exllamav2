@@ -117,7 +117,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                self.temp_q_size() + \
                self.temp_k_size() + \
                self.temp_v_size() + \
-               self.temp_dq_size()
+               self.temp_dq_size() + \
+               self.temp_attn_size()
 
 
     def temp_state_size(self):
@@ -151,6 +152,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def temp_kv_size(self):
 
         return self.model.config.max_seq_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+
+
+    def temp_attn_size(self):
+
+        return self.model.config.max_attention_size * self.model.config.max_batch_size * 2 + 128
 
 
     def set_device_idx(self, idx):
