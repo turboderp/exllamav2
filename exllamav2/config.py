@@ -69,6 +69,8 @@ class ExLlamaV2Config:
             self.rms_norm_eps = read_config["rms_norm_eps"]
             self.vocab_size = read_config["vocab_size"]
 
+            self.rotary_embedding_base = read_config["rope_theta"] if "rope_theta" in read_config else 10000.0
+
             if "num_key_value_heads" in read_config:
                 self.num_key_value_heads = read_config["num_key_value_heads"]
                 self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
