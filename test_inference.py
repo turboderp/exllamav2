@@ -1,5 +1,12 @@
-from exllamav2.model import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Cache
-from exllamav2.tokenizer import ExLlamaV2Tokenizer
+
+from exllamav2 import(
+    ExLlamaV2,
+    ExLlamaV2Config,
+    ExLlamaV2Cache,
+    ExLlamaV2Tokenizer,
+    model_init,
+)
+
 import argparse, os, math, time
 import pandas, fastparquet
 import torch
@@ -16,41 +23,29 @@ torch.set_printoptions(precision = 10)
 # torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
 # torch.set_float32_matmul_precision("medium")
 
-parser = argparse.ArgumentParser(description = "Test inference on model")
-parser.add_argument("-m", "--model_dir", type = str, help = "Model directory", default = "")
-parser.add_argument("-gs", "--gpu_split", type = str, help = "VRAM allocation per GPU in GB", default = "")
+parser = argparse.ArgumentParser(description = "Test inference on ExLlamaV2 model")
 parser.add_argument("-ed", "--eval_dataset", type = str, help = "Perplexity evaluation dataset (.parquet file)")
 parser.add_argument("-er", "--eval_rows", type = int, default = 128, help = "Number of rows to apply from dataset")
 parser.add_argument("-el", "--eval_length", type = int, default = 2048, help = "Max no. tokens per sample")
-parser.add_argument("-p", "--prompt", type = str, help = "Prompt")
+parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt")
 parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no. tokens")
-parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
-parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE NTK alpha value")
+parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
 
+# Initialize model and tokenizer
+
+model_init.add_args(parser)
 args = parser.parse_args()
-
-print(f" -- Loading model: {args.model_dir}")
-
-config = ExLlamaV2Config()
-config.model_dir = args.model_dir
-config.max_seq_len = 2048
-config.max_input_len = 2048
-config.scale_pos_emb = args.rope_scale
-config.scale_alpha_value = args.rope_alpha
-config.prepare()
-model = ExLlamaV2(config)
-model.load([16, 24])
-#model.load()
-
-tokenizer = ExLlamaV2Tokenizer(config)
+model_init.check_args(args)
+model_init.print_options(args)
+model, tokenizer = model_init.init(args)
 
 # Test generation
 
-if args.prompt is not None:
+if args.prompt:
 
-    cache = ExLlamaV2Cache(model)
+    with torch.inference_mode():
 
-    with torch.no_grad():
+        cache = ExLlamaV2Cache(model)
 
         ids = tokenizer.encode(args.prompt)
         tokens_prompt = ids.shape[-1]
@@ -59,7 +54,7 @@ if args.prompt is not None:
 
         model.forward(ids[:, :])
 
-        print(f" -- Generating...")
+        print(f" -- Generating (greedy sampling)...")
         print()
         print(args.prompt, end = "")
         sys.stdout.flush()
@@ -93,9 +88,10 @@ if args.prompt is not None:
     print(f"Prompt processed in {total_prompt:.2f} seconds, {tokens_prompt} tokens, {tokens_prompt / total_prompt:.2f} tokens/second")
     print(f"Response generated in {total_gen:.2f} seconds, {args.tokens} tokens, {args.tokens / total_gen:.2f} tokens/second")
 
+
 # Test perplexity
 
-if args.eval_dataset is not None:
+if args.eval_dataset:
 
     with torch.inference_mode():
 
@@ -143,3 +139,40 @@ if args.eval_dataset is not None:
         print(f" -- Evaluation perplexity: {perplexity:.4f}")
 
         xx = 0
+
+
+# Test speed over length
+
+if args.speed:
+
+    with torch.inference_mode():
+
+        cache = ExLlamaV2Cache(model)
+
+        print(f" -- Warmup...")
+
+        ids = tokenizer.encode("X")
+        model.forward(ids[:, :])
+
+        current_idx = ids.shape[-1]
+        next_stop = 128
+
+        while True:
+
+            time_begin = time.time()
+
+            tokens = next_stop - current_idx
+            for i in range(tokens):
+
+                logits = model.forward(ids[:, -1:], cache)
+                sample = torch.argmax(logits[0, -1]).cpu().unsqueeze(0).unsqueeze(0)
+                ids = torch.cat((ids, sample), dim=-1)
+
+            time_end = time.time()
+            tps = tokens / (time_end - time_begin)
+
+            print(f" ** Position {current_idx: 5} + {tokens: 3} tokens: {tps: 3.4f} t/s")
+
+            current_idx = next_stop
+            next_stop = min(next_stop + 128, model.config.max_seq_len)
+            if next_stop == current_idx: break
