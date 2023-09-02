@@ -99,14 +99,6 @@ __forceinline__ __device__ void dequant_5bit_32
     int stride
 )
 {
-//     uint32_t qt[5];
-//     qt[0] = q[0 * stride];
-//     qt[1] = q[1 * stride];
-//     qt[2] = q[2 * stride];
-//     qt[3] = q[3 * stride];
-//     qt[4] = q[4 * stride];
-//     shuffle_5bit_32(qt, 1);
-
     const uint32_t c0 = 0x64006400;
     const half y32_ = __float2half_rn(1.0f / 32.0f);
     const half2 y32 = __halves2half2(y32_, y32_);
@@ -120,11 +112,6 @@ __forceinline__ __device__ void dequant_5bit_32
     uint32_t qc = q[2 * stride];
     uint32_t qd = q[3 * stride];
     uint32_t qe = q[4 * stride];
-//     uint32_t qa = qt[0];
-//     uint32_t qb = qt[1];
-//     uint32_t qc = qt[2];
-//     uint32_t qd = qt[3];
-//     uint32_t qe = qt[4];
 
     half2_uint32 q0 ((qa & 0x001f001f) | c0); // half2(q[ 0], q[ 1])      + 1024
     half2_uint32 q1 ((qa & 0x03e003e0) | c0); // half2(q[ 2], q[ 3]) * 32 + 1024
@@ -174,46 +161,6 @@ __forceinline__ __device__ void dequant_5bit_32
     dq[13] = __hfma2(q13.as_half2, y32, z32);
     dq[14] = __hadd2(q14.as_half2, z1);
     dq[15] = __hadd2(q15.as_half2, z1);
-
-//     half dqp[32];
-//
-//     for (int i = 0; i <  6; i++) dqp[     i] = dq_ns(exb(               q[0 * stride], i * 5    , 0x1f), 16);
-//                                  dqp[ 6    ] = dq_ns(exb(q[1 * stride], q[0 * stride],        30, 0x1f), 16);
-//     for (int i = 0; i <  5; i++) dqp[ 7 + i] = dq_ns(exb(               q[1 * stride], i * 5 + 3, 0x1f), 16);
-//                                  dqp[12    ] = dq_ns(exb(q[2 * stride], q[1 * stride],        28, 0x1f), 16);
-//     for (int i = 0; i <  6; i++) dqp[13 + i] = dq_ns(exb(               q[2 * stride], i * 5 + 1, 0x1f), 16);
-//                                  dqp[19    ] = dq_ns(exb(q[3 * stride], q[2 * stride],        31, 0x1f), 16);
-//     for (int i = 0; i <  5; i++) dqp[20 + i] = dq_ns(exb(               q[3 * stride], i * 5 + 4, 0x1f), 16);
-//                                  dqp[25    ] = dq_ns(exb(q[4 * stride], q[3 * stride],        29, 0x1f), 16);
-//     for (int i = 0; i <  6; i++) dqp[26 + i] = dq_ns(exb(               q[4 * stride], i * 5 + 2, 0x1f), 16);
-//
-//     half2* dqp2 = (half2*) dqp;
-//
-//     for (int i = 0; i < 16; i++) dq[i] = dqp2[i];
-
-//     if (threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0)
-//     {
-//         for (int i = 8; i < 16; i++)
-//         {
-//             DBGIH2(i, dq[i].x, dqp2[i].x);
-//             DBGIH2(i, dq[i].y, dqp2[i].y);
-//         }
-//         printf("-----\n");
-
-//         DBGX(q[0]);
-//         DBGX(qt[0]);
-//         DBGH2(dq[1].x, dqp2[1].x);
-//         DBGH2(dq[2].x, dqp2[2].x);
-//         DBGH2(dq[3].x, dqp2[3].x);
-//         DBGH2(dq[1].y, dqp2[1].y);
-//         DBGH2(dq[2].y, dqp2[2].y);
-//         DBGH2(dq[3].y, dqp2[3].y);
-//     }
-//
-// //     dq[0] = dqp2[0];
-// //     dq[1] = dqp2[1];
-// //     dq[2] = dqp2[2];
-// //     dq[3] = dqp2[3];
 }
 
 #else

@@ -1,7 +1,6 @@
 #include "q_matrix.cuh"
 #include "matrix_view.cuh"
 #include "util.cuh"
-#include "q_gemm_dq.cuh"
 
 #include "quant/qdq_2.cuh"
 #include "quant/qdq_3.cuh"
@@ -130,118 +129,6 @@ QMatrix::QMatrix
 }
 
 
-/*
-// Reconstruct b[k,n]
-
-__global__ void reconstruct_kernel
-(
-    const uint32_t* __restrict__ b_q_weight,
-    const uint16_t* __restrict__ b_q_perm,
-    const uint32_t* __restrict__ b_q_scale,
-    const half* __restrict__ b_q_scale_max,
-    const uint16_t* __restrict__ b_q_groups,
-    const int size_k,
-    const int size_n,
-    const int groupsize,
-    const int groups,
-    half* __restrict__ b
-)
-{
-    MatrixView_half_rw b_(b, size_k, size_n);
-    MatrixView_q4_row b_q_scale_(b_q_scale, groups, size_n);
-
-    int offset_k = BLOCK_KN_SIZE * blockIdx.y;
-
-    // Preload remapping table
-
-    __shared__ uint16_t perm[BLOCK_KN_SIZE];
-    if (offset_k + threadIdx.x < size_k)
-        perm[threadIdx.x] = b_q_perm[offset_k + threadIdx.x];
-        //perm[threadIdx.x] = offset_k + threadIdx.x;
-
-    // Column
-
-    int n = BLOCK_KN_SIZE * blockIdx.x + threadIdx.x;
-    if (n >= size_n) return;
-
-    // Find initial group
-
-    int group = offset_k / groupsize;
-    int bits = b_q_groups[group * 2];
-    int qk = b_q_groups[group * 2 + 1];
-    const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
-
-    half qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]);
-    int nextgroup = groupsize;
-
-    int end_k = min(BLOCK_KN_SIZE, size_k - offset_k);
-
-    __syncthreads();
-
-    int k = 0;
-    while (k < end_k)
-    {
-        if (k == nextgroup)
-        {
-            group++;
-            bits = b_q_groups[group * 2];
-            qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]);
-            nextgroup += groupsize;
-//             if (group == 10 && n < 7)
-//             {
-//                 DBGI3(group, n, b_q_scale_.item(group, n));
-//             }
-        }
-
-        switch(bits)
-        {
-            case 2: for (int p = 0; p < 2; p++) { half dq[16]; dq_2bit_16(b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j < 16; j++) b_.set(perm[k++], n, __hmul(dq[j], qs_h)); } break;
-            case 3:                             { half dq[32]; dq_3bit_32(b_ptr, dq, size_n); b_ptr += size_n * 3; for (int j = 0; j < 32; j++) b_.set(perm[k++], n, __hmul(dq[j], qs_h)); } break;
-            case 4: for (int p = 0; p < 4; p++) { half dq[8];  dq_4bit_8 (b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j <  8; j++) b_.set(perm[k++], n, __hmul(dq[j], qs_h)); } break;
-            case 5:                             { half dq[32]; dq_5bit_32(b_ptr, dq, size_n); b_ptr += size_n * 5; for (int j = 0; j < 32; j++) b_.set(perm[k++], n, __hmul(dq[j], qs_h)); } break;
-            case 6: for (int p = 0; p < 2; p++) { half dq[16]; dq_6bit_16(b_ptr, dq, size_n); b_ptr += size_n * 3; for (int j = 0; j < 16; j++) b_.set(perm[k++], n, __hmul(dq[j], qs_h)); } break;
-            case 8: for (int p = 0; p < 8; p++) { half dq[4];  dq_8bit_4 (b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j <  4; j++) b_.set(perm[k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 2: for (int p = 0; p < 2; p++) { half dq[16]; dq_2bit_16(b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j < 16; j++) b_.set(b_q_perm[offset_k + k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 3:                             { half dq[32]; dq_3bit_32(b_ptr, dq, size_n); b_ptr += size_n * 3; for (int j = 0; j < 32; j++) b_.set(b_q_perm[offset_k + k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 4: for (int p = 0; p < 4; p++) { half dq[8];  dq_4bit_8 (b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j <  8; j++) b_.set(b_q_perm[offset_k + k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 5:                             { half dq[32]; dq_5bit_32(b_ptr, dq, size_n); b_ptr += size_n * 5; for (int j = 0; j < 32; j++) b_.set(b_q_perm[offset_k + k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 6: for (int p = 0; p < 2; p++) { half dq[16]; dq_6bit_16(b_ptr, dq, size_n); b_ptr += size_n * 3; for (int j = 0; j < 16; j++) b_.set(b_q_perm[offset_k + k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 8: for (int p = 0; p < 8; p++) { half dq[4];  dq_8bit_4 (b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j <  4; j++) b_.set(b_q_perm[offset_k + k++], n, __hmul(dq[j], qs_h)); } break;
-//             case 2: for (int p = 0; p < 2; p++) { half dq[16]; dq_2bit_16(b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j < 16; j++) b_.set(offset_k + k++, n, __hmul(dq[j], qs_h)); } break;
-//             case 3:                             { half dq[32]; dq_3bit_32(b_ptr, dq, size_n); b_ptr += size_n * 3; for (int j = 0; j < 32; j++) b_.set(offset_k + k++, n, __hmul(dq[j], qs_h)); } break;
-//             case 4: for (int p = 0; p < 4; p++) { half dq[8];  dq_4bit_8 (b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j <  8; j++) b_.set(offset_k + k++, n, __hmul(dq[j], qs_h)); } break;
-//             case 5:                             { half dq[32]; dq_5bit_32(b_ptr, dq, size_n); b_ptr += size_n * 5; for (int j = 0; j < 32; j++) b_.set(offset_k + k++, n, __hmul(dq[j], qs_h)); } break;
-//             case 6: for (int p = 0; p < 2; p++) { half dq[16]; dq_6bit_16(b_ptr, dq, size_n); b_ptr += size_n * 3; for (int j = 0; j < 16; j++) b_.set(offset_k + k++, n, __hmul(dq[j], qs_h)); } break;
-//             case 8: for (int p = 0; p < 8; p++) { half dq[4];  dq_8bit_4 (b_ptr, dq, size_n); b_ptr += size_n    ; for (int j = 0; j <  4; j++) b_.set(offset_k + k++, n, __hmul(dq[j], qs_h)); } break;
-        }
-    }
-}
-
-void QMatrix::reconstruct(half* out)
-{
-    dim3 blockDim, gridDim;
-    blockDim.x = BLOCK_KN_SIZE;
-    blockDim.y = 1;
-    gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
-    gridDim.y = DIVIDE(height, BLOCK_KN_SIZE);
-
-    reconstruct_kernel<<<gridDim, blockDim>>>
-    (
-        cuda_q_weight,
-        cuda_q_perm,
-        cuda_q_scale,
-        cuda_q_scale_max,
-        cuda_q_groups,
-        height,
-        width,
-        groupsize,
-        groups,
-        out
-    );
-}
-
-*/
-
 // Reconstruct b[k,n]
 
 __global__ void reconstruct_kernel
@@ -303,6 +190,7 @@ __global__ void reconstruct_kernel
     const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
 
     half qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]);
+    half2 qs_h2 = __halves2half2(qs_h, qs_h);
     int nextgroup = offset_k + groupsize;
 
     int end_k = min(offset_k + BLOCK_KN_SIZE, size_k);
@@ -313,85 +201,90 @@ __global__ void reconstruct_kernel
 
     while (k < rows_8 && k < end_k)
     {
-        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; qs_h2 = __halves2half2(qs_h, qs_h); }
         for (int p = 0; p < 4; p++)
         {
             half2 dq[4];
             dequant_8bit_8(b_ptr, dq, size_n);
             b_ptr += size_n * 2;
+            for (int j = 0; j < 4; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
         }
         k += 32;
     }
 
     while (k < rows_6 && k < end_k)
     {
-        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; qs_h2 = __halves2half2(qs_h, qs_h); }
         for (int p = 0; p < 2; p++)
         {
             half2 dq[8];
             dequant_6bit_16(b_ptr, dq, size_n);
             b_ptr += size_n * 3;
+            for (int j = 0; j < 8; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 16; j++)
-            b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+            for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);
         }
         k += 32;
     }
 
     while (k < rows_5 && k < end_k)
     {
-        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; qs_h2 = __halves2half2(qs_h, qs_h); }
         for (int p = 0; p < 1; p++)
         {
             half2 dq[16];
             dequant_5bit_32(b_ptr, dq, size_n);
             b_ptr += size_n * 5;
+            for (int j = 0; j < 16; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, dqh[j]);
         }
         k += 32;
     }
 
     while (k < rows_4 && k < end_k)
     {
-        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; qs_h2 = __halves2half2(qs_h, qs_h); }
         for (int p = 0; p < 4; p++)
         {
             half2 dq[4];
             dequant_4bit_8(b_ptr, dq, size_n);
             b_ptr += size_n;
+            for (int j = 0; j < 4; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
         }
         k += 32;
     }
 
     while (k < rows_3 && k < end_k)
     {
-        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; qs_h2 = __halves2half2(qs_h, qs_h); }
         for (int p = 0; p < 1; p++)
         {
             half2 dq[16];
             dequant_3bit_32(b_ptr, dq, size_n);
             b_ptr += size_n * 3;
+            for (int j = 0; j < 16; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, dqh[j]);
         }
         k += 32;
     }
 
     while (k < rows_2 && k < end_k)
     {
-        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; qs_h2 = __halves2half2(qs_h, qs_h); }
         for (int p = 0; p < 2; p++)
         {
             half2 dq[8];
             dequant_2bit_16(b_ptr, dq, size_n);
             b_ptr += size_n;
+            for (int j = 0; j < 8; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+            for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);
         }
         k += 32;
     }

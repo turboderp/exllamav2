@@ -14,22 +14,36 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
-// #include <cuda/pipeline>
-// #include <mma.h>
-
 #define BLOCK_KN_SIZE 512
 #define BLOCK_M_SIZE_MAX 8
-//#define SUBBLOCK_K_SIZE 256
-//#define BLOCK_KN_SIZE 512
 #define MAX_GROUPS_IN_BLOCK (BLOCK_KN_SIZE / 32)
 #define CLEAR_N_SIZE 256
-//#define DEBUG
-#define WARP_SIZE 32
-#define WARPS_PER_BLOCK (BLOCK_KN_SIZE / WARP_SIZE)
-#define SKEW (128/16)
-#define MAX_QK (BLOCK_KN_SIZE / 4)
 
-#include "q_gemm_dq.cuh"
+
+__forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result, const half qs_h)
+{
+    half2 result = {};
+    const half2* a2_ptr = (const half2*)a_ptr;
+    for (int i = 0; i < 4; i++) result = __hfma2(dq[i], *a2_ptr++, result);
+    return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
+}
+
+__forceinline__ __device__ half2 dot22_16(half2(&dq)[8], const half* a_ptr, const half2 g_result, const half qs_h)
+{
+    half2 result = {};
+    const half2* a2_ptr = (const half2*)a_ptr;
+    for (int i = 0; i < 8; i++) result = __hfma2(dq[i], *a2_ptr++, result);
+    return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
+}
+
+__forceinline__ __device__ half2 dot22_32(half2(&dq)[16], const half* a_ptr, const half2 g_result, const half qs_h)
+{
+    half2 result = {};
+    const half2* a2_ptr = (const half2*)a_ptr;
+    for (int i = 0; i < 16; i += 1) result = __hfma2(dq[i], *a2_ptr++, result);
+    return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
+}
+
 
 typedef void (*fp_gemm_half_q_half_kernel)
 (
@@ -37,7 +51,6 @@ typedef void (*fp_gemm_half_q_half_kernel)
     const uint32_t*,
     const uint32_t*,
     const half*,
-    //const uint16_t*,
     half*,
     const int,
     const int,
@@ -61,7 +74,6 @@ __global__ void gemm_half_q_half_kernel
     const uint32_t*  __restrict__ b_q_weight,
     const uint32_t*  __restrict__ b_q_scale,
     const half*      __restrict__ b_q_scale_max,
-    //const uint16_t*  b_q_groups,
     half*            __restrict__ c,
     const int size_m,
     const int size_n,
@@ -156,8 +168,6 @@ __global__ void gemm_half_q_half_kernel
     const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
     const half* a_ptr = &block_a[0][0];
     int a_stride = BLOCK_KN_SIZE;
-//     const half* a_ptr = a_.item_ptr(offset_m, 0);
-//     int a_stride = size_k;
 
     half qs_h = scales[0];
     int scales_idx = 0;
@@ -170,17 +180,6 @@ __global__ void gemm_half_q_half_kernel
     // Dequantize and process groups
 
     int k = offset_k;
-
-//     while (k < rows_8 && k < end_k)
-//     {
-//         int end_k_sg = min(min(k + 128, rows_6), end_k);
-//         uint32_t q_0[8], q_1[8];
-//         load_8(b_ptr, size_n, q_0);
-//         qdot_8bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-//         qdot_8bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
-//         qdot_8bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-//         qdot_8bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
-//     }
 
     while (k < rows_8 && k < end_k)
     {
@@ -363,7 +362,6 @@ void gemm_half_q_half_cuda_part
         b->cuda_q_weight,
         b->cuda_q_scale,
         b->cuda_q_scale_max,
-        //b->cuda_q_groups,
         c,
         size_m,
         size_n,
@@ -398,14 +396,10 @@ void gemm_half_q_half_cuda
     {
         // Reconstruct FP16 matrix, then cuBLAS
 
-        //DBGI3(size_m, size_n, size_k);
-
         if (!temp_dq) temp_dq = b->temp_dq;
         b->reconstruct(temp_dq);
 
-        cublasSetMathMode(cublas_handle, CUBLAS_TENSOR_OP_MATH);
-
-        //DBGI3(size_m, size_n, size_k);
+        //cublasSetMathMode(cublas_handle, CUBLAS_TENSOR_OP_MATH);
 
         const half alpha = __float2half(1.0f);
         const half beta = clear ? __float2half(0.0f) : __float2half(1.0f);
@@ -453,9 +447,6 @@ void gemm_half_q_half_cuda
         int max_chunks = size_m / BLOCK_M_SIZE_MAX;
         int last_chunk = max_chunks * BLOCK_M_SIZE_MAX;
         int last_chunk_size = size_m - last_chunk;
-
-    //     DBGI3(size_m, size_n, size_k);
-    //     DBGI3(max_chunks, last_chunk, last_chunk_size);
 
         if (max_chunks)
         {

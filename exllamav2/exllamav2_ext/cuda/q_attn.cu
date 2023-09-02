@@ -20,7 +20,7 @@ __global__ void update_cache_kernel
     const int head_dim,
     const int num_kv_heads,
     const int q_len,
-    const int max_seq_len,
+    const int cache_seq_len,
     const int past_len
 )
 {
@@ -28,8 +28,8 @@ __global__ void update_cache_kernel
     int state_stride[] = {                  head_dim,   head_dim * num_kv_heads,        1 };
     int state_pos[]    = {                         0,                         0,        0 };
 
-    //int cache_shape[]  = {              num_kv_heads,               max_seq_len, head_dim };
-    int cache_stride[] = {    max_seq_len * head_dim,                  head_dim,        1 };
+    //int cache_shape[]  = {              num_kv_heads,             cache_seq_len, head_dim };
+    int cache_stride[] = {  cache_seq_len * head_dim,                  head_dim,        1 };
     int cache_pos[]    = {                         0,                  past_len,        0 };
 
     int size[]         = {              num_kv_heads,                     q_len, head_dim };

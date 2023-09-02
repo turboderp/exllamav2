@@ -223,7 +223,7 @@ int top_k_cpu
     int top_k
 )
 {
-    // TODO: Currently relies on sorting the logits, maxheap would probably be faster
+    // TODO: Currently relies on sorting the logits with early exit. Heap would probably be faster
     // TODO: Selection sort should be faster for very low values of K
 
     return top_k;
@@ -237,7 +237,7 @@ int top_p_cpu
     float top_p
 )
 {
-    // TODO: Maybe special case when top-K is disabled: select max until sum exceeds P for P < ~0.75
+    // TODO: Maybe special case when top-K is disabled: select max until sum exceeds P, for P < ~0.75
 
     float cumprob = 0.0f;
     int num = 0;

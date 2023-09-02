@@ -9,7 +9,6 @@
 #include "config.h"
 
 #include "cuda/pack_tensor.cuh"
-#include "cuda/adjust_scale.cuh"
 #include "cuda/quantize.cuh"
 #include "cuda/q_matrix.cuh"
 #include "cuda/q_attn.cuh"
@@ -91,45 +90,6 @@ void pack_columns
 
 
 // Quantization functions
-
-float adjust_scale
-(
-    torch::Tensor qscale,
-    torch::Tensor x,
-    torch::Tensor grid,
-    float max_adjust,
-    float min_adjust,
-    float norm,
-    int qzero,
-    int maxq
-)
-{
-    TORCH_CHECK_DTYPE(qscale, kFloat);
-    TORCH_CHECK_DTYPE(x, kFloat);
-    TORCH_CHECK_DTYPE(grid, kFloat);
-    TORCH_CHECK_SHAPES(qscale, 0, x, 1, 1);
-
-    int rows = x.size(0);
-    int columns = x.size(1);
-    int steps = grid.size(0);
-
-    float p = adjust_scale_cuda
-    (
-        (float*) qscale.data_ptr(),
-        (float*) x.data_ptr(),
-        (float*) grid.data_ptr(),
-        max_adjust,
-        min_adjust,
-        steps,
-        rows,
-        columns,
-        norm,
-        qzero,
-        maxq
-    );
-
-    return p;
-}
 
 void quantize_err
 (
@@ -679,96 +639,12 @@ void sample_basic
 }
 
 
-//void gemm_half_half_half
-//(
-//    torch::Tensor a,
-//    torch::Tensor b,
-//    torch::Tensor c
-//)
-//{
-//    TORCH_CHECK_DTYPE(a, kHalf);
-//    TORCH_CHECK_DTYPE(b, kHalf);
-//    TORCH_CHECK_DTYPE(c, kHalf);
-//    TORCH_CHECK_SHAPES(a, 0, c, 0, 1);
-//    TORCH_CHECK_SHAPES(b, 1, c, 1, 1);
-//    TORCH_CHECK_SHAPES(a, 1, b, 0, 1);
-//
-//    const at::cuda::OptionalCUDAGuard device_guard(device_of(c));
-//
-//    gemm_half_half_half_cuda
-//    (
-//        (const half*) a.data_ptr(),
-//        (const half*) b.data_ptr(),
-//        (half*) c.data_ptr(),
-//        a.size(0),
-//        a.size(1),
-//        b.size(1)
-//    );
-//}
-
-//void gemm_half_half_float
-//(
-//    torch::Tensor a,
-//    torch::Tensor b,
-//    torch::Tensor c
-//)
-//{
-//    TORCH_CHECK_DTYPE(a, kHalf);
-//    TORCH_CHECK_DTYPE(b, kHalf);
-//    TORCH_CHECK_DTYPE(c, kFloat);
-//    TORCH_CHECK_SHAPES(a, 0, c, 0, 1);
-//    TORCH_CHECK_SHAPES(b, 1, c, 1, 1);
-//    TORCH_CHECK_SHAPES(a, 1, b, 0, 1);
-//
-//    const at::cuda::OptionalCUDAGuard device_guard(device_of(c));
-//
-//    gemm_half_half_float_cuda
-//    (
-//        (const half*) a.data_ptr(),
-//        (const half*) b.data_ptr(),
-//        (float*) c.data_ptr(),
-//        a.size(0),
-//        a.size(1),
-//        b.size(1)
-//    );
-//}
-//
-
-//void gemm_float_float_float
-//(
-//    torch::Tensor a,
-//    torch::Tensor b,
-//    torch::Tensor c
-//)
-//{
-//    TORCH_CHECK_DTYPE(a, kFloat);
-//    TORCH_CHECK_DTYPE(b, kFloat);
-//    TORCH_CHECK_DTYPE(c, kFloat);
-//    TORCH_CHECK_SHAPES(a, 0, c, 0, 1);
-//    TORCH_CHECK_SHAPES(b, 1, c, 1, 1);
-//    TORCH_CHECK_SHAPES(a, 1, b, 0, 1);
-//
-//    const at::cuda::OptionalCUDAGuard device_guard(device_of(c));
-//
-//    gemm_float_float_float_cuda
-//    (
-//        (const float*) a.data_ptr(),
-//        (const float*) b.data_ptr(),
-//        (float*) c.data_ptr(),
-//        a.size(0),
-//        a.size(1),
-//        b.size(1)
-//    );
-//}
-
-
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
     m.def("pack_rows_4", &pack_rows_4, "pack_rows_4");
     m.def("pack_columns", &pack_columns, "pack_columns");
-    m.def("adjust_scale", &adjust_scale, "adjust_scale");
     m.def("quantize_err", &quantize_err, "quantize_err");
     m.def("quantize", &quantize, "quantize");
     m.def("make_q_matrix", &make_q_matrix, "make_q_matrix");
@@ -784,8 +660,4 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("rope_", &rope_, "rope_");
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
-
-//    m.def("gemm_half_half_half", &gemm_half_half_half, "gemm_half_half_half");
-//    m.def("gemm_half_half_float", &gemm_half_half_float, "gemm_half_half_float");
-//    m.def("gemm_float_float_float", &gemm_float_float_float, "gemm_float_float_float");
 }

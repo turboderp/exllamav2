@@ -271,39 +271,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         key_states = key_states.transpose(1, 2)
         value_states = value_states.transpose(1, 2)
 
-        # Version one
-
         key_states = self.repeat_kv(key_states, self.model.config.num_key_value_groups)
         key_states = key_states.transpose(-1, -2)
 
         attn_weights = torch.matmul(query_states, key_states)
 
-        # Version two
-
-        # query_states = query_states.view(bsz, num_key_value_heads, num_key_value_groups, q_len, head_dim)
-        # key_states = key_states.unsqueeze(2).transpose(-1, -2)
-        #
-        # attn_weights_2 = torch.matmul(query_states, key_states)
-        # attn_weights_2 = attn_weights_2.view(bsz, num_attention_heads, attn_weights_2.shape[-2], attn_weights_2.shape[-1])
-
         attn_weights /= math.sqrt(head_dim)
         if attn_mask is not None: attn_weights = attn_weights + attn_mask
         attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
-        # Version one
-
         value_states = self.repeat_kv(value_states, self.model.config.num_key_value_groups)
         attn_output = torch.matmul(attn_weights, value_states)
         attn_output = attn_output.transpose(1, 2)
-
-        # Version two
-
-        # attn_weights = attn_weights.view(bsz, num_key_value_heads, num_key_value_groups, attn_weights_2.shape[-2], attn_weights_2.shape[-1])
-        # attn_weights = attn_weights.sum(dim = 2)
-        # # attn_weights = attn_weights.squeeze(2)
-        #
-        # attn_output_2 = torch.matmul(attn_weights, value_states)
-        # attn_output_2 = attn_output_2.transpose(1, 2)
 
         # Output projection
 

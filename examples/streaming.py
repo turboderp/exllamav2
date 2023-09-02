@@ -69,8 +69,7 @@ generator.set_stop_conditions([])
 generator.begin_stream(input_ids, settings)
 
 # Streaming loop. Note that repeated calls to sys.stdout.flush() adds some latency, but some
-# consoles won't update partial lines without it. The argument to generator.stream() is optional,
-# just ensure that the last bit of text is streamed even if it is a partial stop condition.
+# consoles won't update partial lines without it.
 
 time_begin_stream = time.time()
 generated_tokens = 0

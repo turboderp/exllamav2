@@ -47,7 +47,6 @@ exllamav2_ext = load \
     sources = [
         os.path.join(library_dir, "exllamav2_ext/ext.cpp"),
         os.path.join(library_dir, "exllamav2_ext/cuda/pack_tensor.cu"),
-        os.path.join(library_dir, "exllamav2_ext/cuda/adjust_scale.cu"),
         os.path.join(library_dir, "exllamav2_ext/cuda/quantize.cu"),
         os.path.join(library_dir, "exllamav2_ext/cuda/q_matrix.cu"),
         os.path.join(library_dir, "exllamav2_ext/cuda/q_attn.cu"),

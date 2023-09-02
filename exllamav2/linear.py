@@ -1,7 +1,6 @@
 import torch
 from exllamav2.module import ExLlamaV2Module
 from torch import nn
-import torch.optim as optim
 import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor

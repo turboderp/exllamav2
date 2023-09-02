@@ -38,11 +38,6 @@ __forceinline__ __device__ void dequant_4bit_8
     int stride
 )
 {
-//     uint32_t qt[1];
-//     qt[0] = q[0];
-//
-//     shuffle_4bit_8(qt, 1);
-
     const uint32_t c0 = 0x64006400;
     const half y16_ = __float2half_rn(1.0f / 16.0f);
     const half2 y16 = __halves2half2(y16_, y16_);
@@ -62,31 +57,6 @@ __forceinline__ __device__ void dequant_4bit_8
     dq[1] = __hfma2(q1.as_half2, y16, z16);
     dq[2] = __hadd2(q2.as_half2, z1);
     dq[3] = __hfma2(q3.as_half2, y16, z16);
-
-//     half dqp[8];
-//     for (int i = 0; i <  8; i++) dqp[i] = dq_ns(exb(q[0], i * 4, 0x0f), 8);
-//
-//     half2* dqp2 = (half2*) dqp;
-//
-//     if (threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0)
-//     {
-//         DBGX(q[0]);
-//         DBGX(qt[0]);
-//         DBGH2(dq[0].x, dqp2[0].x);
-//         DBGH2(dq[1].x, dqp2[1].x);
-//         DBGH2(dq[2].x, dqp2[2].x);
-//         DBGH2(dq[3].x, dqp2[3].x);
-//         DBGH2(dq[0].y, dqp2[0].y);
-//         DBGH2(dq[1].y, dqp2[1].y);
-//         DBGH2(dq[2].y, dqp2[2].y);
-//         DBGH2(dq[3].y, dqp2[3].y);
-//         printf("-----\n");
-//     }
-//
-// //     dq[0] = dqp2[0];
-// //     dq[1] = dqp2[1];
-// //     dq[2] = dqp2[2];
-// //     dq[3] = dqp2[3];
 }
 
 #else
