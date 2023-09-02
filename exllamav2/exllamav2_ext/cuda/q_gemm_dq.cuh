@@ -1,4 +1,7 @@
 
+#include "quant/qdq_2.cuh"
+#include "quant/qdq_3.cuh"
+
 __device__ __forceinline__ void dq_2bit_16(const uint32_t* b_ptr, half (&dq)[16], const int size_n)
 {
     uint32_t q0 = *b_ptr;
@@ -102,6 +105,33 @@ __forceinline__ __device__ half2 dot2_32(half(&dq)[32], const half* a_ptr, const
     return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
 }
 
+__forceinline__ __device__ half2 dot2_16(half(&dq)[16], const half* a_ptr, const half2 g_result, const half qs_h)
+{
+    half2 result = {};
+    const half2* a2_ptr = (const half2*)a_ptr;
+    for (int i = 0; i < 16; i += 2) result = __hfma2(__halves2half2(dq[i], dq[i + 1]), *a2_ptr++, result);
+    return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
+}
+
+
+__forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result, const half qs_h)
+{
+    half2 result = {};
+    const half2* a2_ptr = (const half2*)a_ptr;
+    for (int i = 0; i < 4; i++) result = __hfma2(dq[i], *a2_ptr++, result);
+    return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
+}
+
+
+__forceinline__ __device__ half2 dot22_16(half2(&dq)[8], const half* a_ptr, const half2 g_result, const half qs_h)
+{
+    half2 result = {};
+    const half2* a2_ptr = (const half2*)a_ptr;
+    for (int i = 0; i < 8; i++) result = __hfma2(dq[i], *a2_ptr++, result);
+    return __hfma2(result, __halves2half2(qs_h, qs_h), g_result);
+}
+
+
 __forceinline__ __device__ half2 dot22_32(half2(&dq)[16], const half* a_ptr, const half2 g_result, const half qs_h)
 {
     half2 result = {};
@@ -196,147 +226,293 @@ __forceinline__ __device__ void load_8
     for (int i = 0; i < 8; i++, b_ptr += size_n) q[i] = *b_ptr;
 }
 
-template <int m_count>
-__forceinline__ __device__ void qdot_2bit_32
-(
-    int &k,
-    int &end_k_sg,
-    int &group,
-    int &nextgroup,
-    const int &groupsize,
-    int &n,
-    half* scales,
-    int &scales_idx,
-    half &qs_h,
-    half2* block_c,
-    const half* &a_ptr,
-    int &a_stride,
-    const uint32_t* &b_ptr,
-    const int &size_n,
-    uint32_t (&q_xx)[2],
-    uint32_t (&q_yy)[2]
-)
-{
-    if (k >= end_k_sg) return;
 
-    advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+// template <int m_count>
+// __forceinline__ __device__ void qdot_2bit_32_lut
+// (
+//     int& k,
+//     int& end_k_sg,
+//     int& group,
+//     int& nextgroup,
+//     const int& groupsize,
+//     int& n,
+//     half* scales,
+//     int& scales_idx,
+//     half& qs_h,
+//     half2* block_c,
+//     const half*& a_ptr,
+//     int& a_stride,
+//     const uint32_t*& b_ptr,
+//     const int& size_n,
+//     uint32_t(&q_xx)[2],
+//     uint32_t(&q_yy)[2],
+//     const half2* lut2
+// )
+// {
+//     if (k >= end_k_sg) return;
+//
+//     advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+//
+//     if (k + 32 < end_k_sg) load_2(b_ptr, size_n, q_yy);
+//
+//     int i = 0;
+//     half2 dq[16];
+//
+//     int l0 = (q_xx[0]      ) & 0xff;
+//     int l1 = (q_xx[0] >>  8) & 0xff;
+//     int l2 = (q_xx[0] >> 16) & 0xff;
+//     int l3 = (q_xx[0] >> 24);
+//     int l4 = (q_xx[1]      ) & 0xff;
+//     int l5 = (q_xx[1] >>  8) & 0xff;
+//     int l6 = (q_xx[1] >> 16) & 0xff;
+//     int l7 = (q_xx[1] >> 24);
+//
+//     dq[ 0] = lut2[l0 * 2    ];
+//     dq[ 1] = lut2[l0 * 2 + 1];
+//     dq[ 2] = lut2[l1 * 2    ];
+//     dq[ 3] = lut2[l1 * 2 + 1];
+//     dq[ 4] = lut2[l2 * 2    ];
+//     dq[ 5] = lut2[l2 * 2 + 1];
+//     dq[ 6] = lut2[l3 * 2    ];
+//     dq[ 7] = lut2[l3 * 2 + 1];
+//     dq[ 8] = lut2[l4 * 2    ];
+//     dq[ 9] = lut2[l4 * 2 + 1];
+//     dq[10] = lut2[l5 * 2    ];
+//     dq[11] = lut2[l5 * 2 + 1];
+//     dq[12] = lut2[l6 * 2    ];
+//     dq[13] = lut2[l6 * 2 + 1];
+//     dq[14] = lut2[l7 * 2    ];
+//     dq[15] = lut2[l7 * 2 + 1];
+//
+//     //for (int i = 0; i < 16; i++) dq[     i] = dq_ns(exb(q_xx[0], i * 2, 0x03), 2);
+//     //for (int i = 0; i < 16; i++) dq[16 + i] = dq_ns(exb(q_xx[1], i * 2, 0x03), 2);
+//
+//     for (int m = 0; m < m_count; m++) block_c[m] = dot22_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+//
+//     a_ptr += 32;
+//     k += 32;
+// }
 
-    if (k + 32 < end_k_sg) load_2(b_ptr, size_n, q_yy);
+// template <int m_count>
+// __forceinline__ __device__ void qdot_2bit_32_bf
+// (
+//     int &k,
+//     int &end_k_sg,
+//     int &group,
+//     int &nextgroup,
+//     const int &groupsize,
+//     int &n,
+//     half* scales,
+//     int &scales_idx,
+//     half &qs_h,
+//     half2* block_c,
+//     const half* &a_ptr,
+//     int &a_stride,
+//     const uint32_t* &b_ptr,
+//     const int &size_n,
+//     uint32_t (&q_xx)[2],
+//     uint32_t (&q_yy)[2]
+// )
+// {
+//     if (k >= end_k_sg) return;
+//
+//     advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+//
+//     if (k + 32 < end_k_sg) load_2(b_ptr, size_n, q_yy);
+//
+//     for (int j = 0; j < 2; j++)
+//     {
+//         uint32_t dqp[1];
+//         dqp[0] = q_xx[j];
+//         half2 dq[8];
+//
+//         dequant_2bit_16(dqp, dq);
+//
+//         for (int m = 0; m < m_count; m++) block_c[m] = dot22_16(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+//
+//         a_ptr += 16;
+//         k += 16;
+//     }
+// }
 
-    half dq[32];
-    for (int i = 0; i < 16; i++) dq[     i] = dq_ns(exb(q_xx[0], i * 2, 0x03), 2);
-    for (int i = 0; i < 16; i++) dq[16 + i] = dq_ns(exb(q_xx[1], i * 2, 0x03), 2);
 
-    for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+// template <int m_count>
+// __forceinline__ __device__ void qdot_2bit_32_bf2
+// (
+//     int &k,
+//     int &end_k_sg,
+//     int &group,
+//     int &nextgroup,
+//     const int &groupsize,
+//     int &n,
+//     half* scales,
+//     int &scales_idx,
+//     half &qs_h,
+//     half2* block_c,
+//     const half* &a_ptr,
+//     int &a_stride,
+//     const uint32_t* &b_ptr,
+//     const int &size_n,
+//     uint32_t (&q_xx)[2],
+//     uint32_t (&q_yy)[2]
+// )
+// {
+//     if (k >= end_k_sg) return;
+//
+//     advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+//
+//     if (k + 32 < end_k_sg) load_2(b_ptr, size_n, q_yy);
+//
+//     const uint64_t lut = 0x3c000000bc00c000;  // half4(1, 0, -1, -2)
+//
+//     int i = 0;
+//     half dq[32];
+//
+//     uint32_t q = q_xx[0];
+//     #pragma unroll
+//     while (i < 16)
+//     {
+//         uint32_t b = q & 3;
+//         uint64_t d = lut >> (b << 4);
+//         dq[i++] = __ushort_as_half((uint16_t)d);
+//         q >>= 2;
+//     }
+//
+//     q = q_xx[1];
+//     #pragma unroll
+//     while (i < 32)
+//     {
+//         uint32_t b = q & 3;
+//         uint64_t d = lut >> (b << 4);
+//         dq[i++] = __ushort_as_half((uint16_t)d);
+//         q >>= 2;
+//     }
+//
+//     //for (int i = 0; i < 16; i++) dq[     i] = dq_ns(exb(q_xx[0], i * 2, 0x03), 2);
+//     //for (int i = 0; i < 16; i++) dq[16 + i] = dq_ns(exb(q_xx[1], i * 2, 0x03), 2);
+//
+//     for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+//
+//     a_ptr += 32;
+//     k += 32;
+// }
+//
+// template <int m_count>
+// __forceinline__ __device__ void qdot_2bit_32
+// (
+//     int &k,
+//     int &end_k_sg,
+//     int &group,
+//     int &nextgroup,
+//     const int &groupsize,
+//     int &n,
+//     half* scales,
+//     int &scales_idx,
+//     half &qs_h,
+//     half2* block_c,
+//     const half* &a_ptr,
+//     int &a_stride,
+//     const uint32_t* &b_ptr,
+//     const int &size_n,
+//     uint32_t (&q_xx)[2],
+//     uint32_t (&q_yy)[2]
+// )
+// {
+//     if (k >= end_k_sg) return;
+//
+//     advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+//
+//     if (k + 32 < end_k_sg) load_2(b_ptr, size_n, q_yy);
+//
+//     half dq[32];
+//     for (int i = 0; i < 16; i++) dq[     i] = dq_ns(exb(q_xx[0], i * 2, 0x03), 2);
+//     for (int i = 0; i < 16; i++) dq[16 + i] = dq_ns(exb(q_xx[1], i * 2, 0x03), 2);
+//
+//     for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+//
+//     a_ptr += 32;
+//     k += 32;
+// }
 
-    a_ptr += 32;
-    k += 32;
-}
+// template <int m_count>
+// __forceinline__ __device__ void qdot_3bit_32
+// (
+//     int &k,
+//     int &end_k_sg,
+//     int &group,
+//     int &nextgroup,
+//     const int &groupsize,
+//     int &n,
+//     half* scales,
+//     int &scales_idx,
+//     half &qs_h,
+//     half2* block_c,
+//     const half* &a_ptr,
+//     int &a_stride,
+//     const uint32_t* &b_ptr,
+//     const int &size_n,
+//     uint32_t (&q_xx)[3],
+//     uint32_t (&q_yy)[3]
+// )
+// {
+//     if (k >= end_k_sg) return;
+//
+//     advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+//
+//     if (k + 32 < end_k_sg) load_3(b_ptr, size_n, q_yy);
+//
+//     half dq[32];
+//     for (int i = 0; i < 10; i++) dq[     i] = dq_ns(exb(         q_xx[0], i * 3    , 0x07), 4);
+//                                  dq[10    ] = dq_ns(exb(q_xx[1], q_xx[0],        30, 0x07), 4);
+//     for (int i = 0; i < 10; i++) dq[11 + i] = dq_ns(exb(         q_xx[1], i * 3 + 1, 0x07), 4);
+//                                  dq[21    ] = dq_ns(exb(q_xx[2], q_xx[1],        31, 0x07), 4);
+//     for (int i = 0; i < 10; i++) dq[22 + i] = dq_ns(exb(         q_xx[2], i * 3 + 2, 0x07), 4);
+//
+//     for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+//
+//     a_ptr += 32;
+//     k += 32;
+// }
+//
 
-template <int m_count>
-__forceinline__ __device__ void qdot_2bit_128
-(
-    int &k,
-    int &group,
-    int &nextgroup,
-    const int &groupsize,
-    int &n,
-    half* scales,
-    int &scales_idx,
-    half &qs_h,
-    half2* block_c,
-    const half* &a_ptr,
-    int &a_stride,
-    const uint32_t* &b_ptr,
-    const int &size_n,
-    uint32_t (&q_xx)[8]
-)
-{
-    for (int j = 0; j < 4; j++)
-    {
-        advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
-        half dq[32];
-        for (int i = 0; i < 16; i++) dq[     i] = dq_ns(exb(q_xx[2 * j    ], i * 2, 0x03), 2);
-        for (int i = 0; i < 16; i++) dq[16 + i] = dq_ns(exb(q_xx[2 * j + 1], i * 2, 0x03), 2);
-        for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
-        a_ptr += 32;
-        k += 32;
-    }
-}
-
-template <int m_count>
-__forceinline__ __device__ void qdot_3bit_32
-(
-    int &k,
-    int &end_k_sg,
-    int &group,
-    int &nextgroup,
-    const int &groupsize,
-    int &n,
-    half* scales,
-    int &scales_idx,
-    half &qs_h,
-    half2* block_c,
-    const half* &a_ptr,
-    int &a_stride,
-    const uint32_t* &b_ptr,
-    const int &size_n,
-    uint32_t (&q_xx)[3],
-    uint32_t (&q_yy)[3]
-)
-{
-    if (k >= end_k_sg) return;
-
-    advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
-
-    if (k + 32 < end_k_sg) load_3(b_ptr, size_n, q_yy);
-
-    half dq[32];
-    for (int i = 0; i < 10; i++) dq[     i] = dq_ns(exb(         q_xx[0], i * 3    , 0x07), 4);
-                                 dq[10    ] = dq_ns(exb(q_xx[1], q_xx[0],        30, 0x07), 4);
-    for (int i = 0; i < 10; i++) dq[11 + i] = dq_ns(exb(         q_xx[1], i * 3 + 1, 0x07), 4);
-                                 dq[21    ] = dq_ns(exb(q_xx[2], q_xx[1],        31, 0x07), 4);
-    for (int i = 0; i < 10; i++) dq[22 + i] = dq_ns(exb(         q_xx[2], i * 3 + 2, 0x07), 4);
-
-    for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
-
-    a_ptr += 32;
-    k += 32;
-}
-
-template <int m_count>
-__forceinline__ __device__ void qdot_3bit_64
-(
-    int &k,
-    int &group,
-    int &nextgroup,
-    const int &groupsize,
-    int &n,
-    half* scales,
-    int &scales_idx,
-    half &qs_h,
-    half2* block_c,
-    const half* &a_ptr,
-    int &a_stride,
-    const uint32_t* &b_ptr,
-    const int &size_n,
-    uint32_t (&q_xx)[6]
-)
-{
-    for (int j = 0; j < 2; j++)
-    {
-        advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
-        half dq[32];
-        for (int i = 0; i < 10; i++) dq[     i] = dq_ns(exb(                 q_xx[3 * j    ], i * 3    , 0x07), 4);
-                                     dq[10    ] = dq_ns(exb(q_xx[3 * j + 1], q_xx[3 * j    ],        30, 0x07), 4);
-        for (int i = 0; i < 10; i++) dq[11 + i] = dq_ns(exb(                 q_xx[3 * j + 1], i * 3 + 1, 0x07), 4);
-                                     dq[21    ] = dq_ns(exb(q_xx[3 * j + 2], q_xx[3 * j + 1],        31, 0x07), 4);
-        for (int i = 0; i < 10; i++) dq[22 + i] = dq_ns(exb(                 q_xx[3 * j + 2], i * 3 + 2, 0x07), 4);
-        for (int m = 0; m < m_count; m++) block_c[m] = dot2_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
-        a_ptr += 32;
-        k += 32;
-    }
-}
+// template <int m_count>
+// __forceinline__ __device__ void qdot_3bit_32_bf
+// (
+//     int &k,
+//     int &end_k_sg,
+//     int &group,
+//     int &nextgroup,
+//     const int &groupsize,
+//     int &n,
+//     half* scales,
+//     int &scales_idx,
+//     half &qs_h,
+//     half2* block_c,
+//     const half* &a_ptr,
+//     int &a_stride,
+//     const uint32_t* &b_ptr,
+//     const int &size_n,
+//     uint32_t (&q_xx)[3],
+//     uint32_t (&q_yy)[3]
+// )
+// {
+//     if (k >= end_k_sg) return;
+//
+//     advance_group(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h);
+//     if (k + 32 < end_k_sg) load_3(b_ptr, size_n, q_yy);
+//
+//     uint32_t dqp[3];
+//     dqp[0] = q_xx[0];
+//     dqp[1] = q_xx[1];
+//     dqp[2] = q_xx[2];
+//     half2 dq[16];
+//
+//     dequant_3bit_32(dqp, dq);
+//     for (int m = 0; m < m_count; m++) block_c[m] = dot22_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+//
+//     a_ptr += 32;
+//     k += 32;
+// }
 
 template <int m_count>
 __forceinline__ __device__ void qdot_4bit_32

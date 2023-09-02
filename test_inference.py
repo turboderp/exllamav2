@@ -52,7 +52,7 @@ if args.prompt:
 
         print(f" -- Warmup...")
 
-        model.forward(ids[:, :])
+        model.forward(ids[:, -1:])
 
         print(f" -- Generating (greedy sampling)...")
         print()

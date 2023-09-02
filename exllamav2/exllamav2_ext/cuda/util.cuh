@@ -5,6 +5,9 @@
 #define DBGI(__x) printf("%s: %i\n", #__x, __x)
 #define DBGI2(__x, __y) printf("%s, %s: %i, %i\n", #__x, #__y, __x, __y)
 #define DBGI3(__x, __y, __z) printf("%s, %s, %s: %i, %i, %i\n", #__x, #__y, #__z, __x, __y, __z)
+#define DBGX(__x) printf("%s: %x\n", #__x, __x)
+#define DBGX2(__x, __y) printf("%s, %s: %x, %x\n", #__x, #__y, __x, __y)
+#define DBGX3(__x, __y, __z) printf("%s, %s, %s: %x, %x, %x\n", #__x, #__y, #__z, __x, __y, __z)
 #define DBGF(__x) printf("%s: %f\n", #__x, __x)
 #define DBGF2(__x, __y) printf("%s, %s: %f, %f\n", #__x, #__y, __x, __y)
 #define DBGF3(__x, __y, __z) printf("%s, %s, %s: %f, %f, %f\n", #__x, #__y, #__z, __x, __y, __z)
@@ -13,6 +16,7 @@
 #define DBGH3(__x, __y, __z) printf("%s, %s, %s: %f, %f, %f\n", #__x, #__y, #__z, __half2float(__x), __half2float(__y), __half2float(__z))
 
 #define DBGIH(__x, __y) printf("%s, %s: %i, %f\n", #__x, #__y, __x, __half2float(__y))
+#define DBGIH2(__x, __y, __z) printf("%s, %s, %s: %i, %f, %f\n", #__x, #__y, #__z, __x, __half2float(__y), __half2float(__z))
 
 __forceinline__ __device__ half dq_scale_(const int qs, const half max_scale)
 {
@@ -55,6 +59,6 @@ __forceinline__ __device__ int exb(const uint32_t q, const int shift, const int 
 
 __forceinline__ __device__ int exb(const uint32_t q1, const uint32_t q0, const int shift, const int mask)
 {
-    return (int)(__funnelshift_r(q0, q1, shift) & mask);
+    return (int)(__funnelshift_rc(q0, q1, shift) & mask);
 }
 

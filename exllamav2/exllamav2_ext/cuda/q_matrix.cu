@@ -3,10 +3,45 @@
 #include "util.cuh"
 #include "q_gemm_dq.cuh"
 
+#include "quant/qdq_2.cuh"
+#include "quant/qdq_3.cuh"
+#include "quant/qdq_4.cuh"
+
 #define BLOCK_KN_SIZE 256
 
 #define THREADS_X 32
 #define THREADS_Y 32
+
+// Shuffle quantized data on load
+
+__global__ void shuffle_kernel
+(
+    uint32_t* __restrict__ b_q_weight,
+    const int size_k,
+    const int size_n,
+    const int rows_8,
+    const int rows_6,
+    const int rows_5,
+    const int rows_4,
+    const int rows_3,
+    const int rows_2
+)
+{
+    int n = blockIdx.x * THREADS_X + threadIdx.x;
+    if (n >= size_n) return;
+    int k = 0;
+    uint32_t* b_ptr = b_q_weight + n;
+    while (k < rows_8) { b_ptr += size_n; k += 4; }
+    while (k < rows_6) { b_ptr += 6 * size_n; k += 32; }
+    while (k < rows_5) { b_ptr += 5 * size_n; k += 32; }
+//     while (k < rows_4) {                                 b_ptr += 1 * size_n; k +=  8; }
+    while (k < rows_4) { shuffle_4bit_8 (b_ptr, size_n); b_ptr += 1 * size_n; k +=  8; }
+    while (k < rows_3) { shuffle_3bit_32(b_ptr, size_n); b_ptr += 3 * size_n; k += 32; }
+    while (k < rows_2) { shuffle_2bit_16(b_ptr, size_n); b_ptr += 1 * size_n; k += 16; }
+}
+
+
+// QMatrix constructor
 
 QMatrix::QMatrix
 (
@@ -80,7 +115,18 @@ QMatrix::QMatrix
     // DBGI(rows_4);
     // DBGI(rows_3);
     // DBGI(rows_2);
+
+    // Shuffle quantized data
+
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_X;
+    blockDim.y = 1;
+    gridDim.x = DIVIDE(width, THREADS_X);
+    gridDim.y = 1;
+
+    shuffle_kernel<<<gridDim, blockDim>>>(cuda_q_weight, height, width, rows_8, rows_6, rows_5, rows_4, rows_3, rows_2);
 }
+
 
 // Reconstruct b[k,n]
 

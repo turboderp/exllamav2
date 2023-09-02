@@ -2,14 +2,21 @@
 #include "util.cuh"
 #include "matrix_view.cuh"
 #include "../config.h"
+#include <cuda/barrier>
+#include <cuda/pipeline>
+
+#include "quant/qdq_2.cuh"
+#include "quant/qdq_3.cuh"
+#include "quant/qdq_4.cuh"
 
 // #include <cuda/pipeline>
 // #include <mma.h>
 
 #define BLOCK_KN_SIZE 512
+//#define SUBBLOCK_K_SIZE 256
 //#define BLOCK_KN_SIZE 512
 #define MAX_GROUPS_IN_BLOCK (BLOCK_KN_SIZE / 32)
-#define MAX_COUNT_M 1
+#define MAX_COUNT_M 4
 #define CLEAR_N_SIZE 256
 //#define DEBUG
 #define WARP_SIZE 32
@@ -38,18 +45,19 @@ typedef void (*fp_gemm_half_q_half_kernel)
     const int,
     const int,
     const int,
-    const int
+    const int,
+    const bool
 );
 
 template <bool first_block, int m_count>
 __global__ void gemm_half_q_half_kernel
 (
-    const half*      a,
-    const uint32_t*  b_q_weight,
-    const uint32_t*  b_q_scale,
-    const half*      b_q_scale_max,
+    const half*      __restrict__ a,
+    const uint32_t*  __restrict__ b_q_weight,
+    const uint32_t*  __restrict__ b_q_scale,
+    const half*      __restrict__ b_q_scale_max,
     //const uint16_t*  b_q_groups,
-    half*            c,
+    half*            __restrict__ c,
     const int size_m,
     const int size_n,
     const int size_k,
@@ -61,7 +69,8 @@ __global__ void gemm_half_q_half_kernel
     const int rows_5,
     const int rows_4,
     const int rows_3,
-    const int rows_2
+    const int rows_2,
+    const bool clear
 )
 {
     MatrixView_half a_(a, size_m, size_k);
@@ -96,9 +105,41 @@ __global__ void gemm_half_q_half_kernel
         }
     }
 
-    __syncthreads();
+    // Compute 2-bit LUT if needed
+
+//     __shared__ half2 lut2[512];
+
+//     if (end_k > rows_3 && t < 512)
+//     {
+//         half2* write_lut = (half2*)lut2;
+//         const uint64_t lut_s = 0x3c000000bc00c000;   // half4(1, 0, -1, -2)
+//
+//         int t0 = t & 1;
+//         int t1 = t >> 1;
+//
+//         if (t0)
+//         {
+//             uint32_t b2 = ((uint32_t)t1     ) & 0x30;
+//             uint32_t b3 = ((uint32_t)t1 >> 2) & 0x30;
+//             write_lut[t] = __halves2half2(__ushort_as_half(lut_s >> b2), __ushort_as_half(lut_s >> b3));
+//         }
+//         else
+//         {
+//             uint32_t b0 = ((uint32_t)t1 << 4) & 0x30;
+//             uint32_t b1 = ((uint32_t)t1 << 2) & 0x30;
+//             write_lut[t] = __halves2half2(__ushort_as_half(lut_s >> b0), __ushort_as_half(lut_s >> b1));
+//         }
+//     }
 
     if (n >= size_n) return;
+
+    if (clear && blockIdx.z == 0) // && (threadIdx.x & 1) == 0)
+    {
+        for (int m = 0; m < m_count; m++)
+            *((uint16_t*) c_.item_ptr(offset_m + m, n)) = 0;
+    }
+
+    __syncthreads();
 
     // Advance to subblock
 
@@ -191,76 +232,126 @@ __global__ void gemm_half_q_half_kernel
         qdot_5bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
     }
 
-//     while (k + 128 < rows_4 && k + 128 < end_k)
+
+//
+// //     while (k < rows_3 && k < end_k)
 //     {
-//         uint32_t q_0[8], q_1[8];
-//         load_8(b_ptr, size_n, q_0);
-//         load_8(b_ptr, size_n, q_1);
-//         qdot_4bit_64<m_count>(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0);
-//         qdot_4bit_64<m_count>(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1);
+//         int end_k_sg = min(min(k + 128, rows_2), end_k);
+//         uint32_t q_0[3], q_1[3];
+//         load_3(b_ptr, size_n, q_0);
+// //         qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+// //         qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+// //         qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+// //         qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+//         qdot_3bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+//         qdot_3bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+//         qdot_3bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+//         qdot_3bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
 //     }
 
+
+//     while (k < rows_4 && k < end_k)
+//     {
+//         int end_k_sg = min(min(k + 128, rows_3), end_k);
+//         uint32_t q_0[4], q_1[4];
+//         load_4(b_ptr, size_n, q_0);
+//         qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+//         qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+//         qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+//         qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+//     }
+//
     while (k < rows_4 && k < end_k)
     {
-        int end_k_sg = min(min(k + 128, rows_3), end_k);
-        uint32_t q_0[4], q_1[4];
-        load_4(b_ptr, size_n, q_0);
-        qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-        qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
-        qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-        qdot_4bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+        if (k == nextgroup)
+        {
+            group++;
+            scales_idx++;
+            qs_h = scales[scales_idx];
+            nextgroup += groupsize;
+        }
+
+        #pragma unroll
+        for (int j = 0; j < 4; j++)
+        {
+            half2 dq[4];
+            dequant_4bit_8(b_ptr, dq, size_n); b_ptr += size_n;
+            for (int m = 0; m < m_count; m++) block_c[m] = dot22_8(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+            a_ptr += 8;
+        }
+        k += 32;
     }
 
-//     while (k + 128 < rows_3 && k + 128 < end_k)
-//     {
-//         uint32_t q_0[6], q_1[6];
-//         load_6(b_ptr, size_n, q_0);
-//         load_6(b_ptr, size_n, q_1);
-//         qdot_3bit_64<m_count>(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0);
-//         qdot_3bit_64<m_count>(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1);
-//     }
 
     while (k < rows_3 && k < end_k)
     {
-        int end_k_sg = min(min(k + 128, rows_2), end_k);
-        uint32_t q_0[3], q_1[3];
-        load_3(b_ptr, size_n, q_0);
-        qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-        qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
-        qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-        qdot_3bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
-    }
+        if (k == nextgroup)
+        {
+            group++;
+            scales_idx++;
+            qs_h = scales[scales_idx];
+            nextgroup += groupsize;
+        }
 
-//     while (k + 128 < rows_2 && k + 128 < end_k)
-//     {
-//         uint32_t q_0[8];
-//         load_8(b_ptr, size_n, q_0);
-//         qdot_2bit_128<m_count>(k, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0);
-//     }
+        half2 dq[16];
+        dequant_3bit_32(b_ptr, dq, size_n); b_ptr += 3 * size_n;
+        for (int m = 0; m < m_count; m++) block_c[m] = dot22_32(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+        a_ptr += 32;
+        k += 32;
+    }
 
     while (k < rows_2 && k < end_k)
     {
-        int end_k_sg = min(k + 128, end_k);
-        uint32_t q_0[2], q_1[2];
-        load_2(b_ptr, size_n, q_0);
-        qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-        qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
-        qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
-        qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+        if (k == nextgroup)
+        {
+            group++;
+            scales_idx++;
+            qs_h = scales[scales_idx];
+            nextgroup += groupsize;
+        }
+
+        #pragma unroll
+        for (int j = 0; j < 2; j++)
+        {
+            half2 dq[8];
+            dequant_2bit_16(b_ptr, dq, size_n); b_ptr += size_n;
+            for (int m = 0; m < m_count; m++) block_c[m] = dot22_16(dq, a_ptr + m * a_stride, block_c[m], qs_h);
+            a_ptr += 16;
+        }
+        k += 32;
     }
+
+//     while (k < rows_2 && k < end_k)
+//     {
+//         int end_k_sg = min(k + 128, end_k);
+//         uint32_t q_0[2], q_1[2];
+//         load_2(b_ptr, size_n, q_0);
+// //         qdot_2bit_32_lut<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1, &lut2[0]);
+// //         qdot_2bit_32_lut<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0, &lut2[0]);
+// //         qdot_2bit_32_lut<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1, &lut2[0]);
+// //         qdot_2bit_32_lut<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0, &lut2[0]);
+//         qdot_2bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+//         qdot_2bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+//         qdot_2bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+//         qdot_2bit_32_bf<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+// //         qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+// //         qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+// //         qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_0, q_1);
+// //         qdot_2bit_32<m_count>(k, end_k_sg, group, nextgroup, groupsize, n, scales, scales_idx, qs_h, block_c, a_ptr, a_stride, b_ptr, size_n, q_1, q_0);
+//     }
 
     // Accumulate column sums in c
 
     for (int m = 0; m < m_count; m++) atomicAdd(c_.item_ptr(offset_m + m, n), __hadd(block_c[m].x, block_c[m].y));
-    //for (int m = 0; m < m_count; m++) c_.set(offset_m + m, n, block_c[m]);
+//     for (int m = 0; m < m_count; m++) c_.set(offset_m + m, n, __hadd(block_c[m].x, block_c[m].y));
 }
 
 fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(bool first_block, const int m_count)
 {
     if (m_count == 1) return gemm_half_q_half_kernel<true, 1>;
-//     if (m_count == 2) return gemm_half_q_half_kernel<true, 2>;
-//     if (m_count == 3) return gemm_half_q_half_kernel<true, 3>;
-//     if (m_count == 4) return gemm_half_q_half_kernel<true, 4>;
+    if (m_count == 2) return gemm_half_q_half_kernel<true, 2>;
+    if (m_count == 3) return gemm_half_q_half_kernel<true, 3>;
+    if (m_count == 4) return gemm_half_q_half_kernel<true, 4>;
 //     if (m_count == 5) return gemm_half_q_half_kernel<true, 5>;
 //     if (m_count == 6) return gemm_half_q_half_kernel<true, 6>;
 //     if (m_count == 7) return gemm_half_q_half_kernel<true, 7>;
@@ -276,7 +367,8 @@ void gemm_half_q_half_cuda_part
     int size_m,
     int size_n,
     int size_k,
-    int count_m
+    int count_m,
+    bool clear
 )
 {
     dim3 blockDim, gridDim;
@@ -308,7 +400,8 @@ void gemm_half_q_half_cuda_part
         b->rows_5,
         b->rows_4,
         b->rows_3,
-        b->rows_2
+        b->rows_2,
+        clear
     );
 }
 
@@ -325,7 +418,7 @@ void gemm_half_q_half_cuda
     half* temp_dq
 )
 {
-    if (size_m >= MAX_Q_GEMM_ROWS)
+    if (size_m >= MAX_Q_GEMM_ROWS && false)
     {
         // Reconstruct FP16 matrix, then cuBLAS
 
@@ -379,7 +472,7 @@ void gemm_half_q_half_cuda
     {
         // Quantized matmul
 
-        if (clear) clear_tensor_cuda(c, size_m, size_n);
+        //if (clear) clear_tensor_cuda(c, size_m, size_n);
 
         int max_chunks = size_m / MAX_COUNT_M;
         int last_chunk = max_chunks * MAX_COUNT_M;
@@ -389,10 +482,16 @@ void gemm_half_q_half_cuda
     //     DBGI3(max_chunks, last_chunk, last_chunk_size);
 
         if (max_chunks)
-            gemm_half_q_half_cuda_part(a, b, c, last_chunk, size_n, size_k, MAX_COUNT_M);
+        {
+//             printf("kernel\n");
+            gemm_half_q_half_cuda_part(a, b, c, last_chunk, size_n, size_k, MAX_COUNT_M, clear);
+        }
 
         if (last_chunk_size)
-            gemm_half_q_half_cuda_part(a + last_chunk * size_k, b, c + last_chunk * size_n, last_chunk_size, size_n, size_k, last_chunk_size);
+        {
+//             printf("kernel2\n");
+            gemm_half_q_half_cuda_part(a + last_chunk * size_k, b, c + last_chunk * size_n, last_chunk_size, size_n, size_k, last_chunk_size, clear);
+        }
     }
 }
 
@@ -417,6 +516,7 @@ void clear_tensor_cuda
     int size_n
 )
 {
+    return;
     dim3 blockDim, gridDim;
     blockDim.x = CLEAR_N_SIZE;
     blockDim.y = 1;
