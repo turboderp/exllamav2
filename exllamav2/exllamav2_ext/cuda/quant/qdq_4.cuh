@@ -2,6 +2,9 @@
 #define _qdq_4_cuh
 
 #include "qdq_util.cuh"
+#include "../../config.h"
+
+#if QMODE_4BIT == 1
 
 // Permutation:
 //
@@ -52,8 +55,8 @@ __forceinline__ __device__ void dequant_4bit_8
     half2_uint32 q0((qa & 0x000f000f) | c0); // half2(q[ 0], q[ 1])      + 1024
     half2_uint32 q1((qa & 0x00f000f0) | c0); // half2(q[ 2], q[ 3]) * 16 + 1024
     qa >>= 8;
-    half2_uint32 q2((qa & 0x000f000f) | c0); // half2(q[ 5], q[ 4])      + 1024
-    half2_uint32 q3((qa & 0x00f000f0) | c0); // half2(q[ 7], q[ 6]) * 16 + 1024
+    half2_uint32 q2((qa & 0x000f000f) | c0); // half2(q[ 4], q[ 5])      + 1024
+    half2_uint32 q3((qa & 0x00f000f0) | c0); // half2(q[ 6], q[ 7]) * 16 + 1024
 
     dq[0] = __hadd2(q0.as_half2, z1);
     dq[1] = __hfma2(q1.as_half2, y16, z16);
@@ -85,5 +88,30 @@ __forceinline__ __device__ void dequant_4bit_8
 // //     dq[2] = dqp2[2];
 // //     dq[3] = dqp2[3];
 }
+
+#else
+
+__forceinline__ __device__ void shuffle_4bit_8
+(
+    uint32_t* q,
+    int stride
+)
+{
+}
+
+__forceinline__ __device__ void dequant_4bit_8
+(
+    const uint32_t* q,
+    half2 (&dq)[4],
+    int stride
+)
+{
+    half dqh[8];
+    for (int i = 0; i < 8; i++) dqh[i] = dq_ns(exb(q[0 * stride], i * 4, 0x0f), 8);
+
+    for (int i = 0; i < 4; i++) dq[i] = __halves2half2(dqh[i * 2], dqh[i * 2 + 1]);
+}
+
+#endif
 
 #endif

@@ -60,8 +60,10 @@ if args.prompt:
         sys.stdout.flush()
 
         time_begin = time.time()
-        if ids.shape[-1] > 1: model.forward(ids[:, :-1], cache)
 
+        if ids.shape[-1] > 1: model.forward(ids[:, :-1], cache, preprocess_only = True)
+
+        torch.cuda.synchronize()
         time_prompt = time.time()
 
         for i in range(args.tokens):

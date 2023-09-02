@@ -2,6 +2,9 @@
 #define _qdq_2_cuh
 
 #include "qdq_util.cuh"
+#include "../../config.h"
+
+#if QMODE_2BIT == 1
 
 // Permutation:
 //
@@ -71,5 +74,30 @@ __forceinline__ __device__ void dequant_2bit_16
     dq[6] = __hfma2(q6.as_half2, y16, z16);
     dq[7] = __hfma2(q7.as_half2, y64, z64);
 }
+
+#else
+
+__forceinline__ __device__ void shuffle_2bit_16
+(
+    uint32_t* q,
+    int stride
+)
+{
+}
+
+__forceinline__ __device__ void dequant_2bit_16
+(
+    const uint32_t* q,
+    half2 (&dq)[8],
+    int stride
+)
+{
+    half dqh[16];
+    for (int i = 0; i < 16; i++) dqh[i] = dq_ns(exb(q[0 * stride], i * 2, 0x03), 2);
+
+    for (int i = 0; i < 8; i++) dq[i] = __halves2half2(dqh[i * 2], dqh[i * 2 + 1]);
+}
+
+#endif
 
 #endif

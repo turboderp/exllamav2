@@ -6,6 +6,9 @@
 #include "quant/qdq_2.cuh"
 #include "quant/qdq_3.cuh"
 #include "quant/qdq_4.cuh"
+#include "quant/qdq_5.cuh"
+#include "quant/qdq_6.cuh"
+#include "quant/qdq_8.cuh"
 
 #define BLOCK_KN_SIZE 256
 
@@ -31,10 +34,9 @@ __global__ void shuffle_kernel
     if (n >= size_n) return;
     int k = 0;
     uint32_t* b_ptr = b_q_weight + n;
-    while (k < rows_8) { b_ptr += size_n; k += 4; }
-    while (k < rows_6) { b_ptr += 6 * size_n; k += 32; }
-    while (k < rows_5) { b_ptr += 5 * size_n; k += 32; }
-//     while (k < rows_4) {                                 b_ptr += 1 * size_n; k +=  8; }
+    while (k < rows_8) { shuffle_8bit_4 (b_ptr, size_n); b_ptr += 1 * size_n; k += 4; }
+    while (k < rows_6) { shuffle_6bit_16(b_ptr, size_n); b_ptr += 3 * size_n; k += 32; }
+    while (k < rows_5) { shuffle_5bit_32(b_ptr, size_n); b_ptr += 5 * size_n; k += 32; }
     while (k < rows_4) { shuffle_4bit_8 (b_ptr, size_n); b_ptr += 1 * size_n; k +=  8; }
     while (k < rows_3) { shuffle_3bit_32(b_ptr, size_n); b_ptr += 3 * size_n; k += 32; }
     while (k < rows_2) { shuffle_2bit_16(b_ptr, size_n); b_ptr += 1 * size_n; k += 16; }
@@ -128,6 +130,7 @@ QMatrix::QMatrix
 }
 
 
+/*
 // Reconstruct b[k,n]
 
 __global__ void reconstruct_kernel
@@ -234,5 +237,191 @@ void QMatrix::reconstruct(half* out)
         groupsize,
         groups,
         out
+    );
+}
+
+*/
+
+// Reconstruct b[k,n]
+
+__global__ void reconstruct_kernel
+(
+    const uint32_t* __restrict__ b_q_weight,
+    const uint16_t* __restrict__ b_q_perm,
+    const uint32_t* __restrict__ b_q_scale,
+    const half* __restrict__ b_q_scale_max,
+    //const uint16_t* __restrict__ b_q_groups,
+    const int size_k,
+    const int size_n,
+    const int groupsize,
+    const int groups,
+    half* __restrict__ b,
+    const int rows_8,
+    const int rows_6,
+    const int rows_5,
+    const int rows_4,
+    const int rows_3,
+    const int rows_2
+)
+{
+    MatrixView_half_rw b_(b, size_k, size_n);
+    MatrixView_q4_row b_q_scale_(b_q_scale, groups, size_n);
+
+    int offset_k = BLOCK_KN_SIZE * blockIdx.y;
+    int offset_n = BLOCK_KN_SIZE * blockIdx.x;
+
+    // Preload remapping table
+
+    int t = threadIdx.x;
+    __shared__ uint16_t perm[BLOCK_KN_SIZE];
+    if (offset_k + t < size_k)
+        perm[t] = b_q_perm[offset_k + t];
+
+    // Column
+
+    int n = offset_n + t;
+    if (n >= size_n) return;
+
+    // Find initial group
+
+    int group = offset_k / groupsize;
+
+    int pre_rows_8 = min(rows_8, offset_k);
+    int pre_rows_6 = offset_k > rows_8 ? min(rows_6, offset_k) - rows_8 : 0;
+    int pre_rows_5 = offset_k > rows_6 ? min(rows_5, offset_k) - rows_6 : 0;
+    int pre_rows_4 = offset_k > rows_5 ? min(rows_4, offset_k) - rows_5 : 0;
+    int pre_rows_3 = offset_k > rows_4 ? min(rows_3, offset_k) - rows_4 : 0;
+    int pre_rows_2 = offset_k > rows_3 ? min(rows_2, offset_k) - rows_3 : 0;
+    int qk = 0;
+    qk += pre_rows_8 / 32 * 8;
+    qk += pre_rows_6 / 32 * 6;
+    qk += pre_rows_5 / 32 * 5;
+    qk += pre_rows_4 / 32 * 4;
+    qk += pre_rows_3 / 32 * 3;
+    qk += pre_rows_2 / 32 * 2;
+
+    const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
+
+    half qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]);
+    int nextgroup = offset_k + groupsize;
+
+    int end_k = min(offset_k + BLOCK_KN_SIZE, size_k);
+    int k = offset_k;
+    int lk = 0;
+
+    __syncthreads();
+
+    while (k < rows_8 && k < end_k)
+    {
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        for (int p = 0; p < 4; p++)
+        {
+            half2 dq[4];
+            dequant_8bit_8(b_ptr, dq, size_n);
+            b_ptr += size_n * 2;
+            half* dqh = (half*) dq;
+            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+        }
+        k += 32;
+    }
+
+    while (k < rows_6 && k < end_k)
+    {
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        for (int p = 0; p < 2; p++)
+        {
+            half2 dq[8];
+            dequant_6bit_16(b_ptr, dq, size_n);
+            b_ptr += size_n * 3;
+            half* dqh = (half*) dq;
+            for (int j = 0; j < 16; j++)
+            b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+        }
+        k += 32;
+    }
+
+    while (k < rows_5 && k < end_k)
+    {
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        for (int p = 0; p < 1; p++)
+        {
+            half2 dq[16];
+            dequant_5bit_32(b_ptr, dq, size_n);
+            b_ptr += size_n * 5;
+            half* dqh = (half*) dq;
+            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+        }
+        k += 32;
+    }
+
+    while (k < rows_4 && k < end_k)
+    {
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        for (int p = 0; p < 4; p++)
+        {
+            half2 dq[4];
+            dequant_4bit_8(b_ptr, dq, size_n);
+            b_ptr += size_n;
+            half* dqh = (half*) dq;
+            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+        }
+        k += 32;
+    }
+
+    while (k < rows_3 && k < end_k)
+    {
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        for (int p = 0; p < 1; p++)
+        {
+            half2 dq[16];
+            dequant_3bit_32(b_ptr, dq, size_n);
+            b_ptr += size_n * 3;
+            half* dqh = (half*) dq;
+            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+        }
+        k += 32;
+    }
+
+    while (k < rows_2 && k < end_k)
+    {
+        if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += groupsize; }
+        for (int p = 0; p < 2; p++)
+        {
+            half2 dq[8];
+            dequant_2bit_16(b_ptr, dq, size_n);
+            b_ptr += size_n;
+            half* dqh = (half*) dq;
+            for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, __hmul(dqh[j], qs_h));
+        }
+        k += 32;
+    }
+}
+
+void QMatrix::reconstruct(half* out)
+{
+    dim3 blockDim, gridDim;
+    blockDim.x = BLOCK_KN_SIZE;
+    blockDim.y = 1;
+    gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
+    gridDim.y = DIVIDE(height, BLOCK_KN_SIZE);
+
+    reconstruct_kernel<<<gridDim, blockDim>>>
+    (
+        cuda_q_weight,
+        cuda_q_perm,
+        cuda_q_scale,
+        cuda_q_scale_max,
+        //cuda_q_groups,
+        height,
+        width,
+        groupsize,
+        groups,
+        out,
+        rows_8,
+        rows_6,
+        rows_5,
+        rows_4,
+        rows_3,
+        rows_2
     );
 }
