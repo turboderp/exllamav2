@@ -39,6 +39,8 @@ class ExLlamaV2Tokenizer:
 
     # Encode string
 
+    # TODO: Handle added tokens for "special" models
+
     def encode(self, text, add_bos = False, add_eos = False):
 
         if isinstance(text, list):
@@ -75,6 +77,9 @@ class ExLlamaV2Tokenizer:
 
             return torch.tensor(ids).unsqueeze(0)
 
+
+    # Decode IDs
+
     def decode(self, ids):
 
         if ids.dim() > 1:
@@ -92,6 +97,18 @@ class ExLlamaV2Tokenizer:
             ids = ids.tolist()
             text = self.tokenizer.Decode(ids)
             return text
+
+
+    # Create padding mask
+
+    def padding_mask(self, ids):
+
+        mask = (ids == self.pad_token_id)
+        mask = mask.int()
+        mask *= -65504
+        mask = mask.half()
+        return mask
+
 
     def num_tokens(self, text):
 

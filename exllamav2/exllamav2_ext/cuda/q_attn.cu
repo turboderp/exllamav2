@@ -76,9 +76,9 @@ QAttn::QAttn
     QMatrix* _v_proj,
     QMatrix* _o_proj,
     half* _temp_state,
-    half* _temp_q,
-    half* _temp_k,
-    half* _temp_v,
+//     half* _temp_q,
+//     half* _temp_k,
+//     half* _temp_v,
     half* _temp_dq,
     int _max_rows,
     int _hidden_size,
@@ -94,9 +94,9 @@ QAttn::QAttn
     v_proj(_v_proj),
     o_proj(_o_proj),
     temp_state(_temp_state),
-    temp_q(_temp_q),
-    temp_k(_temp_k),
-    temp_v(_temp_v),
+//     temp_q(_temp_q),
+//     temp_k(_temp_k),
+//     temp_v(_temp_v),
     temp_dq(_temp_dq),
     max_rows(_max_rows),
     hidden_size(_hidden_size),
@@ -114,59 +114,22 @@ void QAttn::forward_cuda_1
     int batch_size,
     int q_len,
     int past_len,
-    half* key_cache,
-    half* value_cache,
+    const uint32_t* past_lens,
+    half* temp_q,
+    half* temp_k,
+    half* temp_v,
     const half* sin,
     const half* cos
 )
 {
-    // Input layernorm
-
     rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
 
-    // Q, K, V projections
+    gemm_half_q_half_cuda(cublas_handle, temp_state, q_proj, temp_q, q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
+    gemm_half_q_half_cuda(cublas_handle, temp_state, k_proj, temp_k, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);
+    gemm_half_q_half_cuda(cublas_handle, temp_state, v_proj, temp_v, q_len * batch_size, v_proj->width, hidden_size, true, temp_dq);
 
-    int kv_size      = q_len    * num_kv_heads * head_dim;
-    int cache_offset = past_len * num_kv_heads * head_dim;
-    half* temp_k_;
-    half* temp_v_;
-
-    if (batch_size > 1)
-    {
-        temp_k_ = temp_k;
-        temp_v_ = temp_v;
-    }
-    else
-    {
-        temp_k_ = key_cache + cache_offset;
-        temp_v_ = value_cache + cache_offset;
-    }
-
-    gemm_half_q_half_cuda(cublas_handle, temp_state, q_proj, temp_q,  q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
-    gemm_half_q_half_cuda(cublas_handle, temp_state, k_proj, temp_k_, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);
-    gemm_half_q_half_cuda(cublas_handle, temp_state, v_proj, temp_v_, q_len * batch_size, v_proj->width, hidden_size, true, temp_dq);
-
-    // Q: [batch_size, q_len,    num_heads, head_dim]
-    // K: [batch_size, q_len, num_kv_heads, head_dim]
-    // V: [batch_size, q_len, num_kv_heads, head_dim]
-
-    // RoPE
-
-    rope_cuda(temp_q,  sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len);
-    rope_cuda(temp_k_, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len); // TODO: fused repeat k/v for MQA
-
-    // Update cache
-
-    // cK: [batch_size, max_seq_len, num_kv_heads, head_dim]
-    // cV: [batch_size, max_seq_len, num_kv_heads, head_dim]
-
-    if (batch_size > 1)
-    {
-        // TODO: split k/v into cache when batch size > 1
-
-        cudaMemcpyAsync(key_cache   + cache_offset, temp_k, kv_size * sizeof(half), cudaMemcpyDeviceToDevice);
-        cudaMemcpyAsync(value_cache + cache_offset, temp_v, kv_size * sizeof(half), cudaMemcpyDeviceToDevice);
-    }
+    rope_cuda(temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
+    rope_cuda(temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
 }
 
 void QAttn::forward_cuda_2

@@ -211,20 +211,22 @@ class ExLlamaV2:
 
     def load(self, gpu_split = None, lazy = False, stats = False):
 
-        stats = self.set_device_map(gpu_split or [99999])
+        with torch.inference_mode():
 
-        # Load module weights
+            stats = self.set_device_map(gpu_split or [99999])
 
-        if not lazy:
+            # Load module weights
 
-            for module in self.modules: module.load()
+            if not lazy:
 
-        # Cache map
+                for module in self.modules: module.load()
 
-        self.set_cache_map()
+            # Cache map
 
-        if stats: return gpu_split, stats
-        else: return gpu_split
+            self.set_cache_map()
+
+            if stats: return gpu_split, stats
+            else: return gpu_split
 
 
     def set_cache_map(self):
@@ -255,30 +257,57 @@ class ExLlamaV2:
 
     def build_attn_mask(self, batch_size, seq_len, past_len, input_mask, device):
 
-        if seq_len > 1:
+        if input_mask is None and seq_len == 1: return None
+
+        if isinstance(past_len, tuple):
+
+            attn_masks = []
+
+            for i in range(len(past_len[1])):
+
+                attn_mask = torch.zeros(1, 1, seq_len, past_len[1][i] + seq_len, dtype = torch.float16, device = device)
+                attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
+                attn_mask[:, :, : seq_len - 1, past_len[1][i] + 1: past_len[1][i] + seq_len] = attn_mask_triu
+
+                if input_mask is not None:
+                    min_mask_width = min(input_mask[i].shape[-1], seq_len + past_len[1][i])
+                    input_mask_part = input_mask[i][:, :min_mask_width].to(attn_mask.device)
+                    input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
+                    attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
+
+                attn_masks.append(attn_mask)
+
+            return attn_masks
+
+        else:
 
             attn_mask = torch.zeros(batch_size, 1, seq_len, past_len + seq_len, dtype = torch.float16, device = device)
             attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
             attn_mask[:, :, : seq_len - 1, past_len + 1: past_len + seq_len] = attn_mask_triu
 
             if input_mask is not None:
-                input_mask = torch.where(input_mask, 0, -65504.).half()
-                input_mask = input_mask.unsqueeze(1).unsqueeze(2)
-                attn_mask = torch.minimum(attn_mask, input_mask)
+                min_mask_width = min(input_mask.shape[-1], seq_len + past_len)
+                input_mask_part = input_mask[:, :min_mask_width].to(attn_mask.device)
+                input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
+                attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
 
-        else:
-
-            attn_mask = None
-
-        return attn_mask
+            return attn_mask
 
 
     def forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False):
 
-        assert input_mask is None or input_mask.shape == input_ids.shape
-
         batch_size, seq_len = input_ids.shape
-        past_len = 0 if cache is None else cache.current_seq_len
+        past_len = 0
+        if cache is not None:
+            if isinstance(cache, ExLlamaV2Cache):
+                past_len = cache.current_seq_len
+            else:
+                pl = [c.current_seq_len for c in cache]
+                past_len = torch.tensor(pl, dtype = torch.int)
+                past_len = (past_len, past_len)
+
+
+        assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
 
         x = input_ids
         prev_device = None
@@ -294,11 +323,12 @@ class ExLlamaV2:
 
                 prev_device = device
                 attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, input_mask, device)
+                if isinstance(past_len, tuple): past_len = (past_len[0].to(device), past_len[1])
 
             # Onward
 
             x = x.to(device)
-            x = module.forward(x, cache, attn_mask)
+            x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len)
 
             if preprocess_only and idx == self.last_kv_layer_idx:
                 x = None
@@ -310,6 +340,9 @@ class ExLlamaV2:
         # Advance cache
 
         if cache is not None:
-            cache.current_seq_len += seq_len
+            if isinstance(cache, list):
+                for c in cache: c.current_seq_len += seq_len
+            else:
+                cache.current_seq_len += seq_len
 
         return x

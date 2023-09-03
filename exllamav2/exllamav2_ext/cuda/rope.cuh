@@ -14,7 +14,8 @@ void rope_cuda
     const int rows_per_batch,
     const int head_dim,
     const int num_heads,
-    const int past_len
+    const int past_len,
+    const uint32_t* past_lens
 );
 
 #endif

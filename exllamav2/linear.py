@@ -115,7 +115,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.out_features * self.model.config.max_input_len * self.model.config.max_batch_size * 4 + 128
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, intermediates = False, test = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, test = False):
 
         # test = True
         if self.q_handle is not None and not test:

@@ -18,7 +18,6 @@
 #include "cuda/rope.cuh"
 
 #include "cpp/quantize_func.h"
-#include "cpp/torch_attn.h"
 #include "cpp/sampling.h"
 
 #include "cpp/util.h"
@@ -276,9 +275,9 @@ uintptr_t make_q_attn
     uintptr_t q_v_proj,
     uintptr_t q_o_proj,
     torch::Tensor temp_state,
-    torch::Tensor temp_q,
-    torch::Tensor temp_k,
-    torch::Tensor temp_v,
+//    torch::Tensor temp_q,
+//    torch::Tensor temp_k,
+//    torch::Tensor temp_v,
     torch::Tensor temp_dq,
     int max_rows,
     int hidden_size,
@@ -309,9 +308,9 @@ uintptr_t make_q_attn
         qm_v_proj,
         qm_o_proj,
         (half*) temp_state.data_ptr(),
-        (half*) temp_q.data_ptr(),
-        (half*) temp_k.data_ptr(),
-        (half*) temp_v.data_ptr(),
+//        (half*) temp_q.data_ptr(),
+//        (half*) temp_k.data_ptr(),
+//        (half*) temp_v.data_ptr(),
         (half*) temp_dq.data_ptr(),
         max_rows,
         hidden_size,
@@ -324,19 +323,19 @@ uintptr_t make_q_attn
     return reinterpret_cast<uintptr_t> (attn);
 }
 
-void q_attn_forward_
+void q_attn_forward_1
 (
     uintptr_t q_attn,
     torch::Tensor x,
     int batch_size,
     int q_len,
     int past_len,
-    torch::Tensor key_cache,
-    torch::Tensor value_cache,
+    torch::Tensor past_lens,
+    torch::Tensor q_temp,
+    torch::Tensor k_temp,
+    torch::Tensor v_temp,
     torch::Tensor sin,
-    torch::Tensor cos,
-    torch::Tensor temp_q,
-    torch::Tensor attn_mask
+    torch::Tensor cos
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
@@ -352,26 +351,29 @@ void q_attn_forward_
         batch_size,
         q_len,
         past_len,
-        (half*) key_cache.data_ptr(),
-        (half*) value_cache.data_ptr(),
+        past_lens.device().is_meta() ? NULL : (uint32_t*) past_lens.data_ptr(),
+        (half*) q_temp.data_ptr(),
+        (half*) k_temp.data_ptr(),
+        (half*) v_temp.data_ptr(),
         (half*) sin.data_ptr(),
         (half*) cos.data_ptr()
     );
+}
 
-    torch::Tensor attn_output = torch_attn
-    (
-        key_cache.narrow(1, 0, past_len + q_len),
-        value_cache.narrow(1, 0, past_len + q_len),
-        temp_q.narrow(0, 0, batch_size * q_len * attn->num_heads * attn->head_dim)
-              .view({batch_size, q_len, attn->num_heads, attn->head_dim}),
-        past_len,
-        q_len,
-        batch_size,
-        attn->num_heads,
-        attn->num_kv_heads,
-        attn->head_dim,
-        attn_mask
-    );
+void q_attn_forward_2
+(
+    uintptr_t q_attn,
+    torch::Tensor x,
+    torch::Tensor attn_output,
+    int batch_size,
+    int q_len
+)
+{
+    QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
+    TORCH_CHECK_DTYPE(x, kHalf);
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
 
     attn->forward_cuda_2
     (
@@ -480,7 +482,8 @@ void rope_
         rows_per_batch,
         head_dim,
         num_heads,
-        past_len
+        past_len,
+        NULL
     );
 }
 
@@ -652,7 +655,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
-    m.def("q_attn_forward_", &q_attn_forward_, "q_attn_forward_");
+    m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");
+    m.def("q_attn_forward_2", &q_attn_forward_2, "q_attn_forward_2");
     m.def("quantize_range", &quantize_range, "quantize_range");
     m.def("gemm_half_q_half", &gemm_half_q_half, "gemm_half_q_half");
     m.def("rms_norm", &rms_norm, "rms_norm");

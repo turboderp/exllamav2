@@ -117,7 +117,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.up_proj.set_device_idx(idx)
         self.down_proj.set_device_idx(idx)
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_mask, intermediates)

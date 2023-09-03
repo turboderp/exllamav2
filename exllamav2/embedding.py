@@ -21,6 +21,9 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         w = self.load_weight()
         assert isinstance(w, nn.Parameter)
 
+        pad_id = self.model.config.pad_token_id
+        w[pad_id] *= 0
+
         self.embedding = nn.Embedding(vocab_size, hidden_size, pad_token_id, device ="meta")
         self.embedding.weight = w
 
@@ -49,7 +52,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
 
         hidden_states = self.embedding.forward(hidden_states)
 

@@ -22,9 +22,9 @@ public:
     QMatrix* o_proj;
 
     half* temp_state;
-    half* temp_q;
-    half* temp_k;
-    half* temp_v;
+//     half* temp_q;
+//     half* temp_k;
+//     half* temp_v;
     half* temp_dq;
 
     int device;
@@ -44,9 +44,9 @@ public:
         QMatrix* _v_proj,
         QMatrix* _o_proj,
         half* _temp_state,
-        half* _temp_q,
-        half* _temp_k,
-        half* _temp_v,
+//         half* _temp_q,
+//         half* _temp_k,
+//         half* _temp_v,
         half* _temp_dq,
         int _max_rows,
         int _hidden_size,
@@ -65,8 +65,10 @@ public:
         int batch_size,
         int q_len,
         int past_len,
-        half* key_cache,
-        half* value_cache,
+        const uint32_t* past_lens,
+        half* temp_q,
+        half* temp_k,
+        half* temp_v,
         const half* sin,
         const half* cos
     );

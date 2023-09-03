@@ -55,7 +55,6 @@ exllamav2_ext = load \
         os.path.join(library_dir, "exllamav2_ext/cuda/rms_norm.cu"),
         os.path.join(library_dir, "exllamav2_ext/cuda/rope.cu"),
         os.path.join(library_dir, "exllamav2_ext/cpp/quantize_func.cpp"),
-        os.path.join(library_dir, "exllamav2_ext/cpp/torch_attn.cpp"),
         os.path.join(library_dir, "exllamav2_ext/cpp/sampling.cpp"),
         # ..
     ],

@@ -15,7 +15,8 @@ typedef void (*fp_rope_cuda_kernel)
     int,
     int,
     int,
-    int
+    int,
+    const uint32_t*
 );
 
 template<bool use_half2>
@@ -27,7 +28,8 @@ __global__ void rope_cuda_kernel
     int rows_per_batch,
     int head_dim,
     int num_heads,
-    int past_len
+    int past_len,
+    const uint32_t* __restrict__ past_lens
 )
 {
     MatrixView_half_rw x_(x, MAX_ROWS, head_dim);
@@ -45,6 +47,7 @@ __global__ void rope_cuda_kernel
 
     // Get sin and cos
 
+    if (past_len == -1) past_len = past_lens[blockIdx.z];
     int sincos_row = past_len + row / num_heads;
 
     if constexpr (use_half2)
@@ -102,7 +105,8 @@ void rope_cuda
     const int rows_per_batch,
     const int head_dim,
     const int num_heads,
-    const int past_len
+    const int past_len,
+    const uint32_t* past_lens
 )
 {
     bool use_half2 = true;
@@ -115,5 +119,5 @@ void rope_cuda
     gridDim.z = batch_size;
 
     fp_rope_cuda_kernel kernel = pick_rope_cuda_kernel(use_half2);
-    kernel<<<gridDim, blockDim>>>(x, sin, cos, rows_per_batch, head_dim, num_heads, past_len);
+    kernel<<<gridDim, blockDim>>>(x, sin, cos, rows_per_batch, head_dim, num_heads, past_len, past_lens);
 }
