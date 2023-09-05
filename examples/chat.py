@@ -26,6 +26,13 @@ parser.add_argument("-un", "--username", type = str, default = "User", help = "U
 parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help = "Bot name when using raw chat mode")
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
 
+parser.add_argument("-temp", "--temperature", type = float, default = 0.95, help = "Sampler temperature, default = 0.95 (1 to disable)")
+parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sampler top-K, default = 50 (0 to disable)")
+parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
+parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1, help = "Sampler repetition penalty, default = 1.1 (1 to disable)")
+parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
+parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
+
 # Initialize model and tokenizer
 
 model_init.add_args(parser)
@@ -132,13 +139,13 @@ def get_tokenized_context(max_len):
 generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
 
 settings = ExLlamaV2Sampler.Settings()
-settings.temperature = 0.85
-settings.top_k = 50
-settings.top_p = 0.8
-settings.token_repetition_penalty = 1.05
+settings.temperature = args.temperature
+settings.top_k = args.top_k
+settings.top_p = args.top_p
+settings.token_repetition_penalty = args.repetition_penalty
 
-max_response_tokens = 1024
-min_space_in_context = 256
+max_response_tokens = args.max_response_tokens
+min_space_in_context = args.response_chunk
 
 # Stop conditions
 
