@@ -27,6 +27,8 @@ class ExLlamaV2Module:
 
     def load_weight(self):
 
+        # EXL2
+
         if self.key + ".q_weight" in self.model.config.tensor_file_map:
             filename = self.model.config.tensor_file_map[self.key + ".q_weight"]
             with safe_open(filename, framework = "pt", device = "cpu") as st:
@@ -38,6 +40,21 @@ class ExLlamaV2Module:
                 qtensors["q_groups"] = st.get_tensor(self.key + ".q_groups").to(self.device())
                 qtensors["q_perm"] = torch.argsort(qtensors["q_invperm"]).to(torch.int)
                 return qtensors
+
+        # GPTQ
+
+        if self.key + ".qweight" in self.model.config.tensor_file_map:
+            filename = self.model.config.tensor_file_map[self.key + ".qweight"]
+            with safe_open(filename, framework = "pt", device = "cpu") as st:
+                qtensors = {}
+                qtensors["qweight"] = st.get_tensor(self.key + ".qweight").to(self.device())
+                qtensors["qzeros"] = st.get_tensor(self.key + ".qzeros").to(self.device())
+                qtensors["scales"] = st.get_tensor(self.key + ".scales").to(self.device())
+                if self.key + ".g_idx" in self.model.config.tensor_file_map:
+                    qtensors["g_idx"] = st.get_tensor(self.key + ".g_idx").to(self.device())
+                return qtensors
+
+        # Torch
 
         if self.key + ".weight" in self.model.config.tensor_file_map:
             filename = self.model.config.tensor_file_map[self.key + ".weight"]

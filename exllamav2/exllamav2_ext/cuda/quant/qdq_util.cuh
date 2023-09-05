@@ -9,6 +9,15 @@ union half2_uint32
     __device__ half2_uint32(half2 val) : as_half2(val) {}
 };
 
+union half_uint16
+{
+    uint16_t as_uint16;
+    half as_half;
+    __device__ half_uint16(uint16_t val) : as_uint16(val) {}
+    __device__ half_uint16(half val) : as_half(val) {}
+};
+
+
 // Max_scale premultiplied by 1/256
 
 __forceinline__ __device__ half dq_scale(const int qs, const half max_scale)

@@ -17,6 +17,7 @@ def _tsize(st, key):
     if dtype == "I32": return numel * 4
     elif dtype == "I16": return numel * 2
     elif dtype == "F16": return numel * 2
+    elif dtype == "F32": return numel * 4
     else: raise ValueError("Unexpected datatype: " + key)
 
 
@@ -52,8 +53,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             device_tensors = self.model.get_device_tensors(self.device_idx)
             device_tensors.begin_scratch_alloc()
             self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
-            self.q_handle = ext.make_q_matrix(w, self.temp_dq)
             self.q_tensors = w
+            self.q_handle = ext.make_q_matrix(w, self.temp_dq)
 
         elif isinstance(w, nn.Parameter):
             self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
@@ -76,11 +77,15 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         if self.footprint == -1:
 
+            # Torch linear layer
+
             if self.key + ".weight" in self.model.config.tensor_file_map:
                 filename = self.model.config.tensor_file_map[self.key + ".weight"]
                 with safe_open(filename, framework="pt", device="cpu") as st:
                     self.footprint = 0
                     self.footprint += _tsize(st, self.key + ".weight")
+
+            # EXL2
 
             elif self.key + ".q_weight" in self.model.config.tensor_file_map:
                 filename = self.model.config.tensor_file_map[self.key + ".q_weight"]
@@ -92,6 +97,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                     self.footprint += _tsize(st, self.key + ".q_scale_max") + 128
                     self.footprint += _tsize(st, self.key + ".q_groups") + 128
                     self.footprint += _tsize(st, self.key + ".q_invperm") + 128
+
+            # GPTQ
+
+            elif self.key + ".qweight" in self.model.config.tensor_file_map:
+                filename = self.model.config.tensor_file_map[self.key + ".qweight"]
+                with safe_open(filename, framework="pt", device="cpu") as st:
+                    self.footprint += _tsize(st, self.key + ".qweight") + 128
+                    self.footprint += _tsize(st, self.key + ".qzeros") + 128
+                    self.footprint += _tsize(st, self.key + ".scales") + 128
+                    if self.key + ".g_idx" in self.model.config.tensor_file_map:
+                        self.footprint += _tsize(st, self.key + ".g_idx") + 128
 
             else:
                 raise ValueError("Can't find tensors in model files.")
@@ -115,16 +131,16 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.out_features * self.model.config.max_input_len * self.model.config.max_batch_size * 4 + 128
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, test = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, force_recons = False, force_cuda = False):
 
         # test = True
-        if self.q_handle is not None and not test:
+        if self.q_handle is not None and not force_recons:
 
             output_shape = hidden_states.shape[:-1] + (self.out_features,)
             hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
             # hidden_states = hidden_states[:, self.q_tensors["q_perm"]]
             output = torch.empty((hidden_states.shape[0], self.out_features), dtype = torch.half, device = self.device())
-            ext_c.gemm_half_q_half(hidden_states, self.q_handle, output)
+            ext_c.gemm_half_q_half(hidden_states, self.q_handle, output, force_cuda)
 
             hidden_states = output.view(output_shape)
 

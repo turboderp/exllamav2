@@ -1,5 +1,4 @@
 import torch
-from torch.cuda.amp import custom_bwd, custom_fwd
 from torch.utils.cpp_extension import load
 import os
 import sys
@@ -81,14 +80,63 @@ none_tensor = torch.empty((1, 1), device = "meta")
 
 def make_q_matrix(w: dict, temp_dq, key: str = None):
 
-    w["q_scale_max"] /= 256
-    w["q_perm"] = w["q_perm"].short()
-    w["q_invperm"] = w["q_invperm"].short()
+    # EXL2
 
-    return ext_c.make_q_matrix(w["q_weight"],
-                               w["q_perm"],
-                               w["q_invperm"],
-                               w["q_scale"],
-                               w["q_scale_max"],
-                               w["q_groups"],
-                               temp_dq)
+    if "q_weight" in w:
+
+        w["q_scale_max"] /= 256
+        w["q_perm"] = w["q_perm"].short()
+        w["q_invperm"] = w["q_invperm"].short()
+
+        return ext_c.make_q_matrix(w["q_weight"],
+                                   w["q_perm"],
+                                   w["q_invperm"],
+                                   w["q_scale"],
+                                   w["q_scale_max"],
+                                   w["q_groups"],
+                                   none_tensor,
+                                   none_tensor,
+                                   none_tensor,
+                                   temp_dq)
+
+
+    # GPTQ
+
+    elif "qweight" in w:
+
+        if w["scales"].dtype == torch.float: w["scales"] = w["scales"].half()
+
+        # GPTQ with g_idx (act_order)
+
+        if "g_idx" in w and not (w["g_idx"] == 0).all().item():
+
+            w["q_perm"] = torch.empty((w["qweight"].shape[0] * 8,), dtype = torch.short, device = w["qweight"].device)
+            w["q_invperm"] = torch.empty_like(w["q_perm"])
+
+            return ext_c.make_q_matrix(w["qweight"],
+                                       w["q_perm"],
+                                       w["q_invperm"],
+                                       none_tensor,
+                                       none_tensor,
+                                       none_tensor,
+                                       w["qzeros"],
+                                       w["scales"],
+                                       w["g_idx"].cpu(),
+                                       temp_dq)
+
+        # GPTQ without g_idx
+
+        else:
+
+            return ext_c.make_q_matrix(w["qweight"],
+                                       none_tensor,
+                                       none_tensor,
+                                       none_tensor,
+                                       none_tensor,
+                                       none_tensor,
+                                       w["qzeros"],
+                                       w["scales"],
+                                       none_tensor,
+                                       temp_dq)
+
+

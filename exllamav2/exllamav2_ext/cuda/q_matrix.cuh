@@ -13,6 +13,7 @@ class QMatrix
 public:
 
     int device;
+    bool is_gptq;
 
     int height;
     int width;
@@ -32,6 +33,8 @@ public:
     uint32_t* cuda_q_scale = NULL;
     half* cuda_q_scale_max = NULL;
     uint16_t* cuda_q_groups = NULL;
+    uint32_t* cuda_gptq_qzeros = NULL;
+    half* cuda_gptq_scales = NULL;
 
     half* temp_dq;
 
@@ -49,12 +52,17 @@ public:
         half* _q_scale_max,
         uint16_t* _q_groups,
 
+        uint32_t* _gptq_qzeros,
+        half* _gptq_scales,
+        uint32_t* _gptq_g_idx,
+
         half* _temp_dq
     );
 
     ~QMatrix();
 
     void reconstruct(half* out);
+    void make_sequential(const uint32_t* cpu_g_idx);
 
 private:
 

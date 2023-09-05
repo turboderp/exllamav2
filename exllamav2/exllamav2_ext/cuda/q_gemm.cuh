@@ -19,7 +19,8 @@ void gemm_half_q_half_cuda
     int size_n,
     int size_k,
     bool clear = false,
-    half* reconstruct = NULL
+    half* reconstruct = NULL,
+    bool force_cuda = false
 );
 
 void clear_tensor_cuda
