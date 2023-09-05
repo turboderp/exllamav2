@@ -224,8 +224,8 @@ while True:
         if eos:
 
             if mode == "llama":
-                responses_ids[-1] = torch.cat([responses_ids[-1], tokenizer.single_token(tokenizer.eos_token_id)], dim=-1)
                 print()
+            #     responses_ids[-1] = torch.cat([responses_ids[-1], tokenizer.single_token(tokenizer.eos_token_id)], dim = -1)
 
             break
 
