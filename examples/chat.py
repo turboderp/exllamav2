@@ -208,12 +208,13 @@ while True:
             active_context = get_tokenized_context(model.config.max_seq_len - min_space_in_context)
             generator.begin_stream(active_context, settings)
 
-        # If response is too long, cut it short and append EOS
+        # If response is too long, cut it short, and append EOS if that was a stop condition
 
         response_tokens += 1
         if response_tokens == max_response_tokens:
 
-            responses_ids[-1] = torch.cat([responses_ids[-1], tokenizer.single_token(tokenizer.eos_token_id)], dim = -1)
+            if tokenizer.eos_token_id in generator.stop_tokens:
+                responses_ids[-1] = torch.cat([responses_ids[-1], tokenizer.single_token(tokenizer.eos_token_id)], dim = -1)
 
             print()
             print(col_error + f" !! Response exceeded {max_response_tokens} tokens and was cut short." + col_default)
@@ -225,7 +226,6 @@ while True:
 
             if mode == "llama":
                 print()
-            #     responses_ids[-1] = torch.cat([responses_ids[-1], tokenizer.single_token(tokenizer.eos_token_id)], dim = -1)
 
             break
 
