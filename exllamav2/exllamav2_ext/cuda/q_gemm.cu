@@ -38,7 +38,7 @@ void gemm_half_q_half_cuda_part
     blockDim.x = BLOCK_KN_SIZE;
     blockDim.y = 1;
     blockDim.z = 1;
-    gridDim.x = DIVIDE(size_n,   BLOCK_KN_SIZE);
+    gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE);
     gridDim.y = DIVIDE(size_m, m_count);
     gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
 

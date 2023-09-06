@@ -157,7 +157,7 @@ if mode == "raw":
 
     generator.set_stop_conditions([username + ":", username[0:1] + ":"])
 
-# Color codes
+# ANSI color codes
 
 col_default = "\u001b[0m"
 col_user = "\u001b[33;1m"  # Yellow

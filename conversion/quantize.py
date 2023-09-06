@@ -383,8 +383,12 @@ def do_quant(source: ExLlamaV2Linear,
         quant_w = source.linear.weight.T
         recons_w = recons_linear.get_weight_tensor_dq()
 
-        diff = torch.max(torch.abs(quant_w - recons_w))
-        if diff > 0.01:
+        ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
+        recons_w2 = recons_linear.forward(ident, force_cuda = True)
+
+        diff1 = torch.max(torch.abs(quant_w - recons_w))
+        diff2 = torch.max(torch.abs(quant_w - recons_w2))
+        if diff1 > 0.01 or diff2 > 0.01:
 
             print(" ## Quantization error (2)")
             os._exit(0)
