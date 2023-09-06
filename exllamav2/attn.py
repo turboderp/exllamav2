@@ -184,7 +184,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_mask, intermediates)
+            return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates)
 
         batch_size = hidden_states.shape[0]
         q_len = hidden_states.shape[1]
