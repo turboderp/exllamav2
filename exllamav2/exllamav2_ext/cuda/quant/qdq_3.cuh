@@ -147,17 +147,19 @@ __forceinline__ __device__ void shuffle_3bit_32
 
 __forceinline__ __device__ void dequant_3bit_32
 (
-    const uint32_t* q,
+    const uint32_t q_0,
+    const uint32_t q_1,
+    const uint32_t q_2,
     half2 (&dq)[16],
     int stride
 )
 {
     half dqh[32];
-    for (int i = 0; i < 10; i++) dqh[     i] = dq_ns(exb(               q[0 * stride], i * 3    , 0x07), 4);
-                                 dqh[10    ] = dq_ns(exb(q[1 * stride], q[0 * stride],        30, 0x07), 4);
-    for (int i = 0; i < 10; i++) dqh[11 + i] = dq_ns(exb(               q[1 * stride], i * 3 + 1, 0x07), 4);
-                                 dqh[21    ] = dq_ns(exb(q[2 * stride], q[1 * stride],        31, 0x07), 4);
-    for (int i = 0; i < 10; i++) dqh[22 + i] = dq_ns(exb(               q[2 * stride], i * 3 + 2, 0x07), 4);
+    for (int i = 0; i < 10; i++) dqh[     i] = dq_ns(exb(     q_0, i * 3    , 0x07), 4);
+                                 dqh[10    ] = dq_ns(exb(q_1, q_0,        30, 0x07), 4);
+    for (int i = 0; i < 10; i++) dqh[11 + i] = dq_ns(exb(     q_1, i * 3 + 1, 0x07), 4);
+                                 dqh[21    ] = dq_ns(exb(q_2, q_1,        31, 0x07), 4);
+    for (int i = 0; i < 10; i++) dqh[22 + i] = dq_ns(exb(     q_2, i * 3 + 2, 0x07), 4);
 
     for (int i = 0; i < 16; i++) dq[i] = __halves2half2(dqh[i * 2], dqh[i * 2 + 1]);
 }

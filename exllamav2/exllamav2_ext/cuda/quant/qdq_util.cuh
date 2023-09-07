@@ -17,14 +17,6 @@ union half_uint16
     __device__ half_uint16(half val) : as_half(val) {}
 };
 
-// union half4_int2
-// {
-//     struct { half x, y, w, z; } as_half4;
-//     int2 as_int2;
-//     __device__ half4_int2(half _x, half _y, half _w, half _z) : as_half4.x(_x, _y, _z, _w) {}
-//     __device__ half4_int2(int2 val) : as_int2(val) {}
-// };
-
 // Max_scale premultiplied by 1/256
 
 __forceinline__ __device__ half dq_scale(const int qs, const half max_scale)

@@ -109,8 +109,6 @@ __forceinline__ __device__ void dequant_4bit_8_gptq
 
 #else
 
-// TODO: Fallback dequant functions for 4-bit GPTQ
-
 __forceinline__ __device__ void shuffle_4bit_8
 (
     uint32_t* q,
@@ -121,15 +119,54 @@ __forceinline__ __device__ void shuffle_4bit_8
 
 __forceinline__ __device__ void dequant_4bit_8
 (
-    const uint32_t* q,
+    const uint32_t q_0,
     half2 (&dq)[4],
     int stride
 )
 {
     half dqh[8];
-    for (int i = 0; i < 8; i++) dqh[i] = dq_ns(exb(q[0 * stride], i * 4, 0x0f), 8);
+    for (int i = 0; i < 8; i++) dqh[i] = dq_ns(exb(q_0, i * 4, 0x0f), 8);
 
     for (int i = 0; i < 4; i++) dq[i] = __halves2half2(dqh[i * 2], dqh[i * 2 + 1]);
+}
+
+__forceinline__ __device__ void dequant_4bit_8_prep_zero_scale
+(
+    const uint32_t zero,
+    const half scale,
+    half2 (&z1)[2],
+    half2 (&y1)[2]
+)
+{
+    half z = __int2half_rn(-((int)zero));
+    z = __hmul(z, scale);
+    z1[0] = __half2half2(z);
+    y1[0] = __half2half2(scale);
+}
+
+__forceinline__ __device__ void dequant_4bit_8_gptq
+(
+    const uint32_t q_0,
+    half2 (&dq)[4],
+    half2 (&z1)[2],
+    half2 (&y1)[2],
+    int stride
+)
+{
+    half2 dqh2[8];
+
+    uint32_t qa = q_0;
+    for (int i = 0; i < 4; i++)
+    {
+        half d0 = __int2half_rn(qa & 0x0f); qa >>= 4;
+        half d1 = __int2half_rn(qa & 0x0f); qa >>= 4;
+        dqh2[i] = __halves2half2(d0, d1);
+    }
+
+    dq[0] = __hfma2(dqh2[0], y1[0], z1[0]);
+    dq[1] = __hfma2(dqh2[1], y1[0], z1[0]);
+    dq[2] = __hfma2(dqh2[2], y1[0], z1[0]);
+    dq[3] = __hfma2(dqh2[3], y1[0], z1[0]);
 }
 
 #endif

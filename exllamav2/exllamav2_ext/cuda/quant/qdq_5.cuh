@@ -179,21 +179,25 @@ __forceinline__ __device__ void shuffle_5bit_32
 
 __forceinline__ __device__ void dequant_5bit_32
 (
-    const uint32_t* q,
+    const uint32_t q_0,
+    const uint32_t q_1,
+    const uint32_t q_2,
+    const uint32_t q_3,
+    const uint32_t q_4,
     half2 (&dq)[16],
     int stride
 )
 {
     half dqh[32];
-    for (int i = 0; i <  6; i++) dqh[     i] = dq_ns(exb(               q[0 * stride], i * 5    , 0x1f), 16);
-                                 dqh[ 6    ] = dq_ns(exb(q[1 * stride], q[0 * stride],        30, 0x1f), 16);
-    for (int i = 0; i <  5; i++) dqh[ 7 + i] = dq_ns(exb(               q[1 * stride], i * 5 + 3, 0x1f), 16);
-                                 dqh[12    ] = dq_ns(exb(q[2 * stride], q[1 * stride],        28, 0x1f), 16);
-    for (int i = 0; i <  6; i++) dqh[13 + i] = dq_ns(exb(               q[2 * stride], i * 5 + 1, 0x1f), 16);
-                                 dqh[19    ] = dq_ns(exb(q[3 * stride], q[2 * stride],        31, 0x1f), 16);
-    for (int i = 0; i <  5; i++) dqh[20 + i] = dq_ns(exb(               q[3 * stride], i * 5 + 4, 0x1f), 16);
-                                 dqh[25    ] = dq_ns(exb(q[4 * stride], q[3 * stride],        29, 0x1f), 16);
-    for (int i = 0; i <  6; i++) dqh[26 + i] = dq_ns(exb(               q[4 * stride], i * 5 + 2, 0x1f), 16);
+    for (int i = 0; i <  6; i++) dqh[     i] = dq_ns(exb(     q_0, i * 5    , 0x1f), 16);
+                                 dqh[ 6    ] = dq_ns(exb(q_1, q_0,        30, 0x1f), 16);
+    for (int i = 0; i <  5; i++) dqh[ 7 + i] = dq_ns(exb(     q_1, i * 5 + 3, 0x1f), 16);
+                                 dqh[12    ] = dq_ns(exb(q_2, q_1,        28, 0x1f), 16);
+    for (int i = 0; i <  6; i++) dqh[13 + i] = dq_ns(exb(     q_2, i * 5 + 1, 0x1f), 16);
+                                 dqh[19    ] = dq_ns(exb(q_3, q_2,        31, 0x1f), 16);
+    for (int i = 0; i <  5; i++) dqh[20 + i] = dq_ns(exb(     q_3, i * 5 + 4, 0x1f), 16);
+                                 dqh[25    ] = dq_ns(exb(q_4, q_3,        29, 0x1f), 16);
+    for (int i = 0; i <  6; i++) dqh[26 + i] = dq_ns(exb(     q_4, i * 5 + 2, 0x1f), 16);
 
     for (int i = 0; i < 16; i++) dq[i] = __halves2half2(dqh[i * 2], dqh[i * 2 + 1]);
 }

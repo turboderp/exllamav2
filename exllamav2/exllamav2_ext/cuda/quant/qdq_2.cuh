@@ -87,13 +87,13 @@ __forceinline__ __device__ void shuffle_2bit_16
 
 __forceinline__ __device__ void dequant_2bit_16
 (
-    const uint32_t* q,
+    const uint32_t q_0,
     half2 (&dq)[8],
     int stride
 )
 {
     half dqh[16];
-    for (int i = 0; i < 16; i++) dqh[i] = dq_ns(exb(q[0 * stride], i * 2, 0x03), 2);
+    for (int i = 0; i < 16; i++) dqh[i] = dq_ns(exb(q_0, i * 2, 0x03), 2);
 
     for (int i = 0; i < 8; i++) dq[i] = __halves2half2(dqh[i * 2], dqh[i * 2 + 1]);
 }
