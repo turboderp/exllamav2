@@ -25,8 +25,8 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         # Padding token should embed a zero vector, but sometimes it doesn't (?)
 
-        if not torch.is_grad_enabled():
-            w[pad_id] *= 0
+        # if not torch.is_grad_enabled():
+        #     w[pad_id] *= 0
 
         self.embedding = nn.Embedding(vocab_size, hidden_size, pad_token_id, device ="meta")
         self.embedding.weight = w

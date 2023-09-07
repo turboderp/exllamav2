@@ -55,6 +55,15 @@ public:
         int shift = (column & 0x07) * 4;
         return (data[row * width / 8 + column / 8] >> shift) & 0x0f;
     }
+
+    __device__ __forceinline__ void item2(int (&items)[2], int row, int column) const
+    {
+        int shift = (column & 0x07) * 4;
+        uint32_t d = data[row * width / 8 + column / 8] >> shift;
+        items[0] = d & 0x0f;
+        items[1] = (d >> 4) & 0x0f;
+    }
+
 };
 
 #endif

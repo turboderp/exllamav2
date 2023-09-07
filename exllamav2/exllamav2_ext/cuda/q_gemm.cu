@@ -14,7 +14,7 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
-#define BLOCK_KN_SIZE 128
+#define BLOCK_KN_SIZE 256
 #define BLOCK_M_SIZE_MAX 8
 #define MAX_GROUPS_IN_BLOCK (BLOCK_KN_SIZE / 32)
 #define CLEAR_N_SIZE 256
@@ -34,16 +34,16 @@ void gemm_half_q_half_cuda_part
     bool clear
 )
 {
-    dim3 blockDim, gridDim;
-    blockDim.x = BLOCK_KN_SIZE;
-    blockDim.y = 1;
-    blockDim.z = 1;
-    gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 2);
-    gridDim.y = DIVIDE(size_m, m_count);
-    gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
-
     if (!b->is_gptq)
     {
+        dim3 blockDim, gridDim;
+        blockDim.x = BLOCK_KN_SIZE;
+        blockDim.y = 1;
+        blockDim.z = 1;
+        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE);
+        gridDim.y = DIVIDE(size_m, m_count);
+        gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
+
         fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(true, m_count);
 
         kernel<<<gridDim, blockDim>>>
@@ -70,6 +70,14 @@ void gemm_half_q_half_cuda_part
     }
     else
     {
+        dim3 blockDim, gridDim;
+        blockDim.x = BLOCK_KN_SIZE;
+        blockDim.y = 1;
+        blockDim.z = 1;
+        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 2);
+        gridDim.y = DIVIDE(size_m, m_count);
+        gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
+
         fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(true, m_count);
 
 //         DBGX((uint64_t) b->cuda_q_perm);

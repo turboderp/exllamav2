@@ -85,7 +85,7 @@ __forceinline__ __device__ void dequant_4bit_8_prep_zero_scale
 
 __forceinline__ __device__ void dequant_4bit_8_gptq
 (
-    const uint32_t* q,
+    const uint32_t q_0,
     half2 (&dq)[4],
     half2 (&z1z16)[2],
     half2 (&y1y16)[2],
@@ -94,7 +94,7 @@ __forceinline__ __device__ void dequant_4bit_8_gptq
 {
     const uint32_t c0 = 0x64006400;
 
-    uint32_t qa = q[0];
+    uint32_t qa = q_0;
     half2_uint32 q0((qa & 0x000f000f) | c0); // half2(q[ 0], q[ 1])      + 1024
     half2_uint32 q1((qa & 0x00f000f0) | c0); // half2(q[ 2], q[ 3]) * 16 + 1024
     qa >>= 8;

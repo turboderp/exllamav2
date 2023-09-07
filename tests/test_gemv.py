@@ -28,7 +28,7 @@ with torch.no_grad():
 
     config_quant = ExLlamaV2Config()
     # config_quant.model_dir = "/mnt/str/models/_exl2/llama-7b-4.0bpw-h6-exl2/"
-    # config_quant.model_dir = "/mnt/str/models/llama-7b-4bit-128g/"
+    config_quant.model_dir = "/mnt/str/models/llama-7b-4bit-128g/"
     # config_quant.model_dir = "/mnt/str/models/_test_models/TheBloke_WizardLM-30B-Uncensored-GPTQ/"
     config_quant.prepare()
     model_quant = ExLlamaV2(config_quant)
@@ -133,7 +133,7 @@ with torch.no_grad():
         module_quant = model_quant.modules_dict[k]
         module_quant.load()
 
-    # Test that result of multiplication with identity matrix is the same with and without reconstruction
+    # Test that result of multiplication with identity and random matrix is the same with and without reconstruction
 
     print()
 
@@ -145,12 +145,16 @@ with torch.no_grad():
         module_quant.load()
         if isinstance(module_quant, ExLlamaV2Linear):
 
-            ident = torch.eye(module_quant.in_features, dtype = torch.half).cuda()
+            mat = torch.eye(module_quant.in_features, dtype = torch.half).cuda()
+            test1 = module_quant.forward(mat, force_cuda = True)
+            test2 = module_quant.forward(mat, force_recons = True)
+            diff_i = torch.max((test1 - test2).abs())
 
-            test1 = module_quant.forward(ident, force_cuda = True)
-            test2 = module_quant.forward(ident, force_recons = True)
+            mat = torch.randn((module_quant.in_features, module_quant.in_features), dtype = torch.half).cuda()
+            test1 = module_quant.forward(mat, force_cuda = True)
+            test2 = module_quant.forward(mat, force_recons = True)
+            diff_r = F.mse_loss(test1, test2)
 
-            diff = torch.max((test1 - test2).abs())
-            print (f"{k:40} {diff.item():.4f}")
+            print (f"{k:40} ident: {diff_i.item():.6f}  u: {diff_r.item():.6f}")
 
     xx = 0

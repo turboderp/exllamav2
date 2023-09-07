@@ -90,7 +90,7 @@ __global__ void gemm_half_q_half_gptq_kernel
             *((uint32_t*)c_.item_ptr(offset_m + m, n)) = 0;
     }
 
-    // __syncthreads();
+    __syncthreads();
 
     // Find initial group
 
@@ -107,10 +107,12 @@ __global__ void gemm_half_q_half_gptq_kernel
 
     // Initial group
 
+    int zeros[2];
     half2 z1z16[2][2];
     half2 y1y16[2][2];
-    dequant_4bit_8_prep_zero_scale(b_gptq_qzeros_.item(group, n) + 1, b_gptq_scales_.item(group, n), z1z16[0], y1y16[0]);
-    dequant_4bit_8_prep_zero_scale(b_gptq_qzeros_.item(group, n + 1) + 1, b_gptq_scales_.item(group, n), z1z16[1], y1y16[1]);
+    b_gptq_qzeros_.item2(zeros, group, n);
+    dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n    ), z1z16[0], y1y16[0]);
+    dequant_4bit_8_prep_zero_scale(zeros[1] + 1, b_gptq_scales_.item(group, n + 1), z1z16[1], y1y16[1]);
 
     __syncthreads();
 
@@ -126,8 +128,9 @@ __global__ void gemm_half_q_half_gptq_kernel
         if (k == nextgroup)
         {
             group++;
-            dequant_4bit_8_prep_zero_scale(b_gptq_qzeros_.item(group, n) + 1, b_gptq_scales_.item(group, n), z1z16[0], y1y16[0]);
-            dequant_4bit_8_prep_zero_scale(b_gptq_qzeros_.item(group, n + 1) + 1, b_gptq_scales_.item(group, n), z1z16[1], y1y16[1]);
+            b_gptq_qzeros_.item2(zeros, group, n);
+            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n), z1z16[0], y1y16[0]);
+            dequant_4bit_8_prep_zero_scale(zeros[1] + 1, b_gptq_scales_.item(group, n + 1), z1z16[1], y1y16[1]);
             nextgroup += groupsize;
         }
 
@@ -135,13 +138,11 @@ __global__ void gemm_half_q_half_gptq_kernel
         for (int j = 0; j < 4; j++)
         {
             half2 dq[2][4];
-//             const int2* b_ptr2 = (int2*) b_ptr;
-//             int2 load_int2 = *b_ptr2;
-//             uint32_t load[] = { (uint32_t) load_int2.x, (uint32_t) load_int2.y };
-            uint32_t load[] = { b_ptr[0], b_ptr[1] };
+            const int2* b_ptr2 = (int2*) b_ptr;
+            int2 load_int2 = *b_ptr2;
 
-            dequant_4bit_8_gptq(&load[0], dq[0], z1z16[0], y1y16[0], size_n);
-            dequant_4bit_8_gptq(&load[1], dq[1], z1z16[1], y1y16[1], size_n);
+            dequant_4bit_8_gptq(load_int2.x, dq[0], z1z16[0], y1y16[0], size_n);
+            dequant_4bit_8_gptq(load_int2.y, dq[1], z1z16[1], y1y16[1], size_n);
             for (int m = 0; m < m_count; m++)
             {
                 block_c[m][0] = dot22_8(dq[0], a_ptr + m * a_stride, block_c[m][0]);
