@@ -14,7 +14,7 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
-#define BLOCK_KN_SIZE 256
+#define BLOCK_KN_SIZE 128
 #define BLOCK_M_SIZE_MAX 8
 #define MAX_GROUPS_IN_BLOCK (BLOCK_KN_SIZE / 32)
 #define CLEAR_N_SIZE 256
@@ -74,7 +74,7 @@ void gemm_half_q_half_cuda_part
         blockDim.x = BLOCK_KN_SIZE;
         blockDim.y = 1;
         blockDim.z = 1;
-        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 2);
+        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 4);
         gridDim.y = DIVIDE(size_m, m_count);
         gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
 

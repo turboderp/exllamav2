@@ -64,6 +64,17 @@ public:
         items[1] = (d >> 4) & 0x0f;
     }
 
+    __device__ __forceinline__ void item4(int (&items)[4], int row, int column) const
+    {
+        int shift = (column & 0x07) * 4;
+        uint32_t d = data[row * width / 8 + column / 8] >> shift;
+        items[0] = d & 0x0f;
+        items[1] = (d >> 4) & 0x0f;
+        items[2] = (d >> 8) & 0x0f;
+        items[3] = (d >> 12) & 0x0f;
+    }
+
+
 };
 
 #endif

@@ -52,15 +52,15 @@ __global__ void gemm_half_q_half_gptq_kernel
 
     // Block
 
-    int offset_n = blockIdx.x * BLOCK_KN_SIZE * 2;
+    int offset_n = blockIdx.x * BLOCK_KN_SIZE * 4;
     int offset_m = blockIdx.y * m_count;
     int offset_k = blockIdx.z * BLOCK_KN_SIZE;
 
-    int end_n = min(offset_n + BLOCK_KN_SIZE * 2, size_n);
+    int end_n = min(offset_n + BLOCK_KN_SIZE * 4, size_n);
     int end_m = min(offset_m + m_count, size_m);
     int end_k = min(offset_k + BLOCK_KN_SIZE, size_k);
 
-    int n = offset_n + t * 2;
+    int n = offset_n + t * 4;
 
     // Preload block_a
 
@@ -87,7 +87,7 @@ __global__ void gemm_half_q_half_gptq_kernel
     if (clear && blockIdx.z == 0) // && (threadIdx.x & 1) == 0)
     {
         for (int m = 0; m < m_count; m++)
-            *((uint32_t*)c_.item_ptr(offset_m + m, n)) = 0;
+            *((uint64_t*)c_.item_ptr(offset_m + m, n)) = 0;
     }
 
     __syncthreads();
@@ -95,8 +95,7 @@ __global__ void gemm_half_q_half_gptq_kernel
     // Find initial group
 
     int group = offset_k / groupsize;
-    int nextgroup = offset_k + groupsize;
-    
+
     // a, b offset
 
     int qk = offset_k / (32 / 4);
@@ -107,18 +106,21 @@ __global__ void gemm_half_q_half_gptq_kernel
 
     // Initial group
 
-    int zeros[2];
-    half2 z1z16[2][2];
-    half2 y1y16[2][2];
-    b_gptq_qzeros_.item2(zeros, group, n);
+    int zeros[4];
+    half2 z1z16[4][2];
+    half2 y1y16[4][2];
+    b_gptq_qzeros_.item4(zeros, group, n);
     dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n    ), z1z16[0], y1y16[0]);
     dequant_4bit_8_prep_zero_scale(zeros[1] + 1, b_gptq_scales_.item(group, n + 1), z1z16[1], y1y16[1]);
+    dequant_4bit_8_prep_zero_scale(zeros[2] + 1, b_gptq_scales_.item(group, n + 2), z1z16[2], y1y16[2]);
+    dequant_4bit_8_prep_zero_scale(zeros[3] + 1, b_gptq_scales_.item(group, n + 3), z1z16[3], y1y16[3]);
+    int nextgroup = offset_k + groupsize;
 
     __syncthreads();
 
     // Column result
 
-    half2 block_c[m_count][2] = {};
+    half2 block_c[m_count][4] = {};
 
     // Dequantize and multiply
 
@@ -128,26 +130,35 @@ __global__ void gemm_half_q_half_gptq_kernel
         if (k == nextgroup)
         {
             group++;
-            b_gptq_qzeros_.item2(zeros, group, n);
-            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n), z1z16[0], y1y16[0]);
+            b_gptq_qzeros_.item4(zeros, group, n);
+            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n    ), z1z16[0], y1y16[0]);
             dequant_4bit_8_prep_zero_scale(zeros[1] + 1, b_gptq_scales_.item(group, n + 1), z1z16[1], y1y16[1]);
+            dequant_4bit_8_prep_zero_scale(zeros[2] + 1, b_gptq_scales_.item(group, n + 2), z1z16[2], y1y16[2]);
+            dequant_4bit_8_prep_zero_scale(zeros[3] + 1, b_gptq_scales_.item(group, n + 3), z1z16[3], y1y16[3]);
             nextgroup += groupsize;
         }
 
         #pragma unroll
         for (int j = 0; j < 4; j++)
         {
-            half2 dq[2][4];
-            const int2* b_ptr2 = (int2*) b_ptr;
-            int2 load_int2 = *b_ptr2;
+            half2 dq[4][4];
+            const int4* b_ptr4 = (int4*) b_ptr;
+            int4 load_int4 = *b_ptr4;
 
-            dequant_4bit_8_gptq(load_int2.x, dq[0], z1z16[0], y1y16[0], size_n);
-            dequant_4bit_8_gptq(load_int2.y, dq[1], z1z16[1], y1y16[1], size_n);
+            dequant_4bit_8_gptq(load_int4.x, dq[0], z1z16[0], y1y16[0], size_n);
+            dequant_4bit_8_gptq(load_int4.y, dq[1], z1z16[1], y1y16[1], size_n);
+            dequant_4bit_8_gptq(load_int4.z, dq[2], z1z16[2], y1y16[2], size_n);
+            dequant_4bit_8_gptq(load_int4.w, dq[3], z1z16[3], y1y16[3], size_n);
+
+            #pragma unroll
             for (int m = 0; m < m_count; m++)
             {
                 block_c[m][0] = dot22_8(dq[0], a_ptr + m * a_stride, block_c[m][0]);
                 block_c[m][1] = dot22_8(dq[1], a_ptr + m * a_stride, block_c[m][1]);
+                block_c[m][2] = dot22_8(dq[2], a_ptr + m * a_stride, block_c[m][2]);
+                block_c[m][3] = dot22_8(dq[3], a_ptr + m * a_stride, block_c[m][3]);
             }
+
             b_ptr += size_n;
             a_ptr += 8;
         }
@@ -159,9 +170,12 @@ __global__ void gemm_half_q_half_gptq_kernel
         half2 *out = (half2*) c_.item_ptr(offset_m + m, n);
         half result0 = __hadd(block_c[m][0].x, block_c[m][0].y);
         half result1 = __hadd(block_c[m][1].x, block_c[m][1].y);
+        half result2 = __hadd(block_c[m][2].x, block_c[m][2].y);
+        half result3 = __hadd(block_c[m][3].x, block_c[m][3].y);
         half2 result01 = __halves2half2(result0, result1);
-        atomicAdd(out, result01);
-//         *out = result01;
+        half2 result23 = __halves2half2(result2, result3);
+        atomicAdd(out    , result01);
+        atomicAdd(out + 1, result23);
     }
 }
 
