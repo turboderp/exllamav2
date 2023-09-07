@@ -17,7 +17,8 @@ with torch.no_grad():
     # Full-precision model
 
     config_full = ExLlamaV2Config()
-    config_full.model_dir = "/mnt/str/models/llama-7b"
+    # config_full.model_dir = "/mnt/str/models/llama-7b"
+    config_full.model_dir = "/mnt/str/models/_exl2/llama2-7b"
     config_full.prepare()
     model_full = ExLlamaV2(config_full)
     model_full.load(lazy = True)
@@ -28,7 +29,8 @@ with torch.no_grad():
 
     config_quant = ExLlamaV2Config()
     # config_quant.model_dir = "/mnt/str/models/_exl2/llama-7b-4.0bpw-h6-exl2/"
-    config_quant.model_dir = "/mnt/str/models/llama-7b-4bit-128g/"
+    config_quant.model_dir = "/mnt/str/models/_exl2/llama2-7b-5.0bpw-h6-exl2/"
+    # config_quant.model_dir = "/mnt/str/models/llama-7b-4bit-128g/"
     # config_quant.model_dir = "/mnt/str/models/_test_models/TheBloke_WizardLM-30B-Uncensored-GPTQ/"
     config_quant.prepare()
     model_quant = ExLlamaV2(config_quant)
@@ -43,11 +45,13 @@ with torch.no_grad():
 
     # Forward through full and quant layers
 
-    linear_full = model_full.modules_dict["model.layers.0.self_attn.v_proj"]
+    linear_full = model_full.modules_dict["model.layers.0.mlp.gate_proj"]
+    # linear_full = model_full.modules_dict["model.layers.0.self_attn.q_proj"]
     linear_full.load()
     test_state_full = linear_full.forward(test_state)
 
-    linear_quant = model_quant.modules_dict["model.layers.0.self_attn.v_proj"]
+    linear_quant = model_quant.modules_dict["model.layers.0.mlp.gate_proj"]
+    # linear_quant = model_quant.modules_dict["model.layers.0.self_attn.q_proj"]
     linear_quant.load()
     test_state_quant = linear_quant.forward(test_state, force_cuda = True)
 
@@ -77,7 +81,7 @@ with torch.no_grad():
     # Allocate some input states and initialize some more linear layers. Using multiple layers here for a more
     # realistic benchmark, since individual quantized layers can be small enough to fit entirely in the GPU's L2 cache
 
-    for size_m in [1, 2, 3, 4, 8, 16, 32, 64, 96, 128, 256]:
+    for size_m in [1]: #, 2, 3, 4, 8, 16, 32, 64]:
 
         itr = 5000
         a_num = 113
@@ -139,11 +143,13 @@ with torch.no_grad():
 
     for k in model_quant.modules_dict.keys():
 
-        if not "layers.4." in k: continue
+        if not prefix in k and not "head" in k: continue
 
         module_quant = model_quant.modules_dict[k]
         module_quant.load()
         if isinstance(module_quant, ExLlamaV2Linear):
+
+            gi = module_quant.dump_group_info()
 
             mat = torch.eye(module_quant.in_features, dtype = torch.half).cuda()
             test1 = module_quant.forward(mat, force_cuda = True)
@@ -155,6 +161,6 @@ with torch.no_grad():
             test2 = module_quant.forward(mat, force_recons = True)
             diff_r = F.mse_loss(test1, test2)
 
-            print (f"{k:40} ident: {diff_i.item():.6f}  u: {diff_r.item():.6f}")
+            print (f"{k:40}  {gi:30}  ident: {diff_i.item():.6f}  u: {diff_r.item():.6f}")
 
     xx = 0

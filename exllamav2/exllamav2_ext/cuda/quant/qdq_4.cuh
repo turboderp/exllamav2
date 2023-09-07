@@ -33,7 +33,7 @@ __forceinline__ __device__ void shuffle_4bit_8
 
 __forceinline__ __device__ void dequant_4bit_8
 (
-    const uint32_t* q,
+    const uint32_t q_0,
     half2 (&dq)[4],
     int stride
 )
@@ -46,7 +46,7 @@ __forceinline__ __device__ void dequant_4bit_8
     const half2 z1  = __halves2half2(z1_,  z1_);
     const half2 z16 = __halves2half2(z16_, z16_);
 
-    uint32_t qa = q[0];
+    uint32_t qa = q_0;
     half2_uint32 q0((qa & 0x000f000f) | c0); // half2(q[ 0], q[ 1])      + 1024
     half2_uint32 q1((qa & 0x00f000f0) | c0); // half2(q[ 2], q[ 3]) * 16 + 1024
     qa >>= 8;

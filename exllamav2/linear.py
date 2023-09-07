@@ -157,6 +157,42 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             return hidden_states
 
 
+    def dump_group_info(self):
+
+        if "q_groups" in self.q_tensors:
+
+            groups = self.q_tensors["q_groups"].cpu()
+
+            if "q_invperm" in self.q_tensors:
+                height = self.q_tensors["q_invperm"].shape[0]
+            else:
+                height = self.q_tensors["q_weight"].shape[0] * 8
+
+            groupsize = 1
+            while groupsize * groups.shape[0] / 2 < height:
+                groupsize *= 2;
+
+            gis = f"gs: {groupsize}, "
+            i = 0
+            pg = 0
+            gc = 0
+            while i <= groups.shape[0]:
+                g = groups[i].item() if i < groups.shape[0] else -1
+                if g != pg:
+                    if pg != 0:
+                        gis += f"{pg}: {gc}, "
+                        gc = 0
+                    pg = g
+                gc += 1
+                i += 2
+
+            return gis
+
+        else:
+
+            return "GPTQ"
+
+
     def get_weight_tensor_dq(self):
 
         if self.linear is not None:

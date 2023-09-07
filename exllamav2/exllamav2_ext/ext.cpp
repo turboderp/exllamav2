@@ -278,7 +278,9 @@ void gemm_half_q_half
         c.size(0), // m
         c.size(1), // n
         a.size(1), // k
-        true
+        true,
+        NULL,
+        force_cuda
     );
 }
 

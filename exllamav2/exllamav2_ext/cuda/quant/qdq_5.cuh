@@ -94,7 +94,11 @@ __forceinline__ __device__ void shuffle_5bit_32
 
 __forceinline__ __device__ void dequant_5bit_32
 (
-    const uint32_t* q,
+    const uint32_t q_0,
+    const uint32_t q_1,
+    const uint32_t q_2,
+    const uint32_t q_3,
+    const uint32_t q_4,
     half2 (&dq)[16],
     int stride
 )
@@ -107,11 +111,11 @@ __forceinline__ __device__ void dequant_5bit_32
     const half2 z1  = __halves2half2(z1_,  z1_);
     const half2 z32 = __halves2half2(z32_, z32_);
 
-    uint32_t qa = q[0 * stride];
-    uint32_t qb = q[1 * stride];
-    uint32_t qc = q[2 * stride];
-    uint32_t qd = q[3 * stride];
-    uint32_t qe = q[4 * stride];
+    uint32_t qa = q_0;
+    uint32_t qb = q_1;
+    uint32_t qc = q_2;
+    uint32_t qd = q_3;
+    uint32_t qe = q_4;
 
     half2_uint32 q0 ((qa & 0x001f001f) | c0); // half2(q[ 0], q[ 1])      + 1024
     half2_uint32 q1 ((qa & 0x03e003e0) | c0); // half2(q[ 2], q[ 3]) * 32 + 1024

@@ -60,9 +60,9 @@ exllamav2_ext = load \
     extra_include_paths = [os.path.join(library_dir, "exllamav2_ext")],
     verbose = verbose,
     extra_ldflags=(["cublas.lib"] + ([f"/LIBPATH:{os.path.join(sys.base_prefix, 'libs')}"] if sys.base_prefix != sys.prefix else [])) if windows else [],
-    extra_cuda_cflags=["-lineinfo", "-O3"] + (["-U__HIP_NO_HALF_CONVERSIONS__"] if torch.version.hip else []),
+    extra_cuda_cflags=["-lineinfo", "-O3", "-maxrregcount=128"] + (["-U__HIP_NO_HALF_CONVERSIONS__"] if torch.version.hip else []),
 
-        # "-maxrregcount=128"
+        #
 
     extra_cflags=["/Ox" if windows else "-O3"]
     # extra_cflags = ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]

@@ -68,7 +68,9 @@ __forceinline__ __device__ void shuffle_3bit_32
 
 __forceinline__ __device__ void dequant_3bit_32
 (
-    const uint32_t* q,
+    const uint32_t q_0,
+    const uint32_t q_1,
+    const uint32_t q_2,
     half2 (&dq)[16],
     int stride
 )
@@ -85,9 +87,9 @@ __forceinline__ __device__ void dequant_3bit_32
     const half2 z8  = __halves2half2(z8_,  z8_);
     const half2 z64 = __halves2half2(z64_, z64_);
 
-    uint32_t qa = q[0 * stride];
-    uint32_t qb = q[1 * stride];
-    uint32_t qc = q[2 * stride];
+    uint32_t qa = q_0;
+    uint32_t qb = q_1;
+    uint32_t qc = q_2;
 
     half2_uint32 q0((qa & 0x00070007) | c0); // half2(q[ 0], q[ 1])      + 1024
     half2_uint32 q1((qa & 0x00380038) | c0); // half2(q[ 2], q[ 3]) *  8 + 1024

@@ -40,7 +40,7 @@ void gemm_half_q_half_cuda_part
         blockDim.x = BLOCK_KN_SIZE;
         blockDim.y = 1;
         blockDim.z = 1;
-        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE);
+        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 4);
         gridDim.y = DIVIDE(size_m, m_count);
         gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
 
@@ -119,6 +119,8 @@ void gemm_half_q_half_cuda
 {
     if (size_m > MAX_Q_GEMM_ROWS && !force_cuda)
     {
+        //printf("cublas\n");
+
         // Reconstruct FP16 matrix, then cuBLAS
 
         if (!temp_dq) temp_dq = b->temp_dq;
@@ -165,6 +167,8 @@ void gemm_half_q_half_cuda
     }
     else
     {
+        //printf("cuda\n");
+
         // Quantized matmul
 
         //if (clear) clear_tensor_cuda(c, size_m, size_n);

@@ -9,7 +9,7 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
-#define BLOCK_KN_SIZE 256
+#define BLOCK_KN_SIZE 128
 
 #define THREADS_X 32
 #define THREADS_Y 32
@@ -162,7 +162,7 @@ __global__ void reconstruct_gptq_kernel
     MatrixView_half b_gptq_scales_(b_gptq_scales, groups, size_n);
 
     int offset_k = BLOCK_KN_SIZE * blockIdx.y;
-    int offset_n = BLOCK_KN_SIZE * blockIdx.x;
+    int offset_n = BLOCK_KN_SIZE * blockIdx.x * 4;
 
     int end_k = min(offset_k + BLOCK_KN_SIZE, size_k);
 
@@ -179,7 +179,7 @@ __global__ void reconstruct_gptq_kernel
 
     // Column
 
-    int n = offset_n + t;
+    int n = offset_n + t * 4;
     if (n >= size_n) return;
 
     // Find initial group
@@ -189,15 +189,22 @@ __global__ void reconstruct_gptq_kernel
 
     // b offset
 
-    int qk = offset_k / 32 * 4;
+    int qk = offset_k / (32 / 4);
 
     const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
 
     // Initial zeros/scale
 
-    half2 z1z16[2];
-    half2 y1y16[2];
-    dequant_4bit_8_prep_zero_scale(b_gptq_qzeros_.item(group, n) + 1, b_gptq_scales_.item(group, n), z1z16, y1y16);
+    int zeros[4];
+    half scales[4];
+    half2 z1z16[4][2];
+    half2 y1y16[4][2];
+    b_gptq_qzeros_.item4(zeros, group, n);
+    b_gptq_scales_.item4(scales, group, n);
+    dequant_4bit_8_prep_zero_scale(zeros[0] + 1, scales[0], z1z16[0], y1y16[0]);
+    dequant_4bit_8_prep_zero_scale(zeros[1] + 1, scales[1], z1z16[1], y1y16[1]);
+    dequant_4bit_8_prep_zero_scale(zeros[2] + 1, scales[2], z1z16[2], y1y16[2]);
+    dequant_4bit_8_prep_zero_scale(zeros[3] + 1, scales[3], z1z16[3], y1y16[3]);
 
     __syncthreads();
 
@@ -209,28 +216,47 @@ __global__ void reconstruct_gptq_kernel
         if (k == nextgroup)
         {
             group++;
-            dequant_4bit_8_prep_zero_scale(b_gptq_qzeros_.item(group, n) + 1, b_gptq_scales_.item(group, n), z1z16, y1y16);
             nextgroup += groupsize;
+            b_gptq_qzeros_.item4(zeros, group, n);
+            b_gptq_scales_.item4(scales, group, n);
+            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, scales[0], z1z16[0], y1y16[0]);
+            dequant_4bit_8_prep_zero_scale(zeros[1] + 1, scales[1], z1z16[1], y1y16[1]);
+            dequant_4bit_8_prep_zero_scale(zeros[2] + 1, scales[2], z1z16[2], y1y16[2]);
+            dequant_4bit_8_prep_zero_scale(zeros[3] + 1, scales[3], z1z16[3], y1y16[3]);
         }
 
         for (int p = 0; p < 4; p++)
         {
-            half2 dq[4];
-            dequant_4bit_8_gptq(b_ptr, dq, z1z16, y1y16, size_n);
+            half2 dq[4][4];
+            const int4* b_ptr4 = (int4*) b_ptr;
+            int4 load_int4 = *b_ptr4;
+
+            dequant_4bit_8_gptq(load_int4.x, dq[0], z1z16[0], y1y16[0], size_n);
+            dequant_4bit_8_gptq(load_int4.y, dq[1], z1z16[1], y1y16[1], size_n);
+            dequant_4bit_8_gptq(load_int4.z, dq[2], z1z16[2], y1y16[2], size_n);
+            dequant_4bit_8_gptq(load_int4.w, dq[3], z1z16[3], y1y16[3], size_n);
+
             b_ptr += size_n;
-            half* dqh = (half*)dq;
+            //half* dqh = (half*)dq;
             if (b_q_perm)
             {
-                for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
+                for (int j = 0; j < 4; j++)
+                {
+                    b_.set4(perm[lk++], n, dq[0][j].x, dq[1][j].x, dq[2][j].x, dq[3][j].x);
+                    b_.set4(perm[lk++], n, dq[0][j].y, dq[1][j].y, dq[2][j].y, dq[3][j].y);
+                }
             }
             else
             {
-                for (int j = 0; j < 8; j++) b_.set(offset_k + lk++, n, dqh[j]);
+                for (int j = 0; j < 4; j++)
+                {
+                    b_.set4(offset_k + lk++, n, dq[0][j].x, dq[1][j].x, dq[2][j].x, dq[3][j].x);
+                    b_.set4(offset_k + lk++, n, dq[0][j].y, dq[1][j].y, dq[2][j].y, dq[3][j].y);
+                }
             }
         }
         k += 32;
     }
-
 }
 
 
@@ -310,8 +336,9 @@ __global__ void reconstruct_kernel
         for (int p = 0; p < 4; p++)
         {
             half2 dq[4];
-            dequant_8bit_8(b_ptr, dq, size_n);
-            b_ptr += size_n * 2;
+            uint32_t q_0 = *b_ptr; b_ptr += size_n;
+            uint32_t q_1 = *b_ptr; b_ptr += size_n;
+            dequant_8bit_8(q_0, q_1, dq, size_n);
             for (int j = 0; j < 4; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
             for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
@@ -325,8 +352,10 @@ __global__ void reconstruct_kernel
         for (int p = 0; p < 2; p++)
         {
             half2 dq[8];
-            dequant_6bit_16(b_ptr, dq, size_n);
-            b_ptr += size_n * 3;
+            uint32_t q_0 = *b_ptr; b_ptr += size_n;
+            uint32_t q_1 = *b_ptr; b_ptr += size_n;
+            uint32_t q_2 = *b_ptr; b_ptr += size_n;
+            dequant_6bit_16(q_0, q_1, q_2, dq, size_n);
             for (int j = 0; j < 8; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
             for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);
@@ -340,8 +369,12 @@ __global__ void reconstruct_kernel
         for (int p = 0; p < 1; p++)
         {
             half2 dq[16];
-            dequant_5bit_32(b_ptr, dq, size_n);
-            b_ptr += size_n * 5;
+            uint32_t q_0 = *b_ptr; b_ptr += size_n;
+            uint32_t q_1 = *b_ptr; b_ptr += size_n;
+            uint32_t q_2 = *b_ptr; b_ptr += size_n;
+            uint32_t q_3 = *b_ptr; b_ptr += size_n;
+            uint32_t q_4 = *b_ptr; b_ptr += size_n;
+            dequant_5bit_32(q_0, q_1, q_2, q_3, q_4, dq, size_n);
             for (int j = 0; j < 16; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
             for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, dqh[j]);
@@ -355,8 +388,8 @@ __global__ void reconstruct_kernel
         for (int p = 0; p < 4; p++)
         {
             half2 dq[4];
-            dequant_4bit_8(b_ptr, dq, size_n);
-            b_ptr += size_n;
+            uint32_t q_0 = *b_ptr; b_ptr += size_n;
+            dequant_4bit_8(q_0, dq, size_n);
             for (int j = 0; j < 4; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
             for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
@@ -370,8 +403,10 @@ __global__ void reconstruct_kernel
         for (int p = 0; p < 1; p++)
         {
             half2 dq[16];
-            dequant_3bit_32(b_ptr, dq, size_n);
-            b_ptr += size_n * 3;
+            uint32_t q_0 = *b_ptr; b_ptr += size_n;
+            uint32_t q_1 = *b_ptr; b_ptr += size_n;
+            uint32_t q_2 = *b_ptr; b_ptr += size_n;
+            dequant_3bit_32(q_0, q_1, q_2, dq, size_n);
             for (int j = 0; j < 16; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
             for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, dqh[j]);
@@ -385,8 +420,8 @@ __global__ void reconstruct_kernel
         for (int p = 0; p < 2; p++)
         {
             half2 dq[8];
-            dequant_2bit_16(b_ptr, dq, size_n);
-            b_ptr += size_n;
+            uint32_t q_0 = *b_ptr; b_ptr += size_n;
+            dequant_2bit_16(q_0, dq, size_n);
             for (int j = 0; j < 8; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
             for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);

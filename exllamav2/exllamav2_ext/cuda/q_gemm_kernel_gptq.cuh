@@ -95,6 +95,7 @@ __global__ void gemm_half_q_half_gptq_kernel
     // Find initial group
 
     int group = offset_k / groupsize;
+    int nextgroup = offset_k + groupsize;
 
     // a, b offset
 
@@ -107,16 +108,17 @@ __global__ void gemm_half_q_half_gptq_kernel
     // Initial group
 
     int zeros[4];
+    half scales[4];
     half2 z1z16[4][2];
     half2 y1y16[4][2];
     b_gptq_qzeros_.item4(zeros, group, n);
-    dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n    ), z1z16[0], y1y16[0]);
-    dequant_4bit_8_prep_zero_scale(zeros[1] + 1, b_gptq_scales_.item(group, n + 1), z1z16[1], y1y16[1]);
-    dequant_4bit_8_prep_zero_scale(zeros[2] + 1, b_gptq_scales_.item(group, n + 2), z1z16[2], y1y16[2]);
-    dequant_4bit_8_prep_zero_scale(zeros[3] + 1, b_gptq_scales_.item(group, n + 3), z1z16[3], y1y16[3]);
-    int nextgroup = offset_k + groupsize;
+    b_gptq_scales_.item4(scales, group, n);
+    dequant_4bit_8_prep_zero_scale(zeros[0] + 1, scales[0], z1z16[0], y1y16[0]);
+    dequant_4bit_8_prep_zero_scale(zeros[1] + 1, scales[1], z1z16[1], y1y16[1]);
+    dequant_4bit_8_prep_zero_scale(zeros[2] + 1, scales[2], z1z16[2], y1y16[2]);
+    dequant_4bit_8_prep_zero_scale(zeros[3] + 1, scales[3], z1z16[3], y1y16[3]);
 
-    __syncthreads();
+//    __syncthreads();
 
     // Column result
 
@@ -130,21 +132,22 @@ __global__ void gemm_half_q_half_gptq_kernel
         if (k == nextgroup)
         {
             group++;
-            b_gptq_qzeros_.item4(zeros, group, n);
-            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, b_gptq_scales_.item(group, n    ), z1z16[0], y1y16[0]);
-            dequant_4bit_8_prep_zero_scale(zeros[1] + 1, b_gptq_scales_.item(group, n + 1), z1z16[1], y1y16[1]);
-            dequant_4bit_8_prep_zero_scale(zeros[2] + 1, b_gptq_scales_.item(group, n + 2), z1z16[2], y1y16[2]);
-            dequant_4bit_8_prep_zero_scale(zeros[3] + 1, b_gptq_scales_.item(group, n + 3), z1z16[3], y1y16[3]);
             nextgroup += groupsize;
+            b_gptq_qzeros_.item4(zeros, group, n);
+            b_gptq_scales_.item4(scales, group, n);
+            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, scales[0], z1z16[0], y1y16[0]);
+            dequant_4bit_8_prep_zero_scale(zeros[1] + 1, scales[1], z1z16[1], y1y16[1]);
+            dequant_4bit_8_prep_zero_scale(zeros[2] + 1, scales[2], z1z16[2], y1y16[2]);
+            dequant_4bit_8_prep_zero_scale(zeros[3] + 1, scales[3], z1z16[3], y1y16[3]);
         }
 
         #pragma unroll
         for (int j = 0; j < 4; j++)
         {
-            half2 dq[4][4];
             const int4* b_ptr4 = (int4*) b_ptr;
             int4 load_int4 = *b_ptr4;
 
+            half2 dq[4][4];
             dequant_4bit_8_gptq(load_int4.x, dq[0], z1z16[0], y1y16[0], size_n);
             dequant_4bit_8_gptq(load_int4.y, dq[1], z1z16[1], y1y16[1], size_n);
             dequant_4bit_8_gptq(load_int4.z, dq[2], z1z16[2], y1y16[2], size_n);

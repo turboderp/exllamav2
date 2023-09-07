@@ -4,6 +4,8 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
+#include "quant/qdq_util.cuh"
+
 class MatrixView_half
 {
 public:
@@ -19,6 +21,17 @@ public:
     __device__ __forceinline__ half2 item_half2(int row, int column) const { return ((half2*)data)[(row * width + column) / 2]; }
     __device__ __forceinline__ half2 item_half2half2(int row, int column) const { return __half2half2(data[row * width + column]); }
     __device__ __forceinline__ const half* item_ptr(int row, int column) const { return &data[row * width + column]; }
+
+    __device__ __forceinline__ void item4(half (&items)[4], int row, int column) const
+    {
+        half2* ptr = (half2*) item_ptr(row, column);
+        half2 i01 = ptr[0];
+        half2 i23 = ptr[1];
+        items[0] = i01.x;
+        items[1] = i01.y;
+        items[2] = i23.x;
+        items[3] = i23.y;
+    }
 };
 
 class MatrixView_half_rw
@@ -37,6 +50,15 @@ public:
     __device__ __forceinline__ half* item_ptr(int row, int column) { return &data[row * width + column]; }
     __device__ __forceinline__ void set(int row, int column, half value) { data[row * width + column] = value; }
     __device__ __forceinline__ void set_half2(int row, int column, half2 value) { ((half2*)data)[(row * width + column) / 2] = value; }
+
+    __device__ __forceinline__ void set4(int row, int column, half v0, half v1, half v2, half v3)
+    {
+        half2 v01 = __halves2half2(v0, v1);
+        half2 v23 = __halves2half2(v2, v3);
+        half2* ptr = (half2*) item_ptr(row, column);
+        ptr[0] = v01;
+        ptr[1] = v23;
+    }
 };
 
 class MatrixView_q4_row
@@ -73,8 +95,6 @@ public:
         items[2] = (d >> 8) & 0x0f;
         items[3] = (d >> 12) & 0x0f;
     }
-
-
 };
 
 #endif

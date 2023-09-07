@@ -29,6 +29,7 @@ parser.add_argument("-er", "--eval_rows", type = int, default = 128, help = "Num
 parser.add_argument("-el", "--eval_length", type = int, default = 2048, help = "Max no. tokens per sample")
 parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt")
 parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no. tokens")
+parser.add_argument("-ps", "--prompt_speed", action = "store_true", help = "Test prompt processing (batch) speed over context length")
 parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
 
 # Initialize model and tokenizer
@@ -145,7 +146,44 @@ if args.eval_dataset:
         xx = 0
 
 
-# Test speed over length
+# Test prompt speed
+
+if args.prompt_speed:
+
+    with torch.inference_mode():
+
+        cache = ExLlamaV2Cache(model)
+
+        ids = torch.randint(0, model.config.vocab_size - 1, (1, model.config.max_seq_len))
+
+        print(f" -- Warmup...")
+
+        model.forward(ids[:, -1:])
+
+        print(f" -- Measuring token speed...")
+
+        current_len = 128
+        while True:
+
+            time_begin = time.time()
+
+            cache.current_seq_len = 0
+            model.forward(ids[:, :current_len], cache, preprocess_only = True)
+            torch.cuda.synchronize()
+
+            time_end = time.time()
+            tps = current_len / (time_end - time_begin)
+
+            print(f" ** Length {current_len:>5} tokens: {tps:>11.4f} t/s")
+
+            current_len_ = current_len
+            current_len = min(current_len + 128, model.config.max_seq_len)
+            if current_len == current_len_: break
+
+    cache = None
+
+
+# Test token speed
 
 if args.speed:
 
@@ -153,8 +191,7 @@ if args.speed:
 
         cache = ExLlamaV2Cache(model)
 
-        print(f" -- Warmup...")
-
+        print(f" -- Measuring token speed...")
         ids = tokenizer.encode("X")
         model.forward(ids[:, :])
 
@@ -175,7 +212,7 @@ if args.speed:
             time_end = time.time()
             tps = tokens / (time_end - time_begin)
 
-            print(f" ** Position {current_idx: 5} + {tokens: 3} tokens: {tps: 3.4f} t/s")
+            print(f" ** Position {current_idx:>5} + {tokens:>3} tokens: {tps:>9.4f} t/s")
 
             current_idx = next_stop
             next_stop = min(next_stop + 128, model.config.max_seq_len)
