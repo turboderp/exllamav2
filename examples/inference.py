@@ -20,7 +20,8 @@ import time
 
 #model_directory =  "/mnt/str/models/_exl2/llama-7b-4.0bpw-h6-exl2/"
 #model_directory =  "/mnt/str/models/_exl2/openllama-3b-3.0bpw-h6-exl2/"
-model_directory =  "/mnt/str/models/_exl2/llama2-70b-3.0bpw-h6-exl2/"
+#model_directory =  "/mnt/str/models/_exl2/llama2-70b-3.0bpw-h6-exl2/"
+model_directory = "/mnt/str/models/llama-7b-4bit-128g/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
