@@ -296,6 +296,76 @@ class ExLlamaV2:
 
     def forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False):
 
+        q_len = input_ids.shape[-1]
+        remaining_q_len = q_len
+        bsz = input_ids.shape[0]
+
+        # Attn and MLP layers have preallocated buffers for temp states, sized by the model config. Effective max input
+        # length depends on the current batch size
+
+        effective_max_input_len = self.config.max_input_len * self.config.max_batch_size // bsz
+
+        # Without a cache we can't process the sequence in chunks, so forward the whole thing and assume the input length
+        # is less than config.max_input_len
+
+        if cache is None or not isinstance(cache, ExLlamaV2Cache):
+
+            assert q_len <= effective_max_input_len, "Maximum input length exceeded in model.forward"
+
+            return self._forward(input_ids = input_ids,
+                                 cache = cache,
+                                 input_mask = input_mask,
+                                 preprocess_only = preprocess_only)
+
+        # Confirm that the input fits within the allocated cache space
+
+        past_len = cache.current_seq_len
+        assert past_len + q_len <= cache.max_seq_len, "Total sequence length exceeds cache size in model.forward"
+
+        # Split sequence
+
+        result = None
+
+        chunk_begin = 0
+        while chunk_begin < q_len:
+
+            # Limit chunk_size to max_input_len
+
+            chunk_size = min(remaining_q_len, effective_max_input_len)
+
+            # Limit chunk_size to keep size of attention operation <= max_attention_size, unless using flash-attn
+
+            past_len = cache.current_seq_len
+            attn_size = (past_len + remaining_q_len) * remaining_q_len
+            max_a = self.config.max_attention_size
+            if attn_size > max_a:
+                cs = (math.sqrt(past_len ** 2 + 4 * max_a) - past_len) / 2
+                chunk_size = min(chunk_size, math.floor(cs))
+
+            # Process chunk
+
+            chunk_end = min(chunk_begin + chunk_size, q_len)
+
+            # print(f"Forward chunk length: {chunk_end - chunk_begin}")
+
+            _preprocess_only = preprocess_only or (chunk_end < q_len and last_id_only)
+
+            r = self._forward(input_ids = input_ids[:, chunk_begin : chunk_end],
+                              cache = cache,
+                              input_mask = input_mask,
+                              preprocess_only = preprocess_only)
+
+            if not _preprocess_only:
+                result = r if result is None else torch.cat((result, r), dim = 1)
+
+            chunk_begin = chunk_end
+            remaining_q_len -= chunk_size
+
+        return result
+
+
+    def _forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False):
+
         batch_size, seq_len = input_ids.shape
         past_len = 0
         if cache is not None:
@@ -306,8 +376,7 @@ class ExLlamaV2:
                 past_len = torch.tensor(pl, dtype = torch.int)
                 past_len = (past_len, past_len)
 
-
-        assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
+        # assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
 
         x = input_ids
         prev_device = None
