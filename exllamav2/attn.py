@@ -9,7 +9,7 @@ import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 import sys
-# from flash_attn import flash_attn_func
+from flash_attn import flash_attn_func
 # import xformers.ops as xops
 
 
@@ -188,6 +188,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         batch_size = hidden_states.shape[0]
         q_len = hidden_states.shape[1]
+        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2Cache))
 
         # past_len = 0
         # if cache is not None:
@@ -208,8 +209,20 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_shape = hidden_states.shape[:-1] + (self.k_proj.out_features,)
         v_shape = hidden_states.shape[:-1] + (self.v_proj.out_features,)
         q_states = torch.empty(q_shape, device = hidden_states.device, dtype = torch.half)
-        k_states = torch.empty(k_shape, device = hidden_states.device, dtype = torch.half)
-        v_states = torch.empty(v_shape, device = hidden_states.device, dtype = torch.half)
+
+        # If conditions are right we can write the K/V projections directly into the cache
+
+        if direct:
+
+            batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
+            batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
+            k_states = batch_keys.narrow(1, past_len, q_len)
+            v_states = batch_values.narrow(1, past_len, q_len)
+
+        else:
+
+            k_states = torch.empty(k_shape, device = hidden_states.device, dtype = torch.half)
+            v_states = torch.empty(v_shape, device = hidden_states.device, dtype = torch.half)
 
         # RMS norm, Q/K/V projections, position embeddings
 
@@ -237,20 +250,25 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             if cache is not None:
 
-                # TODO: For batch_size == 1, cached K, V states are contiguous and consecutive, so they can be written directly into the cache
+                if direct:
 
-                batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
-                batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
+                    k_states = batch_keys.narrow(1, 0, past_len + q_len)
+                    v_states = batch_values.narrow(1, 0, past_len + q_len)
 
-                new_keys = batch_keys.narrow(1, past_len, q_len)
-                new_values = batch_values.narrow(1, past_len, q_len)
-                new_keys.copy_(k_states)
-                new_values.copy_(v_states)
+                else:
 
-                # Key/value tensors with past
+                    batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
+                    batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
 
-                k_states = batch_keys.narrow(1, 0, past_len + q_len)
-                v_states = batch_values.narrow(1, 0, past_len + q_len)
+                    new_keys = batch_keys.narrow(1, past_len, q_len)
+                    new_values = batch_values.narrow(1, past_len, q_len)
+                    new_keys.copy_(k_states)
+                    new_values.copy_(v_states)
+
+                    # Key/value tensors with past
+
+                    k_states = batch_keys.narrow(1, 0, past_len + q_len)
+                    v_states = batch_values.narrow(1, 0, past_len + q_len)
 
             # Torch matmul attention
 
