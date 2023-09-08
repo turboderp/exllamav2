@@ -348,14 +348,12 @@ class ExLlamaV2:
 
             # print(f"Forward chunk length: {chunk_end - chunk_begin}")
 
-            _preprocess_only = preprocess_only or (chunk_end < q_len and last_id_only)
-
             r = self._forward(input_ids = input_ids[:, chunk_begin : chunk_end],
                               cache = cache,
                               input_mask = input_mask,
                               preprocess_only = preprocess_only)
 
-            if not _preprocess_only:
+            if not preprocess_only:
                 result = r if result is None else torch.cat((result, r), dim = 1)
 
             chunk_begin = chunk_end
