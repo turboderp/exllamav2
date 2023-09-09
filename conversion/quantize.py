@@ -513,7 +513,6 @@ def quant(job, save_fn, model):
             logprob_count = 0
 
         # Post-quantization forward pass
-        # TODO: Determine if this has a measurable impact on PPL
 
         out_name = os.path.join(job["out_dir"], "output_states.safetensors")
 

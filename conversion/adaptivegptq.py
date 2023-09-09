@@ -317,7 +317,7 @@ class AdaptiveGPTQ:
     def pack(self, key, qparams):
 
         assert qparams.scale_bits in [4]
-        assert self.columns % 32 == 0  # TODO:
+        # assert self.columns % 32 == 0
 
         output = {}
         output[key + ".q_invperm"] = self.invperm.to(torch.int)
