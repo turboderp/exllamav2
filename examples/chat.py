@@ -21,7 +21,7 @@ from exllamav2.generator import (
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
-parser.add_argument("-mode", "--mode", choices = ["llama", "raw"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
+parser.add_argument("-mode", "--mode", choices = ["llama", "raw", "codellama"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
 parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help = "Bot name when using raw chat mode")
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
@@ -52,15 +52,22 @@ botname = args.botname
 system_prompt = args.system_prompt
 mode = args.mode
 
-if mode == "llama":
+if mode == "llama" or mode == "codellama":
 
     if not system_prompt:
 
-        system_prompt = \
-        """You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  """ + \
-        """Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. """ + \
-        """Please ensure that your responses are socially unbiased and positive in nature."""
+        if mode == "llama":
 
+            system_prompt = \
+            """You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  """ + \
+            """Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. """ + \
+            """Please ensure that your responses are socially unbiased and positive in nature."""
+
+        elif mode == "codellama":
+
+            system_prompt = \
+            """You are a helpful coding assistant. Always answer as helpfully as possible."""
+            
     first_prompt = \
     """[INST] <<SYS>>\n<|system_prompt|>\n<</SYS>>\n\n<|user_prompt|> [/INST]"""
 
@@ -101,7 +108,7 @@ def format_prompt(user_prompt, first):
 def encode_prompt(text):
     global tokenizer, mode
 
-    if mode == "llama":
+    if mode == "llama" or mode == "codellama":
         return tokenizer.encode(text, add_bos = True)
 
     if mode == "raw":
@@ -149,7 +156,7 @@ min_space_in_context = args.response_chunk
 
 # Stop conditions
 
-if mode == "llama":
+if mode == "llama" or mode == "codellama":
 
     generator.set_stop_conditions([tokenizer.eos_token_id])
 
@@ -231,7 +238,7 @@ while True:
 
         if eos:
 
-            if mode == "llama":
+            if mode == "llama" or mode == "codellama":
                 print()
 
             break
