@@ -78,7 +78,7 @@ In my tests, this allows Llama2 70B to run on a single 24 GB GPU at the full 409
 coherent output with 2.5 bits per weight. It can still be unstable, so it probably still needs a little optimization.
 It also only *barely* fits in 24 GB, so it most likely won't work with a desktop environment running on the same GPU.
 
-[![chat_screenshot](doc/screenshot_chat_2.5bit_thumb.png)](doc/screenshot_chat_thumb.png)
+[![chat_screenshot](doc/screenshot_chat_2.5bit_thumb.png)](doc/screenshot_chat_2.5bit.png)
 
 ### Conversion
 
