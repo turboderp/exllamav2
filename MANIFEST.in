@@ -1,0 +1,3 @@
+recursive-include exllamav2 *
+global-exclude *.pyc
+global-exclude dni_*
