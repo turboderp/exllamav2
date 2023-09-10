@@ -18,6 +18,7 @@ from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.embedding import ExLlamaV2Embedding
+# from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -152,7 +153,6 @@ class ExLlamaV2:
         constant_size = sincos_size * 2
 
         # Max size of hidden state
-        # TODO: Test estimate of VRAM usage more thoroughly
         # TODO: Option to reserve space for cache while loading model
 
         state_size = self.config.hidden_size * self.config.max_input_len * self.config.max_batch_size * 2
@@ -165,6 +165,8 @@ class ExLlamaV2:
         # Scratch space required per device
 
         reserve_bytes = [0 for a in allocation]
+        reserve_bytes_attn = [0 for a in allocation]
+        fixed_bytes = [0 for a in allocation]
 
         current_idx = 0
         for idx, module in enumerate(self.modules):
@@ -176,6 +178,11 @@ class ExLlamaV2:
                 module.set_device_idx(-1)
                 continue
 
+            # Special case for attention
+
+            attn_bytes_current = 0
+            if isinstance(module, ExLlamaV2Attention): attn_bytes_current = module.temp_attn_size()
+
             # Advance current_idx until module fits in allocation
 
             footprint = module.weight_footprint()   # Footprint, in bytes
@@ -184,12 +191,19 @@ class ExLlamaV2:
             while True:
                 assert current_idx < len(allocation_bytes), "Insufficient space in device allocation"
                 dev_scratch = max(scratch, reserve_bytes[current_idx])
-                if footprint + dev_scratch <= allocation_bytes[current_idx]: break
+                dev_scratch_attn = max(attn_bytes_current, reserve_bytes_attn[current_idx])
+                if footprint + dev_scratch + dev_scratch_attn <= allocation_bytes[current_idx]: break
                 current_idx += 1
+
+            # Size for fixed tensors
+
+            scratch_fixed = module.scratch_space_fixed()
+            fixed_bytes[current_idx] = max(scratch_fixed, fixed_bytes[current_idx])
 
             # Subtract module size from allocation
 
             reserve_bytes[current_idx] = dev_scratch
+            reserve_bytes_attn[current_idx] = dev_scratch_attn
             allocation_bytes[current_idx] -= footprint
 
             module.set_device_idx(current_idx)
@@ -197,7 +211,7 @@ class ExLlamaV2:
         # Prepare to prepare device tensors
 
         self.device_tensors = []
-        for idx, scratch_bytes in enumerate(reserve_bytes):
+        for idx, scratch_bytes in enumerate(fixed_bytes):
             self.device_tensors.append(ExLlamaV2DeviceTensors(self, idx, scratch_bytes))
 
         # Create map for cache
@@ -206,7 +220,7 @@ class ExLlamaV2:
 
         # Return unused space, in GB
 
-        return [(ab - rb) / 1024**3 for (ab, rb) in zip(allocation_bytes, reserve_bytes)]
+        return [(ab - rb - rba) / 1024**3 for (ab, rb, rba) in zip(allocation_bytes, reserve_bytes, reserve_bytes_attn)]
 
 
     def load(self, gpu_split = None, lazy = False, stats = False):
@@ -333,7 +347,7 @@ class ExLlamaV2:
 
             chunk_size = min(remaining_q_len, effective_max_input_len)
 
-            # Limit chunk_size to keep size of attention operation <= max_attention_size, unless using flash-attn
+            # Limit chunk_size to keep size of attention operation <= max_attention_size
 
             past_len = cache.current_seq_len
             attn_size = (past_len + remaining_q_len) * remaining_q_len
@@ -355,6 +369,7 @@ class ExLlamaV2:
 
             if not preprocess_only:
                 result = r if result is None else torch.cat((result, r), dim = 1)
+                r = None
 
             chunk_begin = chunk_end
             remaining_q_len -= chunk_size

@@ -37,13 +37,18 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
     def weight_footprint(self):
 
-        hidden_size = self.model.config.hidden_size  # TODO: Confirm
+        hidden_size = self.model.config.hidden_size
         return hidden_size * 2
+
+
+    def scratch_space_fixed(self):
+
+        return 0
 
 
     def scratch_space(self):
 
-        return 0  # TODO
+        return 0
 
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):

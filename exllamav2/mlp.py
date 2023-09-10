@@ -78,6 +78,14 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                self.down_proj.weight_footprint()
 
 
+    def scratch_space_fixed(self):
+
+        return self.temp_state_size() + \
+               self.temp_a_size() + \
+               self.temp_b_size() + \
+               self.temp_dq_size()
+
+
     def scratch_space(self):
 
         assert self.model.config.intermediate_size >= self.model.config.hidden_size

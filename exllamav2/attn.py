@@ -8,10 +8,11 @@ from exllamav2.cache import ExLlamaV2Cache
 import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+import gc
 import sys
-from flash_attn import flash_attn_func
+# from flash_attn import flash_attn_func
 # import xformers.ops as xops
-
+# from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 
 class ExLlamaV2Attention(ExLlamaV2Module):
 
@@ -113,6 +114,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                self.o_proj.weight_footprint()
 
 
+    def scratch_space_fixed(self):
+
+        return self.temp_state_size() + \
+               self.temp_dq_size()
+
+
     def scratch_space(self):
 
         return self.temp_state_size() + \
@@ -120,7 +127,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                self.temp_k_size() + \
                self.temp_v_size() + \
                self.temp_dq_size() + \
-               self.temp_attn_size()
+               self.temp_kv_size()
+               # self.temp_attn_size() +  # Accounted for separately in model.set_device_map()
 
 
     def temp_state_size(self):
@@ -153,12 +161,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_kv_size(self):
 
-        return self.model.config.max_seq_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        if self.model.config.num_key_value_heads == self.model.config.num_attention_heads: return 0
+        return 2 * self.model.config.max_seq_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
 
 
     def temp_attn_size(self):
 
-        return self.model.config.max_attention_size * self.model.config.max_batch_size * 2 + 128
+        att_max = min(self.model.config.max_attention_size, self.model.config.max_seq_len ** 2)
+        return 2 * att_max * self.model.config.num_attention_heads * 2 + 128
 
 
     def set_device_idx(self, idx):
@@ -280,6 +290,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             k_states = k_states.transpose(-1, -2)
 
             attn_weights = torch.matmul(q_states, k_states)
+            k_states = None
+            q_states = None
 
             attn_weights /= math.sqrt(head_dim)
             if attn_mask is not None: attn_weights = attn_weights + attn_mask
@@ -287,6 +299,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             v_states = self.repeat_kv(v_states, num_key_value_groups)
             attn_output = torch.matmul(attn_weights, v_states)
+            v_states = None
+
             attn_output = attn_output.transpose(1, 2)
             attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
@@ -347,6 +361,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 k_states_b = k_states_b.transpose(-1, -2)
 
                 attn_weights = torch.matmul(q_states_b, k_states_b)
+                q_states_b = None
+                k_states_b = None
 
                 attn_weights /= math.sqrt(head_dim)
                 if attn_mask is not None: attn_weights = attn_weights + attn_mask[i]
@@ -354,7 +370,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 v_states_b = self.repeat_kv(v_states_b, num_key_value_groups)
                 attn_output_b = torch.matmul(attn_weights, v_states_b)
+                v_states_b = None
+
                 attn_outputs.append(attn_output_b)
+
+            q_states = None
+            k_states = None
+            v_states = None
 
             attn_output = torch.cat(attn_outputs, dim = 0)
             attn_output = attn_output.transpose(1, 2)
@@ -367,6 +389,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                attn_output,
                                batch_size,
                                q_len)
+
+        attn_output = None
+        attn_weights = None
 
         return hidden_states
 

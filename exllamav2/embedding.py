@@ -51,6 +51,11 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         return vocab_size * hidden_size * 2
 
 
+    def scratch_space_fixed(self):
+
+        return 0
+
+
     def scratch_space(self):
 
         return 0

@@ -115,6 +115,12 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.footprint
 
 
+    def scratch_space_fixed(self):
+
+        return self.temp_dq_size() + \
+               self.temp_fwd_size()
+
+
     def scratch_space(self):
 
         return self.temp_dq_size() + \
