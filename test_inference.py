@@ -160,7 +160,7 @@ if args.prompt_speed:
 
         model.forward(ids[:, -1:])
 
-        print(f" -- Measuring token speed...")
+        print(f" -- Measuring prompt speed...")
 
         current_len = 128
         while True:
