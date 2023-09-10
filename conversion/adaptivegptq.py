@@ -357,7 +357,10 @@ class AdaptiveGPTQ:
             qrows = math.ceil(qrows)
 
             g_qwt = qwt[row:row+rows, :].contiguous()
-            g_qwt_packed = torch.zeros((qrows, columns), dtype = torch.int32, device = self.device)
+            g_qwt_packed = torch.zeros((qrows, columns + padding), dtype = torch.int32, device = self.device)
+
+            if padding > 0: g_qwt[:, -padding:] = 2 ** (bits - 1)
+
             ext_c.pack_columns(g_qwt, g_qwt_packed, bits)
             qwt_packed.append(g_qwt_packed)
 

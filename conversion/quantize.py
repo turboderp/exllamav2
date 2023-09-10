@@ -370,7 +370,9 @@ def do_quant(source: ExLlamaV2Linear,
 
         # Reconstruct from packed layer
 
-        recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features, False)
+        padding = -source.out_features % 32
+
+        recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features + padding, False)
         recons_linear.device_idx = source.device_idx
         recons_dict = {}
         for k in ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]:
@@ -381,6 +383,7 @@ def do_quant(source: ExLlamaV2Linear,
         # Sanity test to ensure reconstructed matrix matches unpacked matrix
 
         quant_w = source.linear.weight.T
+        quant_w = F.pad(quant_w, (0, padding)).contiguous()
         recons_w = recons_linear.get_weight_tensor_dq()
 
         ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
@@ -548,7 +551,7 @@ def quant(job, save_fn, model):
 
                     target = output_states_list[b]
                     if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                    rfn = torch.linalg.norm(outputs[0] - target[0], 'fro') / torch.linalg.norm(target[0], 'fro')
+                    rfn = torch.linalg.norm(outputs[0][:, :, target[0].shape[2]] - target[0], 'fro') / torch.linalg.norm(target[0], 'fro')
                     rfn_sum += rfn
                     target = None
 

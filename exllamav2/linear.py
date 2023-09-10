@@ -39,8 +39,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     def __init__(self, model, key, in_features, out_features, has_bias):
         super().__init__(model, key)
 
+        padding = -out_features % 32
+
         self.in_features = in_features
-        self.out_features = out_features
+        self.out_features = out_features + padding
         self.has_bias = has_bias
         self.temp_dq = None
         self.footprint = -1
