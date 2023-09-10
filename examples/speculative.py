@@ -18,10 +18,6 @@ import time
 
 # Initialize model and draft model
 
-# model_directory = "/mnt/str/models/_exl2/llama2-70b-3.0bpw-h6-exl2/"
-# model_directory = "/mnt/str/models/_exl2/llama2-70b-chat-4.0bpw-h6-exl2"
-# draft_directory = "/mnt/str/models/_exl2/llama-7b-3.0bpw-h6-exl2/"
-# draft_directory = "/mnt/str/models/_exl2/llama2-7b-4.0bpw-h6-exl2"
 model_directory = "/mnt/str/models/_exl2/codellama-34b-instruct-4.0bpw-h6-exl2/"
 draft_directory = "/mnt/str/models/_exl2/tinyllama-1b-4.0bpw-h6-exl2"
 
