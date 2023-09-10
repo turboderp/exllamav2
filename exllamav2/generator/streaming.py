@@ -85,7 +85,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             position = self.held_text.find(ss)
             if position != -1:
-                return self.held_text[:position], True, self.no_tokens  # TODO: Decide if we want to tokenize a partial string here
+                return self.held_text[:position], True, self.no_tokens
 
             # Check for overlap between end of held_text and start of stop string
 

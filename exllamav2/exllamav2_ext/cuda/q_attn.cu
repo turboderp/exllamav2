@@ -9,7 +9,7 @@ const int THREADS_X = 32;
 const int THREADS_Y = 1;
 const int THREADS_Z = 4;
 const int BLOCKSIZE_X = 2; // 2*half == 1*uint32_t
-const int BLOCKSIZE_Z = 4; // num_heads must be divisible by BLOCKSIZE_Z  TODO: Check that this is the case when Llama2-34b releases
+const int BLOCKSIZE_Z = 4; // num_heads must be divisible by BLOCKSIZE_Z
 
 __global__ void update_cache_kernel
 (
