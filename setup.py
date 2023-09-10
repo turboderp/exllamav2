@@ -11,6 +11,7 @@ setup(
     author = "bb",
     install_requires = [
         "pandas",
+        "ninja",
         "fastparquet",
         "torch>=2.0.1",
         "safetensors>=0.3.2",
