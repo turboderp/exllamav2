@@ -37,19 +37,19 @@ models and various other finetunes. You can also provide a custom system prompt 
 Some quick tests to compare performance with V1. There may still be more performance optimizations in the future, and
 speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
 
-| Model      | Mode        | Size  | grpsz | act | V1: 3090 | V1: 4090 | V2: 3090 | V2: 4090    |
-|------------|-------------|-------|-------|-----|----------|----------|----------|-------------|
-| Llama      | GPTQ        | 7B    | 128   | no  | 143 t/s  | 173 t/s  | 175 t/s  | **195** t/s |
-| Llama      | GPTQ        | 13B   | 128   | no  | 84 t/s   | 102 t/s  | 105 t/s  | **110** t/s |
-| Llama      | GPTQ        | 33B   | 128   | yes | 37 t/s   | 45 t/s   | 45 t/s   | **48** t/s  |
-| OpenLlama  | GPTQ        | 3B    | 128   | yes | 194 t/s  | 226 t/s  | 295 t/s  | **321** t/s |
-| CodeLlama  | EXL2 4.0bpw | 34B   | -     | -   | -        | -        | 42 t/s   | **48** t/s  |
-| Llama2     | EXL2 3.0bpw | 7B    | -     | -   | -        | -        | 195 t/s  | **224** t/s |
-| Llama2     | EXL2 4.0bpw | 7B    | -     | -   | -        | -        | 164 t/s  | **197** t/s |
-| Llama2     | EXL2 5.0bpw | 7B    | -     | -   | -        | -        | 144 t/s  | **160** t/s |
-| Llama2     | EXL2 2.5bpw | 70B   | -     | -   | -        | -        | 30 t/s   | **35** t/s  |
-| TinyLlama2 | EXL2 3.0bpw | 1.1B  | -     | -   | -        | -        | 536 t/s  | **635** t/s |
-| TinyLlama2 | EXL2 4.0bpw | 1.1B  | -     | -   | -        | -        | 509 t/s  | **590** t/s |
+| Model      | Mode        | Size  | grpsz | act | V1: 3090Ti | V1: 4090 | V2: 3090Ti | V2: 4090    |
+|------------|-------------|-------|-------|-----|------------|----------|------------|-------------|
+| Llama      | GPTQ        | 7B    | 128   | no  | 143 t/s    | 173 t/s  | 175 t/s    | **195** t/s |
+| Llama      | GPTQ        | 13B   | 128   | no  | 84 t/s     | 102 t/s  | 105 t/s    | **110** t/s |
+| Llama      | GPTQ        | 33B   | 128   | yes | 37 t/s     | 45 t/s   | 45 t/s     | **48** t/s  |
+| OpenLlama  | GPTQ        | 3B    | 128   | yes | 194 t/s    | 226 t/s  | 295 t/s    | **321** t/s |
+| CodeLlama  | EXL2 4.0bpw | 34B   | -     | -   | -          | -        | 42 t/s     | **48** t/s  |
+| Llama2     | EXL2 3.0bpw | 7B    | -     | -   | -          | -        | 195 t/s    | **224** t/s |
+| Llama2     | EXL2 4.0bpw | 7B    | -     | -   | -          | -        | 164 t/s    | **197** t/s |
+| Llama2     | EXL2 5.0bpw | 7B    | -     | -   | -          | -        | 144 t/s    | **160** t/s |
+| Llama2     | EXL2 2.5bpw | 70B   | -     | -   | -          | -        | 30 t/s     | **35** t/s  |
+| TinyLlama2 | EXL2 3.0bpw | 1.1B  | -     | -   | -          | -        | 536 t/s    | **635** t/s |
+| TinyLlama2 | EXL2 4.0bpw | 1.1B  | -     | -   | -          | -        | 509 t/s    | **590** t/s |
 
 ### Installation
 
@@ -95,7 +95,7 @@ python convert.py \
 ```
 
 The output directory should be empty when you start converting. The script will dump a bunch of files there as it
-works, so it can resume an interrupted job if you point it to the same output directory.
+works, so it can resume an interrupted job if you point it to the same output directory a second time.
 
 After the first pass is completed, a `measurement.json` file will be written to the output directory. This can be
 supplied (with the `-m` argument) to subsequent conversion jobs to skip the first pass and save some time when quantizing
