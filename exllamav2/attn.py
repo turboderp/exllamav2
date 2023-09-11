@@ -8,8 +8,6 @@ from exllamav2.cache import ExLlamaV2Cache
 import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-import gc
-import sys
 # from flash_attn import flash_attn_func
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak

@@ -5,7 +5,7 @@ from conversion.qparams import QParams, qparams_options, qparams_headoptions
 from conversion.adaptivegptq import AdaptiveGPTQ
 import torch
 from torch import nn
-import os, sys, time, math, json
+import os, time, math, json
 import torch.nn.functional as F
 import gc
 

@@ -6,9 +6,6 @@ if sys.version_info < min_version:
     print("")
 
 import torch
-from torch import nn
-import torch.nn.functional as F
-from safetensors import safe_open
 import math
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.cache import ExLlamaV2Cache

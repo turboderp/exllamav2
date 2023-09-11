@@ -1,10 +1,8 @@
 import torch
-from torch import nn
 import torch.nn.functional as F
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.linear import ExLlamaV2Linear
-from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 class ExLlamaV2MLP(ExLlamaV2Module):

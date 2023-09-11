@@ -4,7 +4,6 @@ import argparse, sys, os, glob
 from exllamav2 import(
     ExLlamaV2,
     ExLlamaV2Config,
-    ExLlamaV2Cache,
     ExLlamaV2Tokenizer
 )
 

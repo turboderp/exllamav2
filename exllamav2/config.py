@@ -1,6 +1,6 @@
 import torch
 from safetensors import safe_open
-import sys, os, glob, json
+import os, glob, json
 
 class ExLlamaV2Config:
 

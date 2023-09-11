@@ -2,8 +2,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import math
-import exllamav2.ext
-from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 
