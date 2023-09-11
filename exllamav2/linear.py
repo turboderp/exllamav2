@@ -6,20 +6,6 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from safetensors import safe_open
 
 
-def _tsize(st, key):
-
-    tslice = st.get_slice(key)
-    shape = tslice.get_shape()
-    numel = 1
-    for x in shape: numel *= x
-    dtype = tslice.get_dtype()
-    if dtype == "I32": return numel * 4
-    elif dtype == "I16": return numel * 2
-    elif dtype == "F16": return numel * 2
-    elif dtype == "F32": return numel * 4
-    else: raise ValueError("Unexpected datatype: " + key)
-
-
 class ExLlamaV2Linear(ExLlamaV2Module):
 
     in_features: int
@@ -29,7 +15,6 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     linear: nn.Linear or None = None
     q_handle: int or None = None
     q_tensors: dict or None = None
-    footprint: int
 
     name: str = "Linear"
 
@@ -72,48 +57,6 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     def get_weight(self):
 
         return self.linear.weight.data
-
-
-    def weight_footprint(self):
-
-        if self.footprint == -1:
-
-            # Torch linear layer
-
-            if self.key + ".weight" in self.model.config.tensor_file_map:
-                filename = self.model.config.tensor_file_map[self.key + ".weight"]
-                with safe_open(filename, framework="pt", device="cpu") as st:
-                    self.footprint = 0
-                    self.footprint += _tsize(st, self.key + ".weight")
-
-            # EXL2
-
-            elif self.key + ".q_weight" in self.model.config.tensor_file_map:
-                filename = self.model.config.tensor_file_map[self.key + ".q_weight"]
-                with safe_open(filename, framework="pt", device="cpu") as st:
-                    self.footprint = 0
-                    self.footprint += _tsize(st, self.key + ".q_weight") + 128
-                    self.footprint += _tsize(st, self.key + ".q_invperm") + 128
-                    self.footprint += _tsize(st, self.key + ".q_scale") + 128
-                    self.footprint += _tsize(st, self.key + ".q_scale_max") + 128
-                    self.footprint += _tsize(st, self.key + ".q_groups") + 128
-                    self.footprint += _tsize(st, self.key + ".q_invperm") + 128
-
-            # GPTQ
-
-            elif self.key + ".qweight" in self.model.config.tensor_file_map:
-                filename = self.model.config.tensor_file_map[self.key + ".qweight"]
-                with safe_open(filename, framework="pt", device="cpu") as st:
-                    self.footprint += _tsize(st, self.key + ".qweight") + 128
-                    self.footprint += _tsize(st, self.key + ".qzeros") + 128
-                    self.footprint += _tsize(st, self.key + ".scales") + 128
-                    if self.key + ".g_idx" in self.model.config.tensor_file_map:
-                        self.footprint += _tsize(st, self.key + ".g_idx") + 128
-
-            else:
-                raise ValueError("Can't find tensors in model files.")
-
-        return self.footprint
 
 
     def scratch_space_fixed(self):
