@@ -34,7 +34,7 @@ models and various other finetunes. You can also provide a custom system prompt 
 
 ## Performance
 
-Some quick tests to compare performance with V1. There may still be more performance optimizations in the future, and
+Some quick tests to compare performance with V1. There may be more performance optimizations in the future, and
 speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
 
 | Model      | Mode        | Size  | grpsz | act | V1: 3090Ti | V1: 4090 | V2: 3090Ti | V2: 4090    |
