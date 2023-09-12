@@ -551,7 +551,9 @@ def quant(job, save_fn, model):
 
                     target = output_states_list[b]
                     if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                    rfn = torch.linalg.norm(outputs[0][:, :, target[0].shape[2]] - target[0], 'fro') / torch.linalg.norm(target[0], 'fro')
+                    a_ = outputs.narrow(-1, 0, target.shape[-1])
+                    b_ = target
+                    rfn = torch.linalg.norm(a_[0] - b_[0], 'fro') / torch.linalg.norm(b_[0], 'fro')
                     rfn_sum += rfn
                     target = None
 
