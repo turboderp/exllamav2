@@ -49,7 +49,7 @@ python test_inference.py -m <path_to_model> -p "Once upon a time,"
 For now, a simple console chatbot is included. Run it with:
 
 ```
-python examples/chat.py -m <path_to_model> -mode llama`
+python examples/chat.py -m <path_to_model> -mode llama
 ```
 
 The `-mode` argument chooses the prompt format to use. `llama` is for the Llama(2)-chat finetunes, while `codellama`
