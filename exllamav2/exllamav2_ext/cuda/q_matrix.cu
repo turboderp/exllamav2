@@ -242,16 +242,16 @@ __global__ void reconstruct_gptq_kernel
             {
                 for (int j = 0; j < 4; j++)
                 {
-                    b_.set4(perm[lk++], n, dq[0][j].x, dq[1][j].x, dq[2][j].x, dq[3][j].x);
-                    b_.set4(perm[lk++], n, dq[0][j].y, dq[1][j].y, dq[2][j].y, dq[3][j].y);
+                    b_.set4(perm[lk++], n, __low2half(dq[0][j]), __low2half(dq[1][j]), __low2half(dq[2][j]), __low2half(dq[3][j]));
+                    b_.set4(perm[lk++], n, __high2half(dq[0][j]), __high2half(dq[1][j]), __high2half(dq[2][j]), __high2half(dq[3][j]));
                 }
             }
             else
             {
                 for (int j = 0; j < 4; j++)
                 {
-                    b_.set4(offset_k + lk++, n, dq[0][j].x, dq[1][j].x, dq[2][j].x, dq[3][j].x);
-                    b_.set4(offset_k + lk++, n, dq[0][j].y, dq[1][j].y, dq[2][j].y, dq[3][j].y);
+                    b_.set4(offset_k + lk++, n, __low2half(dq[0][j]), __low2half(dq[1][j]), __low2half(dq[2][j]), __low2half(dq[3][j]));
+                    b_.set4(offset_k + lk++, n, __high2half(dq[0][j]), __high2half(dq[1][j]), __high2half(dq[2][j]), __high2half(dq[3][j]));
                 }
             }
         }

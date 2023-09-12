@@ -79,9 +79,6 @@ if ext_debug:
 extra_cuda_cflags = ["-lineinfo", "-O3"]
 # extra_cuda_cflags += ["-maxrregcount=128"]
 
-if torch.version.hip:
-    extra_cuda_cflags += ["-U__HIP_NO_HALF_CONVERSIONS__"]
-
 
 # linker flags
 
@@ -122,7 +119,7 @@ exllamav2_ext = load \
 (
     name = extension_name,
     sources = sources,
-    extra_include_paths = sources_dir,
+    extra_include_paths = [sources_dir],
     verbose = verbose,
     extra_ldflags = extra_ldflags,
     extra_cuda_cflags = extra_cuda_cflags,

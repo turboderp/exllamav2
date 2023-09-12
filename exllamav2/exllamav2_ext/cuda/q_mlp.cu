@@ -4,6 +4,14 @@
 #include "util.cuh"
 #include "matrix_view.cuh"
 
+#if defined(USE_ROCM)
+__device__ __forceinline__ __half2 __compat_h2rcp(__half2 x) {
+    return _Float16_2{static_cast<_Float16>(__builtin_amdgcn_rcph(static_cast<__half2_raw>(x).data.x)),
+        static_cast<_Float16>(__builtin_amdgcn_rcph(static_cast<__half2_raw>(x).data.y))};
+}
+#define h2rcp __compat_h2rcp
+#endif
+
 const int THREADS_X = 32;
 const int THREADS_Y = 4;
 // const int MAX_DIMENSION = 8192;
