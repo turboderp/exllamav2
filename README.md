@@ -51,7 +51,7 @@ python examples/chat.py -m <path_to_model> -mode llama`
 
 The `-mode` argument chooses the prompt format to use. `llama` is for the Llama(2)-chat finetunes, while `codellama`
 probably works better for CodeLlama-instruct. `raw` will produce a simple chatlog-style chat that works with base 
-models and various other finetunes. You can also provide a custom system prompt with `-p`. 
+models and various other finetunes. You can also provide a custom system prompt with `-sp`. 
 
 
 ### Installation
@@ -86,7 +86,7 @@ average bitrate.
 In my tests, this scheme allows Llama2 70B to run on a single 24 GB GPU with a full (4k) context, producing coherent 
 and mostly stable output with 2.55 bits per weight. 13B models run at 2.65 bits within 8 GB of VRAM, although currently
 none of them uses GQA which effectively limits the context size to 2048. In either case it's unlikely that the model
-will fit alongside a desktop environment, though. For now.
+will fit alongside a desktop environment. For now.
 
 [![chat_screenshot](doc/llama2_70b_chat_thumb.png)](doc/llama2_70b_chat.png)
 [![chat_screenshot](doc/codellama_13b_instruct_thumb.png)](doc/codellama_13b_instruct.png)
@@ -116,7 +116,11 @@ are optimizations planned to accelerate conversion, utilizing more or larger GPU
 
 ### HuggingFace repos
 
-I've uploaded a few EXL2-quantized models to HuggingFace, [here](https://huggingface.co/turboderp). 
+I've uploaded a few EXL2-quantized models to HuggingFace to play around with, [here](https://huggingface.co/turboderp).
+
+Note that these were produced over a period of time with different calibration data, so they're not useful as a way to
+measure quantization loss. Thorough perplexity and accuracy tests are coming, once I've had time to convert models for
+that purpose.
 
 ### More to come
 
@@ -125,6 +129,6 @@ There are still things that need to be ported over from V1, and other planned fe
 - PyPi package
 - ROCm support
 - LoRA support
-- Example chat UI
+- Example web UI
 - Web server
 - More samplers
