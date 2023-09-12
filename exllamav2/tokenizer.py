@@ -75,7 +75,7 @@ class ExLlamaV2Tokenizer:
             if add_eos:
                 ids.append(self.eos_token_id)
 
-            return torch.tensor(ids).unsqueeze(0)
+            return torch.tensor(ids).to(torch.long).unsqueeze(0)
 
 
     # Decode IDs
