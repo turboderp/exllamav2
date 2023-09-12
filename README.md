@@ -1,7 +1,10 @@
 # ExLlamaV2
 
-This is a very early release of ExLlamaV2, an inference library for running local LLMs on modern consumer GPUs. It 
-still needs a lot of testing and tuning, and a few key features are not yet implemented.
+This is a very initial release of ExLlamaV2, an inference library for running local LLMs on modern consumer GPUs.
+
+It still needs a lot of testing and tuning, and a few key features are not yet implemented. Don't be surprised if 
+things are a bit broken to start with, as almost all of this code is completely new and only tested on a few setups
+so far.
 
 
 ## Overview of differences compared to V1
