@@ -86,7 +86,7 @@ error (with respect to the chosen calibration data) for each of a number of poss
 combination is chosen that minimizes the maximum quantization error over the entire model while meeting a target
 average bitrate.
 
-In my tests, this scheme allows Llama2 70B to run on a single 24 GB GPU with a full (4k) context, producing coherent 
+In my tests, this scheme allows Llama2 70B to run on a single 24 GB GPU with a 2048-token context, producing coherent 
 and mostly stable output with 2.55 bits per weight. 13B models run at 2.65 bits within 8 GB of VRAM, although currently
 none of them uses GQA which effectively limits the context size to 2048. In either case it's unlikely that the model
 will fit alongside a desktop environment. For now.
