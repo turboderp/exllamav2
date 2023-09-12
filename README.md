@@ -126,7 +126,7 @@ that purpose.
 
 There are still things that need to be ported over from V1, and other planned features. Among them:
 
-- PyPi package
+- PyPi package with prebuilt extensions
 - ROCm support
 - LoRA support
 - Example web UI
