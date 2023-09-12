@@ -43,7 +43,7 @@ git clone https://github.com/turboderp/exllamav2
 cd exllamav2
 pip install -r requirements.txt
 
-python test_inference -m <path_to_model> -p "Once upon a time,"
+python test_inference.py -m <path_to_model> -p "Once upon a time,"
 ```
 
 For now, a simple console chatbot is included. Run it with:
