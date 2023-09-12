@@ -56,11 +56,15 @@ models and various other finetunes. You can also provide a custom system prompt 
 
 ### Installation
 
-Clone the repository and run `python setup.py install --user`. (PyPi package is coming, be patient.)
+To install as a library (not required for the included examples), clone the repository and run:
+
+```
+python setup.py install --user`.
+```
 
 ExLlamaV2 relies on a Torch C++ extension for its CUDA functions, which is compiled at runtime. This means the first
 time the library is used it will take 10-20 seconds (depending on your hardware) to start, but the extension gets cached
-for subsequent use.
+for subsequent use. A PyPI package will evantually be available with an option to install a precompiled extension. 
 
 
 ## EXL2 quantization
