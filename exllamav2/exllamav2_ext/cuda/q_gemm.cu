@@ -2,10 +2,6 @@
 #include "util.cuh"
 #include "matrix_view.cuh"
 #include "../config.h"
-#include <cuda/barrier>
-#include <cuda/pipeline>
-
-#include "../config.h"
 
 #include "quant/qdq_2.cuh"
 #include "quant/qdq_3.cuh"
