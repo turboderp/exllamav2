@@ -2,12 +2,6 @@
 #include "util.cuh"
 #include "matrix_view.cuh"
 #include "../config.h"
-#if !defined(USE_ROCM)
-#include <cuda/barrier>
-#include <cuda/pipeline>
-#endif
-
-#include "../config.h"
 
 #include "quant/qdq_2.cuh"
 #include "quant/qdq_3.cuh"
