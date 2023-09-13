@@ -26,6 +26,9 @@ config.prepare()
 
 model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
+
+# allocate 18 GB to CUDA:0 and 24 GB to CUDA:1.
+# (Call `model.load()` if using a single GPU.)
 model.load([18, 24])
 
 tokenizer = ExLlamaV2Tokenizer(config)
