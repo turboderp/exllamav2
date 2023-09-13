@@ -125,13 +125,16 @@ Note that these were produced over a period of time with different calibration d
 measure quantization loss. Thorough perplexity and accuracy tests are coming, once I've had time to convert models for
 that purpose.
 
-### More to come
+## More to come
 
 There are still things that need to be ported over from V1, and other planned features. Among them:
 
 - PyPi package with prebuilt extensions
-- ROCm support
 - LoRA support
 - Example web UI
 - Web server
 - More samplers
+
+## Updates
+
+**2023-09-13**: Preliminary ROCm support added, thanks to @ardfork. Bumped to 0.0.1
