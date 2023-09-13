@@ -20,7 +20,7 @@ def _tsize(st, key):
     elif dtype == "I16": return numel * 2
     elif dtype == "F16": return numel * 2
     elif dtype == "F32": return numel * 4
-    else: raise ValueError("Unexpected datatype: " + key)
+    else: raise ValueError(f"Unexpected datatype {dtype}: {key}")
 
 
 class ExLlamaV2Module:
