@@ -1,3 +1,4 @@
+#include "compat.cuh"
 
 __forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result, const half qs_h)
 {
@@ -201,10 +202,10 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
-                block_c[m][0] = dot22_8(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h01.x);
-                block_c[m][1] = dot22_8(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h01.y);
-                block_c[m][2] = dot22_8(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h23.x);
-                block_c[m][3] = dot22_8(dq[3], a_ptr + m * a_stride, block_c[m][3], qs_h23.y);
+                block_c[m][0] = dot22_8(dq[0], a_ptr + m * a_stride, block_c[m][0], __low2half(qs_h01));
+                block_c[m][1] = dot22_8(dq[1], a_ptr + m * a_stride, block_c[m][1], __high2half(qs_h01));
+                block_c[m][2] = dot22_8(dq[2], a_ptr + m * a_stride, block_c[m][2], __low2half(qs_h23));
+                block_c[m][3] = dot22_8(dq[3], a_ptr + m * a_stride, block_c[m][3], __high2half(qs_h23));
             }
             a_ptr += 8;
         }
@@ -238,10 +239,10 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
-                block_c[m][0] = dot22_16(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h01.x);
-                block_c[m][1] = dot22_16(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h01.y);
-                block_c[m][2] = dot22_16(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h23.x);
-                block_c[m][3] = dot22_16(dq[3], a_ptr + m * a_stride, block_c[m][3], qs_h23.y);
+                block_c[m][0] = dot22_16(dq[0], a_ptr + m * a_stride, block_c[m][0], __low2half(qs_h01));
+                block_c[m][1] = dot22_16(dq[1], a_ptr + m * a_stride, block_c[m][1], __high2half(qs_h01));
+                block_c[m][2] = dot22_16(dq[2], a_ptr + m * a_stride, block_c[m][2], __low2half(qs_h23));
+                block_c[m][3] = dot22_16(dq[3], a_ptr + m * a_stride, block_c[m][3], __high2half(qs_h23));
             }
             a_ptr += 16;
         }
@@ -277,10 +278,10 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
-                block_c[m][0] = dot22_32(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h01.x);
-                block_c[m][1] = dot22_32(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h01.y);
-                block_c[m][2] = dot22_32(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h23.x);
-                block_c[m][3] = dot22_32(dq[3], a_ptr + m * a_stride, block_c[m][3], qs_h23.y);
+                block_c[m][0] = dot22_32(dq[0], a_ptr + m * a_stride, block_c[m][0], __low2half(qs_h01));
+                block_c[m][1] = dot22_32(dq[1], a_ptr + m * a_stride, block_c[m][1], __high2half(qs_h01));
+                block_c[m][2] = dot22_32(dq[2], a_ptr + m * a_stride, block_c[m][2], __low2half(qs_h23));
+                block_c[m][3] = dot22_32(dq[3], a_ptr + m * a_stride, block_c[m][3], __high2half(qs_h23));
             }
             a_ptr += 32;
         }
@@ -313,10 +314,10 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
-                block_c[m][0] = dot22_8(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h01.x);
-                block_c[m][1] = dot22_8(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h01.y);
-                block_c[m][2] = dot22_8(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h23.x);
-                block_c[m][3] = dot22_8(dq[3], a_ptr + m * a_stride, block_c[m][3], qs_h23.y);
+                block_c[m][0] = dot22_8(dq[0], a_ptr + m * a_stride, block_c[m][0], __low2half(qs_h01));
+                block_c[m][1] = dot22_8(dq[1], a_ptr + m * a_stride, block_c[m][1], __high2half(qs_h01));
+                block_c[m][2] = dot22_8(dq[2], a_ptr + m * a_stride, block_c[m][2], __low2half(qs_h23));
+                block_c[m][3] = dot22_8(dq[3], a_ptr + m * a_stride, block_c[m][3], __high2half(qs_h23));
             }
             a_ptr += 8;
         }
@@ -350,10 +351,10 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
-                block_c[m][0] = dot22_32(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h01.x);
-                block_c[m][1] = dot22_32(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h01.y);
-                block_c[m][2] = dot22_32(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h23.x);
-                block_c[m][3] = dot22_32(dq[3], a_ptr + m * a_stride, block_c[m][3], qs_h23.y);
+                block_c[m][0] = dot22_32(dq[0], a_ptr + m * a_stride, block_c[m][0], __low2half(qs_h01));
+                block_c[m][1] = dot22_32(dq[1], a_ptr + m * a_stride, block_c[m][1], __high2half(qs_h01));
+                block_c[m][2] = dot22_32(dq[2], a_ptr + m * a_stride, block_c[m][2], __low2half(qs_h23));
+                block_c[m][3] = dot22_32(dq[3], a_ptr + m * a_stride, block_c[m][3], __high2half(qs_h23));
             }
             a_ptr += 32;
         }
@@ -385,10 +386,10 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
-                block_c[m][0] = dot22_16(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h01.x);
-                block_c[m][1] = dot22_16(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h01.y);
-                block_c[m][2] = dot22_16(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h23.x);
-                block_c[m][3] = dot22_16(dq[3], a_ptr + m * a_stride, block_c[m][3], qs_h23.y);
+                block_c[m][0] = dot22_16(dq[0], a_ptr + m * a_stride, block_c[m][0], __low2half(qs_h01));
+                block_c[m][1] = dot22_16(dq[1], a_ptr + m * a_stride, block_c[m][1], __high2half(qs_h01));
+                block_c[m][2] = dot22_16(dq[2], a_ptr + m * a_stride, block_c[m][2], __low2half(qs_h23));
+                block_c[m][3] = dot22_16(dq[3], a_ptr + m * a_stride, block_c[m][3], __high2half(qs_h23));
             }
 
             a_ptr += 16;
@@ -401,10 +402,10 @@ __global__ void gemm_half_q_half_kernel
     for (int m = 0; m < m_count; m++)
     {
         half2 *out = (half2*) c_.item_ptr(offset_m + m, n);
-        half result0 = __hadd(block_c[m][0].x, block_c[m][0].y);
-        half result1 = __hadd(block_c[m][1].x, block_c[m][1].y);
-        half result2 = __hadd(block_c[m][2].x, block_c[m][2].y);
-        half result3 = __hadd(block_c[m][3].x, block_c[m][3].y);
+        half result0 = __hadd(__low2half(block_c[m][0]), __high2half(block_c[m][0]));
+        half result1 = __hadd(__low2half(block_c[m][1]), __high2half(block_c[m][1]));
+        half result2 = __hadd(__low2half(block_c[m][2]), __high2half(block_c[m][2]));
+        half result3 = __hadd(__low2half(block_c[m][3]), __high2half(block_c[m][3]));
         half2 result01 = __halves2half2(result0, result1);
         half2 result23 = __halves2half2(result2, result3);
         atomicAdd(out    , result01);

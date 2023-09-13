@@ -1,3 +1,4 @@
+#include "compat.cuh"
 
 __forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result)
 {
@@ -171,10 +172,10 @@ __global__ void gemm_half_q_half_gptq_kernel
     for (int m = 0; m < m_count; m++)
     {
         half2 *out = (half2*) c_.item_ptr(offset_m + m, n);
-        half result0 = __hadd(block_c[m][0].x, block_c[m][0].y);
-        half result1 = __hadd(block_c[m][1].x, block_c[m][1].y);
-        half result2 = __hadd(block_c[m][2].x, block_c[m][2].y);
-        half result3 = __hadd(block_c[m][3].x, block_c[m][3].y);
+        half result0 = __hadd(__low2half(block_c[m][0]), __high2half(block_c[m][0]));
+        half result1 = __hadd(__low2half(block_c[m][1]), __high2half(block_c[m][1]));
+        half result2 = __hadd(__low2half(block_c[m][2]), __high2half(block_c[m][2]));
+        half result3 = __hadd(__low2half(block_c[m][3]), __high2half(block_c[m][3]));
         half2 result01 = __halves2half2(result0, result1);
         half2 result23 = __halves2half2(result2, result3);
         atomicAdd(out    , result01);

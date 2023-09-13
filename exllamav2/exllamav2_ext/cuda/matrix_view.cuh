@@ -27,10 +27,10 @@ public:
         half2* ptr = (half2*) item_ptr(row, column);
         half2 i01 = ptr[0];
         half2 i23 = ptr[1];
-        items[0] = i01.x;
-        items[1] = i01.y;
-        items[2] = i23.x;
-        items[3] = i23.y;
+        items[0] = __low2half(i01);
+        items[1] = __high2half(i01);
+        items[2] = __low2half(i23);
+        items[3] = __high2half(i23);
     }
 };
 

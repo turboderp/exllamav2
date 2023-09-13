@@ -1,6 +1,7 @@
 #include "quantize.cuh"
 #include "util.cuh"
 #include <curand_kernel.h>
+#include "compat.cuh"
 
 #define BLOCKSIZE_X 32
 #define BLOCKSIZE_Y 32

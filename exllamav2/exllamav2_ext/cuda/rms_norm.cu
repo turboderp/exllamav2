@@ -1,6 +1,10 @@
 #include "rms_norm.cuh"
 #include "util.cuh"
 
+#if defined(USE_ROCM)
+#define __shfl_xor_sync(mask, var, laneMask) __shfl_xor(var, laneMask)
+#endif
+
 // y = x * w / sqrt(row_mean(x * x) + epsilon)
 
 #define NUM_WARPS 32
