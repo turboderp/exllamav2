@@ -153,6 +153,7 @@ def measure_quant(job, save_fn, model):
         module = model.modules[index]
         module.load()
 
+
         print(f" -- Layer: {module.key} ({module.name})")
 
         # Reference forward pass
@@ -255,6 +256,8 @@ def measure_quant(job, save_fn, model):
         # Head module
 
         if module.key == "lm_head":
+
+            if module.padding > 0: output_states = output_states[:, :, :-module.padding]
 
             with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
                 cal_ids = f.get_tensor("input_ids")
@@ -370,9 +373,7 @@ def do_quant(source: ExLlamaV2Linear,
 
         # Reconstruct from packed layer
 
-        padding = -source.out_features % 32
-
-        recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features + padding, False)
+        recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features, False)
         recons_linear.device_idx = source.device_idx
         recons_dict = {}
         for k in ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]:
@@ -383,7 +384,6 @@ def do_quant(source: ExLlamaV2Linear,
         # Sanity test to ensure reconstructed matrix matches unpacked matrix
 
         quant_w = source.linear.weight.T
-        quant_w = F.pad(quant_w, (0, padding)).contiguous()
         recons_w = recons_linear.get_weight_tensor_dq()
 
         ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
@@ -536,6 +536,8 @@ def quant(job, save_fn, model):
                 # Compute perplexity for head layer without saving output state
 
                 if module.key == "lm_head" and b < job["measurement_rows"]:
+
+                    if module.padding > 0: outputs = outputs[:, :, :-module.padding]
 
                     logits = outputs[:, :-1, :]
                     target_ids = cal_ids[b].unsqueeze(0)[:, 1:].to("cuda:0")

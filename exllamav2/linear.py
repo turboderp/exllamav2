@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from exllamav2.module import ExLlamaV2Module
 from torch import nn
 from exllamav2 import ext
@@ -19,14 +20,15 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     name: str = "Linear"
 
     temp_dq: torch.tensor
+    padding: int = 0
 
     def __init__(self, model, key, in_features, out_features, has_bias):
         super().__init__(model, key)
 
-        padding = -out_features % 32
+        self.padding = -out_features % 32
 
         self.in_features = in_features
-        self.out_features = out_features + padding
+        self.out_features = out_features + self.padding
         self.has_bias = has_bias
         self.temp_dq = None
         self.footprint = -1
@@ -43,9 +45,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.q_handle = ext.make_q_matrix(w, self.temp_dq)
 
         elif isinstance(w, nn.Parameter):
+            if self.padding > 0: w = nn.Parameter(F.pad(w.data, (0, 0, 0, self.padding)).contiguous())
             self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
             self.linear.weight = w
-
 
 
     def unload(self):
