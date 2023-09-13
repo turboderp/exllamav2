@@ -41,6 +41,10 @@ __host__ __forceinline__ hipblasStatus_t __compat_hipblasHgemm(hipblasHandle_t  
                         reinterpret_cast<hipblasHalf *>(CP), ldc);
 }
 #define hipblasHgemm __compat_hipblasHgemm
+
+// Previous version of PyTorch were converting to rocBLAS instead of hipBLAS.
+#define rocblas_operation_none HIPBLAS_OP_N
+#define rocblas_hgemm __compat_hipblasHgemm
 #endif
 
 void gemm_half_q_half_cuda_part
