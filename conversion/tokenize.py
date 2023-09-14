@@ -9,11 +9,12 @@ def get_tokens(num_rows, length, filename, tokenizer):
     min_tokens = num_rows * length
 
     df = pandas.read_parquet(filename, engine = "fastparquet")
+    df['concatenated'] = df.apply(lambda r: ' '.join(r.values), axis = 1)
+
     all_tokens = torch.empty((1,0), dtype = torch.long)
 
-    for _, row in df.iterrows():
-
-        tokens = tokenizer.encode(row[0])
+    for _, row in df['concatenated'].items():
+        tokens = tokenizer.encode(row)
         all_tokens = torch.cat((all_tokens, tokens), dim = -1)
         if all_tokens.shape[-1] >= min_tokens: break
 
