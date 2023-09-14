@@ -81,7 +81,6 @@ class ExLlamaV2Config:
             if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
             elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
 
-
         # Create map of model tensors
 
         self.tensor_file_map = {}
@@ -89,11 +88,34 @@ class ExLlamaV2Config:
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
 
+        if len(self.tensor_files) == 0:
+            raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
+
         for st_file in self.tensor_files:
 
             with safe_open(st_file, framework = "pt", device = "cpu") as f:
                 for key in f.keys():
                     self.tensor_file_map[key] = st_file
+
+        # Make sure we found all the layers we need
+
+        layer_keys = ["input_layernorm",
+                      "self_attn.q_proj",
+                      "self_attn.k_proj",
+                      "self_attn.v_proj",
+                      "self_attn.o_proj",
+                      "post_attention_layernorm",
+                      "mlp.down_proj",
+                      "mlp.gate_proj",
+                      "mlp.up_proj"]
+
+        expect_keys = []
+        expect_keys += ["lm_head", "model.norm", "model.embed_tokens"]
+        expect_keys += [f"model.layers.{layer_idx}.{k}" for layer_idx in range(self.num_hidden_layers) for k in layer_keys]
+
+        for prefix in expect_keys:
+            if not any(key.startswith(prefix) for key in self.tensor_file_map):
+                raise ValueError(f" ## Could not find {prefix}.* in model")
 
         # Model dimensions
 
