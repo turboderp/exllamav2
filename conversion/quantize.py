@@ -577,6 +577,10 @@ def quant(job, save_fn, model):
             rfn_avg = rfn_sum / input_states.shape[0]
             print(f" -- Layer rfn_error: {rfn_avg:.6f}")
 
+            if math.isnan(rfn_avg) or rfn_avg > 1.0:
+                print(" ## Quantization error (3)")
+                os._exit(0)
+
             if module.key != "lm_head":
 
                 output_states = torch.cat(output_states_list, dim = 0)
