@@ -210,7 +210,9 @@ def measure_quant(job, save_fn, model):
             value_states  = [x["value_states"] for x in all_outputs_list]
             attn_output   = [x["attn_output"] for x in all_outputs_list]
             attn_proj     = [x["attn_proj"] for x in all_outputs_list]
+            
             all_outputs_list = None
+            torch.cuda.empty_cache()
 
             test_quants(module.q_proj, post_norm, query_states, qparams_options, results)
             test_quants(module.k_proj, post_norm, key_states, qparams_options, results)
@@ -234,7 +236,9 @@ def measure_quant(job, save_fn, model):
             up            = [x["up"] for x in all_outputs_list]
             pre_down      = [x["pre_down"] for x in all_outputs_list]
             down          = [x["down"] for x in all_outputs_list]
+            
             all_outputs_list = None
+            torch.cuda.empty_cache()
 
             # list_live_tensors()
             test_quants(module.gate_proj, post_norm, gate, qparams_options, results)
@@ -252,6 +256,7 @@ def measure_quant(job, save_fn, model):
         # Free up some VRAM
 
         all_outputs_list = None
+        torch.cuda.empty_cache()
 
         # Head module
 
@@ -496,6 +501,7 @@ def quant(job, save_fn, model):
         # Free up some VRAM
 
         all_outputs_list = None
+        torch.cuda.empty_cache()
 
         # Head module
 
