@@ -9,7 +9,7 @@ def get_tokens(num_rows, length, filename, tokenizer):
     min_tokens = num_rows * length
 
     df = pandas.read_parquet(filename, engine = "fastparquet")
-    df['concatenated'] = df.apply(lambda r: ' '.join(r.values), axis = 1)
+    df['concatenated'] = df.apply(lambda r: ' '.join([str(v) for v in r.values]), axis = 1)
 
     all_tokens = torch.empty((1,0), dtype = torch.long)
 
