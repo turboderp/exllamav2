@@ -153,6 +153,7 @@ def measure_quant(job, save_fn, model):
         module = model.modules[index]
         module.load()
 
+
         print(f" -- Layer: {module.key} ({module.name})")
 
         # Reference forward pass
@@ -209,7 +210,9 @@ def measure_quant(job, save_fn, model):
             value_states  = [x["value_states"] for x in all_outputs_list]
             attn_output   = [x["attn_output"] for x in all_outputs_list]
             attn_proj     = [x["attn_proj"] for x in all_outputs_list]
+            
             all_outputs_list = None
+            torch.cuda.empty_cache()
 
             test_quants(module.q_proj, post_norm, query_states, qparams_options, results)
             test_quants(module.k_proj, post_norm, key_states, qparams_options, results)
@@ -233,7 +236,9 @@ def measure_quant(job, save_fn, model):
             up            = [x["up"] for x in all_outputs_list]
             pre_down      = [x["pre_down"] for x in all_outputs_list]
             down          = [x["down"] for x in all_outputs_list]
+            
             all_outputs_list = None
+            torch.cuda.empty_cache()
 
             # list_live_tensors()
             test_quants(module.gate_proj, post_norm, gate, qparams_options, results)
@@ -251,10 +256,13 @@ def measure_quant(job, save_fn, model):
         # Free up some VRAM
 
         all_outputs_list = None
+        torch.cuda.empty_cache()
 
         # Head module
 
         if module.key == "lm_head":
+
+            if module.padding > 0: output_states = output_states[:, :, :-module.padding]
 
             with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
                 cal_ids = f.get_tensor("input_ids")
@@ -370,9 +378,7 @@ def do_quant(source: ExLlamaV2Linear,
 
         # Reconstruct from packed layer
 
-        padding = -source.out_features % 32
-
-        recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features + padding, False)
+        recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features, False)
         recons_linear.device_idx = source.device_idx
         recons_dict = {}
         for k in ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]:
@@ -383,7 +389,6 @@ def do_quant(source: ExLlamaV2Linear,
         # Sanity test to ensure reconstructed matrix matches unpacked matrix
 
         quant_w = source.linear.weight.T
-        quant_w = F.pad(quant_w, (0, padding)).contiguous()
         recons_w = recons_linear.get_weight_tensor_dq()
 
         ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
@@ -496,6 +501,7 @@ def quant(job, save_fn, model):
         # Free up some VRAM
 
         all_outputs_list = None
+        torch.cuda.empty_cache()
 
         # Head module
 
@@ -537,6 +543,8 @@ def quant(job, save_fn, model):
 
                 if module.key == "lm_head" and b < job["measurement_rows"]:
 
+                    if module.padding > 0: outputs = outputs[:, :, :-module.padding]
+
                     logits = outputs[:, :-1, :]
                     target_ids = cal_ids[b].unsqueeze(0)[:, 1:].to("cuda:0")
 
@@ -568,6 +576,10 @@ def quant(job, save_fn, model):
 
             rfn_avg = rfn_sum / input_states.shape[0]
             print(f" -- Layer rfn_error: {rfn_avg:.6f}")
+
+            if math.isnan(rfn_avg) or rfn_avg > 1.0:
+                print(" ## Quantization error (3)")
+                os._exit(0)
 
             if module.key != "lm_head":
 

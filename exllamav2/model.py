@@ -424,4 +424,11 @@ class ExLlamaV2:
             else:
                 cache.current_seq_len += seq_len
 
+        # Set padding logits to -inf
+
+        if x is not None:
+            head_padding = self.modules[-1].padding
+            if head_padding > 0:
+                x[:, :, -head_padding:] = -65504.
+
         return x

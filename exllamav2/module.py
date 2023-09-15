@@ -19,6 +19,7 @@ def _tsize(st, key):
     if dtype == "I32": return numel * 4
     elif dtype == "I16": return numel * 2
     elif dtype == "F16": return numel * 2
+    elif dtype == "BF16": return numel * 2
     elif dtype == "F32": return numel * 4
     else: raise ValueError(f"Unexpected datatype {dtype}: {key}")
 

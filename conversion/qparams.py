@@ -87,7 +87,7 @@ class QParams:
         return s
 
 
-# gemm_q_half requires groupsize divisible by 16
+# kernels require groupsize divisible by 32
 
 qparams_options = \
 [
@@ -112,7 +112,7 @@ qparams_options = \
 
 qparams_headoptions = \
 {
-    2: QParams(16, [4, 2], [0.3, 0.7], 4),
+    2: QParams(32, [4, 2], [0.3, 0.7], 4),
     3: QParams(32, [4, 3], [0.15, 0.85], 4),
     4: QParams(32, [6, 4], [0.15, 0.85], 4),
     5: QParams(32, [6, 5], [0.15, 0.85], 4),
