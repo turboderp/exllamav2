@@ -8,9 +8,20 @@ from exllamav2.cache import ExLlamaV2Cache
 import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-# from flash_attn import flash_attn_func
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
+
+# Detect flash-attn
+
+has_flash_attn = False
+try:
+    import flash_attn
+    flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".")]
+    if flash_attn_ver >= [2, 2, 1]:
+        from flash_attn import flash_attn_func
+        has_flash_attn = True
+except ModuleNotFoundError:
+    pass
 
 class ExLlamaV2Attention(ExLlamaV2Module):
 
@@ -164,8 +175,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     def temp_attn_size(self):
+        global has_flash_attn
 
         att_max = min(self.model.config.max_attention_size, self.model.config.max_seq_len ** 2)
+
+        if has_flash_attn and not self.model.config.no_flash_attn:
+            eff = self.model.config.max_attention_size ** 0.5 / 220  # based on supposed memory savings listed in flash-attn repo + some fudging
+            att_max //= eff
+
         return 2 * att_max * self.model.config.num_attention_heads * 2 + 128
 
 
@@ -190,6 +207,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+        global has_flash_attn
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates)
@@ -280,32 +298,36 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             # Torch matmul attention
 
-            q_states = q_states.transpose(1, 2)
-            k_states = k_states.transpose(1, 2)
-            v_states = v_states.transpose(1, 2)
+            if self.model.config.no_flash_attn or not has_flash_attn:
 
-            k_states = self.repeat_kv(k_states, num_key_value_groups)
-            k_states = k_states.transpose(-1, -2)
+                q_states = q_states.transpose(1, 2)
+                k_states = k_states.transpose(1, 2)
+                v_states = v_states.transpose(1, 2)
 
-            attn_weights = torch.matmul(q_states, k_states)
-            k_states = None
-            q_states = None
+                k_states = self.repeat_kv(k_states, num_key_value_groups)
+                k_states = k_states.transpose(-1, -2)
 
-            attn_weights /= math.sqrt(head_dim)
-            if attn_mask is not None: attn_weights = attn_weights + attn_mask
-            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
+                attn_weights = torch.matmul(q_states, k_states)
+                k_states = None
+                q_states = None
 
-            v_states = self.repeat_kv(v_states, num_key_value_groups)
-            attn_output = torch.matmul(attn_weights, v_states)
-            v_states = None
+                attn_weights /= math.sqrt(head_dim)
+                if attn_mask is not None: attn_weights = attn_weights + attn_mask
+                attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
-            attn_output = attn_output.transpose(1, 2)
-            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+                v_states = self.repeat_kv(v_states, num_key_value_groups)
+                attn_output = torch.matmul(attn_weights, v_states)
+                v_states = None
 
-            # Flash Attention 2.0
+                attn_output = attn_output.transpose(1, 2)
+                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
-            # attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
-            # attn_output = attn_output.reshape((batch_size, q_len, hidden_size));
+            # Flash Attention 2
+
+            else:
+
+                attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
+                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
             # xformers memory_efficient_attention
 
@@ -350,6 +372,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 v_states_b = batch_values.narrow(1, 0, past_len[1][i] + q_len)
 
                 # Torch matmul attention
+
+                # TODO: enable flash-attn
 
                 q_states_b = q_states.transpose(1, 2).narrow(0, i, 1)
                 k_states_b = k_states_b.transpose(1, 2)
@@ -451,28 +475,37 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             key_states = cache.key_states[self.layer_idx].narrow(1, 0, past_len + q_len)
             value_states = cache.value_states[self.layer_idx].narrow(1, 0, past_len + q_len)
 
-        # Attention
+        # Torch matmul attention
 
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
+        if self.model.config.no_flash_attn or not has_flash_attn:
 
-        key_states = self.repeat_kv(key_states, self.model.config.num_key_value_groups)
-        key_states = key_states.transpose(-1, -2)
+            query_states = query_states.transpose(1, 2)
+            key_states = key_states.transpose(1, 2)
+            value_states = value_states.transpose(1, 2)
 
-        attn_weights = torch.matmul(query_states, key_states)
+            key_states = self.repeat_kv(key_states, self.model.config.num_key_value_groups)
+            key_states = key_states.transpose(-1, -2)
 
-        attn_weights /= math.sqrt(head_dim)
-        if attn_mask is not None: attn_weights = attn_weights + attn_mask
-        attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
+            attn_weights = torch.matmul(query_states, key_states)
 
-        value_states = self.repeat_kv(value_states, self.model.config.num_key_value_groups)
-        attn_output = torch.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose(1, 2)
+            if attn_mask is not None: attn_weights = attn_weights + attn_mask
+            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
+
+            value_states = self.repeat_kv(value_states, self.model.config.num_key_value_groups)
+            attn_output = torch.matmul(attn_weights, value_states)
+
+            attn_output = attn_output.transpose(1, 2)
+            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+
+        # Flash Attention 2
+
+        else:
+
+            attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
+            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
         # Output projection
 
-        attn_output = attn_output.reshape(batch_size, q_len, hidden_size)
         attn_proj = self.o_proj.forward(attn_output)
 
         # Add residual connection
@@ -481,11 +514,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if intermediates:
             return {"post_norm": post_norm,
-                    "query_states": query_states_im,
-                    "key_states": key_states_im,
-                    "value_states": value_states_im,
+                    # "query_states": query_states_im,
+                    # "key_states": key_states_im,
+                    # "value_states": value_states_im,
                     "attn_output": attn_output,
-                    "attn_proj": attn_proj,
+                    # "attn_proj": attn_proj,
                     "hidden_states": hidden_states}
         else:
             return hidden_states

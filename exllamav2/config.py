@@ -15,6 +15,8 @@ class ExLlamaV2Config:
     scale_pos_emb: float = 1.0                  # Factor by which to scale positional embeddings, e.g. for 4096-token sequence use a scaling factor of 2.0, requires finetuned model or LoRA
     scale_alpha_value: float = 1.0              # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model
 
+    no_flash_attn: bool = False                 # Implementation will automatically use flash-attn-2 when available
+
     # Loaded/set by .prepare():
 
     model_config: str
