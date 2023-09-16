@@ -514,11 +514,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if intermediates:
             return {"post_norm": post_norm,
-                    # "query_states": query_states_im,
-                    # "key_states": key_states_im,
-                    # "value_states": value_states_im,
+                    "query_states": query_states_im,
+                    "key_states": key_states_im,
+                    "value_states": value_states_im,
                     "attn_output": attn_output,
-                    # "attn_proj": attn_proj,
+                    "attn_proj": attn_proj,
                     "hidden_states": hidden_states}
         else:
             return hidden_states
