@@ -147,10 +147,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         if intermediates:
             return {"post_norm": post_norm,
-                    "gate": gate,
-                    "up": up,
+                    # "gate": gate,
+                    # "up": up,
                     "pre_down": y,
-                    "down": down,
+                    # "down": down,
                     "hidden_states": hidden_states}
         else:
             return hidden_states
