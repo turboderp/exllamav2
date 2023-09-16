@@ -169,12 +169,12 @@ def measure_quant(job, save_fn, model):
             with safe_open(in_name, framework = "pt", device = "cpu" if page_rows else "cuda:0") as f:
                 input_states = f.get_tensor("hidden_state")
 
-        output_states_list = []
-        all_outputs_list = []
-        quantizers = {}
-        results = None
-
         with torch.inference_mode():
+
+            output_states_list = []
+            all_outputs_list = []
+            quantizers = {}
+            results = None
 
             batchsize = 1
             batch1 = []
@@ -191,6 +191,11 @@ def measure_quant(job, save_fn, model):
                     attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
 
                 outputs = module.forward(x, cache, attn_mask, intermediates = True)
+
+                for k, v in outputs.items():
+                    v[v == -float('inf')] = -65504.0
+                    v[v == float('inf')] = 65504.0
+
                 if page_rows:
                     for k in outputs.keys(): outputs[k] = outputs[k].to("cpu")
 
@@ -241,112 +246,119 @@ def measure_quant(job, save_fn, model):
             input_states = None
             save_file({ "hidden_state": output_states }, out_name)
 
-        # Attention layer
+            # Attention layer
 
-        if isinstance(module, ExLlamaV2Attention):
+            if isinstance(module, ExLlamaV2Attention):
 
-            results = []
+                results = []
 
-            post_norm     = [x["post_norm"] for x in all_outputs_list]
-            query_states  = [x["query_states"] for x in all_outputs_list]
-            key_states    = [x["key_states"] for x in all_outputs_list]
-            value_states  = [x["value_states"] for x in all_outputs_list]
-            attn_output   = [x["attn_output"] for x in all_outputs_list]
-            attn_proj     = [x["attn_proj"] for x in all_outputs_list]
-            
+                post_norm     = [x["post_norm"] for x in all_outputs_list]
+                query_states  = [x["query_states"] for x in all_outputs_list]
+                key_states    = [x["key_states"] for x in all_outputs_list]
+                value_states  = [x["value_states"] for x in all_outputs_list]
+                attn_output   = [x["attn_output"] for x in all_outputs_list]
+                attn_proj     = [x["attn_proj"] for x in all_outputs_list]
+
+                all_outputs_list = None
+                torch.cuda.empty_cache()
+
+                test_quants(module.q_proj, quantizers["q_proj"], post_norm, query_states, qparams_options, results)
+                quantizers["k_proj"].reuse_h(quantizers["q_proj"])
+                quantizers["v_proj"].reuse_h(quantizers["q_proj"])
+                del quantizers["q_proj"]
+                torch.cuda.empty_cache()
+
+                test_quants(module.k_proj, quantizers["k_proj"], post_norm, key_states, qparams_options, results, skip_prep = True)
+                del quantizers["k_proj"]
+                torch.cuda.empty_cache()
+
+                test_quants(module.v_proj, quantizers["v_proj"], post_norm, value_states, qparams_options, results, skip_prep = True)
+                post_norm = None
+                del quantizers["v_proj"]
+                torch.cuda.empty_cache()
+
+                test_quants(module.o_proj, quantizers["o_proj"], attn_output, attn_proj, qparams_options, results)
+                del quantizers["o_proj"]
+                query_states = None
+                key_states = None
+                value_states = None
+                attn_output = None
+                attn_proj = None
+                torch.cuda.empty_cache()
+
+            # MLP layer
+
+            if isinstance(module, ExLlamaV2MLP):
+
+                results = []
+
+                post_norm     = [x["post_norm"] for x in all_outputs_list]
+                gate          = [x["gate"] for x in all_outputs_list]
+                up            = [x["up"] for x in all_outputs_list]
+                pre_down      = [x["pre_down"] for x in all_outputs_list]
+                down          = [x["down"] for x in all_outputs_list]
+
+                all_outputs_list = None
+
+                test_quants(module.gate_proj, quantizers["gate_proj"], post_norm, gate, qparams_options, results)
+                quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+                del quantizers["gate_proj"]
+                gate = None
+                torch.cuda.empty_cache()
+
+                test_quants(module.up_proj, quantizers["up_proj"], post_norm, up, qparams_options, results, skip_prep = True)
+                del quantizers["up_proj"]
+                up = None
+                post_norm = None
+                torch.cuda.empty_cache()
+
+                test_quants(module.down_proj, quantizers["down_proj"], pre_down, down, qparams_options, results)
+                del quantizers["down_proj"]
+                pre_down = None
+                down = None
+                torch.cuda.empty_cache()
+
+            # Free up some VRAM
+
             all_outputs_list = None
             torch.cuda.empty_cache()
 
-            test_quants(module.q_proj, quantizers["q_proj"], post_norm, query_states, qparams_options, results)
-            quantizers["k_proj"].reuse_h(quantizers["q_proj"])
-            quantizers["v_proj"].reuse_h(quantizers["q_proj"])
-            del quantizers["q_proj"]
+            # Head module
 
-            test_quants(module.k_proj, quantizers["k_proj"], post_norm, key_states, qparams_options, results, skip_prep = True)
-            del quantizers["k_proj"]
+            if module.key == "lm_head":
 
-            test_quants(module.v_proj, quantizers["v_proj"], post_norm, value_states, qparams_options, results, skip_prep = True)
-            del quantizers["v_proj"]
+                if module.padding > 0: output_states = output_states[:, :, :-module.padding]
 
-            test_quants(module.o_proj, quantizers["o_proj"], attn_output, attn_proj, qparams_options, results)
-            del quantizers["o_proj"]
+                with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
+                    cal_ids = f.get_tensor("input_ids")
 
-            post_norm = None
-            query_states = None
-            key_states = None
-            value_states = None
-            attn_output = None
-            attn_proj = None
+                with torch.inference_mode():
 
-        # MLP layer
+                    logprob_sum = 0.0
+                    logprob_count = 0
 
-        if isinstance(module, ExLlamaV2MLP):
+                    for i in range(output_states.shape[0]):
 
-            results = []
+                        logits = output_states[i:i+1, :, :].to("cuda:0")
+                        ids = cal_ids[i]
 
-            post_norm     = [x["post_norm"] for x in all_outputs_list]
-            gate          = [x["gate"] for x in all_outputs_list]
-            up            = [x["up"] for x in all_outputs_list]
-            pre_down      = [x["pre_down"] for x in all_outputs_list]
-            down          = [x["down"] for x in all_outputs_list]
-            
-            all_outputs_list = None
-            torch.cuda.empty_cache()
+                        target_ids = ids.unsqueeze(0)[:, 1:].to("cuda:0")
+                        logits = logits[:, :-1, :]
 
-            test_quants(module.gate_proj, quantizers["gate_proj"], post_norm, gate, qparams_options, results)
-            quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+                        log_probs = F.log_softmax(logits, dim = -1)
+                        token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+                        logprob_sum += token_log_probs.sum().item()
+                        logprob_count += target_ids.numel()
 
-            gate = None
+                    mean_log_prob = logprob_sum / logprob_count
+                    perplexity = math.exp(-mean_log_prob)
 
-            test_quants(module.up_proj, quantizers["up_proj"], post_norm, up, qparams_options, results, skip_prep = True)
-            up = None
-            post_norm = None
+                    print(f" -- Calibration perplexity (base): {perplexity:.4f}")
+                    job["base_perplexity"] = perplexity
 
-            test_quants(module.down_proj, quantizers["down_proj"], pre_down, down, qparams_options, results)
-            pre_down = None
-            down = None
+            # Unload module
 
-        # Free up some VRAM
-
-        all_outputs_list = None
-        torch.cuda.empty_cache()
-
-        # Head module
-
-        if module.key == "lm_head":
-
-            if module.padding > 0: output_states = output_states[:, :, :-module.padding]
-
-            with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
-                cal_ids = f.get_tensor("input_ids")
-
-            with torch.inference_mode():
-
-                logprob_sum = 0.0
-                logprob_count = 0
-
-                for i in range(output_states.shape[0]):
-
-                    logits = output_states[i:i+1, :, :].to("cuda:0")
-                    ids = cal_ids[i]
-
-                    target_ids = ids.unsqueeze(0)[:, 1:].to("cuda:0")
-                    logits = logits[:, :-1, :]
-
-                    log_probs = F.log_softmax(logits, dim = -1)
-                    token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
-                    logprob_sum += token_log_probs.sum().item()
-                    logprob_count += target_ids.numel()
-
-                mean_log_prob = logprob_sum / logprob_count
-                perplexity = math.exp(-mean_log_prob)
-
-                print(f" -- Calibration perplexity (base): {perplexity:.4f}")
-                job["base_perplexity"] = perplexity
-
-        # Unload module
-
-        module.unload()
+            module.unload()
 
         # Advance
 
