@@ -138,3 +138,8 @@ There are still things that need to be ported over from V1, and other planned fe
 ## Updates
 
 **2023-09-13**: Preliminary ROCm support added, thanks to @ardfork. Bumped to 0.0.1
+
+**2023-09-16**: Reworked the quantizer a bit, now gives somewhat more precise quants and uses less VRAM, and it should
+be more resilient. The quantizer now saves sharded models (default size of 8 GB) to prevent massive system RAM usage
+when compiling large output files. The kernels should be slightly more precise as well, especially for GPTQ files.
+Flash Attention is used now, when available, requiring at least version **2.2.1** installed.
