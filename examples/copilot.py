@@ -61,8 +61,8 @@ async def startup_event():
     )
     snapshot_download(
         repo_id=MODEL_HG_REPO_ID,
-        cache_dir="models/.cache",
-        local_dir="models",
+        cache_dir=f"{os.getcwd()}/models/.cache",
+        local_dir=f"{os.getcwd()}/models",
         resume_download=True,
     )
     log.debug("Creating generator instance...")
