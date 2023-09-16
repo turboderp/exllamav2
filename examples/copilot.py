@@ -2,7 +2,7 @@
 # The server depends on fastapi/uvicorn/huggingface-hub (for auto download the model files), to run the server:
 # 1. `pip install uvicorn fastapi huggingface-hub`
 # 2. `uvicorn copilot:app --reload --host 0.0.0.0 --port 9999`
-# 3. Configure VSCode copilot extension:
+# 3. Configure VSCode copilot extension (in VSCode's settings.json):
 # ```json
 # "github.copilot.advanced": {
 #     "debug.overrideEngine": "engine", # can be any string.
@@ -72,6 +72,7 @@ async def startup_event():
     config.prepare()
     tokenizer = ExLlamaV2Tokenizer(config)
     model = ExLlamaV2(config)
+    model.load([16, 24])
     cache = ExLlamaV2Cache(model)
 
     generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
