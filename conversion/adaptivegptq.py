@@ -70,7 +70,7 @@ class AdaptiveQuantizer:
 
 class AdaptiveGPTQ:
 
-    percdamp: float = 0.05
+    percdamp: float = 0.01
 
     layer: nn.Linear
     device: torch.device
@@ -180,9 +180,12 @@ class AdaptiveGPTQ:
 
         diagonal = torch.diag(self.hessian)
 
-        dead = diagonal == 0
-        self.hessian[dead, dead] = 1
-        self.weights[dead, :] = 0
+        # Zero weights that have no impact. Disabling this since it feels a little drastic based on just the calibration
+        # data. It likely never triggers, anyway.
+
+        # dead = diagonal == 0.0
+        # self.hessian[dead, dead] = 1
+        # self.weights[dead, :] = 0
 
         # Activation order
 
@@ -190,30 +193,41 @@ class AdaptiveGPTQ:
         self.weights = self.weights[self.perm, :]
         hessian = self.hessian[self.perm][:, self.perm]
 
+        # In case numerical errors have caused some asymmetry in H, assume it's close to symmetrical and force it
+
+        hessian = (hessian + hessian.T) * 0.5
+
         # Damping
 
-        damp = self.percdamp * torch.mean(torch.diag(hessian))
-        d = torch.arange(self.rows, device = self.device)
-        hessian[d, d] += damp
-
-        # hessian = hessian.to(torch.float64)
-        # testq = torch.max(hessian)
-        # testr = torch.min(hessian)
-        # testd = torch.diagonal(hessian)
-        # testds, testds1 = torch.sort(testd)
-        # test = torch.allclose(hessian, hessian.T)
-        # eigenvalues = torch.linalg.eigvalsh(hessian)
-        # condition_number = eigenvalues[-1] / eigenvalues[0]
-        # print(condition_number)
-        # test2 = torch.any(eigenvalues <= 0)
-        # test3, test4 = torch.sort(eigenvalues)
+        diagonal = torch.diag(hessian)
+        damp = torch.clamp(self.percdamp * torch.mean(diagonal), min = self.percdamp)
 
         # Inverse of H
 
-        hessian_inv = torch.linalg.cholesky(hessian)
-        hessian_inv = torch.cholesky_inverse(hessian_inv)
-        hessian_inv = torch.linalg.cholesky(hessian_inv, upper = True)
-        hessian_inv = hessian_inv.contiguous()
+        attempts = 0
+        while True:
+
+            try:
+
+                d = torch.arange(self.rows, device = self.device)
+                hessian[d, d] += damp
+
+                hessian_inv = torch.linalg.cholesky(hessian)
+                hessian_inv = torch.cholesky_inverse(hessian_inv)
+                hessian_inv = torch.linalg.cholesky(hessian_inv, upper = True)
+                hessian_inv = hessian_inv.contiguous()
+
+                break
+
+            except RuntimeError:
+
+                # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift the
+                # eigenvalues in a positive direction.
+
+                damp *= 1.2
+                attempts += 1
+                if attempts == 10:
+                    raise ValueError("Hessian is not invertible")
 
         self.hessian_inv = hessian_inv
         self.hessian = None
