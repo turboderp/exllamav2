@@ -22,6 +22,7 @@ parser.add_argument("-ml", "--measurement_length", type = int, default = 2048, h
 parser.add_argument("-b", "--bits", type = float, default = 4.156, help = "Target bits per weight")
 parser.add_argument("-hb", "--head_bits", type = int, default = 6, help = "Target bits per weight (head layer)")
 parser.add_argument("-m", "--measurement", type = str, help = "Reuse previous measurement")
+parser.add_argument("-ss", "--shard_size", type = str, help = "Max shard size in MB (default: 8192)", default = 8192)
 
 args = parser.parse_args()
 
@@ -38,6 +39,7 @@ measurement_length = args.measurement_length
 bits = args.bits
 head_bits = args.head_bits
 reuse_measurement = args.measurement
+shard_size = args.shard_size if args.shard_size > 0 else 1024 ** 3  # 1 PB = unlimited
 
 if not os.path.exists(out_dir):
     print(f" ## Error: Directory not found: {out_dir}")
@@ -91,6 +93,7 @@ if not os.path.exists(job_file):
             "bits": bits,
             "head_bits": head_bits,
             "progress": "begin",
+            "shard_size": shard_size
             }
 
     if reuse_measurement is not None:
@@ -119,6 +122,8 @@ else:
         print(" ** Error: Corrupted job")
         sys.exit()
 
+    if "shard_size" not in job: job["shard_size"] = shard_size
+
     job["out_dir"] = out_dir
 
 # Feedback
@@ -127,6 +132,7 @@ print(f" -- Input: {job['in_dir']}")
 print(f" -- Output: {out_dir}")
 print(f" -- Calibration dataset: {job['cal_dataset']}, {job['dataset_rows']} / {job['measurement_rows']} ({job['gpu_rows']}) rows, {job['length']} tokens per sample")
 print(f" -- Target bits per weight: {job['bits']} (decoder), {job['head_bits']} (head)")
+print(f" -- Max shard size: {job['shard_size']} MB")
 
 # Make sure subfolders exist
 
