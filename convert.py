@@ -6,6 +6,7 @@ from conversion.tokenize import tokenize
 from conversion.quantize import embeddings, measure_quant, quant
 from conversion.optimize import optimize
 from conversion.compile import compile_model
+from conversion.qparams import qparams_headoptions
 
 # import tracemalloc
 # tracemalloc.start()
@@ -25,6 +26,30 @@ parser.add_argument("-m", "--measurement", type = str, help = "Reuse previous me
 parser.add_argument("-ss", "--shard_size", type = str, help = "Max shard size in MB (default: 8192)", default = 8192)
 
 args = parser.parse_args()
+
+# Check some args
+
+if not args.in_dir:
+    print(" ## Please specify input model directory (-i, --in_dir)")
+    sys.exit()
+
+if not args.out_dir:
+    print(" ## Please specify output/working directory (-o, --out_dir)")
+    sys.exit()
+
+if not args.cal_dataset:
+    print(" ## Please specify dataset Parquet file (-c, --cal_dataset)")
+    sys.exit()
+
+if args.length > 2048 or args.measurement_length > 2048:
+    print(" !! Warning: calibration rows > 2048 tokens may result in excessive VRAM use")
+
+if not args.head_bits in qparams_headoptions:
+    print(f" ## Error: {args.head_bits} is not a supported option for head layer bitrate")
+    sys.exit()
+
+if args.bits < 2 or args.bits > 8:
+    print(f" !! Warning: target bitrate {args.bits} will likely not be attainable")
 
 # Arguments
 

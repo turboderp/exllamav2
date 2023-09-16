@@ -117,7 +117,6 @@ if args.eval_dataset:
         logprob_count = 0
 
         for i in range(eval_tokens.shape[0]):
-        #for i in range(126, 127):
 
             if i % 10 == 0: print(".", end = "")
             sys.stdout.flush()
@@ -126,8 +125,7 @@ if args.eval_dataset:
 
             input_ids = input_ids[:, :-1]
             logits = model.forward(input_ids)
-
-            # print (tokenizer.decode(input_ids))
+            logits = logits.float() + 1e-10
 
             target_ids = input_ids[:, 1:].to(logits.device)
 
