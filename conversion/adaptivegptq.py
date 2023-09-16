@@ -70,7 +70,7 @@ class AdaptiveQuantizer:
 
 class AdaptiveGPTQ:
 
-    percdamp: float = 0.01
+    percdamp: float = 0.07
 
     layer: nn.Linear
     device: torch.device
@@ -114,7 +114,7 @@ class AdaptiveGPTQ:
         self.columns = self.layer.weight.data.shape[0]
 
         self.weights = self.layer.weight.data.T.clone().float().contiguous()
-        self.hessian = torch.zeros((self.rows, self.rows), device = self.device, dtype = torch.float)
+        self.hessian = None
         self.num_samples = 0
         self.num_batches = 0
 
@@ -166,6 +166,9 @@ class AdaptiveGPTQ:
 
     def add_batch(self, inputs):
 
+        if self.hessian is None:
+            self.hessian = torch.zeros((self.rows, self.rows), device=self.device, dtype=torch.float)
+
         self.num_batches += 1
         num_samples = len(inputs)
         inputs = torch.cat(inputs, dim = 0)
@@ -196,11 +199,12 @@ class AdaptiveGPTQ:
         # In case numerical errors have caused some asymmetry in H, assume it's close to symmetrical and force it
 
         hessian = (hessian + hessian.T) * 0.5
+        torch.cuda.empty_cache()
 
         # Damping
 
         diagonal = torch.diag(hessian)
-        damp = torch.clamp(self.percdamp * torch.mean(diagonal), min = self.percdamp)
+        damp = torch.clamp(self.percdamp * torch.mean(diagonal), min = 1e-5)
 
         # Inverse of H
 
@@ -224,13 +228,19 @@ class AdaptiveGPTQ:
                 # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift the
                 # eigenvalues in a positive direction.
 
-                damp *= 1.2
                 attempts += 1
-                if attempts == 10:
+                if attempts == 5:
                     raise ValueError("Hessian is not invertible")
 
         self.hessian_inv = hessian_inv
         self.hessian = None
+
+    def reuse_h(self, other):
+
+        self.hessian_inv = other.hessian_inv
+        self.hessian = None
+        self.perm = other.perm
+        self.weights = self.weights[self.perm, :]
 
 
     def quantize(self, keep_qweight = False):
