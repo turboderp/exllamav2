@@ -75,13 +75,33 @@ __forceinline__ __device__ void dequant_4bit_8_prep_zero_scale
     z1z16[0] = __hmul2(scale2, __half2half2(z1.as_half));
     z1z16[1] = __hmul2(scale2, __half2half2(z16));
 
-    const half y1_ = __float2half_rn(1.0f);
-    const half y16_ = __float2half_rn(1.0f / 16.0f);
-    const half2 y16 = __half2half2(y16_);
+    const half y1 = __float2half_rn(1.0f);
+    const half y16 = __float2half_rn(1.0f / 16.0f);
 
-    y1y16[0] = __hmul2(scale2, __half2half2(y1_));
-    y1y16[1] = __hmul2(scale2, __half2half2(y16_));
+    y1y16[0] = __hmul2(scale2, __half2half2(y1));
+    y1y16[1] = __hmul2(scale2, __half2half2(y16));
 }
+
+__forceinline__ __device__ void dequant_4bit_8_prep_zero
+(
+    const uint32_t zero,
+    half2(&z1z16)[2],
+    half2(&y1y16)[2]
+)
+{
+    half_uint16 z1(0xe400 | zero); // half(-1024.0f - zero);
+    half z16 = __hsub(__int2half_rn(-64), __int2half_rn(zero));
+
+    z1z16[0] = __half2half2(z1.as_half);
+    z1z16[1] = __half2half2(z16);
+
+    const half y1 = __float2half_rn(1.0f);
+    const half y16 = __float2half_rn(1.0f / 16.0f);
+
+    y1y16[0] = __half2half2(y1);
+    y1y16[1] = __half2half2(y16);
+}
+
 
 __forceinline__ __device__ void dequant_4bit_8_gptq
 (
@@ -89,22 +109,33 @@ __forceinline__ __device__ void dequant_4bit_8_gptq
     half2 (&dq)[4],
     half2 (&z1z16)[2],
     half2 (&y1y16)[2],
-    int stride
+    int stride,
+    bool scaled
 )
 {
     const uint32_t c0 = 0x64006400;
 
     uint32_t qa = q_0;
-    half2_uint32 q0((qa & 0x000f000f) | c0); // half2(q[ 0], q[ 1])      + 1024
-    half2_uint32 q1((qa & 0x00f000f0) | c0); // half2(q[ 2], q[ 3]) * 16 + 1024
+    half2_uint32 q0((qa & 0x000f000f) | c0); // half2( q[0]      + 1024, q[1]      + 1024 )
+    half2_uint32 q1((qa & 0x00f000f0) | c0); // half2( q[2] * 16 + 1024, q[3] * 16 + 1024 )
     qa >>= 8;
-    half2_uint32 q2((qa & 0x000f000f) | c0); // half2(q[ 4], q[ 5])      + 1024
-    half2_uint32 q3((qa & 0x00f000f0) | c0); // half2(q[ 6], q[ 7]) * 16 + 1024
+    half2_uint32 q2((qa & 0x000f000f) | c0); // half2( q[4]      + 1024, q[5]      + 1024 )
+    half2_uint32 q3((qa & 0x00f000f0) | c0); // half2( q[6] * 16 + 1024, q[7] * 16 + 1024 )
 
-    dq[0] = __hfma2(q0.as_half2, y1y16[0], z1z16[0]);  //  q2  * ( 1/1)*s  + (-1024-z)*s
-    dq[1] = __hfma2(q1.as_half2, y1y16[1], z1z16[1]);  //  q2  * (1/16)*s  + (  -64-z)*s
-    dq[2] = __hfma2(q2.as_half2, y1y16[0], z1z16[0]);
-    dq[3] = __hfma2(q3.as_half2, y1y16[1], z1z16[1]);
+    if (scaled)
+    {
+        dq[0] = __hfma2(q0.as_half2, y1y16[0], z1z16[0]);  // half2( q[0] * s - z * s, q[1] * s - z * s)
+        dq[1] = __hfma2(q1.as_half2, y1y16[1], z1z16[1]);  // half2( q[2] * s - z * s, q[3] * s - z * s)
+        dq[2] = __hfma2(q2.as_half2, y1y16[0], z1z16[0]);
+        dq[3] = __hfma2(q3.as_half2, y1y16[1], z1z16[1]);
+    }
+    else
+    {
+        dq[0] = __hadd2(q0.as_half2,           z1z16[0]);  // half2( q[0] - z, q[1] - z )
+        dq[1] = __hfma2(q1.as_half2, y1y16[1], z1z16[1]);  // half2( q[2] - z, q[3] - z )
+        dq[2] = __hadd2(q2.as_half2,           z1z16[0]);  // half2( q[4] - z, q[5] - z )
+        dq[3] = __hfma2(q3.as_half2, y1y16[1], z1z16[1]);  // half2( q[6] - z, q[7] - z )
+    }
 }
 
 #else
@@ -144,13 +175,25 @@ __forceinline__ __device__ void dequant_4bit_8_prep_zero_scale
     y1[0] = __half2half2(scale);
 }
 
+__forceinline__ __device__ void dequant_4bit_8_prep_zero
+(
+    const uint32_t zero,
+    half2(&z1)[2],
+    half2(&y1)[2]
+)
+{
+    half z = __int2half_rn(-((int)zero));
+    z1[0] = __half2half2(z);
+}
+
 __forceinline__ __device__ void dequant_4bit_8_gptq
 (
     const uint32_t q_0,
     half2 (&dq)[4],
     half2 (&z1)[2],
     half2 (&y1)[2],
-    int stride
+    int stride,
+    bool scaled
 )
 {
     half2 dqh2[8];
@@ -163,10 +206,20 @@ __forceinline__ __device__ void dequant_4bit_8_gptq
         dqh2[i] = __halves2half2(d0, d1);
     }
 
-    dq[0] = __hfma2(dqh2[0], y1[0], z1[0]);
-    dq[1] = __hfma2(dqh2[1], y1[0], z1[0]);
-    dq[2] = __hfma2(dqh2[2], y1[0], z1[0]);
-    dq[3] = __hfma2(dqh2[3], y1[0], z1[0]);
+    if (scaled)
+    {
+        dq[0] = __hfma2(dqh2[0], y1[0], z1[0]);
+        dq[1] = __hfma2(dqh2[1], y1[0], z1[0]);
+        dq[2] = __hfma2(dqh2[2], y1[0], z1[0]);
+        dq[3] = __hfma2(dqh2[3], y1[0], z1[0]);
+    }
+    else
+    {
+        dq[0] = __hadd2(dqh2[0], z1[0]);
+        dq[1] = __hadd2(dqh2[1], z1[0]);
+        dq[2] = __hadd2(dqh2[2], z1[0]);
+        dq[3] = __hadd2(dqh2[3], z1[0]);
+    }
 }
 
 #endif
