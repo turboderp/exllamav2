@@ -31,19 +31,15 @@ from exllamav2.generator import ExLlamaV2StreamingGenerator, ExLlamaV2Sampler
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from huggingface_hub import snapshot_download
-from typing import (
-    Any,
-    List,
-    Optional,
-)
-from pydantic import BaseModel, Field
+from typing import List, Optional
+from pydantic import BaseModel
 
 log = logging.getLogger("uvicorn")
 log.setLevel("DEBUG")
 app = FastAPI()
 
 # Find one here https://huggingface.co/turboderp
-MODEL_HG_REPO_ID = "TheBloke/CodeLlama-34B-Python-GPTQ"
+MODEL_HG_REPO_ID = "turboderp/CodeLlama-13B-instruct-2.65bpw-h6-exl2"
 
 
 @app.on_event("startup")
@@ -71,15 +67,21 @@ async def startup_event():
     config.model_dir = model_directory
     config.prepare()
     tokenizer = ExLlamaV2Tokenizer(config)
+    log.debug("Creating tokenizer instance...")
     model = ExLlamaV2(config)
+    log.debug("Loading model...")
     model.load([16, 24])
+    log.debug("Creating cache instance...")
     cache = ExLlamaV2Cache(model)
 
+    log.debug("Creating generator instance...")
     generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
     # Ensure CUDA is initialized
+    log.debug("Warming up generator instance...")
     generator.warmup()
     app.state.generator = generator
     app.state.tokenizer = tokenizer
+    log.debug("Generator instance created.")
 
 
 class CompletionRequestBody(BaseModel):
@@ -87,33 +89,17 @@ class CompletionRequestBody(BaseModel):
     from from https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/server/app.py
     """
 
-    prompt: str = Field(
-        default="", description="The prompt to generate completions for."
-    )
-    max_tokens: Optional[int]
-    temperature: Optional[float]
-    top_p: Optional[float]
-    stop: Optional[List[str] | str]
-    stream: bool = Field()
-    model: str = Field()
+    prompt: str = ""
+    max_tokens: Optional[int] = 99999
+    temperature: Optional[float] = 0.85
+    top_p: Optional[float] = 0.8
+    stop: Optional[List[str] | str] = ["\ndef ", "\nclass ", "\nif ", "\n\n#"]
+    stream: bool = True
+    model: str = ""
     # llama.cpp specific parameters
-    top_k: Optional[int]
-    repetition_penalty: Optional[float]
-    last_n_tokens: Optional[int]
-    seed: Optional[int]
-    batch_size: Optional[int]
-    threads: Optional[int]
+    top_k: Optional[int] = 50
 
-    # ignored or currently unsupported
-    suffix: Any
-    presence_penalty: Any
-    frequency_penalty: Any
-    echo: Any
-    n: Any
-    logprobs: Any
-    best_of: Any
-    logit_bias: Any
-    user: Any
+    repetition_penalty: Optional[float] = 15
 
     class Config:
         arbitrary_types_allowed = True
@@ -144,11 +130,15 @@ async def engine_completions(
     prompt = body.prompt
     settings = ExLlamaV2Sampler.Settings()
     settings.temperature = body.temperature if body.temperature else 0.85
+    log.debug("temperature:%s", settings.temperature)
     settings.top_k = body.top_k if body.top_k else 50
+    log.debug("top_k:%s", settings.top_k)
     settings.top_p = body.top_p if body.top_p else 0.8
+    log.debug("top_p:%s", settings.top_p)
     settings.token_repetition_penalty = (
         body.repetition_penalty if body.repetition_penalty else 1.15
     )
+    log.debug("token_repetition_penalty:%s", settings.token_repetition_penalty)
     tokenizer = app.state.tokenizer
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
     max_new_tokens = body.max_tokens if body.max_tokens else 1024
