@@ -39,7 +39,7 @@ log.setLevel("DEBUG")
 app = FastAPI()
 
 # Find one here https://huggingface.co/turboderp
-MODEL_HG_REPO_ID = "turboderp/CodeLlama-13B-instruct-2.65bpw-h6-exl2"
+MODEL_HG_REPO_ID = "turboderp/CodeLlama-34B-instruct-3.0bpw-h6-exl2"
 
 
 @app.on_event("startup")
@@ -96,7 +96,6 @@ class CompletionRequestBody(BaseModel):
     stop: Optional[List[str] | str] = ["\ndef ", "\nclass ", "\nif ", "\n\n#"]
     stream: bool = True
     model: str = ""
-    # llama.cpp specific parameters
     top_k: Optional[int] = 50
 
     repetition_penalty: Optional[float] = 15
