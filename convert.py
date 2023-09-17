@@ -23,7 +23,7 @@ parser.add_argument("-ml", "--measurement_length", type = int, default = 2048, h
 parser.add_argument("-b", "--bits", type = float, default = 4.156, help = "Target bits per weight")
 parser.add_argument("-hb", "--head_bits", type = int, default = 6, help = "Target bits per weight (head layer)")
 parser.add_argument("-m", "--measurement", type = str, help = "Reuse previous measurement")
-parser.add_argument("-ss", "--shard_size", type = str, help = "Max shard size in MB (default: 8192)", default = 8192)
+parser.add_argument("-ss", "--shard_size", type = float, help = "Max shard size in MB (default: 8192)", default = 8192)
 
 args = parser.parse_args()
 
