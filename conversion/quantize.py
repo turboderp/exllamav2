@@ -384,8 +384,15 @@ def measure_quant(job, save_fn, model):
                         "last_module_idx": job["last_module_idx"],
                         "base_perplexity": job["base_perplexity"] }
 
-    with open(os.path.join(job["out_dir"], "measurement.json"), "w") as f:
-        f.write(json.dumps(exp_measurement, indent = 4))
+
+    measurement_files = [os.path.join(job["out_dir"], "measurement.json")]
+    if job["output_measurement"] is not None:
+        measurement_files += [job["output_measurement"]]
+        print(f" -- Writing {job['output_measurement']}")
+
+    for filename in measurement_files:
+        with open(filename, "w") as f:
+            f.write(json.dumps(exp_measurement, indent = 4))
 
 
 # Quantize
