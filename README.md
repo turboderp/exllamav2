@@ -96,26 +96,8 @@ will fit alongside a desktop environment. For now.
 
 ### Conversion
 
-A script is provided to quantize models. Converting large models can be somewhat slow, so be warned. To use it: 
-
-```
-python convert.py \
-    -i <input_HF_model> \
-    -o <output_work_directory> \
-    -c <calibration_data_file> \
-    -b <target_bits_per_weight>
-```
-
-The output directory should be empty when you start converting. The script will dump a bunch of files there as it
-works, so it can resume an interrupted job if you point it to the same output directory a second time.
-
-After the first pass is completed, a `measurement.json` file will be written to the output directory. This can be
-supplied (with the `-m` argument) to subsequent conversion jobs to skip the first pass and save some time when quantizing
-the same model to different bitrates. Once complete, the quantized tensors will be compiled into `output.safetensors`,
-and this file can replace the safetensors file in the original HF model.
-
-Roughly speaking, you'll need about 24 GB of VRAM to convert a 70B model, while 7B seems to require about 8 GB. There
-are optimizations planned to accelerate conversion, utilizing more or larger GPUs.
+A script is provided to quantize models. Converting large models can be somewhat slow, so be warned. The conversion
+script and its options are explained in [detail here](doc/convert.md)
 
 ### HuggingFace repos
 
@@ -143,3 +125,6 @@ There are still things that need to be ported over from V1, and other planned fe
 be more resilient. The quantizer now saves sharded models (default size of 8 GB) to prevent massive system RAM usage
 when compiling large output files. The kernels should be slightly more precise as well, especially for GPTQ files.
 Flash Attention is used now, when available, requiring at least version **2.2.1** installed.
+
+**2023-09-18**: Some minor changes to allow models with higher bitrates (it used to cap at around 6), and changes to
+the converter to better facilitate scripted jobs.
