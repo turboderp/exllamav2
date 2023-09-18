@@ -1,25 +1,25 @@
 
 def optimize(job, save_fn):
 
-    # eps = 0.0001
+    eps = 0.0001
 
     numel = 0
     max_rfn = 0.0
-    # min_rfn = 10000.0
     for layer in job["measurement"]:
         numel += layer["numel"]
         for option in layer["options"]:
             max_rfn = max(max_rfn, option["err"])
-            # min_rfn = min(min_rfn, option["err"])
 
     # max_rfn -= eps
     min_rfn = 0
+    best_rfn = 10000.0
     target_bpw = job["bits"]
 
     # Binary search for combination of settings that minimizes max rfn_error while
 
+    invalid = False
     min_diff = 0.00001
-    while max_rfn - min_rfn > min_diff:
+    while max_rfn - min_rfn > min_diff or invalid:
 
         target_rfn = (min_rfn + max_rfn) / 2
 
@@ -50,15 +50,17 @@ def optimize(job, save_fn):
             print(f" -- rfn max: {target_rfn:2.5f}  (not possible)")
 
         if current_bpw <= target_bpw and not invalid:
+            best_rfn = min(best_rfn, target_rfn)
             max_rfn = target_rfn
         else:
             min_rfn = target_rfn
+            max_rfn += eps
 
     # We've found the smallest error that can be met by _all_ layers while staying below the set no. bits.
     # Now select a minimum target to allow some layers to use more accurate settings if we didn't meet the
     # target bitrate
 
-    max_rfn = target_rfn
+    max_rfn = max(target_rfn, best_rfn)
     min_rfn = 0
 
     min_diff = 0.00001
