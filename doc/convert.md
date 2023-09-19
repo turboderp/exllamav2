@@ -34,7 +34,7 @@ be dropped in the working directory (**-o**). If you specify **-om** with a path
 path after the measurement pass, and the script will exit immediately after.
   
 
-- **-m / --measurement *file***: Skip the measurement pass and instead use the results from the provided files. This is
+- **-m / --measurement *file***: Skip the measurement pass and instead use the results from the provided file. This is
 particularly useful when quantizing the same model to multiple bitrates, since the measurement pass can take a long time
 to complete.
   
@@ -43,7 +43,7 @@ to complete.
 the data in this file into one long string and uses the first _r_ \* _l_ tokens for calibration.   
   
 
-- **-l / --length *int***: Length, in tokens, of each calibration row. Default is 16.
+- **-l / --length *int***: Length, in tokens, of each calibration row. Default is 2048.
   
 
 - **-r / --dataset_rows *int***: Number of rows in the calibration batch. Default is 100.
@@ -75,7 +75,7 @@ Note that writing a very large `.safetensors` file can require a lot of system R
 ### Notes
 
 The converter works in two passes; first it measures how quantization impacts each matrix in the model, and then it
-actually quantizes the model, choosing quantization parameters for each layer that minimizes the overall error while 
+actually quantizes the model, choosing quantization parameters for each layer that minimize the overall error while 
 also achieving the desired overall (average) bitrate.
 
 The first pass is slow, since it effectively quantizes the model about 20 times over, so make sure to save the
