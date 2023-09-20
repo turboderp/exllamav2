@@ -80,14 +80,13 @@ if not os.path.exists(out_dir):
     print(f" ## Error: Directory not found: {out_dir}")
     sys.exit()
 
-# Create model without loading weights
+# Create config
 
 config = ExLlamaV2Config()
 config.model_dir = in_dir
 config.prepare()
 
-model = ExLlamaV2(config)
-model.load(lazy = True)
+# Tokenizer
 
 tokenizer = ExLlamaV2Tokenizer(config)
 
@@ -199,6 +198,17 @@ if job["compile_full"] is not None:
 out_tensor_dir = os.path.join(job["out_dir"], "out_tensor")
 if not os.path.exists(out_tensor_dir):
     os.makedirs(out_tensor_dir)
+
+# Allocate space for hidden state
+
+max_l = max(job["measurement_length"], job["length"])
+config.max_input_len = max_l
+config.max_attention_size = max_l ** 2
+
+# Create model without loading weights
+
+model = ExLlamaV2(config)
+model.load(lazy = True)
 
 # Do the things
 
