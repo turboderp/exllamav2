@@ -340,9 +340,8 @@ def measure_quant(job, save_fn, model):
                     for i in range(output_states.shape[0]):
 
                         logits = output_states[i:i+1, :, :].to("cuda:0")
-                        ids = cal_ids[i]
 
-                        target_ids = ids.unsqueeze(0)[:, 1:].to("cuda:0")
+                        target_ids = cal_ids[i:i+1, 1:].to("cuda:0")
                         logits = logits[:, :-1, :]
 
                         log_probs = F.log_softmax(logits, dim = -1)
@@ -512,7 +511,7 @@ def quant(job, save_fn, model):
 
         with torch.inference_mode():
 
-            batchsize = 8
+            batchsize = 1  # Keeping this at 1 seems to help with numerical precision
             batch1 = []
             batch2 = []
 
@@ -665,34 +664,37 @@ def quant(job, save_fn, model):
                     if module.padding > 0: outputs = outputs[:, :, :-module.padding]
 
                     logits = outputs[:, :-1, :]
-                    target_ids = cal_ids[b].unsqueeze(0)[:, 1:].to("cuda:0")
+                    logits = logits.float() + 1e-10
+                    target_ids = cal_ids[b:b+1, 1:].to("cuda:0")
 
                     log_probs = F.log_softmax(logits, dim = -1)
                     token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
                     logprob_sum += token_log_probs.sum().item()
                     logprob_count += target_ids.numel()
 
-                else:
+                # Measure error
 
-                    # Measure error
+                target = output_states_list[b]
+                if target.device == torch.device("cpu"): target = target.to("cuda:0")
+                a_ = outputs.narrow(-1, 0, target.shape[-1])
+                b_ = target
+                rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
 
-                    target = output_states_list[b]
-                    if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                    a_ = outputs.narrow(-1, 0, target.shape[-1])
-                    b_ = target
-                    rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
+                # diff = torch.max(torch.abs(a_[0] - b_[0]))
+                # max_diff = max(diff, max_diff)
+                #
+                # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
+                # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
+                # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
+                # print(f"abs(a-b) min, max: {torch.min()}, {torch.max(torch.abs(a_[0] - b_[0]))}")
 
-                    # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
-                    # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
-                    # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
+                rfn_sum += rfn
+                target = None
 
-                    rfn_sum += rfn
-                    target = None
+                if page_rows:
+                    outputs = outputs.to("cpu")
 
-                    if page_rows:
-                        outputs = outputs.to("cpu")
-
-                    output_states_list[b] = outputs
+                output_states_list[b] = outputs
 
                 outputs = None
                 x = None
