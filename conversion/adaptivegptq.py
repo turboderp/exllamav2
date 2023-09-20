@@ -1,3 +1,4 @@
+import gc
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -202,10 +203,11 @@ class AdaptiveGPTQ:
             self.hessian = None
 
             # In case numerical errors have caused some asymmetry in H, assume it's close to symmetrical and force it.
+            # (Doesn't seem to be needed)
 
-            torch.cuda.empty_cache()
-            hessian = (hessian + hessian.T) * 0.5
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
+            # hessian = (hessian + hessian.T) * 0.5
+            # torch.cuda.empty_cache()
 
             # Damping
 
@@ -222,8 +224,36 @@ class AdaptiveGPTQ:
                     d = torch.arange(self.rows, device = self.device)
                     hessian[d, d] += damp
 
+                    # Dump condition number and smallest eigenvalue (should be positive)
+
+                    # fro_norm_hessian = torch.norm(hessian, p = 'fro')
+                    # fro_norm_inv = torch.norm(torch.linalg.inv(hessian), p = 'fro')
+                    # cond_number = fro_norm_hessian * fro_norm_inv
+                    # print(cond_number)
+
+                    # eigenvalues = torch.linalg.eigvalsh(hessian)
+                    # is_pd = torch.all(eigenvalues > 0)
+                    # print(is_pd)
+                    # print(torch.min(eigenvalues))
+
                     hessian_inv = torch.linalg.cholesky(hessian)
                     hessian_inv = torch.cholesky_inverse(hessian_inv)
+
+                    # The Cholesky inverse will sometimes fail to compute due to accumulated rounding errors when H
+                    # is very large (e.g. 70B MLP down proj) and a lot of calibration data is used (e.g. 100 rows of
+                    # 4096 tokens). This won't always throw an exception and sometimes just results in a NaN tensor.
+                    # TODO: Consider if it's feasible to maintain H in double precision
+
+                    if torch.any(torch.isnan(hessian_inv)): raise RuntimeError
+
+                    # Test inversion
+
+                    # test = hessian_inv @ hessian
+                    # test.sub_(torch.eye(test.size(0), device = test.device, dtype = test.dtype))
+                    # test **= 2
+                    # test = test.mean()
+                    # print(test)
+
                     hessian_inv = torch.linalg.cholesky(hessian_inv, upper = True)
                     hessian_inv = hessian_inv.contiguous()
 
@@ -231,11 +261,13 @@ class AdaptiveGPTQ:
 
                 except RuntimeError:
 
-                    # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift the
-                    # eigenvalues in a positive direction.
+                    # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift
+                    # the eigenvalues in a positive direction.
+
+                    print(" !! Warning: Applied additional damping")
 
                     attempts += 1
-                    if attempts == 5:
+                    if attempts == 10:
                         raise ValueError("Hessian is not invertible")
 
             self.hessian_inv = hessian_inv
@@ -263,7 +295,6 @@ class AdaptiveGPTQ:
 
             # Quantize groups
 
-            # self.scale = torch.zeros((self.total_groups, self.columns), dtype = torch.float, device = weights.device)
             scale = []
             qscale = []
             qscale_max = []
