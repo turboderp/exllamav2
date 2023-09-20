@@ -16,7 +16,8 @@ typedef void (*fp_rope_cuda_kernel)
     int,
     int,
     int,
-    const uint32_t*
+    const uint32_t*,
+    int
 );
 
 template<bool use_half2>
@@ -29,7 +30,8 @@ __global__ void rope_cuda_kernel
     int head_dim,
     int num_heads,
     int past_len,
-    const uint32_t* __restrict__ past_lens
+    const uint32_t* __restrict__ past_lens,
+    int threads_y
 )
 {
     MatrixView_half_rw x_(x, MAX_ROWS, head_dim);
@@ -40,7 +42,7 @@ __global__ void rope_cuda_kernel
     int half_dim = head_dim / 2;
     if (column >= half_dim) return;
 
-    int row = blockIdx.y * THREADS_Y + threadIdx.y;
+    int row = blockIdx.y * threads_y + threadIdx.y;
     if (row >= rows_per_batch) return;
     int batch_offset = blockIdx.z * rows_per_batch;
     int row_offset = batch_offset + row;
@@ -111,13 +113,20 @@ void rope_cuda
 {
     bool use_half2 = true;
 
+    // For large batch sizes we risk exceeding grid dimension of 65535, so shift to block dimension instead
+
+    int threads_y = THREADS_Y;
+    while (DIVIDE(rows_per_batch, threads_y) > 65535) threads_y *= 2;
+
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_X;
-    blockDim.y = THREADS_Y;
+    blockDim.y = threads_y;
     gridDim.x = DIVIDE(head_dim, THREADS_X) / (use_half2 ? 2 : 1);
-    gridDim.y = DIVIDE(rows_per_batch, THREADS_Y);
+    gridDim.y = DIVIDE(rows_per_batch, threads_y);
     gridDim.z = batch_size;
 
     fp_rope_cuda_kernel kernel = pick_rope_cuda_kernel(use_half2);
-    kernel<<<gridDim, blockDim>>>(x, sin, cos, rows_per_batch, head_dim, num_heads, past_len, past_lens);
+    kernel<<<gridDim, blockDim>>>(x, sin, cos, rows_per_batch, head_dim, num_heads, past_len, past_lens, threads_y);
+
+    cuda_check( cudaPeekAtLastError() );
 }
