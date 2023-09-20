@@ -487,7 +487,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             key_states = key_states.transpose(-1, -2)
 
             attn_weights = torch.matmul(query_states, key_states)
-
+            attn_weights /= math.sqrt(head_dim)
             if attn_mask is not None: attn_weights = attn_weights + attn_mask
             attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
