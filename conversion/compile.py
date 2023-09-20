@@ -105,8 +105,6 @@ def compile_model(job, save_fn, model):
 
             out_dict = dont_save_dict
 
-    print(f" -- Saved model weights:")
-
     num_files = file_index - 1
     if num_files == 1:
 
