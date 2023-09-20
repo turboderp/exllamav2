@@ -85,7 +85,6 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, force_recons = False, force_cuda = False):
 
-        # test = True
         if self.q_handle is not None and not force_recons:
 
             output_shape = hidden_states.shape[:-1] + (self.out_features,)
@@ -100,8 +99,6 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
             matrix = self.get_weight_tensor_dq()
             hidden_states = torch.matmul(hidden_states, matrix)
-
-        # hidden_states = self.linear.forward(hidden_states)
 
         if intermediates:
             return {"hidden_states": hidden_states}
