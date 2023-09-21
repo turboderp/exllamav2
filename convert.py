@@ -54,6 +54,10 @@ if not args.head_bits in qparams_headoptions:
 if args.bits < 2 or args.bits > 8:
     print(f" !! Warning: target bitrate {args.bits} will likely not be attainable")
 
+if args.output_measurement is not None and args.compile_full is not None:
+    print(" ## Conflicting options: --output_measurement and --compile_full")
+    sys.exit()
+
 # Arguments
 
 in_dir = None if args.in_dir == "" else os.path.abspath(args.in_dir)
@@ -177,10 +181,11 @@ else:
 print(f" -- Input: {job['in_dir']}")
 print(f" -- Output: {out_dir}")
 print(f" -- Calibration dataset: {job['cal_dataset']}, {job['dataset_rows']} / {job['measurement_rows']} ({job['gpu_rows']}) rows, {job['length']} tokens per sample")
-print(f" -- Target bits per weight: {job['bits']} (decoder), {job['head_bits']} (head)")
-print(f" -- Max shard size: {job['shard_size']} MB")
 
-if job["output_measurement"] is not None:
+if job["output_measurement"] is None:
+    print(f" -- Target bits per weight: {job['bits']} (decoder), {job['head_bits']} (head)")
+    print(f" -- Max shard size: {job['shard_size']} MB")
+else:
     print(f" -- Measurement will be saved to {job['output_measurement']}")
     print(f" !! Conversion script will end after measurement pass")
 
