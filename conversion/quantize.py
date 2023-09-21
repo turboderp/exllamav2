@@ -676,8 +676,8 @@ def quant(job, save_fn, model):
 
                 target = output_states_list[b]
                 if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                a_ = outputs.narrow(-1, 0, target.shape[-1])
-                b_ = target
+                a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
                 rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
 
                 # diff = torch.max(torch.abs(a_[0] - b_[0]))
