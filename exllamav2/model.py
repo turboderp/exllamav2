@@ -102,6 +102,7 @@ class ExLlamaV2:
     device_tensors: list = []
     cache_map: dict
     last_kv_layer_idx: int
+    head_layer_idx: int
 
 
     def __init__(self, config: ExLlamaV2Config, lazy_load = False):
@@ -126,6 +127,8 @@ class ExLlamaV2:
 
         self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
+
+        self.head_layer_idx = len(self.modules)
         self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
 
@@ -305,7 +308,7 @@ class ExLlamaV2:
             return attn_mask
 
 
-    def forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False):
+    def forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False, last_id_only = False):
 
         q_len = input_ids.shape[-1]
         remaining_q_len = q_len
@@ -326,7 +329,8 @@ class ExLlamaV2:
             return self._forward(input_ids = input_ids,
                                  cache = cache,
                                  input_mask = input_mask,
-                                 preprocess_only = preprocess_only)
+                                 preprocess_only = preprocess_only,
+                                 last_id_only = last_id_only)
 
         # Confirm that the input fits within the allocated cache space
 
@@ -359,12 +363,16 @@ class ExLlamaV2:
 
             # print(f"Forward chunk length: {chunk_end - chunk_begin}")
 
+            _last_id_only = last_id_only
+            _preprocess_only = preprocess_only or (chunk_end < q_len and last_id_only)
+
             r = self._forward(input_ids = input_ids[:, chunk_begin : chunk_end],
                               cache = cache,
                               input_mask = input_mask,
-                              preprocess_only = preprocess_only)
+                              preprocess_only = _preprocess_only,
+                              last_id_only = _last_id_only)
 
-            if not preprocess_only:
+            if not _preprocess_only:
                 result = r if result is None else torch.cat((result, r), dim = 1)
                 r = None
 
@@ -374,7 +382,7 @@ class ExLlamaV2:
         return result
 
 
-    def _forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False):
+    def _forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False, last_id_only = False):
 
         batch_size, seq_len = input_ids.shape
         past_len = 0
@@ -405,6 +413,9 @@ class ExLlamaV2:
                 if isinstance(past_len, tuple): past_len = (past_len[0].to(device), past_len[1])
 
             # Onward
+
+            if last_id_only and idx == self.head_layer_idx:
+                x = x.narrow(-2, -1, 1)
 
             x = x.to(device)
             x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len)
