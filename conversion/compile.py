@@ -91,19 +91,33 @@ def compile_model(job, save_fn, model):
                 else:
                     dont_save_dict[k] = v
 
-            print(f" -- Writing shard {file_index}...")
+            if len(save_dict) == 0:
 
-            out_dir = job["out_dir"]
-            if job["compile_full"] is not None: out_dir = job["compile_full"]
-            if not os.path.exists(out_dir):
-                print(f" -- Creating directory {out_dir}")
-                os.makedirs(out_dir)
+                print(f" ## Error: Unable to fit output tensor in single shard.")
+                os._exit(0)
 
-            out_filename = os.path.join(out_dir, f"output_temp_{file_index}.safetensors")
-            save_file(save_dict, out_filename)
-            file_index += 1
+            while True:
 
-            out_dict = dont_save_dict
+                print(f" -- Writing shard {file_index}...")
+
+                out_dir = job["out_dir"]
+                if job["compile_full"] is not None: out_dir = job["compile_full"]
+                if not os.path.exists(out_dir):
+                    print(f" -- Creating directory {out_dir}")
+                    os.makedirs(out_dir)
+
+                out_filename = os.path.join(out_dir, f"output_temp_{file_index}.safetensors")
+                save_file(save_dict, out_filename)
+                file_index += 1
+
+                out_dict = dont_save_dict
+
+                if index == len(model.modules) and len(out_dict) > 0:
+                    save_dict = dont_save_dict
+                    dont_save_dict = {}
+                    continue
+
+                break
 
     num_files = file_index - 1
     if num_files == 1:
