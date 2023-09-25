@@ -437,11 +437,11 @@ void QMatrix::reconstruct(half* out)
     dim3 blockDim, gridDim;
     blockDim.x = BLOCK_KN_SIZE;
     blockDim.y = 1;
-    gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
     gridDim.y = DIVIDE(height, BLOCK_KN_SIZE);
 
     if (!is_gptq)
     {
+        gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
         reconstruct_kernel<<<gridDim, blockDim>>>
         (
             cuda_q_weight,
@@ -464,6 +464,7 @@ void QMatrix::reconstruct(half* out)
     }
     else
     {
+        gridDim.x = DIVIDE(width, BLOCK_KN_SIZE * 4);
         reconstruct_gptq_kernel<<<gridDim, blockDim>>>
         (
             cuda_q_weight,
