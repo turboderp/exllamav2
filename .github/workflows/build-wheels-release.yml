@@ -86,8 +86,6 @@ jobs:
           if ($IsLinux) {$env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH}
           $env:TORCH_CUDA_ARCH_LIST = if ([version]$env:CUDAVER -lt [version]'11.8') {'6.0 6.1 7.0 7.5 8.0 8.6+PTX'} else {'6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX'}
           python -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
-          
-          if ($IsLinux -and $env:PYVER -eq '3.11' -and $env:CUDAVER -eq '11.8.0') {$env:EXLLAMA_NOCOMPILE=1; python -m build -n}
         
       - uses: actions/upload-artifact@v3
         with:
@@ -104,7 +102,7 @@ jobs:
           overwrite: true
           release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
       
-  publish-to-pypi:
+  publish-wheels-to-pypi:
     name: Publish Python distribution to PyPI
     if: inputs.pypi == '1'
     needs: ['build_wheels','build_rocm']
@@ -121,6 +119,67 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: wheels
+          path: dist/
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.8.10
+        
+  build_sdist:
+    name: Build sdist
+    needs: publish-wheels-to-pypi
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+        with:
+          python-version: "3.11"
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install build wheel ninja
+        
+      - name: Build Wheel
+        id: build-wheel-sdist
+        run: |
+          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(') {Write-Output $('::notice file=build-wheels-release.yml,line=53,title=Package Version::Detected package version is: {0}' -f $Matches[1]); Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"} else {Write-Output '::error file=build-wheels-release.yml,line=41::Could not parse version from setup.py! You must upload wheels manually!'; Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"}
+          $env:EXLLAMA_NOCOMPILE=1
+          python -m build
+        
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'sdist'
+          path: ./dist/*
+          
+      - name: Upload files to a GitHub release
+        if: steps.build-wheel-sdist.outputs.PACKAGE_VERSION != 'None'
+        uses: svenstaro/upload-release-action@2.6.1
+        with:
+          file: ./dist/*.whl
+          tag: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+          file_glob: true
+          overwrite: true
+          release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+      
+  publish-sdist-to-pypi:
+    name: Publish Python distribution to PyPI
+    if: inputs.pypi == '1'
+    needs: build_sdist
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: pypi
+      url: https://pypi.org/p/exllamav2
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      
+    steps:
+      - name: Download the sdist
+        uses: actions/download-artifact@v3
+        with:
+          name: sdist
           path: dist/
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@v1.8.10
