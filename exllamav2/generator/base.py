@@ -50,7 +50,7 @@ class ExLlamaV2BaseGenerator:
         mask = self.tokenizer.padding_mask(ids) if batch_size > 1 else None
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
-        if overflow > 0: ids = ids[:, -overflow:]
+        if overflow > 0: ids = ids[:, overflow:]
 
         self._gen_begin_base(ids, mask)
 
