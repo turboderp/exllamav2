@@ -101,6 +101,13 @@ jobs:
           file_glob: true
           overwrite: true
           release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+          
+  build_rocm:
+    name: Build ROCm Wheels & Release
+    needs: build_wheels
+    uses: ./.github/workflows/build-wheels-release-rocm.yml
+    with:
+      pypi: '0'
       
   publish-wheels-to-pypi:
     name: Publish Python distribution to PyPI

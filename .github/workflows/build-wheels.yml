@@ -80,3 +80,8 @@ jobs:
         with:
           name: 'wheels'
           path: ./dist/*
+          
+  build_rocm:
+    name: Build ROCm Wheels & Release
+    needs: build_wheels
+    uses: ./.github/workflows/build-wheels-rocm.yml
