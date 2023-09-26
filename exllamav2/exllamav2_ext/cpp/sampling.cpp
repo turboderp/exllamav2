@@ -1,6 +1,11 @@
 #include "sampling.h"
 #include "util.h"
 #include <math.h>
+#include <vector>
+#include <queue>
+#include <utility>
+
+const int top_k_heap_threshold = 500;
 
 bool* g_rep_mask = NULL;
 int g_vocab_size = 0;
@@ -212,6 +217,8 @@ void quicksort_with_idx
         quicksort_with_idx<cmp_func>(arr, idx, pos + 1, high, max_index);
 }
 
+// Discard tiny probabilities, improves performance when temperature is very low
+
 int pre_sort_descending
 (
     const int num_candidates,
@@ -260,8 +267,43 @@ int top_k_cpu
     int top_k
 )
 {
-    // TODO: Currently relies on sorting the logits with early exit. Heap would probably be faster
-    // TODO: Selection sort should be faster for very low values of K
+    //TIME_START;
+
+    // Use min-heap for lower values of K
+
+    if (top_k <= top_k_heap_threshold)
+    {
+        std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> min_heap;
+
+        for (int i = 0; i < top_k; ++i) min_heap.push({temp_probs[i], temp_indices[i]});
+
+        for (int i = top_k; i < num_candidates; i++)
+        {
+            if (temp_probs[i] > min_heap.top().first)
+            {
+                min_heap.pop();
+                min_heap.push({temp_probs[i], temp_indices[i]});
+            }
+        }
+
+        int j = top_k;
+        for (int i = 0; i < top_k; i++)
+        {
+            j--;
+            temp_probs[j] = min_heap.top().first;
+            temp_indices[j] = min_heap.top().second;
+            min_heap.pop();
+        }
+    }
+
+    // For larger values, quicksort is still faster
+
+    else
+    {
+        sort_descending(num_candidates, temp_probs, temp_indices, top_k);
+    }
+
+    //TIME_STOP;
 
     return top_k;
 }
@@ -274,21 +316,41 @@ int top_p_cpu
     float top_p
 )
 {
-    // TODO: Maybe special case when top-K is disabled: select max until sum exceeds P, for P < ~0.75
+    std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> min_heap;
 
-    float cumprob = 0.0f;
-    int num = 0;
+    //TIME_START;
 
-    while (true)
+    float min_p = 1e-6;
+
+    float sum = 0.0f;
+    for (int i = 0; i < num_candidates; i++)
     {
-        cumprob += temp_probs[num];
-        if (cumprob >= top_p) break;
-        num++;
-        if (num >= num_candidates) break;
+        if (temp_probs[i] < min_p) continue;
+        if (sum > top_p && temp_probs[i] < min_heap.top().first) continue;
+
+        min_heap.push({temp_probs[i], temp_indices[i]});
+        sum += temp_probs[i];
+
+        while (sum > top_p && min_heap.size() > 1)
+        {
+            sum -= min_heap.top().first;
+            min_heap.pop();
+        }
     }
 
-    if (num == 0) num = 1;
-    return num;
+    int j = min_heap.size();
+    int k = j;
+    while (j > 0)
+    {
+        j--;
+        temp_probs[j] = min_heap.top().first;
+        temp_indices[j] = min_heap.top().second;
+        min_heap.pop();
+    }
+
+    //TIME_STOP;
+
+    return k;
 }
 
 int typical_cpu

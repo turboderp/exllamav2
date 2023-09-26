@@ -640,10 +640,10 @@ void sample_basic
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
-        if (top_k > 0 || top_p > 0)
-        {
-            sort_descending(num_candidates, temp_probs, temp_indices, top_k);
-        }
+//        if (top_k > 0 || top_p > 0)
+//        {
+//            sort_descending(num_candidates, temp_probs, temp_indices, top_k);
+//        }
 
         if (top_k > 0)
         {
