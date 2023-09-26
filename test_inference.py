@@ -116,22 +116,24 @@ if args.eval_dataset:
         logprob_sum = 0.0
         logprob_count = 0
 
+        cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
+
         for i in range(eval_tokens.shape[0]):
-        #for i in range(126, 127):
 
             if i % 10 == 0: print(".", end = "")
             sys.stdout.flush()
 
             input_ids = eval_tokens[i:i+1, :]
 
-            input_ids = input_ids[:, :-1]
-            logits = model.forward(input_ids)
-
-            # print (tokenizer.decode(input_ids))
+            input_ids = input_ids[:, :]
+            if cache is not None: cache.current_seq_len = 0
+            logits = model.forward(input_ids, cache)
+            logits = logits[:, :-1, :]
+            logits = logits.float() + 1e-10
 
             target_ids = input_ids[:, 1:].to(logits.device)
 
-            log_probs = F.log_softmax(logits, dim=-1)
+            log_probs = F.log_softmax(logits, dim = -1)
             token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
             logprob_sum += token_log_probs.sum().item()
             logprob_count += target_ids.numel()

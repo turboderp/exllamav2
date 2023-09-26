@@ -64,7 +64,10 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, intermediates = False):
+    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+
+        hidden_states[hidden_states == -float('inf')] = -65504.0
+        hidden_states[hidden_states == float('inf')] = 65504.0
 
         variance = hidden_states.to(torch.float32).pow(2).mean(-1, keepdim = True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)

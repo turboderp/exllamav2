@@ -56,8 +56,12 @@ void softmax_cpu
 {
     float esum = 0.0f;
     float itemp = 1.0f / temperature;
+    float maxl = 0.0f;
     #pragma unroll(32)
-    for (int i = 0; i < vocab_size; i++) { float e = expf(logits[i] * itemp); output[i] = e; esum += e; }
+    for (int i = 0; i < vocab_size; i++) maxl = fmaxf(logits[i], maxl);
+    maxl *= itemp;
+    #pragma unroll(32)
+    for (int i = 0; i < vocab_size; i++) { float e = expf(logits[i] * itemp - maxl); output[i] = e; esum += e; }
     float isum = 1.0f / esum;
     #pragma unroll(32)
     for (int i = 0; i < vocab_size; i++) { output[i] *= isum; }
@@ -114,7 +118,7 @@ void quicksort_with_idx_desc
     int max_index
 )
 {
-	if (low >= high) return;
+    if (low >= high) return;
 
     // Bubblesort very short segments
 
@@ -176,26 +180,50 @@ void quicksort_with_idx_desc
         return;
     }
 
-    // Quicksort longer segments
+    float pivot = arr[high];
+    int i = low - 1;
+    for (int j = low; j < high; j++)
+    {
+        if (arr[j] >= pivot)
+        {
+            i++;
+            swap<float>(arr[i], arr[j]);
+            swap<int>(idx[i], idx[j]);
+        }
+    }
 
-	float pivot = arr[high];
-	int i = low;
-	int j = low;
-    #pragma unroll(4)
-	while(i <= high)
-	{
-		if(arr[i] < pivot) i++;
-		else { swap<float>(arr[i], arr[j]); swap<int>(idx[i], idx[j]); i++; j++; }
-	}
+    swap<float>(arr[i + 1], arr[high]);
+    swap<int>(idx[i + 1], idx[high]);
 
-	int pos = j - 1;
+    int pos = i + 1;
+    if (max_index == 0 || low <= max_index)
+        quicksort_with_idx_desc(arr, idx, low, pos - 1, max_index);
+    if (max_index == 0 || pos <= max_index)
+        quicksort_with_idx_desc(arr, idx, pos + 1, high, max_index);
+}
 
-    // We know in advance we'll only need max_index elements of the sorted array so skip sorting segments after that
+int pre_sort_descending
+(
+    const int num_candidates,
+    float* arr,
+    int* idx
+)
+{
+    const float eps = 1e-8;
+    int i = 0;
+    int j = num_candidates - 1;
 
-	if (max_index == 0 || max_index >= low)
-	    quicksort_with_idx_desc(arr, idx, low, pos - 1, max_index);
-	if (max_index == 0 || max_index > pos)
-	    quicksort_with_idx_desc(arr, idx, pos + 1, high, max_index);
+    while (i <= j)
+    {
+        if (arr[j] < eps) { j--; continue; }
+        if (arr[i] >= eps) { i++; continue; }
+        swap<float>(arr[i], arr[j]);
+        swap<int>(idx[i], idx[j]);
+        i++;
+        j--;
+    }
+
+    return i;
 }
 
 void sort_descending
@@ -206,13 +234,19 @@ void sort_descending
     int max_index
 )
 {
+
 //    auto start = std::chrono::high_resolution_clock::now();
-    quicksort_with_idx_desc(temp_probs, temp_indices, 0, num_candidates - 1, max_index);
+
+    int pre = pre_sort_descending(num_candidates, temp_probs, temp_indices);
+    quicksort_with_idx_desc(temp_probs, temp_indices, 0, pre - 1, max_index);
+
 //    auto stop = std::chrono::high_resolution_clock::now();
 //    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-//    DBGI(duration_us);
+//    DBGI2(duration_us, pre);
 
-    //for (int i = 0; i < (max_index == 0 ? num_candidates : max_index) - 1; i++) if (temp_probs[i] < temp_probs[i + 1]) DBGI(i);
+//    int m = (max_index == 0 ? num_candidates : max_index);
+//    for (int i = 0; i < m; i++) printf("%i - %f \n", temp_indices[i], temp_probs[i] * 10000.0);
+//    for (int i = 0; i < m - 1; i++) if (temp_probs[i] < temp_probs[i + 1] - 2e-8) DBGI(i);
 }
 
 int top_k_cpu

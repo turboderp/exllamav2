@@ -1,3 +1,4 @@
+import gc
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -70,7 +71,7 @@ class AdaptiveQuantizer:
 
 class AdaptiveGPTQ:
 
-    percdamp: float = 0.05
+    percdamp: float = 0.07
 
     layer: nn.Linear
     device: torch.device
@@ -114,7 +115,7 @@ class AdaptiveGPTQ:
         self.columns = self.layer.weight.data.shape[0]
 
         self.weights = self.layer.weight.data.T.clone().float().contiguous()
-        self.hessian = torch.zeros((self.rows, self.rows), device = self.device, dtype = torch.float)
+        self.hessian = None
         self.num_samples = 0
         self.num_batches = 0
 
@@ -166,135 +167,201 @@ class AdaptiveGPTQ:
 
     def add_batch(self, inputs):
 
-        self.num_batches += 1
-        num_samples = len(inputs)
-        inputs = torch.cat(inputs, dim = 0)
-        inputs = inputs.view((-1, inputs.shape[-1])).float().T.to("cuda:0")
-        inputs *= math.sqrt(2 / num_samples)
-        self.hessian += inputs.matmul(inputs.T)
+        with torch.inference_mode():
+
+            if self.hessian is None:
+                self.hessian = torch.zeros((self.rows, self.rows), device=self.device, dtype=torch.float)
+
+            self.num_batches += 1
+            num_samples = len(inputs)
+            inputs = torch.cat(inputs, dim = 0)
+            inputs = inputs.view((-1, inputs.shape[-1])).float().T.to("cuda:0")
+            inputs *= math.sqrt(2 / num_samples)
+            self.hessian += inputs.matmul(inputs.T)
 
 
     def prepare(self):
 
-        self.hessian /= self.num_batches
+        with torch.inference_mode():
 
-        diagonal = torch.diag(self.hessian)
+            self.hessian /= self.num_batches
 
-        dead = diagonal == 0
-        self.hessian[dead, dead] = 1
-        self.weights[dead, :] = 0
+            diagonal = torch.diag(self.hessian)
 
-        # Activation order
+            # Zero weights that have no impact. Disabling this since it feels a little drastic based on just the calibration
+            # data. It likely never triggers, anyway.
 
-        self.perm = torch.argsort(diagonal, descending = True)
-        self.weights = self.weights[self.perm, :]
-        hessian = self.hessian[self.perm][:, self.perm]
+            # dead = diagonal == 0.0
+            # self.hessian[dead, dead] = 1
+            # self.weights[dead, :] = 0
 
-        # Damping
+            # Activation order
 
-        damp = self.percdamp * torch.mean(torch.diag(hessian))
-        d = torch.arange(self.rows, device = self.device)
-        hessian[d, d] += damp
+            self.perm = torch.argsort(diagonal, descending = True)
+            self.weights = self.weights[self.perm, :]
+            hessian = self.hessian[self.perm][:, self.perm]
+            self.hessian = None
 
-        # hessian = hessian.to(torch.float64)
-        # testq = torch.max(hessian)
-        # testr = torch.min(hessian)
-        # testd = torch.diagonal(hessian)
-        # testds, testds1 = torch.sort(testd)
-        # test = torch.allclose(hessian, hessian.T)
-        # eigenvalues = torch.linalg.eigvalsh(hessian)
-        # condition_number = eigenvalues[-1] / eigenvalues[0]
-        # print(condition_number)
-        # test2 = torch.any(eigenvalues <= 0)
-        # test3, test4 = torch.sort(eigenvalues)
+            # In case numerical errors have caused some asymmetry in H, assume it's close to symmetrical and force it.
+            # (Doesn't seem to be needed)
 
-        # Inverse of H
+            # torch.cuda.empty_cache()
+            # hessian = (hessian + hessian.T) * 0.5
+            # torch.cuda.empty_cache()
 
-        hessian_inv = torch.linalg.cholesky(hessian)
-        hessian_inv = torch.cholesky_inverse(hessian_inv)
-        hessian_inv = torch.linalg.cholesky(hessian_inv, upper = True)
-        hessian_inv = hessian_inv.contiguous()
+            # Damping
 
-        self.hessian_inv = hessian_inv
-        self.hessian = None
+            diagonal = torch.diag(hessian)
+            damp = torch.clamp(self.percdamp * torch.mean(diagonal), min = 1e-5)
+
+            # Inverse of H
+
+            attempts = 0
+            while True:
+
+                try:
+
+                    d = torch.arange(self.rows, device = self.device)
+                    hessian[d, d] += damp
+
+                    # Dump condition number and smallest eigenvalue (should be positive)
+
+                    # fro_norm_hessian = torch.norm(hessian, p = 'fro')
+                    # fro_norm_inv = torch.norm(torch.linalg.inv(hessian), p = 'fro')
+                    # cond_number = fro_norm_hessian * fro_norm_inv
+                    # print(cond_number)
+
+                    # eigenvalues = torch.linalg.eigvalsh(hessian)
+                    # is_pd = torch.all(eigenvalues > 0)
+                    # print(is_pd)
+                    # print(torch.min(eigenvalues))
+
+                    hessian_inv = torch.linalg.cholesky(hessian)
+                    hessian_inv = torch.cholesky_inverse(hessian_inv)
+
+                    # The Cholesky inverse will sometimes fail to compute due to accumulated rounding errors when H
+                    # is very large (e.g. 70B MLP down proj) and a lot of calibration data is used (e.g. 100 rows of
+                    # 4096 tokens). This won't always throw an exception and sometimes just results in a NaN tensor.
+                    # TODO: Consider if it's feasible to maintain H in double precision
+
+                    if torch.any(torch.isnan(hessian_inv)): raise RuntimeError
+
+                    # Test inversion
+
+                    # test = hessian_inv @ hessian
+                    # test.sub_(torch.eye(test.size(0), device = test.device, dtype = test.dtype))
+                    # test **= 2
+                    # test = test.mean()
+                    # print(test)
+
+                    hessian_inv = torch.linalg.cholesky(hessian_inv, upper = True)
+                    hessian_inv = hessian_inv.contiguous()
+
+                    break
+
+                except RuntimeError:
+
+                    # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift
+                    # the eigenvalues in a positive direction.
+
+                    print(" !! Warning: Applied additional damping")
+
+                    attempts += 1
+                    if attempts == 10:
+                        raise ValueError("Hessian is not invertible")
+
+            self.hessian_inv = hessian_inv
+            self.hessian = None
+
+    def reuse_h(self, other):
+
+        with torch.inference_mode():
+
+            self.hessian_inv = other.hessian_inv
+            self.hessian = None
+            self.perm = other.perm
+            self.weights = self.weights[self.perm, :]
 
 
     def quantize(self, keep_qweight = False):
 
-        weights = self.weights.clone()
-        self.quant = torch.zeros_like(self.weights)
+        with torch.inference_mode():
 
-        if keep_qweight:
-            self.qweight = torch.zeros_like(weights, dtype = torch.short)
+            weights = self.weights.clone()
+            self.quant = torch.zeros_like(self.weights)
 
-        # Quantize groups
+            if keep_qweight:
+                self.qweight = torch.zeros_like(weights, dtype = torch.short)
 
-        # self.scale = torch.zeros((self.total_groups, self.columns), dtype = torch.float, device = weights.device)
-        scale = []
-        qscale = []
-        qscale_max = []
-        qgroups = []
+            # Quantize groups
 
-        bits_idx = -1
-        bits_idx_r = 1
+            scale = []
+            qscale = []
+            qscale_max = []
+            qgroups = []
 
-        error = weights.clone()
+            bits_idx = -1
+            bits_idx_r = 1
 
-        for group in range(self.total_groups):
+            error = weights.clone()
 
-            a = group * self.group_size
-            b = min(a + self.group_size, self.rows)
+            for group in range(self.total_groups):
 
-            bits_idx_r -= 1
-            if bits_idx_r == 0:
-                bits_idx += 1
-                bits_idx_r = self.bits_groups[bits_idx]
-                bits = self.bits[bits_idx]
-                quantizer = AdaptiveQuantizer(bits = bits, scale_bits = self.scale_bits)
+                a = group * self.group_size
+                b = min(a + self.group_size, self.rows)
 
-            qgroups.append(bits)
-            qgroups.append(0)
+                bits_idx_r -= 1
+                if bits_idx_r == 0:
+                    bits_idx += 1
+                    bits_idx_r = self.bits_groups[bits_idx]
+                    bits = self.bits[bits_idx]
+                    quantizer = AdaptiveQuantizer(bits = bits, scale_bits = self.scale_bits)
 
-            quantizer.find_params(weights[a : b, :])
-            scale.append(quantizer.scale)
-            qscale.append(quantizer.qscale)
-            qscale_max.append(quantizer.qscale_max)
+                qgroups.append(bits)
+                qgroups.append(0)
 
-            ext_c.quantize_range(self.quant,
-                                 quantizer.scale,
-                                 self.qweight if keep_qweight else none_tensor,
-                                 quantizer.qzero,
-                                 quantizer.maxq,
-                                 self.hessian_inv,
-                                 weights,
-                                 error,
-                                 a,
-                                 b)
+                quantizer.find_params(weights[a : b, :])
+                scale.append(quantizer.scale)
+                qscale.append(quantizer.qscale)
+                qscale_max.append(quantizer.qscale_max)
 
-        # Create g_idx to store inverse activation order
+                ext_c.quantize_range(self.quant,
+                                     quantizer.scale,
+                                     self.qweight if keep_qweight else none_tensor,
+                                     quantizer.qzero,
+                                     quantizer.maxq,
+                                     self.hessian_inv,
+                                     weights,
+                                     error,
+                                     a,
+                                     b)
 
-        rows = [i // self.group_size for i in range(self.rows)]
-        self.g_idx = torch.tensor(rows, dtype = torch.int32, device = self.device)
+            # Create g_idx to store inverse activation order
 
-        self.invperm = torch.argsort(self.perm)
-        self.g_idx = self.g_idx[self.invperm]
+            rows = [i // self.group_size for i in range(self.rows)]
+            self.g_idx = torch.tensor(rows, dtype = torch.int32, device = self.device)
 
-        # Store scales
+            self.invperm = torch.argsort(self.perm)
+            self.g_idx = self.g_idx[self.invperm]
 
-        self.scale = torch.stack(scale, dim = 0)
-        self.qscale = torch.stack(qscale, dim = 0)
-        self.qscale_max = torch.tensor(qscale_max, dtype = torch.float16, device = self.device)
-        self.qgroups = torch.tensor(qgroups, dtype = torch.short, device = self.device)
+            # Store scales
+
+            self.scale = torch.stack(scale, dim = 0)
+            self.qscale = torch.stack(qscale, dim = 0)
+            self.qscale_max = torch.tensor(qscale_max, dtype = torch.float16, device = self.device)
+            self.qgroups = torch.tensor(qgroups, dtype = torch.short, device = self.device)
 
 
     def quant_error(self):
 
-        q = self.quant[self.invperm, :]
-        diff = torch.abs(q - self.layer.weight.data.T)
-        mat_error_1 = (diff > 0.01).sum().item() / diff.numel()
-        mat_error_5 = (diff > 0.05).sum().item() / diff.numel()
-        mat_error_10 = (diff > 0.10).sum().item() / diff.numel()
-        return mat_error_1, mat_error_5, mat_error_10
+        with torch.inference_mode():
+
+            q = self.quant[self.invperm, :]
+            diff = torch.abs(q - self.layer.weight.data.T)
+            mat_error_1 = (diff > 0.01).sum().item() / diff.numel()
+            mat_error_5 = (diff > 0.05).sum().item() / diff.numel()
+            mat_error_10 = (diff > 0.10).sum().item() / diff.numel()
+            return mat_error_1, mat_error_5, mat_error_10
 
 
     def apply_quant(self):

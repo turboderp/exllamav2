@@ -14,6 +14,7 @@ def add_args(parser):
     parser.add_argument("-l", "--length", type = int, help = "Maximum sequence length")
     parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
     parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
+    parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
 
 
 def print_options(args):
@@ -25,6 +26,7 @@ def print_options(args):
     if args.length: print_opts += [f"length: {args.length}"]
     print_opts += [f"rope_scale {args.rope_scale}"]
     print_opts += [f"rope_alpha {args.rope_alpha}"]
+    if args.no_flash_attn: print_opts += ["no_flash_attn"]
     print(f" -- Options: {print_opts}")
 
 
@@ -64,6 +66,7 @@ def init(args, quiet = False):
     if args.length: config.max_seq_len = args.length
     config.rope_scale = args.rope_scale
     config.rope_alpha = args.rope_alpha
+    config.no_flash_attn = args.no_flash_attn
 
     # Load model
 

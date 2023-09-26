@@ -196,15 +196,15 @@ __global__ void reconstruct_gptq_kernel
     // Initial zeros/scale
 
     int zeros[4];
-    half scales[4];
+    half2 scales[4];
     half2 z1z16[4][2];
     half2 y1y16[4][2];
     b_gptq_qzeros_.item4(zeros, group, n);
-    b_gptq_scales_.item4(scales, group, n);
-    dequant_4bit_8_prep_zero_scale(zeros[0] + 1, scales[0], z1z16[0], y1y16[0]);
-    dequant_4bit_8_prep_zero_scale(zeros[1] + 1, scales[1], z1z16[1], y1y16[1]);
-    dequant_4bit_8_prep_zero_scale(zeros[2] + 1, scales[2], z1z16[2], y1y16[2]);
-    dequant_4bit_8_prep_zero_scale(zeros[3] + 1, scales[3], z1z16[3], y1y16[3]);
+    b_gptq_scales_.item4_h2(scales, group, n);
+    dequant_4bit_8_prep_zero(zeros[0] + 1, z1z16[0], y1y16[0]);
+    dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
+    dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
+    dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
 
     __syncthreads();
 
@@ -218,11 +218,11 @@ __global__ void reconstruct_gptq_kernel
             group++;
             nextgroup += groupsize;
             b_gptq_qzeros_.item4(zeros, group, n);
-            b_gptq_scales_.item4(scales, group, n);
-            dequant_4bit_8_prep_zero_scale(zeros[0] + 1, scales[0], z1z16[0], y1y16[0]);
-            dequant_4bit_8_prep_zero_scale(zeros[1] + 1, scales[1], z1z16[1], y1y16[1]);
-            dequant_4bit_8_prep_zero_scale(zeros[2] + 1, scales[2], z1z16[2], y1y16[2]);
-            dequant_4bit_8_prep_zero_scale(zeros[3] + 1, scales[3], z1z16[3], y1y16[3]);
+            b_gptq_scales_.item4_h2(scales, group, n);
+            dequant_4bit_8_prep_zero(zeros[0] + 1, z1z16[0], y1y16[0]);
+            dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
+            dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
+            dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
         }
 
         for (int p = 0; p < 4; p++)
@@ -231,10 +231,10 @@ __global__ void reconstruct_gptq_kernel
             const int4* b_ptr4 = (int4*) b_ptr;
             int4 load_int4 = *b_ptr4;
 
-            dequant_4bit_8_gptq(load_int4.x, dq[0], z1z16[0], y1y16[0], size_n);
-            dequant_4bit_8_gptq(load_int4.y, dq[1], z1z16[1], y1y16[1], size_n);
-            dequant_4bit_8_gptq(load_int4.z, dq[2], z1z16[2], y1y16[2], size_n);
-            dequant_4bit_8_gptq(load_int4.w, dq[3], z1z16[3], y1y16[3], size_n);
+            dequant_4bit_8_gptq(load_int4.x, dq[0], z1z16[0], y1y16[0], size_n, false);
+            dequant_4bit_8_gptq(load_int4.y, dq[1], z1z16[1], y1y16[1], size_n, false);
+            dequant_4bit_8_gptq(load_int4.z, dq[2], z1z16[2], y1y16[2], size_n, false);
+            dequant_4bit_8_gptq(load_int4.w, dq[3], z1z16[3], y1y16[3], size_n, false);
 
             b_ptr += size_n;
             //half* dqh = (half*)dq;
@@ -242,6 +242,7 @@ __global__ void reconstruct_gptq_kernel
             {
                 for (int j = 0; j < 4; j++)
                 {
+                    for (int v = 0; v < 4; v++) dq[v][j] = __hmul2(scales[v], dq[v][j]);
                     b_.set4(perm[lk++], n, __low2half(dq[0][j]), __low2half(dq[1][j]), __low2half(dq[2][j]), __low2half(dq[3][j]));
                     b_.set4(perm[lk++], n, __high2half(dq[0][j]), __high2half(dq[1][j]), __high2half(dq[2][j]), __high2half(dq[3][j]));
                 }
@@ -250,6 +251,7 @@ __global__ void reconstruct_gptq_kernel
             {
                 for (int j = 0; j < 4; j++)
                 {
+                    for (int v = 0; v < 4; v++) dq[v][j] = __hmul2(scales[v], dq[v][j]);
                     b_.set4(offset_k + lk++, n, __low2half(dq[0][j]), __low2half(dq[1][j]), __low2half(dq[2][j]), __low2half(dq[3][j]));
                     b_.set4(offset_k + lk++, n, __high2half(dq[0][j]), __high2half(dq[1][j]), __high2half(dq[2][j]), __high2half(dq[3][j]));
                 }
@@ -435,11 +437,11 @@ void QMatrix::reconstruct(half* out)
     dim3 blockDim, gridDim;
     blockDim.x = BLOCK_KN_SIZE;
     blockDim.y = 1;
-    gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
     gridDim.y = DIVIDE(height, BLOCK_KN_SIZE);
 
     if (!is_gptq)
     {
+        gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
         reconstruct_kernel<<<gridDim, blockDim>>>
         (
             cuda_q_weight,
@@ -462,6 +464,7 @@ void QMatrix::reconstruct(half* out)
     }
     else
     {
+        gridDim.x = DIVIDE(width, BLOCK_KN_SIZE * 4);
         reconstruct_gptq_kernel<<<gridDim, blockDim>>>
         (
             cuda_q_weight,

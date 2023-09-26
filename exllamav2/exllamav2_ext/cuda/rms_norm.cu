@@ -46,16 +46,18 @@ __global__ void rms_norm_kernel
     // Compute sum of squares for each block
 
     float sum = 0.0f;
-    half item[blocks_per_warp];
+    float itemf[blocks_per_warp];
 
     #pragma unroll
     for (int i = 0; i < blocks_per_warp; i++)
     {
         int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
         if (column >= dim) break;
-        item[i] = x_row[column];
-        float itemf = __half2float(item[i]);
-        sum = fma(itemf, itemf, sum);
+
+        float f = __half2float(x_row[column]);
+        f = fmaxf(-65504.0f, fminf(f, 65504.0f));
+        itemf[i] = f;
+        sum = fma(f, f, sum);
     }
 
     // Shuffle to sum across lanes
@@ -83,7 +85,7 @@ __global__ void rms_norm_kernel
         int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
         if (column >= dim) return;
 
-        float x_itemf = __half2float(item[i]);
+        float x_itemf = itemf[i];
         float w_itemf = __half2float(w[column]);
         float n = x_itemf * w_itemf * rmf;
         y_row[column] = __float2half_rn(n);

@@ -158,37 +158,30 @@ void gemm_half_q_half_cuda
         cublasHgemm(cublas_handle,
                     CUBLAS_OP_N,
                     CUBLAS_OP_N,
-                    size_n,
-                    size_m,
-                    size_k,
-                    &alpha,
-                    temp_dq,
-                    size_n,
-                    a,
-                    size_k,
-                    &beta,
-                    c,
-                    size_n);
+                    size_n, size_m, size_k,
+                    &alpha, temp_dq, size_n,
+                            a,       size_k,
+                    &beta,  c,       size_n);
 
-//         const float alpha = 1.0f;
-//         const float beta = clear ? 0.0f : 1.0f;
-//         cublasSgemmEx(cublas_handle,
-//                       CUBLAS_OP_N,
-//                       CUBLAS_OP_N,
-//                       size_n,
-//                       size_m,
-//                       size_k,
-//                       &alpha,
-//                       temp_dq,
-//                       CUDA_R_16F,
-//                       size_n,
-//                       a,
-//                       CUDA_R_16F,
-//                       size_k,
-//                       &beta,
-//                       c,
-//                       CUDA_R_16F,
-//                       size_n);
+        //const float alpha = 1.0f;
+        //const float beta = clear ? 0.0f : 1.0f;
+        //cublasSgemmEx(cublas_handle,
+        //              CUBLAS_OP_N,
+        //              CUBLAS_OP_N,
+        //              size_n, size_m, size_k,
+        //              &alpha, temp_dq, CUDA_R_16F, size_n,
+        //                      a,       CUDA_R_16F, size_k,
+        //              &beta,  c,       CUDA_R_16F, size_n);
+
+        //const float alpha = 1.0f;
+        //const float beta = clear ? 0.0f : 1.0f;
+        //cublasGemmEx(cublas_handle,
+        //             CUBLAS_OP_N, CUBLAS_OP_N,
+        //             size_n, size_m, size_k,
+        //             &alpha, temp_dq, CUDA_R_16F, size_n,
+        //                     a,       CUDA_R_16F, size_k,
+        //             &beta,  c,       CUDA_R_16F, size_n,
+        //             CUDA_R_16F, CUBLAS_GEMM_DFALT_TENSOR_OP);
     }
     else
     {
