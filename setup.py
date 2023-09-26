@@ -43,7 +43,7 @@ setup_kwargs = {
     "cmdclass": {"build_ext": cpp_extension.BuildExtension}
 } if precompile else {}
 
-version = "0.0.3"
+version = "0.0.4"
 
 setup(
     name = "exllamav2",
