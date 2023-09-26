@@ -61,6 +61,14 @@ int top_p_cpu
     float top_p
 );
 
+int typical_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float typical
+);
+
 int multinomial_cpu
 (
     const int num_candidates,

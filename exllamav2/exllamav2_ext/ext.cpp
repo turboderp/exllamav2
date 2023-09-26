@@ -594,6 +594,7 @@ void sample_basic
     float temperature,
     int top_k,
     float top_p,
+    float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
     torch::Tensor output_probs      // shape [bsz, 1]
@@ -639,7 +640,10 @@ void sample_basic
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
-        sort_descending(num_candidates, temp_probs, temp_indices, top_k);
+        if (top_k > 0 || top_p > 0)
+        {
+            sort_descending(num_candidates, temp_probs, temp_indices, top_k);
+        }
 
         if (top_k > 0)
         {
@@ -650,6 +654,12 @@ void sample_basic
         if (top_p > 0.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (typical > 0.0f)
+        {
+            num_candidates = typical_cpu(num_candidates, temp_probs, temp_indices, typical);
             normalize_cpu(num_candidates, temp_probs);
         }
 

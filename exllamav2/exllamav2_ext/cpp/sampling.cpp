@@ -1,7 +1,6 @@
 #include "sampling.h"
 #include "util.h"
 #include <math.h>
-#include <chrono>
 
 bool* g_rep_mask = NULL;
 int g_vocab_size = 0;
@@ -109,7 +108,18 @@ inline void swap(T &a, T &b)
     b = temp;
 }
 
-void quicksort_with_idx_desc
+inline bool cmp_asc(const float& a, const float& b)
+{
+    return a > b;
+}
+
+inline bool cmp_desc(const float& a, const float& b)
+{
+    return a < b;
+}
+
+template <bool (*cmp_func)(const float&, const float&)>
+void quicksort_with_idx
 (
     float* arr,
     int* idx,
@@ -127,7 +137,7 @@ void quicksort_with_idx_desc
         int i0 = low;
         int i1 = low + 1;
 
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
         return;
     }
 
@@ -137,9 +147,9 @@ void quicksort_with_idx_desc
         int i1 = low + 1;
         int i2 = low + 2;
 
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
-        if (arr[i1] < arr[i2]) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i1], arr[i2])) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
         return;
     }
 
@@ -150,12 +160,12 @@ void quicksort_with_idx_desc
         int i2 = low + 2;
         int i3 = low + 3;
 
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
-        if (arr[i1] < arr[i2]) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
-        if (arr[i2] < arr[i3]) { swap<float>(arr[i2], arr[i3]); swap<int>(idx[i2], idx[i3]); }
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
-        if (arr[i1] < arr[i2]) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i1], arr[i2])) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
+        if (cmp_func(arr[i2], arr[i3])) { swap<float>(arr[i2], arr[i3]); swap<int>(idx[i2], idx[i3]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i1], arr[i2])) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
         return;
     }
 
@@ -167,16 +177,16 @@ void quicksort_with_idx_desc
         int i3 = low + 3;
         int i4 = low + 4;
 
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
-        if (arr[i1] < arr[i2]) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
-        if (arr[i2] < arr[i3]) { swap<float>(arr[i2], arr[i3]); swap<int>(idx[i2], idx[i3]); }
-        if (arr[i3] < arr[i4]) { swap<float>(arr[i3], arr[i4]); swap<int>(idx[i3], idx[i4]); }
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
-        if (arr[i1] < arr[i2]) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
-        if (arr[i2] < arr[i3]) { swap<float>(arr[i2], arr[i3]); swap<int>(idx[i2], idx[i3]); }
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
-        if (arr[i1] < arr[i2]) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
-        if (arr[i0] < arr[i1]) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i1], arr[i2])) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
+        if (cmp_func(arr[i2], arr[i3])) { swap<float>(arr[i2], arr[i3]); swap<int>(idx[i2], idx[i3]); }
+        if (cmp_func(arr[i3], arr[i4])) { swap<float>(arr[i3], arr[i4]); swap<int>(idx[i3], idx[i4]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i1], arr[i2])) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
+        if (cmp_func(arr[i2], arr[i3])) { swap<float>(arr[i2], arr[i3]); swap<int>(idx[i2], idx[i3]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
+        if (cmp_func(arr[i1], arr[i2])) { swap<float>(arr[i1], arr[i2]); swap<int>(idx[i1], idx[i2]); }
+        if (cmp_func(arr[i0], arr[i1])) { swap<float>(arr[i0], arr[i1]); swap<int>(idx[i0], idx[i1]); }
         return;
     }
 
@@ -184,7 +194,7 @@ void quicksort_with_idx_desc
     int i = low - 1;
     for (int j = low; j < high; j++)
     {
-        if (arr[j] >= pivot)
+        if (!cmp_func(arr[j], pivot))
         {
             i++;
             swap<float>(arr[i], arr[j]);
@@ -194,12 +204,12 @@ void quicksort_with_idx_desc
 
     swap<float>(arr[i + 1], arr[high]);
     swap<int>(idx[i + 1], idx[high]);
-
     int pos = i + 1;
+
     if (max_index == 0 || low <= max_index)
-        quicksort_with_idx_desc(arr, idx, low, pos - 1, max_index);
+        quicksort_with_idx<cmp_func>(arr, idx, low, pos - 1, max_index);
     if (max_index == 0 || pos <= max_index)
-        quicksort_with_idx_desc(arr, idx, pos + 1, high, max_index);
+        quicksort_with_idx<cmp_func>(arr, idx, pos + 1, high, max_index);
 }
 
 int pre_sort_descending
@@ -234,15 +244,8 @@ void sort_descending
     int max_index
 )
 {
-
-//    auto start = std::chrono::high_resolution_clock::now();
-
     int pre = pre_sort_descending(num_candidates, temp_probs, temp_indices);
-    quicksort_with_idx_desc(temp_probs, temp_indices, 0, pre - 1, max_index);
-
-//    auto stop = std::chrono::high_resolution_clock::now();
-//    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-//    DBGI2(duration_us, pre);
+    quicksort_with_idx<cmp_desc>(temp_probs, temp_indices, 0, pre - 1, max_index);
 
 //    int m = (max_index == 0 ? num_candidates : max_index);
 //    for (int i = 0; i < m; i++) printf("%i - %f \n", temp_indices[i], temp_probs[i] * 10000.0);
@@ -283,6 +286,68 @@ int top_p_cpu
         num++;
         if (num >= num_candidates) break;
     }
+
+    if (num == 0) num = 1;
+    return num;
+}
+
+int typical_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float typical
+)
+{
+    TIME_START;
+
+    const float epsilon = 1e-10;
+
+    float* temp = (float*) malloc(num_candidates * sizeof(float));
+    int* entropy_dev_order = (int*) malloc(num_candidates * sizeof(int));
+    int* temp_indices_2 = (int*) malloc(num_candidates * sizeof(int));
+
+    float neg_entropy = 0.0f;
+    for (int i = 0; i < num_candidates; i++)
+    {
+        float x = temp_probs[i];
+        float y = x + logf(x + epsilon);
+        neg_entropy += x * y;
+        temp[i] = y;  // temp = log_probs
+    }
+
+    for (int i = 0; i < num_candidates; i++)
+    {
+        temp[i] = fabs(temp[i] - neg_entropy);  // temp = entropy_dev
+        entropy_dev_order[i] = i;
+    }
+
+    quicksort_with_idx<cmp_asc>(temp, entropy_dev_order, 0, num_candidates - 1, num_candidates);
+
+    memcpy(temp, temp_probs, num_candidates * sizeof(float));  // temp = temp_probs
+    memcpy(temp_indices_2, temp_indices, num_candidates * sizeof(int));
+
+    float cumprob = 0.0f;
+    int num = 0;
+
+    while (true)
+    {
+        int j = entropy_dev_order[num];
+        float p = temp[j];
+        temp_probs[num] = p;
+        temp_indices[num] = temp_indices_2[j];
+
+        cumprob += p;
+        if (cumprob >= typical) break;
+        num++;
+        if (num >= num_candidates) break;
+    }
+
+    free(temp);
+    free(entropy_dev_order);
+    free(temp_indices_2);
+
+    TIME_STOP;
 
     if (num == 0) num = 1;
     return num;
