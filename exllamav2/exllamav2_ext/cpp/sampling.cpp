@@ -299,7 +299,7 @@ int typical_cpu
     float typical
 )
 {
-    TIME_START;
+    //TIME_START;
 
     const float epsilon = 1e-10;
 
@@ -347,7 +347,7 @@ int typical_cpu
     free(entropy_dev_order);
     free(temp_indices_2);
 
-    TIME_STOP;
+    //TIME_STOP;
 
     if (num == 0) num = 1;
     return num;
