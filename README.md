@@ -57,17 +57,52 @@ probably works better for CodeLlama-instruct. `raw` will produce a simple chatlo
 models and various other finetunes. You can also provide a custom system prompt with `-sp`. 
 
 
-### Installation
+## Installation
 
-To install as a library (not required for the included examples), clone the repository and run:
+### Method 1: Install from source
+
+To install the current dev version, clone the repo and run the setup script:
 
 ```
+git clone https://github.com/turboderp/exllamav2
+cd exllamav2
 python setup.py install --user
 ```
 
-ExLlamaV2 relies on a Torch C++ extension for its CUDA functions, which is compiled at runtime. This means the first
-time the library is used it will take 10-20 seconds (depending on your hardware) to start, but the extension gets cached
-for subsequent use. A PyPI package will evantually be available with an option to install a precompiled extension. 
+By default this will also compile and install the Torch C++ extension (`exllamav2_ext`) that the library relies on. 
+You can skip this step by setting the `EXLLAMA_NOCOMPILE` environment variable:
+
+```
+EXLLAMA_NOCOMPILE= python setup.py install --user
+```
+
+This will install the "JIT version" of the package, i.e. it will install the Python components without building the
+C++ extension in the process. Instead, the extension will be built the first time the library is used, then cached in 
+`~/.cache/torch_extensions` for subsequent use.
+
+### Method 2: Install from release (with prebuilt extension)
+
+Releases are available [here](https://github.com/turboderp/exllamav2/releases), with prebuilt wheels that contain the
+extension binaries. Make sure to grab the right version, matching your platform, Python version (`cp`) and CUDA version.
+Download an appropriate wheel, then run:
+
+```
+pip install exllamav2-0.0.4+cu118-cp310-cp310-linux_x86_64.whl
+```
+
+The `py3-none-any.whl` version is the JIT version which will build the extension on first launch. The `.tar.gz` file
+can also be installed this way, and it will build the extension while installing.
+
+### Method 3: Install from PyPI
+
+A PyPI package is available as well. It can be installed with:
+
+```
+pip install exllamav2
+```
+
+The version available through PyPI is the JIT version (see above). Still working on a solution for distributing
+prebuilt wheels via PyPI.
 
 
 ## EXL2 quantization
@@ -111,7 +146,6 @@ that purpose.
 
 There are still things that need to be ported over from V1, and other planned features. Among them:
 
-- PyPi package with prebuilt extensions
 - LoRA support
 - Example web UI
 - Web server
@@ -128,3 +162,7 @@ Flash Attention is used now, when available, requiring at least version **2.2.1*
 
 **2023-09-18**: Some minor changes to allow models with higher bitrates (it used to cap at around 6), and changes to
 the converter to better facilitate scripted jobs.
+
+**2023-09-27**: Prebuilt wheels are now available, credit to [@jllllll](https://github.com/jllllll). They're on the
+[releases page here](https://github.com/turboderp/exllamav2/releases). A solution to installing prebuilt wheels straight
+from PyPI is still pending. Updated installation instructions above.
