@@ -279,6 +279,8 @@ def print_code_block(chunk):
     # Update the code block text
     code_block_text += chunk
 
+    code_block_text = re.sub(r'```.*?\n', '', code_block_text, flags=re.DOTALL)
+
     # Split updated text into lines and find the longest line
     lines = code_block_text.split('\n')
     max_length = max(len(line) for line in lines)
