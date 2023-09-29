@@ -55,20 +55,40 @@ void softmax_cpu
     const int vocab_size,
     const float temperature,
     const float* logits,
+    const bool* logits_filter,
     float* output
 )
 {
     float esum = 0.0f;
     float itemp = 1.0f / temperature;
     float maxl = 0.0f;
+
     #pragma unroll(32)
-    for (int i = 0; i < vocab_size; i++) maxl = fmaxf(logits[i], maxl);
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (!logits_filter[i]) continue;
+        maxl = fmaxf(logits[i], maxl);
+    }
     maxl *= itemp;
+
     #pragma unroll(32)
-    for (int i = 0; i < vocab_size; i++) { float e = expf(logits[i] * itemp - maxl); output[i] = e; esum += e; }
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (!logits_filter[i]) continue;
+        float e = expf(logits[i] * itemp - maxl);
+        output[i] = e;
+        esum += e;
+    }
     float isum = 1.0f / esum;
+
     #pragma unroll(32)
-    for (int i = 0; i < vocab_size; i++) { output[i] *= isum; }
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (logits_filter[i])
+            output[i] *= isum;
+        else
+            output[i] = 0.0f;
+    }
 }
 
 void normalize_cpu
@@ -439,7 +459,6 @@ int multinomial_cpu
 
     return 1;
 }
-
 
 
 

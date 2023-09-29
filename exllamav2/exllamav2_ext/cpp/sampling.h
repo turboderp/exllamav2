@@ -22,6 +22,7 @@ void softmax_cpu
     const int vocab_size,
     const float temperature,
     const float* logits,
+    const bool* logits_filter,
     float* output
 );
 

@@ -1,5 +1,5 @@
 import torch
-from exllamav2 import ext
+from exllamav2 import ExLlamaV2Tokenizer
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 
@@ -18,6 +18,8 @@ class ExLlamaV2Sampler:
 
         token_bias = None
 
+        filters = []
+
 
         def clone(self):
 
@@ -28,8 +30,8 @@ class ExLlamaV2Sampler:
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
-            c.token_bias = c.token_bias
-
+            c.token_bias = self.token_bias
+            c.filters = [f.clone() for f in self.filters]
             return c
 
 
@@ -42,11 +44,15 @@ class ExLlamaV2Sampler:
 
 
     @staticmethod
-    def sample(logits: torch.tensor, settings: Settings, sequence_ids: torch.tensor, random: float):
+    def sample(logits: torch.tensor, settings: Settings, sequence_ids: torch.tensor, random: float, tokenizer: ExLlamaV2Tokenizer, prefix_token = None):
+
+        batch_size, _, vocab_size = logits.shape
 
         assert logits.shape[1] == 1, "Logits tensor is incorrect shape, must be (bsz, 1, vocab_size)"
+        assert prefix_token is None or prefix_token.shape == (batch_size, 1), "Prefix token list doesn't match batch shape"
 
         logits = logits.clone().squeeze(1)
+        logit_filter = torch.ones((batch_size, vocab_size), dtype = torch.bool)
 
         # Repetition penalty
 
@@ -62,6 +68,24 @@ class ExLlamaV2Sampler:
 
         if settings.token_bias is not None: logits += settings.token_bias
 
+        # Evaluate filters
+
+        # for filter in settings.filters:
+        #     pass
+
+        # Healing
+
+        if prefix_token is not None:
+
+            prefix_id_to_ids = tokenizer.get_prefix_id_to_ids_dict()
+
+            valid_token_lists = []
+            for i in range(batch_size):
+                valid_token_lists.append(prefix_id_to_ids[prefix_token[i, 0].item()])
+
+            ext_c.logit_filter_exclusive(logit_filter, valid_token_lists)
+
+
         # Sampling
 
         batch_size = logits.shape[0]
@@ -75,7 +99,8 @@ class ExLlamaV2Sampler:
                            settings.typical,
                            random,
                            output_tokens,
-                           output_probs)
+                           output_probs,
+                           logit_filter)
 
         return output_tokens, output_probs
 

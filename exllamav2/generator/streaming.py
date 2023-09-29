@@ -24,6 +24,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     stop_tokens: list = []
     no_tokens: torch.Tensor = None
 
+    heal_next_token = False
+
     def __init__(self, model, cache, tokenizer):
         super().__init__(model, cache, tokenizer)
 
@@ -45,17 +47,38 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             else: raise ValueError("Unsupported type in stop_conditions")
     
     
-    def begin_stream(self, input_ids: torch.Tensor, gen_settings: ExLlamaV2Sampler.Settings):
+    def begin_stream(self, input_ids: torch.Tensor, gen_settings: ExLlamaV2Sampler.Settings, token_healing = False):
 
         self.held_text = ""
         self.held_tokens = self.no_tokens
         self.settings = gen_settings
         self._gen_begin_reuse(input_ids, gen_settings)
 
+        self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
+
 
     # Get the next chunk of text in the stream. Returns eos if stop condition has been met but does not count tokens
 
     def stream(self) -> (str, bool, torch.Tensor):
+
+        # Token healing
+
+        if self.heal_next_token:
+
+            # Pop the last toke
+
+            old_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:])[0]
+            last_token = self.sequence_ids[:, -1:]
+            self.sequence_ids = self.sequence_ids[:, :-1]
+            self.cache.current_seq_len -= 1
+
+            # Regenerate the last token again, with prefix
+
+            healed_token = self._gen_single_token(self.settings, prefix_token = last_token)
+            new_tail = self.tokenizer.decode(self.sequence_ids[:, -(self.tail_decode_tokens):])[0]
+            self.held_text += new_tail[len(old_tail):]
+
+            self.heal_next_token = False
 
         # Decode the current tail end of the sequence
 
@@ -147,9 +170,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True)
 
 
-    def _gen_single_token(self, gen_settings):
+    def _gen_single_token(self, gen_settings, prefix_token = None):
 
         logits = self.model.forward(self.sequence_ids[:, -1:], self.cache).float().cpu()
-        token, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random())
+        token, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
         self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
         return token

@@ -5,6 +5,8 @@
 #include <cuda_fp16.h>
 #include <cstdint>
 #include <cstdio>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include "config.h"
 
@@ -597,13 +599,18 @@ void sample_basic
     float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
-    torch::Tensor output_probs      // shape [bsz, 1]
+    torch::Tensor output_probs,     // shape [bsz, 1]
+    torch::Tensor logit_filter      // shape [bsz, vocab_size]
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
     TORCH_CHECK_DTYPE(output_tokens, kLong);
     TORCH_CHECK_DTYPE(output_probs, kFloat);
     TORCH_CHECK_DTYPE(logits, kFloat);
+    TORCH_CHECK_DTYPE(logit_filter, kBool);
+
+    TORCH_CHECK_SHAPES(logit_filter, 0, logits, 0, 1);
+    TORCH_CHECK_SHAPES(logit_filter, 1, logits, 1, 1);
 
     int vocab_size = logits.size(-1);
     int bsz = logits.size(0);
@@ -615,9 +622,18 @@ void sample_basic
     float* output_probs_ptr = (float*) output_tokens.data_ptr();
     float* logits_ptr = (float*) logits.data_ptr();
 
+    bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
+
     for (int i = 0; i < bsz; i++)
     {
-        softmax_cpu(vocab_size, temperature, logits_ptr + i * vocab_size, temp_probs);
+        softmax_cpu
+        (
+            vocab_size,
+            temperature,
+            logits_ptr + i * vocab_size,
+            logits_filter_ptr + i * vocab_size,
+            temp_probs
+        );
 
         if (top_k == 1)
         {
@@ -627,23 +643,8 @@ void sample_basic
             continue;
         }
 
-//        if (top_k == 1)
-//        {
-//            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size);
-//            output_tokens[i] = index;
-//            output_probs[i] = temp_probs[index];
-//            continue;
-//        }
-//
-//        softmax_cpu(vocab_size, temperature, logits_ptr + i * vocab_size, temp_probs);
-
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
-
-//        if (top_k > 0 || top_p > 0)
-//        {
-//            sort_descending(num_candidates, temp_probs, temp_indices, top_k);
-//        }
 
         if (top_k > 0)
         {
@@ -673,6 +674,43 @@ void sample_basic
 }
 
 
+// Filtering
+
+void logit_filter_exclusive
+(
+    torch::Tensor filter,                                       // shape [bsz, vocab_size]
+    const std::vector<std::vector<int>> &exclusive_lists
+)
+{
+    TORCH_CHECK_DTYPE(filter, kBool);
+    TORCH_CHECK(filter.size(0) == exclusive_lists.size(), "Number of lists does not match batch size")
+
+    bool* filter_ptr = (bool*) filter.data_ptr();
+    int vocab_size = filter.size(1);
+
+    for(const auto& list : exclusive_lists)
+    {
+        int id = 0;
+        int next_id_idx = 0;
+        int next_id = list[next_id_idx];
+
+        while (id < vocab_size)
+        {
+            while (id < next_id)
+            {
+                filter_ptr[id] = false;
+                id++;
+            }
+            id++;
+            next_id_idx++;
+            if (next_id_idx >= list.size()) next_id = vocab_size;
+            else next_id = list[next_id_idx];
+        }
+
+        filter_ptr += vocab_size;
+    }
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -695,4 +733,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("rope_", &rope_, "rope_");
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
+    m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
 }
