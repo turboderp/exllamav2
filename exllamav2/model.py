@@ -1,5 +1,5 @@
 import sys
-min_version = (3, 9)
+min_version = (3, 8)
 if sys.version_info < min_version:
     print("")
     print(f" ## Warning: this project requires Python {min_version[0]}.{min_version[1]} or higher.")
