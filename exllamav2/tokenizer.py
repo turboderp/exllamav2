@@ -18,7 +18,11 @@ class ExLlamaV2Tokenizer:
     pad_token_id: int
     newline_token_id: int = 13
 
-    def __init__(self, config):
+    piece_to_id: dict = None
+    prefix_to_ids: dict = None
+    prefix_id_to_ids: dict = None
+
+    def __init__(self, config, lazy_init = False):
 
         self.config = config
 
@@ -28,6 +32,14 @@ class ExLlamaV2Tokenizer:
         self.eos_token_id = self.tokenizer.eos_id()
         self.bos_token_id = self.tokenizer.bos_id()
         self.pad_token_id = 0
+
+        # Create dictionaries on init
+
+        if not lazy_init:
+
+            self.get_piece_to_id_dict()
+            self.get_prefix_to_ids_dict()
+            self.get_prefix_id_to_ids_dict()
 
 
     # Get single token
@@ -114,3 +126,61 @@ class ExLlamaV2Tokenizer:
 
         ids = self.tokenizer.Encode(text)
         return len(ids)
+
+
+    # Copy vocabulary into dictionary
+
+    def get_piece_to_id_dict(self):
+
+        if self.piece_to_id is not None: return self.piece_to_id
+
+        all_tokens = list(range(self.tokenizer.vocab_size()))
+        all_pieces = \
+        [
+            (p.replace("▁", " ") if not p.startswith("<") else self.tokenizer.decode(idx))
+            for idx, p in enumerate(self.tokenizer.id_to_piece(all_tokens))
+        ]
+
+        self.piece_to_id = { piece: idx for idx, piece in enumerate(all_pieces) }
+        return self.piece_to_id
+
+
+    # Create dictionary mapping prefixes to token IDs
+
+    def get_prefix_to_ids_dict(self):
+
+        if self.prefix_to_ids is not None: return self.prefix_to_ids
+
+        piece_to_id = self.get_piece_to_id_dict()
+        pieces = sorted(list(piece_to_id.keys()))
+        pieces = [p for p in pieces if len(p) > 0]
+        self.prefix_to_ids = {}
+
+        for i in range(len(pieces)):
+            piece = pieces[i]
+            if len(piece) == 0: continue
+            piece_id = piece_to_id[pieces[i]]
+            self.prefix_to_ids[piece] = [piece_id]
+
+            for j in range(1, len(piece)):
+                fpiece = piece[:-j]
+                if fpiece in self.prefix_to_ids:
+                    self.prefix_to_ids[fpiece].append(piece_id)
+
+        self.prefix_to_ids = { prefix: sorted(ids) for prefix, ids in self.prefix_to_ids.items() }
+
+        return self.prefix_to_ids
+
+
+    # Create dictionary mapping each ID to any IDs that it prefixes
+
+    def get_prefix_id_to_ids_dict(self):
+
+        if self.prefix_id_to_ids is not None: return self.prefix_id_to_ids
+
+        piece_to_id = self.get_piece_to_id_dict()
+        prefix_to_ids = self.get_prefix_to_ids_dict()
+
+        self.prefix_id_to_ids = { piece_to_id[piece]: ids for piece, ids in prefix_to_ids.items() }
+
+        return self.prefix_id_to_ids
