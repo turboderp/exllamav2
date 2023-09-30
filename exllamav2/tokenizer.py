@@ -35,6 +35,9 @@ class ExLlamaV2Tokenizer:
     char_trie: Trie = None
     char_trie_ci: Trie = None
 
+    tokenized_str_cache = {}
+    max_cached_strings = 100
+
     def __init__(self, config, lazy_init = False):
 
         self.config = config
@@ -249,3 +252,17 @@ class ExLlamaV2Tokenizer:
         self.char_trie_ci = self._make_trie(True)
         return self.char_trie_ci
 
+
+    # Cached tokenization
+
+    def cached_encode_str(self, text: str):
+
+        if text in self.tokenized_str_cache:
+            return self.tokenized_str_cache[text]
+
+        while len(self.tokenized_str_cache) >= self.max_cached_strings:
+            del self.tokenized_str_cache[next(iter(self.tokenized_str_cache))]  # Always removes oldest entry as of Python 3.7
+
+        new_enc = self.encode(text)
+        self.tokenized_str_cache[text] = new_enc
+        return new_enc
