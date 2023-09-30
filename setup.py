@@ -43,12 +43,20 @@ setup_kwargs = {
     "cmdclass": {"build_ext": cpp_extension.BuildExtension}
 } if precompile else {}
 
-version = "0.0.4"
+from exllamav2.version import __version__
+version = __version__
 
 setup(
     name = "exllamav2",
     version = version,
-    packages = ["exllamav2", "exllamav2.generator"],
+    packages = [
+        "exllamav2",
+        "exllamav2.generator",
+        "exllamav2.exllamav2_ext",
+        "exllamav2.exllamav2_ext.cpp",
+        "exllamav2.exllamav2_ext.cuda",
+        "exllamav2.exllamav2_ext.cuda.quant",
+    ],
     url = "https://github.com/turboderp/exllamav2",
     license = "AGPL",
     author = "bb",

@@ -1,4 +1,4 @@
-__version__ = "0.0.1"
+from exllamav2.version import __version__
 
 from exllamav2.model import ExLlamaV2
 from exllamav2.cache import ExLlamaV2Cache
