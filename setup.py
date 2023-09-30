@@ -53,6 +53,7 @@ setup(
         "exllamav2",
         "exllamav2.generator",
         "exllamav2.generator.filters",
+        "exllamav2.server",
         "exllamav2.exllamav2_ext",
         "exllamav2.exllamav2_ext.cpp",
         "exllamav2.exllamav2_ext.cuda",
