@@ -75,15 +75,21 @@ class ExLlamaV2BaseGenerator:
 
         self._gen_begin_base(ids, mask)
 
+        # Begin filters
+
+        gen_settings.begin_filters(self.tokenizer.get_id_to_piece_list()[unhealed_token] if unhealed_token is not None else None)
+
         # Generate tokens
 
         for i in range(num_tokens):
 
             logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask).float().cpu()
-            token, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
+            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
+            gen_settings.feed_filters(token)
 
             unhealed_token = None
+            if eos: break
 
         # Decode
 

@@ -43,6 +43,16 @@ class ExLlamaV2Sampler:
             self.token_bias[tokens] = float("-inf")
 
 
+        def begin_filters(self, prefix_str = ""):
+
+            for f in self.filters: f.begin(prefix_str)
+
+
+        def feed_filters(self, feed_token):
+
+            for f in self.filters: f.feed(feed_token)
+
+
     @staticmethod
     def sample(logits: torch.tensor, settings: Settings, sequence_ids: torch.tensor, random: float, tokenizer: ExLlamaV2Tokenizer, prefix_token = None):
 
@@ -50,6 +60,7 @@ class ExLlamaV2Sampler:
 
         assert logits.shape[1] == 1, "Logits tensor is incorrect shape, must be (bsz, 1, vocab_size)"
         assert prefix_token is None or prefix_token.shape == (batch_size, 1), "Prefix token list doesn't match batch shape"
+        assert batch_size == 1 or len(settings.filters) == 0, "Filters not implemented for batch size > 1"
 
         logits = logits.clone().squeeze(1)
         logit_filter = torch.ones((batch_size, vocab_size), dtype = torch.bool)
@@ -70,8 +81,18 @@ class ExLlamaV2Sampler:
 
         # Evaluate filters
 
-        # for filter in settings.filters:
-        #     pass
+        if len(settings.filters) > 0:
+
+            pass_tokens = None
+            end_tokens = None
+            for f in settings.filters:
+
+                pt, et = f.next()
+                pass_tokens = pt if pass_tokens is None else pass_tokens & pt
+                end_tokens = et if end_tokens is None else end_tokens | et
+
+            assert pass_tokens, "Filter excluded all tokens"
+            ext_c.logit_filter_exclusive(logit_filter, [sorted(list(pass_tokens))])
 
         # Healing
 
@@ -84,7 +105,6 @@ class ExLlamaV2Sampler:
                 valid_token_lists.append(prefix_id_to_ids[prefix_token[i, 0].item()])
 
             ext_c.logit_filter_exclusive(logit_filter, valid_token_lists)
-
 
         # Sampling
 
@@ -102,7 +122,12 @@ class ExLlamaV2Sampler:
                            output_probs,
                            logit_filter)
 
-        return output_tokens, output_probs
+        # Stop condition from filters
+
+        end_filter = False
+        if len(settings.filters) > 0 and output_tokens[0].item() in end_tokens: end_filter = True
+
+        return output_tokens, output_probs, end_filter
 
 
 

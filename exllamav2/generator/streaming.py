@@ -24,6 +24,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     stop_tokens: list = []
     no_tokens: torch.Tensor = None
 
+    first_token = False
     heal_next_token = False
 
     def __init__(self, model, cache, tokenizer):
@@ -72,13 +73,34 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.sequence_ids = self.sequence_ids[:, :-1]
             self.cache.current_seq_len -= 1
 
+            # Start filters
+
+            if self.first_token:
+
+                self.settings.begin_filters(self.tokenizer.get_id_to_piece_list()[last_token])
+                self.first_token = False
+
             # Regenerate the last token again, with prefix
 
-            healed_token = self._gen_single_token(self.settings, prefix_token = last_token)
-            new_tail = self.tokenizer.decode(self.sequence_ids[:, -(self.tail_decode_tokens):])[0]
+            healed_token, eos = self._gen_single_token(self.settings, prefix_token = last_token)
+            new_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:])[0]
             self.held_text += new_tail[len(old_tail):]
 
             self.heal_next_token = False
+
+            # In case we only needed the healed token
+
+            if eos: return self.held_text, True, self.no_tokens
+
+        # Start filters when not healing
+
+        else:
+
+            if self.first_token:
+
+                self.settings.begin_filters()
+                self.first_token = False
+
 
         # Decode the current tail end of the sequence
 
@@ -86,7 +108,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Generate a single token and append to the sequence
 
-        next_token = self._gen_single_token(self.settings)
+        next_token, eos = self._gen_single_token(self.settings)
 
         # End immediately if it was a stop token
 
@@ -98,6 +120,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         new_tail = self.tokenizer.decode(self.sequence_ids[:, -(self.tail_decode_tokens + 1):])[0]
         self.held_text += new_tail[len(old_tail):]
         self.held_tokens = torch.cat([self.held_tokens, next_token], dim = -1)
+
+        # Return now if newly added token ends a filter
+
+        if eos: return self.held_text, True, self.held_tokens
 
         # Hold text as long as it contains part of a stop string
 
@@ -137,6 +163,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.cache.current_seq_len = 0
         self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True)
 
+        self.first_token = True
+
 
     def _gen_begin_reuse(self, in_tokens, gen_settings):
 
@@ -173,6 +201,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
         logits = self.model.forward(self.sequence_ids[:, -1:], self.cache).float().cpu()
-        token, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
         self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
-        return token
+        gen_settings.feed_filters(token)
+        return token, eos

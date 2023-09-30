@@ -4,6 +4,16 @@ import torch
 
 class ExLlamaV2Tokenizer:
 
+    class Trie:
+
+        children: dict = {}
+        leaf: list = []
+
+        def __init__(self, children = None, leaf = None):
+            self.children = children if children is not None else {}
+            self.leaf = leaf if leaf is not None else []
+
+
     config: ExLlamaV2Config
     tokenizer: SentencePieceProcessor
 
@@ -18,9 +28,12 @@ class ExLlamaV2Tokenizer:
     pad_token_id: int
     newline_token_id: int = 13
 
+    id_to_piece: list = None
     piece_to_id: dict = None
     prefix_to_ids: dict = None
     prefix_id_to_ids: dict = None
+    char_trie: Trie = None
+    char_trie_ci: Trie = None
 
     def __init__(self, config, lazy_init = False):
 
@@ -37,9 +50,12 @@ class ExLlamaV2Tokenizer:
 
         if not lazy_init:
 
+            self.get_id_to_piece_list()
             self.get_piece_to_id_dict()
             self.get_prefix_to_ids_dict()
             self.get_prefix_id_to_ids_dict()
+            self.get_char_trie()
+            self.get_char_trie_ci()
 
 
     # Get single token
@@ -128,19 +144,26 @@ class ExLlamaV2Tokenizer:
         return len(ids)
 
 
-    # Copy vocabulary into dictionary
+    # Copy vocabulary from SP model
+
+    def get_id_to_piece_list(self):
+
+        if self.id_to_piece is not None: return self.id_to_piece
+
+        all_tokens = list(range(self.tokenizer.vocab_size()))
+        self.id_to_piece = \
+        [
+            (p.replace("▁", " ") if not p.startswith("<") else self.tokenizer.decode(idx))
+            for idx, p in enumerate(self.tokenizer.id_to_piece(all_tokens))
+        ]
+        return self.id_to_piece
+
 
     def get_piece_to_id_dict(self):
 
         if self.piece_to_id is not None: return self.piece_to_id
 
-        all_tokens = list(range(self.tokenizer.vocab_size()))
-        all_pieces = \
-        [
-            (p.replace("▁", " ") if not p.startswith("<") else self.tokenizer.decode(idx))
-            for idx, p in enumerate(self.tokenizer.id_to_piece(all_tokens))
-        ]
-
+        all_pieces = self.get_id_to_piece_list()
         self.piece_to_id = { piece: idx for idx, piece in enumerate(all_pieces) }
         return self.piece_to_id
 
@@ -184,3 +207,45 @@ class ExLlamaV2Tokenizer:
         self.prefix_id_to_ids = { piece_to_id[piece]: ids for piece, ids in prefix_to_ids.items() }
 
         return self.prefix_id_to_ids
+
+
+    # Create trie mapping chars to token IDs
+
+    def _make_trie(self, ci):
+
+        id_to_piece = self.get_id_to_piece_list()
+        trie = ExLlamaV2Tokenizer.Trie()
+
+        for idx, piece in enumerate(id_to_piece):
+
+            if ci: piece = piece.lower()
+
+            w = trie
+            while piece != "":
+
+                p = piece[0]
+                piece = piece[1:]
+
+                if p not in w.children: w.children[p] = ExLlamaV2Tokenizer.Trie()
+                w = w.children[p]
+
+                if piece == "": w.leaf.append(idx)
+
+        return trie
+
+
+    def get_char_trie(self):
+
+        if self.char_trie is not None: return self.char_trie
+
+        self.char_trie = self._make_trie(False)
+        return self.char_trie
+
+
+    def get_char_trie_ci(self):
+
+        if self.char_trie_ci is not None: return self.char_trie_ci
+
+        self.char_trie_ci = self._make_trie(True)
+        return self.char_trie_ci
+
