@@ -79,7 +79,7 @@ class ExLlamaV2SpeculativeGenerator(ExLlamaV2BaseGenerator):
 
                 logits = self.draft_model.forward(predict_ids[:, -1:], self.draft_cache).float().cpu()
                 past = torch.cat((self.sequence_ids[:, :-1], predict_ids), dim = 1)
-                token, prob = ExLlamaV2Sampler.sample(logits, draft_settings, past, randoms[i])
+                token, prob, _ = ExLlamaV2Sampler.sample(logits, draft_settings, past, randoms[i], self.tokenizer)
                 predict_ids = torch.cat([predict_ids, token], dim = 1)
                 used_predict_len += 1
                 if prob < self.prob_threshold: break
@@ -91,7 +91,7 @@ class ExLlamaV2SpeculativeGenerator(ExLlamaV2BaseGenerator):
             tokens = 0
             while True:
 
-                token, _ = ExLlamaV2Sampler.sample(logits[:, tokens : tokens + 1, :], gen_settings, self.sequence_ids, randoms[tokens])
+                token, _, _ = ExLlamaV2Sampler.sample(logits[:, tokens : tokens + 1, :], gen_settings, self.sequence_ids, randoms[tokens], self.tokenizer)
                 self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
                 tokens += 1
                 if tokens == used_predict_len or token != predict_ids[:, tokens]: break
@@ -101,7 +101,7 @@ class ExLlamaV2SpeculativeGenerator(ExLlamaV2BaseGenerator):
 
             if tokens == used_predict_len and token == predict_ids[:, tokens]:
 
-                token, _ = ExLlamaV2Sampler.sample(logits[:, tokens : tokens + 1, :], gen_settings, self.sequence_ids, randoms[tokens])
+                token, _, _ = ExLlamaV2Sampler.sample(logits[:, tokens : tokens + 1, :], gen_settings, self.sequence_ids, randoms[tokens], self.tokenizer)
                 self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
                 tokens += 1
                 self.draft_model.forward(self.sequence_ids[:, -1:], self.draft_cache, preprocess_only = True)
