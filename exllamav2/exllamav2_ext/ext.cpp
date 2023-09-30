@@ -618,8 +618,8 @@ void sample_basic
     float* temp_probs = (float*) malloc(vocab_size * sizeof(float));
     int* temp_indices = (int*) malloc(vocab_size * sizeof(int));
 
-    int64_t* output_tokens_ptr = (int64_t*) output_tokens.data_ptr();
-    float* output_probs_ptr = (float*) output_tokens.data_ptr();
+//    int64_t* output_tokens_ptr = (int64_t*) output_tokens.data_ptr();
+//    float* output_probs_ptr = (float*) output_tokens.data_ptr();
     float* logits_ptr = (float*) logits.data_ptr();
 
     bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
@@ -683,16 +683,16 @@ void logit_filter_exclusive
 )
 {
     TORCH_CHECK_DTYPE(filter, kBool);
-    TORCH_CHECK(filter.size(0) == exclusive_lists.size(), "Number of lists does not match batch size")
+    TORCH_CHECK((uint64_t) filter.size(0) == exclusive_lists.size(), "Number of lists does not match batch size")
 
     bool* filter_ptr = (bool*) filter.data_ptr();
-    int vocab_size = filter.size(1);
+    unsigned int vocab_size = filter.size(1);
 
     for(const auto& list : exclusive_lists)
     {
-        int id = 0;
-        int next_id_idx = 0;
-        int next_id = list[next_id_idx];
+        unsigned int id = 0;
+        unsigned int next_id_idx = 0;
+        unsigned int next_id = list[next_id_idx];
 
         while (id < vocab_size)
         {
