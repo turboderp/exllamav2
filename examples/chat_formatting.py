@@ -166,8 +166,3 @@ class CodeBlockFormatter:
 
         # Update the lines_printed counter
         self.lines_printed = len(lines)
-
-    def write(self):
-        f = open("demofile3.txt", "w")
-        f.write(self.code_block_text)
-        f.close()
