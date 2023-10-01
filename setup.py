@@ -69,6 +69,8 @@ setup(
         "torch>=2.0.1",
         "safetensors>=0.3.2",
         "sentencepiece>=0.1.97",
+        "pygments",
+        "websockets"
     ],
     include_package_data = True,
     verbose = verbose,
