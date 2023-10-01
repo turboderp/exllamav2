@@ -126,7 +126,8 @@ class CodeBlockFormatter:
         self.code_block_text += chunk
 
         # Remove language after codeblock start
-        code_block_text = '\n' + '\n'.join(self.code_block_text.split('\n')[1:])  # Removes output of specified language
+        code_block_text = '\n'.join([''] + self.code_block_text.split('\n')[1:])
+
         specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
 
         # Split updated text into lines and find the longest line
