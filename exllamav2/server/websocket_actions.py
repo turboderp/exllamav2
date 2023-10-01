@@ -22,11 +22,12 @@ async def dispatch(request, ws, server):
     if action_ == "echo": echo(request, ws, server, response)
     elif action_ == "estimate_token": estimate_token(request, ws, server, response)
     elif action_ == "lefttrim_token": lefttrim_token(request, ws, server, response)
-    try:
-    	else: await infer(request, ws, server, response)
-    except:
-    	print(f" ## Unknown request from client: {request}")
-        return
+    else: 
+        try:
+            await infer(request, ws, server, response)
+        except:
+            print(f" ## Unknown request from client: {request}")
+            return
 
     await ws.send(json.dumps(response))
 
