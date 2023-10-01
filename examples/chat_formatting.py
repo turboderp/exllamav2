@@ -129,9 +129,6 @@ class CodeBlockFormatter:
         code_block_text = '\n' + '\n'.join(self.code_block_text.split('\n')[1:])  # Removes output of specified language
         specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
 
-        if specified_lang is not None:
-            print(specified_lang)
-
         # Split updated text into lines and find the longest line
         lines = code_block_text.split('\n')
         max_length = max(len(line) for line in lines)
