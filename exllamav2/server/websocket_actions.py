@@ -22,10 +22,10 @@ async def dispatch(request, ws, server):
     if action_ == "echo": echo(request, ws, server, response)
     elif action_ == "estimate_token": estimate_token(request, ws, server, response)
     elif action_ == "lefttrim_token": lefttrim_token(request, ws, server, response)
-    elif action_ == "infer": await infer(request, ws, server, response)
-
-    else:
-        print(f" ## Unknown request from client: {request}")
+    try:
+    	else await infer(request, ws, server, response)
+    except:
+    	print(f" ## Unknown request from client: {request}")
         return
 
     await ws.send(json.dumps(response))
@@ -120,8 +120,7 @@ async def infer(request, ws, server, response):
 
     sc = [server.tokenizer.eos_token_id]
     if "stop_conditions" in request:
-        ss = request["stop_conditions"]
-        if not isinstance(ss, list): ss = [ss]
+        ss = request["stop_conditions"].split(',')
         sc += ss
 
     # Tokenize and trim prompt
