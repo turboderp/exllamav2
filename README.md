@@ -76,6 +76,7 @@ python setup.py install --user
 ```
 
 By default this will also compile and install the Torch C++ extension (`exllamav2_ext`) that the library relies on. 
+You will have to have cuda 11.7 on your system. It's possible to have multple cudas. Use `export CUDA_HOME=/usr/local/cuda-11.7/` to set the preferred path.
 You can skip this step by setting the `EXLLAMA_NOCOMPILE` environment variable:
 
 ```
