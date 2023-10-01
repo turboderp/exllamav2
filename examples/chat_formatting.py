@@ -91,6 +91,7 @@ class CodeBlockFormatter:
 
     code_block_text: str
     lines_printed: int
+    last_lexer: str
 
     formatter = BlackBackgroundTerminalFormatter()
 
@@ -100,6 +101,7 @@ class CodeBlockFormatter:
 
         self.code_block_text = ""
         self.lines_printed = 0
+        self.last_lexer = get_lexer_by_name("text")
 
         self.formatter.begin()
 
@@ -128,6 +130,7 @@ class CodeBlockFormatter:
         # Remove language after codeblock start
         code_block_text = '\n'.join([''] + self.code_block_text.split('\n')[1:])
 
+        # Get specified language
         specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
 
         # Split updated text into lines and find the longest line
@@ -142,9 +145,17 @@ class CodeBlockFormatter:
 
         # Try guessing the lexer for syntax highlighting, if we haven't guessed already
         try:
-            lexer = guess_lexer(padded_text) if specified_lang is None else get_lexer_by_name(specified_lang)
+            if bool(specified_lang):
+                lexer = get_lexer_by_name(specified_lang)
+                self.last_lexer = lexer
+            elif '\n' in chunk: # Offload lexguessing to every newline
+                lexer = guess_lexer(padded_text) 
+                self.last_lexer = lexer
+            else:
+                lexer = self.last_lexer
         except ClassNotFound:
             lexer = get_lexer_by_name("text")  # Fallback to plain text if language isn't supported by pygments
+            self.last_lexer = lexer
 
         # Highlight
         highlighted_text = highlight(padded_text, lexer, self.formatter)
