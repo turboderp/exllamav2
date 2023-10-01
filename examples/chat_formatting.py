@@ -126,7 +126,11 @@ class CodeBlockFormatter:
         self.code_block_text += chunk
 
         # Remove language after codeblock start
-        code_block_text = re.sub(r'```.*?$', '```', self.code_block_text, flags=re.MULTILINE)
+        code_block_text = '\n' + '\n'.join(self.code_block_text.split('\n')[1:])  # Removes output of specified language
+        specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
+
+        if specified_lang is not None:
+            print(specified_lang)
 
         # Split updated text into lines and find the longest line
         lines = code_block_text.split('\n')
@@ -140,7 +144,7 @@ class CodeBlockFormatter:
 
         # Try guessing the lexer for syntax highlighting, if we haven't guessed already
         try:
-            lexer = guess_lexer(padded_text)
+            lexer = guess_lexer(padded_text) if specified_lang is None else get_lexer_by_name(specified_lang)
         except ClassNotFound:
             lexer = get_lexer_by_name("text")  # Fallback to plain text if language isn't supported by pygments
 
@@ -153,3 +157,8 @@ class CodeBlockFormatter:
 
         # Update the lines_printed counter
         self.lines_printed = len(lines)
+
+    def write(self):
+        f = open("demofile3.txt", "w")
+        f.write(self.code_block_text)
+        f.close()
