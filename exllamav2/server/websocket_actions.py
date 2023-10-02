@@ -121,7 +121,8 @@ async def infer(request, ws, server, response):
 
     sc = [server.tokenizer.eos_token_id]
     if "stop_conditions" in request:
-        ss = request["stop_conditions"].split(',')
+        ss = request["stop_conditions"]
+        if not isinstance(ss, list): ss = [ss]
         sc += ss
 
     # Tokenize and trim prompt
