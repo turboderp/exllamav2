@@ -1,5 +1,5 @@
 
-import sys, os
+import sys, os, re
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from exllamav2 import(
@@ -181,6 +181,11 @@ col_error = "\u001b[31;1m"  # Magenta
 codeblock_formatter = None if args.no_code_formatting else CodeBlockFormatter()
 in_code_block = False
 
+delim_buffer_array = []
+delim_pattern = re.compile(r'(`{1,3})')
+
+delim_overflow = ""
+
 # Main loop
 
 while True:
@@ -219,10 +224,17 @@ while True:
         response_text += chunk
         responses_ids[-1] = torch.cat([responses_ids[-1], tokens], dim = -1)
 
-        # Check for code block delimiters
+        # Append chunk to delimiter buffer if contains delimiters
+        if delim_pattern.search(chunk) and len(delim_buffer_array) < 2: # dirty fix for assumption that codeblock start is never smaller than `` + `
+            # add chunk
+            delim_buffer_array.append(chunk)
+        else:
+            delim_overflow = "".join(delim_buffer_array)
+            delim_buffer_array = []
 
-        codeblock_delimiter = chunk.startswith("```") and codeblock_formatter is not None
-        if codeblock_delimiter: chunk = chunk[3:]  # Suppress delimiter in output
+        # Check for code block delimiters
+        # if delim_buffer_array contains a full delimiter (```), codeblock true
+        codeblock_delimiter = "".join(delim_buffer_array).find("```") != -1 and (codeblock_formatter is not None)
 
         # Print output
 
@@ -233,9 +245,13 @@ while True:
                 codeblock_formatter.begin()
                 print("\n")
                 in_code_block = True
+                delim_buffer_array = []
 
             # Print unformatted
-            print(chunk, end = "")
+            # if delim buffer is > 0 do not print for now
+            if len(delim_buffer_array) == 0:
+              print(chunk, end = "")
+            
             sys.stdout.flush()
 
         else:
@@ -244,6 +260,7 @@ while True:
             if codeblock_delimiter:
                 print("\033[0m", end = "")  # Reset block color to be certain
                 in_code_block = False
+                delim_buffer_array = []
 
             # Print formatted
             codeblock_formatter.print_code_block(chunk)

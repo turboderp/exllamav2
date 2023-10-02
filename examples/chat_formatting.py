@@ -15,10 +15,12 @@ import shutil
 
 # Code block formatter for black background
 
+
 class BlackBackgroundTerminalFormatter(TerminalFormatter):
 
     code_pad: int = 2
     block_pad_left: int = 1
+
 
     def __init__(self):
         super().__init__(style = "monokai")
@@ -109,7 +111,7 @@ class CodeBlockFormatter:
     # Print a code block, updating the CLI in real-time
 
     def print_code_block(self, chunk):
-
+        
         # Clear previously printed lines
         for _ in range(self.lines_printed):  # -1 not needed?
             # Move cursor up one line
@@ -129,6 +131,11 @@ class CodeBlockFormatter:
 
         # Remove language after codeblock start
         code_block_text = '\n'.join([''] + self.code_block_text.split('\n')[1:])
+
+        # Handle delim at end
+        if code_block_text.endswith("```"):
+            code_block_text = code_block_text[:-3]
+
 
         # Get specified language
         specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
