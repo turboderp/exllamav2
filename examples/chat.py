@@ -18,6 +18,8 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
+from chat_formatting import CodeBlockFormatter
+
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
@@ -33,6 +35,7 @@ parser.add_argument("-typical", "--typical", type = float, default = 0.0, help =
 parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1, help = "Sampler repetition penalty, default = 1.1 (1 to disable)")
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
+parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
 
 # Initialize model and tokenizer
 
@@ -173,6 +176,11 @@ col_user = "\u001b[33;1m"  # Yellow
 col_bot = "\u001b[34;1m"  # Blue
 col_error = "\u001b[31;1m"  # Magenta
 
+# Code block formatting
+
+codeblock_formatter = None if args.no_code_formatting else CodeBlockFormatter()
+in_code_block = False
+
 # Main loop
 
 while True:
@@ -192,10 +200,6 @@ while True:
     active_context = get_tokenized_context(model.config.max_seq_len - min_space_in_context)
     generator.begin_stream(active_context, settings)
 
-    # print("------")
-    # print(tokenizer.decode(active_context))
-    # print("------")
-
     # Stream response
 
     if mode == "raw":
@@ -214,8 +218,35 @@ while True:
         if len(response_text) == 0: chunk = chunk.lstrip()
         response_text += chunk
         responses_ids[-1] = torch.cat([responses_ids[-1], tokens], dim = -1)
-        print(chunk, end="")
-        sys.stdout.flush()
+
+        # Check for code block delimiters
+
+        codeblock_delimiter = chunk.startswith("```") and codeblock_formatter is not None
+        if codeblock_delimiter: chunk = chunk[3:]  # Suppress delimiter in output
+
+        # Print output
+
+        if not in_code_block:
+
+            # Start of codeblock
+            if codeblock_delimiter:
+                codeblock_formatter.begin()
+                print("\n")
+                in_code_block = True
+
+            # Print unformatted
+            print(chunk, end = "")
+            sys.stdout.flush()
+
+        else:
+
+            # End of code block
+            if codeblock_delimiter:
+                print("\033[0m", end = "")  # Reset block color to be certain
+                in_code_block = False
+
+            # Print formatted
+            codeblock_formatter.print_code_block(chunk)
 
         # If model has run out of space, rebuild the context and restart stream
 
