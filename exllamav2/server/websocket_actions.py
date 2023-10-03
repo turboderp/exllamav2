@@ -98,23 +98,28 @@ async def infer(request, ws, server, response):
                 temperature: float,                 # (optional) sampling temperature (1.0 = no temp adjust)
                 rep_pen: float,                     # (optional) repetition penalty (1.0 = no penalty)
                 stop_conditions: [str|int],         # (optional) list of stop conditions
-                token_healing: bool }               # (optionsl) enable token healing
+                token_healing: bool,                # (optionsl) enable token healing
+                tag: str }                          # (optional) tag to echo in response packet
 
     streams:  { action: str = "infer",
                 request_id: str,
                 response_type: str = "chunk",
-                chunk: str }                        # next chunk of response
+                chunk: str,                         # next chunk of response
+                tag: str }                          # (optional)
 
     response: { action: str = "infer",
                 request_id: str,
                 response_type: str = "full",
                 util_text: str,                     # input context (pruned if max_seq_len exceeded)
-                response: str }                     # full response excluding input prompt
+                response: str,                      # full response excluding input prompt
+                tag: str }                          # (optional)
     """
 
     # Mode
 
     stream = request["stream"]
+    if "tag" in request:
+        response["tag"] = request["tag"]
 
     # Stop conditions
 
