@@ -16,6 +16,7 @@ from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
+from exllamav2.compat import safe_move_tensor
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -285,7 +286,7 @@ class ExLlamaV2:
 
                 if input_mask is not None:
                     min_mask_width = min(input_mask[i].shape[-1], seq_len + past_len[1][i])
-                    input_mask_part = input_mask[i][:, :min_mask_width].to(attn_mask.device)
+                    input_mask_part = safe_move_tensor(input_mask[i][:, :min_mask_width], attn_mask.device)
                     input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
                     attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
 
@@ -301,7 +302,7 @@ class ExLlamaV2:
 
             if input_mask is not None:
                 min_mask_width = min(input_mask.shape[-1], seq_len + past_len)
-                input_mask_part = input_mask[:, :min_mask_width].to(attn_mask.device)
+                input_mask_part = safe_move_tensor(input_mask[:, :min_mask_width], attn_mask.device)
                 input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
                 attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
 
@@ -410,14 +411,14 @@ class ExLlamaV2:
 
                 prev_device = device
                 attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, input_mask, device)
-                if isinstance(past_len, tuple): past_len = (past_len[0].to(device), past_len[1])
+                if isinstance(past_len, tuple): past_len = (safe_move_tensor(past_len[0], device), past_len[1])
 
             # Onward
 
             if last_id_only and idx == self.head_layer_idx:
                 x = x.narrow(-2, -1, 1)
 
-            x = x.to(device)
+            x = safe_move_tensor(x, device)
             x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len)
 
             if preprocess_only and idx == self.last_kv_layer_idx:
