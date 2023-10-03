@@ -11,6 +11,7 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
     offset: int
     prefix: str
     case_insensitive: bool
+    sequence_str_cmp: str
 
     def __init__(self, model, tokenizer, options, case_insensitive = False):
         super().__init__(model, tokenizer)
@@ -51,8 +52,8 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
 
         # prefix_to_ids = self.tokenizer.get_prefix_to_ids_dict()
         id_to_piece = self.tokenizer.get_id_to_piece_list()
-        pass_str = set()
-        end_str = set()
+        # pass_str = set()
+        # end_str = set()
 
         char_trie = self.tokenizer.get_char_trie_ci() if self.case_insensitive else self.tokenizer.get_char_trie()
         pass_tokens = set()
@@ -87,10 +88,10 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
 
                     if option_cased is None:
                         pass_tokens.update(w.leaf)
-                        pass_str.update([id_to_piece[l] for l in w.leaf])
+                        # pass_str.update([id_to_piece[l] for l in w.leaf])
                         if option == "":
                             end_tokens.update(w.leaf)
-                            end_str.update([id_to_piece[l] for l in w.leaf])
+                            # end_str.update([id_to_piece[l] for l in w.leaf])
 
                     # Special case if prefix is cased but continuation is case-insensitive
 
@@ -99,9 +100,9 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
                             s = id_to_piece[l]
                             if option_cased.startswith(s):
                                 pass_tokens.add(l)
-                                pass_str.add(s)
+                                # pass_str.add(s)
                                 if option == "":
                                     end_tokens.add(l)
-                                    end_str.add(s)
+                                    # end_str.add(s)
 
         return pass_tokens, end_tokens
