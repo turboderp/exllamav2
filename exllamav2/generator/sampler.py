@@ -38,7 +38,8 @@ class ExLlamaV2Sampler:
         def disallow_tokens(self, tokenizer, tokens):
 
             if self.token_bias is None:
-                self.token_bias = torch.zeros((tokenizer.config.vocab_size,), dtype = torch.float)
+                padding = -tokenizer.config.vocab_size % 32
+                self.token_bias = torch.zeros((tokenizer.config.vocab_size + padding,), dtype = torch.float)
 
             self.token_bias[tokens] = float("-inf")
 

@@ -1,6 +1,7 @@
 from exllamav2.config import ExLlamaV2Config
 from sentencepiece import SentencePieceProcessor
 import torch
+import os, json, re
 
 class ExLlamaV2Tokenizer:
 
@@ -35,6 +36,10 @@ class ExLlamaV2Tokenizer:
     char_trie: Trie = None
     char_trie_ci: Trie = None
 
+    extended_id_to_piece = {}
+    extended_piece_to_id = {}
+    special_delimiters = None
+
     tokenized_str_cache = {}
     max_cached_strings = 100
 
@@ -44,10 +49,44 @@ class ExLlamaV2Tokenizer:
 
         self.tokenizer = SentencePieceProcessor(model_file = self.config.tokenizer_path)
 
+        # Load added_tokens.json if present
+
+        added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
+        if os.path.exists(added_tokens_path):
+            with open(added_tokens_path) as f:
+                self.extended_piece_to_id = json.load(f)
+
+        self.extended_id_to_piece = { v: k for k, v in self.extended_piece_to_id.items() }
+
+        # Get control token IDs
+
+        # self.eos_token_id = self.tokenizer.eos_id()
+        # self.bos_token_id = self.tokenizer.bos_id()
+        # self.unk_token_id = config.unk_token_id
+
         self.unk_token_id = self.tokenizer.unk_id()
-        self.eos_token_id = self.tokenizer.eos_id()
-        self.bos_token_id = self.tokenizer.bos_id()
+        self.eos_token_id = config.eos_token_id
+        self.bos_token_id = config.bos_token_id
+
+        # Get control token strings
+
+        try: self.unk_token = self.extended_id_to_piece[self.unk_token_id] or self.tokenizer.id_to_piece(self.unk_token_id)
+        except: pass
+        try: self.bos_token = self.extended_id_to_piece[self.bos_token_id] or self.tokenizer.id_to_piece(self.bos_token_id)
+        except: pass
+        try: self.eos_token = self.extended_id_to_piece[self.eos_token_id] or self.tokenizer.id_to_piece(self.eos_token_id)
+        except: pass
+
         self.pad_token_id = 0
+
+        # Make sure extended vocab contains control tokens
+
+        self.extended_id_to_piece[self.unk_token_id] = self.unk_token
+        self.extended_id_to_piece[self.bos_token_id] = self.bos_token
+        self.extended_id_to_piece[self.eos_token_id] = self.eos_token
+        self.extended_piece_to_id[self.unk_token] = self.unk_token_id
+        self.extended_piece_to_id[self.bos_token] = self.bos_token_id
+        self.extended_piece_to_id[self.eos_token] = self.eos_token_id
 
         # Create dictionaries on init
 
@@ -68,17 +107,39 @@ class ExLlamaV2Tokenizer:
         return torch.tensor([[token_id]], dtype = torch.long)
 
 
+    # Encode string with special tokens
+
+    def encode_special(self, text: str):
+
+        if self.special_delimiters is None:
+            self.special_delimiters = re.compile("(" + "|".join(map(re.escape, self.extended_piece_to_id.keys())) + ")")
+
+        split = self.special_delimiters.split(text)
+        encoded = []
+
+        i = 0
+        while i < len(split):
+            if split[i] != "": encoded += self.tokenizer.EncodeAsIds(split[i])
+            if i + 1 < len(split): encoded += [self.extended_piece_to_id[split[i + 1]]]
+            i += 2
+
+        return encoded
+
+
     # Encode string
 
     # TODO: Handle added tokens for "special" models
 
-    def encode(self, text, add_bos = False, add_eos = False):
+    def encode(self, text, add_bos = False, add_eos = False, encode_special_tokens = False):
 
         if isinstance(text, list):
 
             # text is a list of strings
 
-            list_ids = self.tokenizer.EncodeAsIds(text)
+            if encode_special_tokens:
+                list_ids = [self.encode_special(t) for t in text]
+            else:
+                list_ids = self.tokenizer.EncodeAsIds(text)
 
             if add_bos:
                 for ids in list_ids: ids.insert(0, self.bos_token_id)
@@ -99,7 +160,10 @@ class ExLlamaV2Tokenizer:
 
             # text is a single string
 
-            ids = self.tokenizer.EncodeAsIds(text)
+            if encode_special_tokens:
+                ids = self.encode_special(text)
+            else:
+                ids = self.tokenizer.EncodeAsIds(text)
 
             if add_bos:
                 ids.insert(0, self.bos_token_id)
@@ -109,18 +173,45 @@ class ExLlamaV2Tokenizer:
             return torch.tensor(ids).to(torch.long).unsqueeze(0)
 
 
+    # Decode sequence with or without special tokens
+
+    def decode_(self, seq, decode_special_tokens):
+
+        if not decode_special_tokens:
+
+            max_token = self.tokenizer.vocab_size()
+            seq = [t for t in seq if (t != self.pad_token_id and t < max_token)]
+            if self.eos_token_id in seq: seq = seq[:seq.index(self.eos_token_id)]
+            return self.tokenizer.Decode(seq)
+
+        else:
+
+            text = ""
+            start = 0
+            end = 0
+            while end < len(seq):
+                if seq[end] in self.extended_id_to_piece:
+                    if end > start: text += self.tokenizer.Decode(seq[start : end])
+                    text += self.extended_id_to_piece[seq[end]]
+                    end += 1
+                    start = end
+                else:
+                    end += 1
+            if end > start: text += self.tokenizer.Decode(seq[start : end])
+
+        return text
+
+
     # Decode IDs
 
-    def decode(self, ids):
+    def decode(self, ids, decode_special_tokens = False):
 
         if ids.dim() > 1:
 
             texts = []
             for i in range(ids.shape[0]):
                 seq = ids[i].tolist()
-                seq = [t for t in seq if t != self.pad_token_id]
-                if self.eos_token_id in seq: seq = seq[:seq.index(self.eos_token_id)]
-                texts.append(self.tokenizer.Decode(seq))
+                texts.append(self.decode_(seq, decode_special_tokens))
             return texts
 
         else:
@@ -159,6 +250,12 @@ class ExLlamaV2Tokenizer:
             (p.replace("▁", " ") if not p.startswith("<") else self.tokenizer.decode(idx))
             for idx, p in enumerate(self.tokenizer.id_to_piece(all_tokens))
         ]
+
+        i = self.tokenizer.vocab_size()
+        while i in self.extended_id_to_piece:
+            self.id_to_piece.append(self.extended_id_to_piece[i])
+            i += 1
+
         return self.id_to_piece
 
 
@@ -208,6 +305,10 @@ class ExLlamaV2Tokenizer:
         prefix_to_ids = self.get_prefix_to_ids_dict()
 
         self.prefix_id_to_ids = { piece_to_id[piece]: ids for piece, ids in prefix_to_ids.items() }
+
+        for i in range(self.config.vocab_size):
+            if i not in self.prefix_id_to_ids:
+                self.prefix_id_to_ids[i] = [i]
 
         return self.prefix_id_to_ids
 
