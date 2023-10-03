@@ -23,7 +23,7 @@ from chat_formatting import CodeBlockFormatter
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
-parser.add_argument("-mode", "--mode", choices = ["llama", "raw", "codellama"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
+parser.add_argument("-mode", "--mode", choices = ["llama", "raw", "codellama", "orca"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
 parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help = "Bot name when using raw chat mode")
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
@@ -91,6 +91,30 @@ elif mode == "raw":
     subs_prompt = \
     f"""{username}: <|user_prompt|>\n{botname}:"""
 
+elif mode == "orca":
+
+    if not ("<|im_start|>" in tokenizer.extended_piece_to_id and "<|im_end|>" in tokenizer.extended_piece_to_id):
+        print(" !! Warning: Model config seems to be missing extra tokens required for Orca")
+
+    if not system_prompt:
+
+        system_prompt = \
+        f"""You are MistralOrca, a large language model trained by Alignment Lab AI. Write out your reasoning step-by-step to be sure you get the right answers!"""
+
+    first_prompt = \
+    """<|im_start|>system\n""" + \
+    """<|system_prompt|>\n""" + \
+    """<|im_end|>\n""" + \
+    """<|im_start|>user\n""" + \
+    """<|user_prompt|><|im_end|>\n""" + \
+    """<|im_start|>assistant\n"""
+
+    subs_prompt = \
+    """<|im_end|>\n""" + \
+    """<|im_start|>user\n""" + \
+    """<|user_prompt|><|im_end|>\n""" + \
+    """<|im_start|>assistant\n"""
+
 else:
 
     print(" ## Error: Incorrect/no mode specified.")
@@ -117,6 +141,9 @@ def encode_prompt(text):
 
     if mode == "raw":
         return tokenizer.encode(text)
+
+    if mode == "orca":
+        return tokenizer.encode(text, encode_special_tokens = True)
 
 user_prompts = []
 responses_ids = []
@@ -168,6 +195,10 @@ if mode == "llama" or mode == "codellama":
 if mode == "raw":
 
     generator.set_stop_conditions([username + ":", username[0:1] + ":", username.upper() + ":", username.lower() + ":", tokenizer.eos_token_id])
+
+if mode == "orca":
+
+    generator.set_stop_conditions([tokenizer.eos_token_id])
 
 # ANSI color codes
 
@@ -271,7 +302,7 @@ while True:
 
         if eos:
 
-            if mode == "llama" or mode == "codellama":
+            if mode in ["llama", "codellama", "orca"]:
                 print()
 
             break
