@@ -47,7 +47,9 @@ class ExLlamaV2BaseGenerator:
                         gen_settings: ExLlamaV2Sampler.Settings,
                         num_tokens: int,
                         seed = None,
-                        token_healing = False):
+                        token_healing = False,
+                        encode_special_tokens = False,
+                        decode_special_tokens = False ):
 
         # Apply seed
 
@@ -56,7 +58,7 @@ class ExLlamaV2BaseGenerator:
         # Tokenize input and produce padding mask if needed
 
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
-        ids = self.tokenizer.encode(prompt)
+        ids = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens)
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
         if overflow > 0: ids = ids[:, overflow:]
@@ -93,7 +95,7 @@ class ExLlamaV2BaseGenerator:
 
         # Decode
 
-        text = self.tokenizer.decode(self.sequence_ids)
+        text = self.tokenizer.decode(self.sequence_ids, decode_special_tokens = decode_special_tokens)
 
         if isinstance(prompt, str): return text[0]
         return text

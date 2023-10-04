@@ -172,3 +172,6 @@ the converter to better facilitate scripted jobs.
 **2023-09-27**: Prebuilt wheels are now available, credit to [@jllllll](https://github.com/jllllll). They're on the
 [releases page here](https://github.com/turboderp/exllamav2/releases). A solution to installing prebuilt wheels straight
 from PyPI is still pending. Updated installation instructions above.
+
+**2023-10-03**: Added support for extended vocabularies and alternative BOS/EOS/UNK tokens and the ability to 
+encode/decode sequences with special tokens. Added Orca template to the chatbot example.
