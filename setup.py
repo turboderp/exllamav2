@@ -43,11 +43,13 @@ setup_kwargs = {
     "cmdclass": {"build_ext": cpp_extension.BuildExtension}
 } if precompile else {}
 
-version_py = {}
-with open("exllamav2/version.py") as fp:
-    exec(fp.read(), version_py)
-version = version_py["__version__"]
-print("Version:", version)
+# version_py = {}
+# with open("exllamav2/version.py") as fp:
+#     exec(fp.read(), version_py)
+# version = version_py["__version__"]
+# print("Version:", version)
+
+version = "0.0.5"
 
 setup(
     name = "exllamav2",
@@ -55,16 +57,16 @@ setup(
     packages = [
         "exllamav2",
         "exllamav2.generator",
-        "exllamav2.generator.filters",
-        "exllamav2.server",
-        "exllamav2.exllamav2_ext",
-        "exllamav2.exllamav2_ext.cpp",
-        "exllamav2.exllamav2_ext.cuda",
-        "exllamav2.exllamav2_ext.cuda.quant",
+        # "exllamav2.generator.filters",
+        # "exllamav2.server",
+        # "exllamav2.exllamav2_ext",
+        # "exllamav2.exllamav2_ext.cpp",
+        # "exllamav2.exllamav2_ext.cuda",
+        # "exllamav2.exllamav2_ext.cuda.quant",
     ],
     url = "https://github.com/turboderp/exllamav2",
-    license = "AGPL",
-    author = "bb",
+    license = "MIT",
+    author = "turboderp",
     install_requires = [
         "pandas",
         "ninja",
@@ -72,8 +74,8 @@ setup(
         "torch>=2.0.1",
         "safetensors>=0.3.2",
         "sentencepiece>=0.1.97",
-        "pygments",
-        "websockets"
+        # "pygments",
+        # "websockets"
     ],
     include_package_data = True,
     verbose = verbose,
