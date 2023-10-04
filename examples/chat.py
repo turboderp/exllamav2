@@ -19,11 +19,14 @@ from exllamav2.generator import (
 )
 
 from chat_formatting import CodeBlockFormatter
+from chat_prompts import prompt_formats
+prompt_formats_list = list(prompt_formats.keys())
 
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
-parser.add_argument("-mode", "--mode", choices = ["llama", "raw", "codellama", "orca"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
+parser.add_argument("-modes", "--modes", action = "store_true", help = "List available modes and exit.")
+parser.add_argument("-mode", "--mode", choices = prompt_formats_list, help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
 parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help = "Bot name when using raw chat mode")
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
@@ -37,10 +40,34 @@ parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
 
-# Initialize model and tokenizer
+# Arrrgs
 
 model_init.add_args(parser)
 args = parser.parse_args()
+
+# Prompt templates/modes
+
+if args.modes:
+    print(" -- Available formats:")
+    for k, v in prompt_formats.items():
+        print(f" --   {k:12} : {v().description}")
+    sys.exit()
+
+username = args.username
+botname = args.botname
+system_prompt = args.system_prompt
+
+if args.mode is None:
+    print(" ## Error: No mode specified.")
+    sys.exit()
+
+prompt_format = prompt_formats[args.mode]()
+prompt_format.botname = botname
+prompt_format.username = username
+if system_prompt is None: system_prompt = prompt_format.default_system_prompt()
+
+# Initialize model and tokenizer
+
 model_init.check_args(args)
 model_init.print_options(args)
 model, tokenizer = model_init.init(args)
@@ -49,101 +76,25 @@ model, tokenizer = model_init.init(args)
 
 cache = ExLlamaV2Cache(model)
 
-# Prompt templates
-
-username = args.username
-botname = args.botname
-system_prompt = args.system_prompt
-mode = args.mode
-
-if mode == "llama" or mode == "codellama":
-
-    if not system_prompt:
-
-        if mode == "llama":
-
-            system_prompt = \
-            """You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  """ + \
-            """Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. """ + \
-            """Please ensure that your responses are socially unbiased and positive in nature."""
-
-        elif mode == "codellama":
-
-            system_prompt = \
-            """You are a helpful coding assistant. Always answer as helpfully as possible."""
-            
-    first_prompt = \
-    """[INST] <<SYS>>\n<|system_prompt|>\n<</SYS>>\n\n<|user_prompt|> [/INST]"""
-
-    subs_prompt = \
-    """[INST] <|user_prompt|> [/INST]"""
-
-elif mode == "raw":
-
-    if not system_prompt:
-
-        system_prompt = \
-        f"""This is a conversation between a helpful AI assistant named {botname} and a """ + ("""user named {username}.""" if username != "User" else """user.""")
-
-    first_prompt = \
-    f"""<|system_prompt|>\n{username}: <|user_prompt|>\n{botname}:"""
-
-    subs_prompt = \
-    f"""{username}: <|user_prompt|>\n{botname}:"""
-
-elif mode == "orca":
-
-    if not ("<|im_start|>" in tokenizer.extended_piece_to_id and "<|im_end|>" in tokenizer.extended_piece_to_id):
-        print(" !! Warning: Model config seems to be missing extra tokens required for Orca")
-
-    if not system_prompt:
-
-        system_prompt = \
-        f"""You are MistralOrca, a large language model trained by Alignment Lab AI. Write out your reasoning step-by-step to be sure you get the right answers!"""
-
-    first_prompt = \
-    """<|im_start|>system\n""" + \
-    """<|system_prompt|>\n""" + \
-    """<|im_end|>\n""" + \
-    """<|im_start|>user\n""" + \
-    """<|user_prompt|><|im_end|>\n""" + \
-    """<|im_start|>assistant\n"""
-
-    subs_prompt = \
-    """<|im_end|>\n""" + \
-    """<|im_start|>user\n""" + \
-    """<|user_prompt|><|im_end|>\n""" + \
-    """<|im_start|>assistant\n"""
-
-else:
-
-    print(" ## Error: Incorrect/no mode specified.")
-    sys.exit()
 
 # Chat context
 
 def format_prompt(user_prompt, first):
-    global system_prompt, first_prompt, subs_prompt
+    global system_prompt, prompt_format
 
     if first:
-        return first_prompt \
+        return prompt_format.first_prompt() \
             .replace("<|system_prompt|>", system_prompt) \
             .replace("<|user_prompt|>", user_prompt)
     else:
-        return subs_prompt \
+        return prompt_format.subs_prompt() \
             .replace("<|user_prompt|>", user_prompt)
 
 def encode_prompt(text):
-    global tokenizer, mode
+    global tokenizer, prompt_format
 
-    if mode == "llama" or mode == "codellama":
-        return tokenizer.encode(text, add_bos = True)
-
-    if mode == "raw":
-        return tokenizer.encode(text)
-
-    if mode == "orca":
-        return tokenizer.encode(text, encode_special_tokens = True)
+    add_bos, add_eos, encode_special_tokens = prompt_format.encoding_options()
+    return tokenizer.encode(text, add_bos = add_bos, add_eos = add_eos, encode_special_tokens = encode_special_tokens)
 
 user_prompts = []
 responses_ids = []
@@ -157,7 +108,8 @@ def get_tokenized_context(max_len):
 
         for turn in range(len(user_prompts)):
 
-            up_ids = encode_prompt(format_prompt(user_prompts[turn], context.shape[-1] == 0))
+            up_text = format_prompt(user_prompts[turn], context.shape[-1] == 0)
+            up_ids = encode_prompt(up_text)
             context = torch.cat([context, up_ids], dim=-1)
 
             if turn < len(responses_ids):
@@ -188,17 +140,7 @@ min_space_in_context = args.response_chunk
 
 # Stop conditions
 
-if mode == "llama" or mode == "codellama":
-
-    generator.set_stop_conditions([tokenizer.eos_token_id])
-
-if mode == "raw":
-
-    generator.set_stop_conditions([username + ":", username[0:1] + ":", username.upper() + ":", username.lower() + ":", tokenizer.eos_token_id])
-
-if mode == "orca":
-
-    generator.set_stop_conditions([tokenizer.eos_token_id])
+generator.set_stop_conditions(prompt_format.stop_conditions(tokenizer))
 
 # ANSI color codes
 
@@ -206,6 +148,7 @@ col_default = "\u001b[0m"
 col_user = "\u001b[33;1m"  # Yellow
 col_bot = "\u001b[34;1m"  # Blue
 col_error = "\u001b[31;1m"  # Magenta
+col_sysprompt = "\u001b[37;1m"  # Grey
 
 # Code block formatting
 
@@ -213,6 +156,11 @@ codeblock_formatter = None if args.no_code_formatting else CodeBlockFormatter()
 in_code_block = False
 
 # Main loop
+
+print(f" -- Prompt format: {args.mode}")
+print(f" -- System prompt:")
+print()
+print(col_sysprompt + system_prompt.strip() + col_default)
 
 while True:
 
@@ -233,7 +181,7 @@ while True:
 
     # Stream response
 
-    if mode == "raw":
+    if prompt_format.print_bot_name():
 
         print(col_bot + botname + ": " + col_default, end = "")
 
@@ -302,7 +250,7 @@ while True:
 
         if eos:
 
-            if mode in ["llama", "codellama", "orca"]:
+            if prompt_format.print_extra_newline():
                 print()
 
             break
