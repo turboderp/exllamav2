@@ -43,13 +43,13 @@ setup_kwargs = {
     "cmdclass": {"build_ext": cpp_extension.BuildExtension}
 } if precompile else {}
 
-# version_py = {}
-# with open("exllamav2/version.py") as fp:
-#     exec(fp.read(), version_py)
-# version = version_py["__version__"]
-# print("Version:", version)
+version_py = {}
+with open("exllamav2/version.py") as fp:
+    exec(fp.read(), version_py)
+version = version_py["__version__"]
+print("Version:", version)
 
-version = "0.0.5"
+# version = "0.0.5"
 
 setup(
     name = "exllamav2",
@@ -74,8 +74,8 @@ setup(
         "torch>=2.0.1",
         "safetensors>=0.3.2",
         "sentencepiece>=0.1.97",
-        # "pygments",
-        # "websockets"
+        "pygments",
+        "websockets"
     ],
     include_package_data = True,
     verbose = verbose,
