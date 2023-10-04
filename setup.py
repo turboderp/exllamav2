@@ -43,8 +43,11 @@ setup_kwargs = {
     "cmdclass": {"build_ext": cpp_extension.BuildExtension}
 } if precompile else {}
 
-from exllamav2.version import __version__
-version = __version__
+version_py = {}
+with open("exllamav2/version.py") as fp:
+    exec(fp.read(), version_py)
+version = version_py["__version__"]
+print("Version:", version)
 
 setup(
     name = "exllamav2",
