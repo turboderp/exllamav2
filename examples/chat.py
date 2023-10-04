@@ -23,7 +23,7 @@ from chat_formatting import CodeBlockFormatter
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
-parser.add_argument("-mode", "--mode", choices = ["llama", "raw", "codellama"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
+parser.add_argument("-mode", "--mode", choices = ["llama", "raw", "codellama", "chatml"], help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
 parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help = "Bot name when using raw chat mode")
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
@@ -91,6 +91,25 @@ elif mode == "raw":
     subs_prompt = \
     f"""{username}: <|user_prompt|>\n{botname}:"""
 
+elif mode == "chatml":
+
+    # Uncomment for names. I removed them because the TinyLlama 1B Chat model works best without them.
+
+    if not system_prompt:
+
+        system_prompt = \
+        f"""You are assistant, a helpful chatbot. Answer as concisely as possible."""
+        # f"""You are {botname}, a helpful chatbot chatting with """ + ("""user named {username}.""" if username != "User" else """user.""") + """ Answer as conceise as possible."""
+
+    first_prompt = \
+    f"""<|im_start|>system\n<|system_prompt|><|im_end|>\n<|im_start|>user\n<|user_prompt|>\n<|im_start|>assistant\n"""
+    # f"""<|im_start|>system\n<|system_prompt|><|im_end|>\n<|im_start|>user\n{username}: <|user_prompt|>\n<|im_start|>assistant\n{botname}: """
+
+    subs_prompt = \
+    f"""<|im_start|>user\n<|user_prompt|><|im_end|>\n<|im_start|>assistant\n"""
+    # f"""<|im_start|>user\n{username}: <|user_prompt|><|im_end|>\n<|im_start|>assistant\n{botname}: """
+
+
 else:
 
     print(" ## Error: Incorrect/no mode specified.")
@@ -115,7 +134,7 @@ def encode_prompt(text):
     if mode == "llama" or mode == "codellama":
         return tokenizer.encode(text, add_bos = True)
 
-    if mode == "raw":
+    if mode == "raw" or mode == "chatml":
         return tokenizer.encode(text)
 
 user_prompts = []
@@ -169,6 +188,10 @@ if mode == "raw":
 
     generator.set_stop_conditions([username + ":", username[0:1] + ":", username.upper() + ":", username.lower() + ":", tokenizer.eos_token_id])
 
+if mode == "chatml":
+
+    generator.set_stop_conditions([username + ":", username[0:1] + ":", username.upper() + ":", username.lower() + ":", tokenizer.eos_token_id, "<|im_start|>", "<|im_end|>"])
+
 # ANSI color codes
 
 col_default = "\u001b[0m"
@@ -188,6 +211,10 @@ while True:
     # Get user prompt
 
     print()
+
+    if mode == "chatml":
+        print()
+
     up = input(col_user + username + ": " + col_default).strip()
     print()
 
@@ -202,9 +229,10 @@ while True:
 
     # Stream response
 
-    if mode == "raw":
+    if mode == "raw": # or mode == "chatml": for names. I removed them because the TinyLlama 1B Chat model works best without them.
 
         print(col_bot + botname + ": " + col_default, end = "")
+    
 
     response_tokens = 0
     response_text = ""
