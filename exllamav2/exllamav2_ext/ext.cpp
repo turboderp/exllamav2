@@ -646,19 +646,19 @@ void sample_basic
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
-        if (top_k > 0)
+        if (top_k > 0 && top_k < vocab_size)
         {
             num_candidates = top_k_cpu(num_candidates, temp_probs, temp_indices, top_k);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (top_p > 0.0f)
+        if (top_p > 0.0f && top_p < 1.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (typical > 0.0f)
+        if (typical > 0.0f && typical < 1.0f)
         {
             num_candidates = typical_cpu(num_candidates, temp_probs, temp_indices, typical);
             normalize_cpu(num_candidates, temp_probs);
