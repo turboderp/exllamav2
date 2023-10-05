@@ -41,8 +41,21 @@ class ExLlamaV2Config:
     rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
     head_dim: int = 128                         # Constant for all Llama models, except 3b
 
+    qkv_embed: bool = False
+
+
     def __init__(self):
         pass
+
+
+    # Set low-mem options
+
+    def set_low_mem(self):
+
+        self.qkv_embed = True
+        self.max_input_len = 1024
+        self.max_attention_size = 1024 ** 2
+
 
     # Populate config with required files from model_dir
 

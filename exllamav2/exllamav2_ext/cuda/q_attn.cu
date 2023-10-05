@@ -107,6 +107,10 @@ QAttn::QAttn
 {
 }
 
+QAttn::~QAttn()
+{
+}
+
 void QAttn::forward_cuda_1
 (
     cublasHandle_t cublas_handle,

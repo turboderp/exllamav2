@@ -88,6 +88,7 @@ if not os.path.exists(out_dir):
 
 config = ExLlamaV2Config()
 config.model_dir = in_dir
+config.qkv_embed = False
 config.prepare()
 
 # Tokenizer

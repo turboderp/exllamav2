@@ -32,6 +32,11 @@ def test_gpu_peer_copy():
 def safe_move_tensor(tensor, device):
     global disable_peer_copy
 
+    # Accept tensor or tuple of tensors
+
+    if isinstance(tensor, tuple):
+        return tuple(safe_move_tensor(x, device) for x in tensor)
+
     # Accept torch.device or string
 
     device = torch.device(device)

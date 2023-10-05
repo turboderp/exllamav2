@@ -52,8 +52,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def unload(self):
 
-        del self.linear
-        self.linear = None
+        if self.linear is not None:
+            del self.linear
+            self.linear = None
+
+        if self.q_handle is not None:
+            ext_c.free_q_matrix(self.q_handle)
+            self.q_handle = None
+
+        if self.q_tensors is not None:
+            for k, v in self.q_tensors.items(): del v
+            self.q_tensors = None
 
 
     def get_weight(self):
@@ -119,7 +128,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
             groupsize = 1
             while groupsize * groups.shape[0] / 2 < height:
-                groupsize *= 2;
+                groupsize *= 2
 
             gis = f"gs: {groupsize}, "
             i = 0

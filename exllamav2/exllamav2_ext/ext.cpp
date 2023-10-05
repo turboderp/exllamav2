@@ -235,6 +235,15 @@ uintptr_t make_q_matrix
     return reinterpret_cast<uintptr_t> (m);
 }
 
+void free_q_matrix
+(
+    uintptr_t handle
+)
+{
+    QMatrix* m = reinterpret_cast<QMatrix*> (handle);
+    delete m;
+}
+
 void reconstruct
 (
     uintptr_t q_handle,
@@ -315,16 +324,16 @@ uintptr_t make_q_attn
     QMatrix* qm_v_proj = reinterpret_cast<QMatrix*> (q_v_proj);
     QMatrix* qm_o_proj = reinterpret_cast<QMatrix*> (q_o_proj);
 
-    TORCH_CHECK_DTYPE(layernorm, kHalf);
+    TORCH_CHECK_DTYPE_OPT(layernorm, kHalf);
 
-    TORCH_CHECK(qm_q_proj->height == layernorm.size(0), "q_proj is wrong shape")
-    TORCH_CHECK(qm_k_proj->height == layernorm.size(0), "k_proj is wrong shape")
-    TORCH_CHECK(qm_v_proj->height == layernorm.size(0), "v_proj is wrong shape")
-    TORCH_CHECK(qm_o_proj->height == layernorm.size(0), "o_proj is wrong shape")
+    if (qm_q_proj && !layernorm.is_meta()) TORCH_CHECK(qm_q_proj->height == layernorm.size(0), "q_proj is wrong shape")
+    if (qm_k_proj && !layernorm.is_meta()) TORCH_CHECK(qm_k_proj->height == layernorm.size(0), "k_proj is wrong shape")
+    if (qm_v_proj && !layernorm.is_meta()) TORCH_CHECK(qm_v_proj->height == layernorm.size(0), "v_proj is wrong shape")
+    if (!layernorm.is_meta()) TORCH_CHECK(qm_o_proj->height == layernorm.size(0), "o_proj is wrong shape")
 
     QAttn* attn = new QAttn
     (
-        (half*) layernorm.data_ptr(),
+        (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
         norm_epsilon,
         qm_q_proj,
         qm_k_proj,
@@ -344,6 +353,15 @@ uintptr_t make_q_attn
     );
 
     return reinterpret_cast<uintptr_t> (attn);
+}
+
+void free_q_attn
+(
+    uintptr_t handle
+)
+{
+    QAttn* attn = reinterpret_cast<QAttn*> (handle);
+    delete attn;
 }
 
 void q_attn_forward_1
@@ -720,10 +738,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("quantize_err", &quantize_err, "quantize_err");
     m.def("quantize", &quantize, "quantize");
     m.def("make_q_matrix", &make_q_matrix, "make_q_matrix");
+    m.def("free_q_matrix", &free_q_matrix, "free_q_matrix");
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
+    m.def("free_q_attn", &free_q_attn, "free_q_attn");
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");
     m.def("q_attn_forward_2", &q_attn_forward_2, "q_attn_forward_2");
     m.def("quantize_range", &quantize_range, "quantize_range");

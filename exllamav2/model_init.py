@@ -15,6 +15,7 @@ def add_args(parser):
     parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
     parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
+    parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
 
 
 def print_options(args):
@@ -27,6 +28,7 @@ def print_options(args):
     print_opts += [f"rope_scale {args.rope_scale}"]
     print_opts += [f"rope_alpha {args.rope_alpha}"]
     if args.no_flash_attn: print_opts += ["no_flash_attn"]
+    if args.low_mem: print_opts += ["low_mem"]
     print(f" -- Options: {print_opts}")
 
 
@@ -67,6 +69,10 @@ def init(args, quiet = False):
     config.rope_scale = args.rope_scale
     config.rope_alpha = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
+
+    # Set low-mem options
+
+    if args.low_mem: config.set_low_mem()
 
     # Load model
 

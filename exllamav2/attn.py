@@ -5,6 +5,7 @@ from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.cache import ExLlamaV2Cache
+from exllamav2.embedding import ExLlamaV2Embedding
 import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
@@ -26,10 +27,10 @@ except ModuleNotFoundError:
 class ExLlamaV2Attention(ExLlamaV2Module):
 
     layer_idx: int
-    input_layernorm: ExLlamaV2RMSNorm
-    q_proj: ExLlamaV2Linear
-    k_proj: ExLlamaV2Linear
-    v_proj: ExLlamaV2Linear
+    input_layernorm: ExLlamaV2RMSNorm or None
+    q_proj: ExLlamaV2Linear or None
+    k_proj: ExLlamaV2Linear or None
+    v_proj: ExLlamaV2Linear or None
     o_proj: ExLlamaV2Linear
 
     name: str = "Attention"
@@ -67,6 +68,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def load(self):
 
+        qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
+
         self.input_layernorm.load()
         self.q_proj.load()
         self.k_proj.load()
@@ -86,11 +89,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
             # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if self.model.config.num_attention_heads != self.model.config.num_key_value_heads else None
 
-            self.q_handle = ext_c.make_q_attn(self.input_layernorm.weight,
-                                              self.input_layernorm.variance_epsilon,
-                                              self.q_proj.q_handle,
-                                              self.k_proj.q_handle,
-                                              self.v_proj.q_handle,
+            self.q_handle = ext_c.make_q_attn(self.input_layernorm.weight if not qkv_embed else ext.none_tensor,
+                                              self.input_layernorm.variance_epsilon if not qkv_embed else 0.0,
+                                              self.q_proj.q_handle if not qkv_embed else 0,
+                                              self.k_proj.q_handle if not qkv_embed else 0,
+                                              self.v_proj.q_handle if not qkv_embed else 0,
                                               self.o_proj.q_handle,
                                               self.temp_state,
                                               # self.temp_q,
@@ -104,23 +107,44 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                               self.model.config.head_dim,
                                               self.model.config.max_seq_len)
 
+        if qkv_embed:
+
+            embedding = self.model.modules[0]
+            assert isinstance(embedding, ExLlamaV2Embedding)
+            q = self.q_proj.get_weight_tensor_dq()
+            k = self.k_proj.get_weight_tensor_dq()
+            v = self.v_proj.get_weight_tensor_dq()
+            norm = self.input_layernorm
+            embedding.make_qkv(norm, q, k, v)
+
+            self.q_proj.unload(); self.q_proj = None
+            self.k_proj.unload(); self.k_proj = None
+            self.v_proj.unload(); self.v_proj = None
+            self.input_layernorm.unload(); self.input_layernorm = None
+
 
     def unload(self):
 
-        self.input_layernorm.unload()
-        self.q_proj.unload()
-        self.k_proj.unload()
-        self.v_proj.unload()
+        if self.input_layernorm is not None: self.input_layernorm.unload()
+        if self.q_proj is not None: self.q_proj.unload()
+        if self.k_proj is not None: self.k_proj.unload()
+        if self.v_proj is not None: self.v_proj.unload()
         self.o_proj.unload()
 
 
-    def weight_footprint(self):
+    def weight_footprint(self, qkv_embed = False):
 
-        return self.input_layernorm.weight_footprint() + \
-               self.q_proj.weight_footprint() + \
-               self.k_proj.weight_footprint() + \
-               self.v_proj.weight_footprint() + \
-               self.o_proj.weight_footprint()
+        if self.layer_idx == 0 and self.model.config.qkv_embed:
+
+            return self.o_proj.weight_footprint()
+
+        else:
+
+            return self.input_layernorm.weight_footprint() + \
+                   self.q_proj.weight_footprint() + \
+                   self.k_proj.weight_footprint() + \
+                   self.v_proj.weight_footprint() + \
+                   self.o_proj.weight_footprint()
 
 
     def scratch_space_fixed(self):
@@ -209,12 +233,19 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
         global has_flash_attn
 
+        qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
+
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates)
 
-        batch_size = hidden_states.shape[0]
-        q_len = hidden_states.shape[1]
-        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2Cache))
+        if qkv_embed:
+            batch_size = hidden_states[0].shape[0]
+            q_len = hidden_states[0].shape[1]
+        else:
+            batch_size = hidden_states.shape[0]
+            q_len = hidden_states.shape[1]
+
+        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2Cache)) and not qkv_embed
 
         # past_len = 0
         # if cache is not None:
@@ -231,38 +262,54 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         constants = self.model.get_device_tensors(self.device_idx)
 
-        q_shape = hidden_states.shape[:-1] + (self.q_proj.out_features,)
-        k_shape = hidden_states.shape[:-1] + (self.k_proj.out_features,)
-        v_shape = hidden_states.shape[:-1] + (self.v_proj.out_features,)
-        q_states = torch.empty(q_shape, device = hidden_states.device, dtype = torch.half)
+        if not qkv_embed:
 
-        # If conditions are right we can write the K/V projections directly into the cache
+            q_shape = hidden_states.shape[:-1] + (self.q_proj.out_features,)
+            k_shape = hidden_states.shape[:-1] + (self.k_proj.out_features,)
+            v_shape = hidden_states.shape[:-1] + (self.v_proj.out_features,)
+            q_states = torch.empty(q_shape, device = hidden_states.device, dtype = torch.half)
 
-        if direct:
+            # If conditions are right we can write the K/V projections directly into the cache
 
-            batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
-            batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
-            k_states = batch_keys.narrow(1, past_len, q_len)
-            v_states = batch_values.narrow(1, past_len, q_len)
+            if direct:
+
+                batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
+                batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
+                k_states = batch_keys.narrow(1, past_len, q_len)
+                v_states = batch_values.narrow(1, past_len, q_len)
+
+            else:
+
+                k_states = torch.empty(k_shape, device = hidden_states.device, dtype = torch.half)
+                v_states = torch.empty(v_shape, device = hidden_states.device, dtype = torch.half)
+
+            # RMS norm, Q/K/V projections, position embeddings
+
+            ext_c.q_attn_forward_1(self.q_handle,
+                                   hidden_states,
+                                   batch_size,
+                                   q_len,
+                                   -1 if isinstance(past_len, tuple) else past_len,
+                                   past_len[0] if isinstance(past_len, tuple) else ext.none_tensor,
+                                   q_states,
+                                   k_states,
+                                   v_states,
+                                   constants.sin,
+                                   constants.cos)
+
+        # Alternative, for embedded QKV
 
         else:
 
-            k_states = torch.empty(k_shape, device = hidden_states.device, dtype = torch.half)
-            v_states = torch.empty(v_shape, device = hidden_states.device, dtype = torch.half)
+            q_states = hidden_states[1]
+            k_states = hidden_states[2]
+            v_states = hidden_states[3]
+            hidden_states = hidden_states[0]
 
-        # RMS norm, Q/K/V projections, position embeddings
+            ext_c.rope_(q_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim)
+            ext_c.rope_(k_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim)
 
-        ext_c.q_attn_forward_1(self.q_handle,
-                               hidden_states,
-                               batch_size,
-                               q_len,
-                               -1 if isinstance(past_len, tuple) else past_len,
-                               past_len[0] if isinstance(past_len, tuple) else ext.none_tensor,
-                               q_states,
-                               k_states,
-                               v_states,
-                               constants.sin,
-                               constants.cos)
+        # Shape for attention
 
         q_states = q_states.view(batch_size, q_len, num_attention_heads, head_dim)
         k_states = k_states.view(batch_size, q_len, num_key_value_heads, head_dim)
@@ -426,35 +473,50 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         head_dim = self.model.config.head_dim
         hidden_size = self.model.config.hidden_size
 
-        batch_size, q_len, _ = hidden_states.size()
-        past_len = 0 if cache is None else cache.current_seq_len
+        qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
 
-        residual = hidden_states
-        post_norm = self.input_layernorm.forward(hidden_states)
+        if not qkv_embed: batch_size, q_len, _ = hidden_states.size()
+        else: batch_size, q_len, _ = hidden_states[0].size()
+
+        past_len = 0 if cache is None else cache.current_seq_len
 
         # Project q, k, v
 
-        query_states_im = self.q_proj.forward(post_norm)
-        key_states_im = self.k_proj.forward(post_norm)
-        value_states_im = self.v_proj.forward(post_norm)
+        if not qkv_embed:
 
-        if intermediates:
+            residual = hidden_states
+            post_norm = self.input_layernorm.forward(hidden_states)
 
-            query_states = query_states_im.clone()
-            key_states = key_states_im.clone()
-            value_states = value_states_im.clone()
+            query_states_im = self.q_proj.forward(post_norm)
+            key_states_im = self.k_proj.forward(post_norm)
+            value_states_im = self.v_proj.forward(post_norm)
+
+            if intermediates:
+
+                query_states = query_states_im.clone()
+                key_states = key_states_im.clone()
+                value_states = value_states_im.clone()
+
+            else:
+
+                query_states = query_states_im
+                key_states = key_states_im
+                value_states = value_states_im
+
+        # Alternative, for embedded QKV
 
         else:
 
-            query_states = query_states_im
-            key_states = key_states_im
-            value_states = value_states_im
+            residual = hidden_states[0]
+            query_states = hidden_states[1]
+            key_states = hidden_states[2]
+            value_states = hidden_states[3]
+
+        # Apply position embeddings
 
         query_states = query_states.view(batch_size, q_len, num_attention_heads, head_dim)
         key_states = key_states.view(batch_size, q_len, num_key_value_heads, head_dim)
         value_states = value_states.view(batch_size, q_len, num_key_value_heads, head_dim)
-
-        # Apply position embeddings
 
         constants = self.model.get_device_tensors(self.device_idx, scratch = False)
 

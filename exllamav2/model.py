@@ -226,6 +226,8 @@ class ExLlamaV2:
 
     def load(self, gpu_split = None, lazy = False, stats = False):
 
+        assert not self.config.qkv_embed or not lazy, "Lazy initialization is unsupported when config.qkv_embed = True"
+
         with torch.inference_mode():
 
             stats = self.set_device_map(gpu_split or [99999])
