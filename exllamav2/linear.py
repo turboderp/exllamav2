@@ -22,6 +22,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     temp_dq: torch.tensor
     padding: int = 0
 
+    lora_a_tensors: dict
+    lora_b_tensors: dict
+
     def __init__(self, model, key, in_features, out_features, has_bias):
         super().__init__(model, key)
 
@@ -32,6 +35,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.has_bias = has_bias
         self.temp_dq = None
         self.footprint = -1
+
+        self.lora_a_tensors = {}
+        self.lora_b_tensors = {}
 
 
     def load(self, w = None):
@@ -92,7 +98,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.out_features * self.model.config.max_input_len * self.model.config.max_batch_size * 4 + 128
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, force_recons = False, force_cuda = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, force_recons = False, force_cuda = False):
+
+        # Linear forward
 
         if self.q_handle is not None and not force_recons:
 
@@ -102,17 +110,28 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             output = torch.empty((hidden_states.shape[0], self.out_features), dtype = torch.half, device = self.device())
             ext_c.gemm_half_q_half(hidden_states, self.q_handle, output, force_cuda)
 
-            hidden_states = output.view(output_shape)
+            hidden_states_out = output.view(output_shape)
 
         else:
 
             matrix = self.get_weight_tensor_dq()
-            hidden_states = torch.matmul(hidden_states, matrix)
+            hidden_states_out = torch.matmul(hidden_states, matrix)
+
+        # Evaluate LoRAs
+
+        if loras is not None:
+            for lora in loras:
+                lora_a = self.lora_a_tensors[lora] if lora in self.lora_a_tensors else None
+                lora_b = self.lora_b_tensors[lora] if lora in self.lora_b_tensors else None
+                if lora_a is not None:
+                    assert lora_b is not None
+                    temp = torch.matmul(hidden_states, lora_a)
+                    hidden_states_out += torch.matmul(temp, lora_b)
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": hidden_states_out}
         else:
-            return hidden_states
+            return hidden_states_out
 
 
     def dump_group_info(self):

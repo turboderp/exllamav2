@@ -101,6 +101,7 @@ except ModuleNotFoundError:
     sources_ = \
     [
         "ext.cpp",
+        "cuda/lora.cu",
         "cuda/pack_tensor.cu",
         "cuda/quantize.cu",
         "cuda/q_matrix.cu",

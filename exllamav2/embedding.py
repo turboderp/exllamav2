@@ -68,7 +68,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
 
         if self.model.config.qkv_embed:
 

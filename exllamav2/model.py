@@ -13,6 +13,7 @@ from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.attn import ExLlamaV2Attention
+from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
@@ -272,6 +273,13 @@ class ExLlamaV2:
         return [module for module in self.modules]
 
 
+    def update_loras(self):
+
+        for module in self.modules:
+            if isinstance(module, ExLlamaV2Attention): module.update_loras()
+            if isinstance(module, ExLlamaV2MLP): module.update_loras()
+
+
     def build_attn_mask(self, batch_size, seq_len, past_len, input_mask, device):
 
         if input_mask is None and seq_len == 1: return None
@@ -311,7 +319,7 @@ class ExLlamaV2:
             return attn_mask
 
 
-    def forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False, last_id_only = False):
+    def forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False, last_id_only = False, loras = None):
 
         q_len = input_ids.shape[-1]
         remaining_q_len = q_len
@@ -333,7 +341,8 @@ class ExLlamaV2:
                                  cache = cache,
                                  input_mask = input_mask,
                                  preprocess_only = preprocess_only,
-                                 last_id_only = last_id_only)
+                                 last_id_only = last_id_only,
+                                 loras = loras)
 
         # Confirm that the input fits within the allocated cache space
 
@@ -373,7 +382,8 @@ class ExLlamaV2:
                               cache = cache,
                               input_mask = input_mask,
                               preprocess_only = _preprocess_only,
-                              last_id_only = _last_id_only)
+                              last_id_only = _last_id_only,
+                              loras = loras)
 
             if not _preprocess_only:
                 result = r if result is None else torch.cat((result, r), dim = 1)
@@ -385,7 +395,7 @@ class ExLlamaV2:
         return result
 
 
-    def _forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False, last_id_only = False):
+    def _forward(self, input_ids, cache = None, input_mask = None, preprocess_only = False, last_id_only = False, loras = None):
 
         batch_size, seq_len = input_ids.shape
         past_len = 0
@@ -421,7 +431,7 @@ class ExLlamaV2:
                 x = x.narrow(-2, -1, 1)
 
             x = safe_move_tensor(x, device)
-            x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len)
+            x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len, loras = loras)
 
             if preprocess_only and idx == self.last_kv_layer_idx:
                 x = None

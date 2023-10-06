@@ -50,7 +50,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])

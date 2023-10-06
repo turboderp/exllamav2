@@ -8,7 +8,7 @@ from exllamav2.cache import ExLlamaV2Cache
 from exllamav2.embedding import ExLlamaV2Embedding
 import math
 from exllamav2 import ext
-from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.ext import exllamav2_ext as ext_c
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 
@@ -45,6 +45,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     temp_o: torch.tensor
     temp_dq: torch.tensor
     # temp_kv: torch.tensor
+
+    temp_lora_size: int = 0
+
 
     def __init__(self, model, key, layer_idx):
         super().__init__(model, key)
@@ -230,13 +233,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
         global has_flash_attn
 
         qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates)
+            return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates, loras = loras)
 
         if qkv_embed:
             batch_size = hidden_states[0].shape[0]
@@ -285,6 +288,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             # RMS norm, Q/K/V projections, position embeddings
 
+            if loras is None or self.temp_lora_size == 0:
+                pass_loras = []
+                pass_lora_temp = ext.none_tensor
+            else:
+                pass_loras = [id(x) for x in loras]
+                pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
+
             ext_c.q_attn_forward_1(self.q_handle,
                                    hidden_states,
                                    batch_size,
@@ -295,7 +305,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                    k_states,
                                    v_states,
                                    constants.sin,
-                                   constants.cos)
+                                   constants.cos,
+                                   pass_loras,
+                                   pass_lora_temp)
 
         # Alternative, for embedded QKV
 
@@ -457,7 +469,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                hidden_states,
                                attn_output,
                                batch_size,
-                               q_len)
+                               q_len,
+                               pass_loras,
+                               pass_lora_temp)
 
         attn_output = None
         attn_weights = None
@@ -465,7 +479,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
 
         num_attention_heads = self.model.config.num_attention_heads
         num_key_value_heads = self.model.config.num_key_value_heads
@@ -487,9 +501,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             residual = hidden_states
             post_norm = self.input_layernorm.forward(hidden_states)
 
-            query_states_im = self.q_proj.forward(post_norm)
-            key_states_im = self.k_proj.forward(post_norm)
-            value_states_im = self.v_proj.forward(post_norm)
+            query_states_im = self.q_proj.forward(post_norm, loras = loras)
+            key_states_im = self.k_proj.forward(post_norm, loras = loras)
+            value_states_im = self.v_proj.forward(post_norm, loras = loras)
 
             if intermediates:
 
@@ -568,7 +582,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_proj = self.o_proj.forward(attn_output)
+        attn_proj = self.o_proj.forward(attn_output, loras = loras)
 
         # Add residual connection
 
@@ -584,5 +598,34 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                     "hidden_states": hidden_states}
         else:
             return hidden_states
+
+
+    def update_loras(self):
+
+        if self.q_handle is None: return
+
+        q_proj_lora_a = { id(k): v for k, v in self.q_proj.lora_a_tensors.items() }
+        q_proj_lora_b = { id(k): v for k, v in self.q_proj.lora_b_tensors.items() }
+        k_proj_lora_a = { id(k): v for k, v in self.k_proj.lora_a_tensors.items() }
+        k_proj_lora_b = { id(k): v for k, v in self.k_proj.lora_b_tensors.items() }
+        v_proj_lora_a = { id(k): v for k, v in self.v_proj.lora_a_tensors.items() }
+        v_proj_lora_b = { id(k): v for k, v in self.v_proj.lora_b_tensors.items() }
+        o_proj_lora_a = { id(k): v for k, v in self.o_proj.lora_a_tensors.items() }
+        o_proj_lora_b = { id(k): v for k, v in self.o_proj.lora_b_tensors.items() }
+
+        temp_lora_size = ext_c.q_attn_set_loras(self.q_handle,
+                                                q_proj_lora_a,
+                                                q_proj_lora_b,
+                                                k_proj_lora_a,
+                                                k_proj_lora_b,
+                                                v_proj_lora_a,
+                                                v_proj_lora_b,
+                                                o_proj_lora_a,
+                                                o_proj_lora_b)
+
+        self.temp_lora_size = temp_lora_size * self.model.config.max_batch_size * self.model.config.max_input_len
+
+
+
 
 

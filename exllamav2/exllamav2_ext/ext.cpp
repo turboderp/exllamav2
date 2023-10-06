@@ -376,7 +376,9 @@ void q_attn_forward_1
     torch::Tensor k_temp,
     torch::Tensor v_temp,
     torch::Tensor sin,
-    torch::Tensor cos
+    torch::Tensor cos,
+    const std::vector<uintptr_t>& loras,
+    torch::Tensor loras_temp
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
@@ -397,7 +399,9 @@ void q_attn_forward_1
         (half*) k_temp.data_ptr(),
         (half*) v_temp.data_ptr(),
         (half*) sin.data_ptr(),
-        (half*) cos.data_ptr()
+        (half*) cos.data_ptr(),
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
 }
 
@@ -407,7 +411,9 @@ void q_attn_forward_2
     torch::Tensor x,
     torch::Tensor attn_output,
     int batch_size,
-    int q_len
+    int q_len,
+    const std::vector<uintptr_t>& loras,
+    torch::Tensor loras_temp
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
@@ -422,8 +428,71 @@ void q_attn_forward_2
         (const half*) attn_output.data_ptr(),
         (half*) x.data_ptr(),
         q_len,
-        batch_size
+        batch_size,
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
+}
+
+int q_attn_set_loras
+(
+    uintptr_t q_attn,
+    std::unordered_map<uintptr_t, torch::Tensor>& q_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& q_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& k_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& k_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& v_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& v_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& o_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& o_proj_lora_b
+)
+{
+    QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
+
+    attn->q_proj_lora.clear();
+    attn->k_proj_lora.clear();
+    attn->v_proj_lora.clear();
+    attn->o_proj_lora.clear();
+
+    int max_rank = 0;
+
+    for (const auto& pair : q_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) q_proj_lora_b[pair.first].data_ptr();
+        attn->q_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : k_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) k_proj_lora_b[pair.first].data_ptr();
+        attn->k_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : v_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) v_proj_lora_b[pair.first].data_ptr();
+        attn->v_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : o_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) o_proj_lora_b[pair.first].data_ptr();
+        attn->o_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    return max_rank;
 }
 
 // Quant MLP
@@ -470,7 +539,9 @@ uintptr_t make_q_mlp
 void q_mlp_forward_
 (
     uintptr_t q_mlp,
-    torch::Tensor x
+    torch::Tensor x,
+    const std::vector<uintptr_t>& loras,
+    torch::Tensor loras_temp
 )
 {
     QMLP* mlp = reinterpret_cast<QMLP*> (q_mlp);
@@ -486,8 +557,59 @@ void q_mlp_forward_
         at::cuda::getCurrentCUDABlasHandle(),
         (half*) x.data_ptr(),
         x.size(0), // rows
-        x.size(1)  // columns == hidden_size
+        x.size(1), // columns == hidden_size
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
+}
+
+int q_mlp_set_loras
+(
+    uintptr_t q_mlp,
+    std::unordered_map<uintptr_t, torch::Tensor>& gate_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& gate_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& up_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& up_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& down_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& down_proj_lora_b
+)
+{
+    QMLP* mlp = reinterpret_cast<QMLP*> (q_mlp);
+
+    mlp->gate_proj_lora.clear();
+    mlp->up_proj_lora.clear();
+    mlp->down_proj_lora.clear();
+
+    int max_rank = 0;
+
+    for (const auto& pair : gate_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) gate_proj_lora_b[pair.first].data_ptr();
+        mlp->gate_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : up_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) up_proj_lora_b[pair.first].data_ptr();
+        mlp->up_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : down_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) down_proj_lora_b[pair.first].data_ptr();
+        mlp->down_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    return max_rank;
 }
 
 
@@ -742,10 +864,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
+    m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
     m.def("free_q_attn", &free_q_attn, "free_q_attn");
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");
     m.def("q_attn_forward_2", &q_attn_forward_2, "q_attn_forward_2");
+    m.def("q_attn_set_loras", &q_attn_set_loras, "q_attn_set_loras");
     m.def("quantize_range", &quantize_range, "quantize_range");
     m.def("gemm_half_q_half", &gemm_half_q_half, "gemm_half_q_half");
     m.def("rms_norm", &rms_norm, "rms_norm");

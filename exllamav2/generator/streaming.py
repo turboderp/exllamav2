@@ -27,6 +27,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     first_token = False
     heal_next_token = False
 
+    active_loras = []
+
     def __init__(self, model, cache, tokenizer):
         super().__init__(model, cache, tokenizer)
 
@@ -48,7 +50,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             else: raise ValueError("Unsupported type in stop_conditions")
     
     
-    def begin_stream(self, input_ids: torch.Tensor, gen_settings: ExLlamaV2Sampler.Settings, token_healing = False):
+    def begin_stream(self, input_ids: torch.Tensor, gen_settings: ExLlamaV2Sampler.Settings, token_healing = False, loras = None):
+
+        if loras is None: self.active_loras = []
+        else: self.active_loras = loras
 
         self.held_text = ""
         self.held_tokens = self.no_tokens
@@ -161,7 +166,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.sequence_ids = in_tokens.clone()
         self.cache.current_seq_len = 0
-        self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True)
+        self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True, loras = self.active_loras)
 
         self.first_token = True
 
@@ -195,12 +200,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         start = self.cache.current_seq_len
         self.sequence_ids = torch.cat((self.sequence_ids, in_tokens), dim = 1)
 
-        self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True)
+        self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True, loras = self.active_loras)
 
 
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
-        logits = self.model.forward(self.sequence_ids[:, -1:], self.cache).float().cpu()
+        logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras).float().cpu()
         token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
         self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
         gen_settings.feed_filters(token)
