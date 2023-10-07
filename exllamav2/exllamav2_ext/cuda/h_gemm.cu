@@ -13,8 +13,10 @@
 //     __device__ half2_uint32(half2 val) : as_half2(val) {}
 // };
 
-const int T_MAX_M = 64;
-const int T_MAX_N = 32;
+// TODO: Improve tall kernel, maybe special cases for size_n = 1, 2, 4, 8, 16
+
+const int T_MAX_M = 16;
+const int T_MAX_N = 64;
 const int T_MAX_K = 8192;
 const int T_THREADS_M = 1;
 const int T_THREADS_N = 8;
@@ -122,7 +124,7 @@ __global__ void h_gemm_tall_kernel
 }
 
 
-const int W_MAX_M = 64;
+const int W_MAX_M = 16;
 const int W_MAX_N = 65536;
 const int W_MAX_K = 32;
 const int W_THREADS_M = 1;
