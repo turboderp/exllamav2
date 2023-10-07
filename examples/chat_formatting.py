@@ -1,5 +1,5 @@
 
-import re
+import re, regex
 from io import StringIO
 
 from pygments import highlight
@@ -13,8 +13,29 @@ from pygments.util import ClassNotFound
 
 import shutil
 
-# Code block formatter for black background
+# List of languages to detect after ``` delimiter
 
+languages = \
+{
+    "python": "python",
+    "c#": "csharp",
+    "csharp": "csharp",
+    "c": "c",
+    "c++": "c",
+    "cpp": "c",
+    "java": "java",
+    "javascript": "javascript",
+    "js": "javascript",
+    "rust": "rust",
+    "ruby": "ruby",
+    "go": "go",
+    "php": "php",
+    "yaml": "yaml",
+    "json": "json"
+}
+
+
+# Code block formatter for black background
 
 class BlackBackgroundTerminalFormatter(TerminalFormatter):
 
@@ -93,17 +114,46 @@ class CodeBlockFormatter:
 
     code_block_text: str
     lines_printed: int
-    last_lexer: str
+    #last_lexer: Lexer
 
     formatter = BlackBackgroundTerminalFormatter()
+    held_chunk: str
+
+    lines: list
+    formatted_lines: list
+    max_line_length: int
+
+    def __init__(self):
+
+        delimiter_exp = r"^```[^\s]*"
+        self.delimiter_pattern = regex.compile(delimiter_exp)
+
+        self.held_chunk = ""
+        self.formatted_lines = []
+        self.lines = []
+        self.last_lexer = None
+        self.next_explicit_language = None
+        self.explicit_language = None
+        self.max_line_length = 0
+
 
     # Start of format block
 
     def begin(self):
+        global languages
 
         self.code_block_text = ""
+        self.formatted_lines = []
+        self.lines = []
         self.lines_printed = 0
-        self.last_lexer = get_lexer_by_name("text")
+        self.max_line_length = 0
+
+        self.explicit_language = self.next_explicit_language
+        if self.explicit_language is not None:
+            self.last_lexer = get_lexer_by_name(self.explicit_language)
+            # print("[" + self.explicit_language + "]", end = "")
+        else:
+            self.last_lexer = get_lexer_by_name("text")
 
         self.formatter.begin()
 
@@ -111,65 +161,95 @@ class CodeBlockFormatter:
     # Print a code block, updating the CLI in real-time
 
     def print_code_block(self, chunk):
-        
-        # Clear previously printed lines
-        for _ in range(self.lines_printed):  # -1 not needed?
-            # Move cursor up one line
-            print('\x1b[1A', end='')
-            # Clear line
-            print('\x1b[2K', end='')
 
         terminal_width = shutil.get_terminal_size().columns
 
+        # Start with a blank line
+        if len(self.lines) == 0: self.lines = [""]
+
         # Check if the chunk will exceed the terminal width on the current line
-        current_line_length = len(self.code_block_text.split('\n')[-1]) + len(chunk) + 2 * 3 + 3  # Including padding and offset
+        current_line_length = len(self.lines[-1]) + len(chunk) + 2 * 3 + 3  # Including padding and offset
         if current_line_length > terminal_width:
-            self.code_block_text += '\n'
+            self.lines.append("")
+
+        # Some models emit tab characters, apparently
+        chunk = chunk.replace("\t", "    ")
 
         # Update the code block text
         self.code_block_text += chunk
+        self.lines[-1] += chunk
 
-        # Remove language after codeblock start
-        code_block_text = '\n'.join([''] + self.code_block_text.split('\n')[1:])
+        # Keep track of longest line
+        self.max_line_length = max(self.max_line_length, len(self.lines[-1]))
 
-        # Handle delim at end
-        if code_block_text.endswith("```"):
-            code_block_text = code_block_text[:-3]
+        # If current line contains newline, split it in two and apply padding and syntax highlighting
+        if "\n" in self.lines[-1]:
+            split = self.lines[-1].split("\n")
+            self.lines[-1] = split[0]
 
-
-        # Get specified language
-        specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
-
-        # Split updated text into lines and find the longest line
-        lines = code_block_text.split('\n')
-        max_length = max(len(line) for line in lines)
-
-        # Pad all lines to match the length of the longest line
-        padded_lines = [line.ljust(max_length) for line in lines]
-
-        # Join padded lines into a single string
-        padded_text = '\n'.join(padded_lines)
-
-        # Try guessing the lexer for syntax highlighting, if we haven't guessed already
-        try:
-            if bool(specified_lang):
-                lexer = get_lexer_by_name(specified_lang)
+            # Try guessing the lexer for syntax highlighting, if we haven't guessed already
+            try:
+                if self.explicit_language is None and '\n' in chunk:  # Offload lexguessing to every newline
+                    lexer = guess_lexer(self.code_block_text)
+                    self.last_lexer = lexer
+                else:
+                    lexer = self.last_lexer
+            except ClassNotFound:
+                lexer = get_lexer_by_name("text")  # Fallback to plain text if language isn't supported by pygments
                 self.last_lexer = lexer
-            elif '\n' in chunk: # Offload lexguessing to every newline
-                lexer = guess_lexer(padded_text) 
-                self.last_lexer = lexer
+
+            # Format lines so far
+            padded_lines = [line.ljust(self.max_line_length) for line in self.lines]
+            padded_text = "\n".join(padded_lines)
+            highlighted_text = highlight(padded_text, lexer, self.formatter)
+            highlighted_text = highlighted_text.replace('\n', '\033[0m\n')
+
+            # Move cursor to top of block, start of line
+            print(f"\x1b[{len(self.lines) - 1}A\x1b[0G ", end="")
+
+            # Print formatted lines
+            print(highlighted_text, end = "")
+
+            # Create next line
+
+            self.lines.append(split[1])
+            print(self.lines[-1], end = "")
+
+        else:
+
+            print(chunk, end = "")
+
+
+    def process_delimiter(self, chunk):
+        global languages
+
+        self.held_chunk += chunk
+
+        match = self.delimiter_pattern.match(self.held_chunk, partial = True)
+
+        # No match, emit any held text
+
+        if not match:
+            chunk = self.held_chunk
+            self.held_chunk = ""
+            return chunk, False
+
+        # Recognize delimited when at least one character of the held chunk doesn't match
+
+        pos = match.end()
+
+        if pos < len(self.held_chunk):
+            match_str = self.held_chunk[3:pos]
+            chunk = self.held_chunk[pos:]
+            self.held_chunk = ""
+
+            if match_str in languages:
+                self.next_explicit_language = languages[match_str]
             else:
-                lexer = self.last_lexer
-        except ClassNotFound:
-            lexer = get_lexer_by_name("text")  # Fallback to plain text if language isn't supported by pygments
-            self.last_lexer = lexer
+                self.next_explicit_language = None
 
-        # Highlight
-        highlighted_text = highlight(padded_text, lexer, self.formatter)
-        highlighted_text = highlighted_text.replace('\n', '\033[0m\n')
+            return chunk, True
 
-        # Print the updated padded and highlighted text
-        print(highlighted_text, end='')
+        # The entire chunk matches, so it may not be complete yet
 
-        # Update the lines_printed counter
-        self.lines_printed = len(lines)
+        return "", False

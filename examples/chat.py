@@ -22,6 +22,8 @@ from chat_formatting import CodeBlockFormatter
 from chat_prompts import prompt_formats
 prompt_formats_list = list(prompt_formats.keys())
 
+import time
+
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
@@ -155,9 +157,6 @@ col_sysprompt = "\u001b[37;1m"  # Grey
 codeblock_formatter = None if args.no_code_formatting else CodeBlockFormatter()
 in_code_block = False
 
-delim_buffer_array = []
-delim_pattern = re.compile(r'(`{1,3})')
-
 delim_overflow = ""
 
 # Main loop
@@ -203,19 +202,11 @@ while True:
         response_text += chunk
         responses_ids[-1] = torch.cat([responses_ids[-1], tokens], dim = -1)
 
-        # Append chunk to delimiter buffer if contains delimiters
-        if delim_pattern.search(chunk) and len(delim_buffer_array) < 2: # dirty fix for assumption that codeblock start is never smaller than `` + `
-            # add chunk
-            delim_buffer_array.append(chunk)
-        else:
-            delim_overflow = "".join(delim_buffer_array)
-            delim_buffer_array = []
-
         # Check for code block delimiters
-        # if delim_buffer_array contains a full delimiter (```), codeblock true
-        codeblock_delimiter = "".join(delim_buffer_array).find("```") != -1 and (codeblock_formatter is not None)
+        # Let formatter suppress text as long as it may be part of delimiter
+        chunk, codeblock_delimiter = (chunk, False) if codeblock_formatter is None else codeblock_formatter.process_delimiter(chunk)
 
-        # Print output
+        # Enter code block
 
         if not in_code_block:
 
@@ -224,25 +215,36 @@ while True:
                 codeblock_formatter.begin()
                 print("\n")
                 in_code_block = True
-                delim_buffer_array = []
+                codeblock_delimiter = False
+
+        # Print
+
+        if in_code_block:
 
             # Print unformatted
-            # if delim buffer is > 0 do not print for now
-            if len(delim_buffer_array) == 0:
-              print(chunk, end = "")
-            
-            sys.stdout.flush()
+            codeblock_formatter.print_code_block(chunk)
 
         else:
 
+            # Print formatted
+            print(chunk, end = "")
+
+        # Exit code block
+
+        if in_code_block:
+
             # End of code block
             if codeblock_delimiter:
-                print("\033[0m", end = "")  # Reset block color to be certain
-                in_code_block = False
-                delim_buffer_array = []
 
-            # Print formatted
-            codeblock_formatter.print_code_block(chunk)
+                # Edge case when we get EOS right after code block
+                if eos: codeblock_formatter.print_code_block("\n")
+
+                print("\033[0m")  # Reset block color to be certain
+                in_code_block = False
+                codeblock_delimiter = False
+
+        sys.stdout.flush()
+        # time.sleep(1)
 
         # If model has run out of space, rebuild the context and restart stream
 
