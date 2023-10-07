@@ -152,14 +152,11 @@ that purpose.
 
 There are still things that need to be ported over from V1, and other planned features. Among them:
 
-- LoRA support
 - Example web UI
 - Web server
 - More samplers
 
-## Updates
-
-**2023-09-13**: Preliminary ROCm support added, thanks to @ardfork. Bumped to 0.0.1
+## Recent updates
 
 **2023-09-16**: Reworked the quantizer a bit, now gives somewhat more precise quants and uses less VRAM, and it should
 be more resilient. The quantizer now saves sharded models (default size of 8 GB) to prevent massive system RAM usage
@@ -175,3 +172,5 @@ from PyPI is still pending. Updated installation instructions above.
 
 **2023-10-03**: Added support for extended vocabularies and alternative BOS/EOS/UNK tokens and the ability to 
 encode/decode sequences with special tokens. Added Orca template to the chatbot example.
+
+**2023-10-07**: (Multi) LoRA support as well as some experimental optimizations.
