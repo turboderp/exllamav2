@@ -11,6 +11,7 @@ from exllamav2 import (
 )
 
 from exllamav2.generator import (
+    ExLlamaV2BaseGenerator,
     ExLlamaV2StreamingGenerator,
     ExLlamaV2Sampler
 )
@@ -37,11 +38,13 @@ cache = ExLlamaV2Cache(model)
 lora_directory = "/mnt/str/models/_test_loras/tloen_alpaca-lora-7b/"
 lora = ExLlamaV2Lora.from_directory(model, lora_directory)
 
-# Initialize generator
+# Initialize generators
 
-generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
-generator.warmup()
-generator.set_stop_conditions([tokenizer.eos_token_id])
+streaming_generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
+streaming_generator.warmup()
+streaming_generator.set_stop_conditions([tokenizer.eos_token_id])
+
+simple_generator = ExLlamaV2BaseGenerator(model, cache, tokenizer)
 
 # Sampling settings
 
@@ -64,35 +67,46 @@ prompt = \
 
 # Generate with and without LoRA
 
-def generate_with_lora(prompt_, lora_, max_new_tokens):
+def generate_with_lora(prompt_, lora_, max_new_tokens, streaming_ = True):
 
-    input_ids = tokenizer.encode(prompt_)
-
-    print (prompt, end = "")
+    print(prompt, end="")
     sys.stdout.flush()
 
-    generator.begin_stream(input_ids, settings, loras = [lora_])
-    generated_tokens = 0
-    while True:
-        chunk, eos, _ = generator.stream()
-        generated_tokens += 1
-        print (chunk, end = "")
-        sys.stdout.flush()
-        if eos or generated_tokens == max_new_tokens: break
+    if streaming_:
 
-    print()
+        input_ids = tokenizer.encode(prompt_)
 
+        streaming_generator.begin_stream(input_ids, settings, loras = lora_)
+        generated_tokens = 0
+        while True:
+            chunk, eos, _ = streaming_generator.stream()
+            generated_tokens += 1
+            print (chunk, end = "")
+            sys.stdout.flush()
+            if eos or generated_tokens == max_new_tokens: break
+
+        print()
+
+    else:
+
+        output = simple_generator.generate_simple(prompt, settings, max_new_tokens, loras = lora_)
+
+        print (output[len(prompt):])
+        print()
+
+
+streaming = True
 
 print()
 print("--------------------------")
 print("No LoRA:")
 print()
 
-generate_with_lora(prompt, None, 250)
+generate_with_lora(prompt, None, 250, streaming)
 
 print()
 print("--------------------------")
 print("Yes LoRA:")
 print()
 
-generate_with_lora(prompt, lora, 250)
+generate_with_lora(prompt, lora, 250, streaming)

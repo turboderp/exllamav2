@@ -2,7 +2,8 @@ from ast import Tuple
 from exllamav2 import (
     ExLlamaV2,
     ExLlamaV2Cache,
-    ExLlamaV2Tokenizer
+    ExLlamaV2Tokenizer,
+    ExLlamaV2Lora
 )
 from exllamav2.generator import (
     ExLlamaV2Sampler,
@@ -52,8 +53,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     
     def begin_stream(self, input_ids: torch.Tensor, gen_settings: ExLlamaV2Sampler.Settings, token_healing = False, loras = None):
 
-        if loras is None: self.active_loras = []
-        else: self.active_loras = loras
+        # Accept LoRA or list of LoRAs
+        if loras is not None and isinstance(loras, ExLlamaV2Lora): loras = [loras]
 
         self.held_text = ""
         self.held_tokens = self.no_tokens
