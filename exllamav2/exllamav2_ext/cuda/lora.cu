@@ -1,37 +1,8 @@
 #include "lora.cuh"
 #include "util.cuh"
+#include "h_gemm.cuh"
 
-#include "compat_gemm.cuh"
-
-// alpha * ( a[m,k] @ b[k,n] ) + beta * c[m,n] -> c[m,n]
-
-void gemm_
-(
-    cublasHandle_t cublas_handle,
-    int size_m,
-    int size_n,
-    int size_k,
-    const half* a,
-    const half* b,
-    half* c,
-    float alpha,
-    float beta
-)
-{
-    //DBGI3(size_m, size_n, size_k);
-
-    half alpha_ = __float2half(alpha);
-    half beta_ = __float2half(beta);
-    cublasHgemm(cublas_handle,
-                CUBLAS_OP_N,
-                CUBLAS_OP_N,
-                size_n, size_m, size_k,
-                &alpha_, b, size_n,
-                         a, size_k,
-                &beta_,  c, size_n);
-}
-
-void apply_loras
+void apply_loras_cuda
 (
     cublasHandle_t cublas_handle,
     const std::unordered_map<uintptr_t, std::tuple<half*, half*, int>>& adapters,
@@ -53,7 +24,10 @@ void apply_loras
         half* lora_b = std::get<1>(lora);
         int rank = std::get<2>(lora);
 
-        gemm_(cublas_handle, rows, rank, base->height, input, lora_a, temp, 1.0f, 0.0f);
-        gemm_(cublas_handle, rows, base->width, rank, temp, lora_b, output, 1.0f, 1.0f);
+//         DBGI3(rows, rank, base->height);
+//         DBGI3(rows, base->width, rank);
+
+        h_gemm_cuda(cublas_handle, rows, rank, base->height, input, lora_a, temp, 1.0f, 0.0f);
+        h_gemm_cuda(cublas_handle, rows, base->width, rank, temp, lora_b, output, 1.0f, 1.0f);
     }
 }

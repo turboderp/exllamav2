@@ -141,8 +141,8 @@ void QMLP::forward_
     gemm_half_q_half_cuda(cublas_handle, temp_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
 
-    apply_loras(cublas_handle, gate_proj_lora, loras, gate, temp_state, temp_a, lora_temp, rows);
-    apply_loras(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_b, lora_temp, rows);
+    apply_loras_cuda(cublas_handle, gate_proj_lora, loras, gate, temp_state, temp_a, lora_temp, rows);
+    apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_b, lora_temp, rows);
 
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_X;
@@ -155,5 +155,5 @@ void QMLP::forward_
 
     gemm_half_q_half_cuda(cublas_handle, temp_a, down, x, rows, columns, intermediate_size, false, temp_dq);
 
-    apply_loras(cublas_handle, down_proj_lora, loras, down, temp_a, x, lora_temp, rows);
+    apply_loras_cuda(cublas_handle, down_proj_lora, loras, down, temp_a, x, lora_temp, rows);
 }

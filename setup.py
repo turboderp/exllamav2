@@ -26,6 +26,7 @@ setup_kwargs = {
             extension_name,
             [
                 "exllamav2/exllamav2_ext/ext.cpp",
+                "exllamav2/exllamav2_ext/cuda/h_gemm.cu",
                 "exllamav2/exllamav2_ext/cuda/lora.cu",
                 "exllamav2/exllamav2_ext/cuda/pack_tensor.cu",
                 "exllamav2/exllamav2_ext/cuda/quantize.cu",
