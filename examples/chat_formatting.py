@@ -15,10 +15,12 @@ import shutil
 
 # Code block formatter for black background
 
+
 class BlackBackgroundTerminalFormatter(TerminalFormatter):
 
     code_pad: int = 2
     block_pad_left: int = 1
+
 
     def __init__(self):
         super().__init__(style = "monokai")
@@ -91,6 +93,7 @@ class CodeBlockFormatter:
 
     code_block_text: str
     lines_printed: int
+    last_lexer: str
 
     formatter = BlackBackgroundTerminalFormatter()
 
@@ -100,6 +103,7 @@ class CodeBlockFormatter:
 
         self.code_block_text = ""
         self.lines_printed = 0
+        self.last_lexer = get_lexer_by_name("text")
 
         self.formatter.begin()
 
@@ -107,7 +111,7 @@ class CodeBlockFormatter:
     # Print a code block, updating the CLI in real-time
 
     def print_code_block(self, chunk):
-
+        
         # Clear previously printed lines
         for _ in range(self.lines_printed):  # -1 not needed?
             # Move cursor up one line
@@ -126,7 +130,15 @@ class CodeBlockFormatter:
         self.code_block_text += chunk
 
         # Remove language after codeblock start
-        code_block_text = re.sub(r'```.*?$', '```', self.code_block_text, flags=re.MULTILINE)
+        code_block_text = '\n'.join([''] + self.code_block_text.split('\n')[1:])
+
+        # Handle delim at end
+        if code_block_text.endswith("```"):
+            code_block_text = code_block_text[:-3]
+
+
+        # Get specified language
+        specified_lang = self.code_block_text.split('\n', 1)[0]  # Get 1st line (directly after delimiter, can be language)
 
         # Split updated text into lines and find the longest line
         lines = code_block_text.split('\n')
@@ -140,9 +152,17 @@ class CodeBlockFormatter:
 
         # Try guessing the lexer for syntax highlighting, if we haven't guessed already
         try:
-            lexer = guess_lexer(padded_text)
+            if bool(specified_lang):
+                lexer = get_lexer_by_name(specified_lang)
+                self.last_lexer = lexer
+            elif '\n' in chunk: # Offload lexguessing to every newline
+                lexer = guess_lexer(padded_text) 
+                self.last_lexer = lexer
+            else:
+                lexer = self.last_lexer
         except ClassNotFound:
             lexer = get_lexer_by_name("text")  # Fallback to plain text if language isn't supported by pygments
+            self.last_lexer = lexer
 
         # Highlight
         highlighted_text = highlight(padded_text, lexer, self.formatter)
