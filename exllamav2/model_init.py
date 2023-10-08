@@ -66,8 +66,8 @@ def init(args, quiet = False):
     # Set config options
 
     if args.length: config.max_seq_len = args.length
-    config.rope_scale = args.rope_scale
-    config.rope_alpha = args.rope_alpha
+    config.scale_pos_emb = args.rope_scale
+    config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
 
     # Set low-mem options
