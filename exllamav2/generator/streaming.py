@@ -55,6 +55,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Accept LoRA or list of LoRAs
         if loras is not None and isinstance(loras, ExLlamaV2Lora): loras = [loras]
+        self.active_loras = loras
 
         self.held_text = ""
         self.held_tokens = self.no_tokens

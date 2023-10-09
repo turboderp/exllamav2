@@ -15,12 +15,12 @@
 
 // TODO: Improve tall kernel, maybe special cases for size_n = 1, 2, 4, 8, 16
 
-const int T_MAX_M = 16;
-const int T_MAX_N = 64;
-const int T_MAX_K = 8192;
 const int T_THREADS_M = 1;
 const int T_THREADS_N = 8;
 const int T_BLOCKSIZE_K = 32;
+const int T_MAX_M = 16;
+const int T_MAX_N = 64;
+const int T_MAX_K = 1024 / T_THREADS_N * T_BLOCKSIZE_K;
 const int T_MAX_BLOCKS_K = T_MAX_K / T_BLOCKSIZE_K;
 
 __global__ void h_gemm_tall_kernel
@@ -239,7 +239,11 @@ void h_gemm_cuda
             gridDim.y = DIVIDE(size_m, T_THREADS_M);
             gridDim.z = 1;
 
+//             DBGI3(blockDim.x, blockDim.y, blockDim.z);
+//             DBGI3(gridDim.x, gridDim.y, gridDim.z);
+
             h_gemm_tall_kernel<<<gridDim, blockDim>>>(size_m, size_n, size_k, a, b, c, clear);
+            cuda_check( cudaPeekAtLastError() );
             return;
         }
 
@@ -255,10 +259,17 @@ void h_gemm_cuda
             gridDim.y = DIVIDE(size_m, W_THREADS_M);
             gridDim.z = 1;
 
+//             DBGI3(blockDim.x, blockDim.y, blockDim.z);
+//             DBGI3(gridDim.x, gridDim.y, gridDim.z);
+
             h_gemm_wide_kernel<<<gridDim, blockDim>>>(size_m, size_n, size_k, a, b, c, clear);
+            cuda_check( cudaPeekAtLastError() );
             return;
         }
     }
 
     h_gemm_cublas(cublas_handle, size_m, size_n, size_k, a, b, c, alpha, beta);
+//     DBGI3(size_m, size_n, size_k);
+    cuda_check( cudaPeekAtLastError() );
+
 }
