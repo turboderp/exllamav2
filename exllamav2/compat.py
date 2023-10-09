@@ -1,36 +1,41 @@
 
 import torch
 
-
 # On some setups Torch will attempt to use GPU peer-to-peer copies even when they are not supported. This is either
 # a driver issue, a bug in Torch, or both. Either way, the result is that .to() will create an empty tensor on the
 # target device and silently fail to copy any data into it. This is a workaround.
 
-disable_peer_copy = False
-tested_peer_copy = False
+tested_peer_copy = None
 
-def test_gpu_peer_copy():
-    global disable_peer_copy, tested_peer_copy
+def test_gpu_peer_copy(device_a, device_b):
+    global tested_peer_copy
 
-    if tested_peer_copy: return
-    tested_peer_copy = True
+    if tested_peer_copy is None:
+        num_dev = torch.cuda.device_count()
+        tested_peer_copy = [[0 for _ in range(num_dev)] for _ in range(num_dev)]
 
-    num_dev = torch.cuda.device_count()
-    for i in range(num_dev):
-        dev_i = f"cuda:{i}"
-        for j in range(i + 1, num_dev):
-            dev_j = f"cuda:{j}"
+    idx_a = device_a.index
+    idx_b = device_b.index
+    if idx_a > idx_b: idx_a, idx_b = idx_b, idx_a
 
-            a = torch.randn(5, device = dev_i) + 123.0
-            b = a.to(dev_j)
-            c = b.to(dev_i)
+    t = tested_peer_copy[idx_a][idx_b]
+    if t == -1: return False
+    if t == 1: return True
 
-            if not torch.all(a == c):
-                disable_peer_copy = True
+    dev_i = f"cuda:{idx_a}"
+    dev_j = f"cuda:{idx_b}"
+    a = torch.randn(5, device = dev_i) + 123.0
+    b = a.to(dev_j)
+    c = b.to(dev_i)
+    if torch.all(a == c):
+        tested_peer_copy[idx_a][idx_b] = 1
+        return True
+    else:
+        tested_peer_copy[idx_a][idx_b] = -1
+        return False
 
 
 def safe_move_tensor(tensor, device):
-    global disable_peer_copy
 
     # Accept tensor or tuple of tensors
 
@@ -46,18 +51,17 @@ def safe_move_tensor(tensor, device):
     if tensor.device == device:
         return tensor
 
-    # Test tensor.to (once) and if it seems to be working, let Torch decide
+    # Copies to/from system RAM are always fine
 
-    test_gpu_peer_copy()
-
-    if not disable_peer_copy:
+    if tensor.device.type == "cpu" or device.type == "cpu":
         return tensor.to(device)
 
-    # Move tensor via CPU if source and dest are distinct CUDA devices
+    # Source and dest are distinct CUDA devices
+    # Test tensor.to (once) and if it seems to be working, let Torch decide
 
-    if tensor.device.type == device.type == 'cuda' and tensor.device != device:
-        return tensor.cpu().to(device)
+    if test_gpu_peer_copy(tensor.device, device):
+        return tensor.to(device)
 
-    # Move to/from CPU
+    # Force move tensor via CPU
 
-    return tensor.to(device)
+    return tensor.cpu().to(device)
