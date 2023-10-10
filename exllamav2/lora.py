@@ -156,8 +156,8 @@ class ExLlamaV2Lora:
     def unload(self):
 
         for k, v in self.target_modules.items():
-            del v.lora_a_tensors[self]
-            del v.lora_b_tensors[self]
+            if self in v.lora_a_tensors: del v.lora_a_tensors[self]
+            if self in v.lora_b_tensors: del v.lora_b_tensors[self]
 
         self.tensors = {}
         self.target_modules = {}
