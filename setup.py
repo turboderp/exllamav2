@@ -77,7 +77,8 @@ setup(
         "safetensors>=0.3.2",
         "sentencepiece>=0.1.97",
         "pygments",
-        "websockets"
+        "websockets",
+        "regex"
     ],
     include_package_data = True,
     verbose = verbose,
