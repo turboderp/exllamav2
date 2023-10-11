@@ -16,6 +16,8 @@ def optimize(job, save_fn):
     target_bpw = job["bits"]
 
     # Binary search for combination of settings that minimizes max rfn_error while
+    # TODO: Detect if bpw is too low to be attainable
+    # TODO: Fix potential broken models when bpw is too high
 
     invalid = False
     min_diff = 0.00001
