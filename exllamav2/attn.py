@@ -18,7 +18,9 @@ has_flash_attn = False
 try:
     import flash_attn
     flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".") if t.isdigit()]
-    if flash_attn_ver >= [2, 2, 1]:
+    is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
+    
+    if flash_attn_ver >= [2, 2, 1] and is_ampere_or_newer_gpu:
         from flash_attn import flash_attn_func
         has_flash_attn = True
 except ModuleNotFoundError:
