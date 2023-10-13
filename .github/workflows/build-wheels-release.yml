@@ -108,7 +108,7 @@ jobs:
         uses: svenstaro/upload-release-action@2.6.1
         with:
           file: ./dist/*.whl
-          tag: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+          tag: ${{ format('v{0}', steps.build-wheel.outputs.PACKAGE_VERSION) }}
           file_glob: true
           overwrite: true
           release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
@@ -185,7 +185,7 @@ jobs:
         uses: svenstaro/upload-release-action@2.6.1
         with:
           file: ./dist/*.whl
-          tag: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+          tag: ${{ format('v{0}', steps.build-wheel.outputs.PACKAGE_VERSION) }}
           file_glob: true
           overwrite: true
           release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
