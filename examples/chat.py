@@ -27,6 +27,8 @@ import time
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
+parser.add_argument("-dm", "--draft_model_dir", type = str, default = None, help = "Path to draft model directory")
+
 parser.add_argument("-modes", "--modes", action = "store_true", help = "List available modes and exit.")
 parser.add_argument("-mode", "--mode", choices = prompt_formats_list, help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
@@ -74,10 +76,35 @@ model_init.check_args(args)
 model_init.print_options(args)
 model, tokenizer = model_init.init(args)
 
+# Initialize draft model if provided
+
+draft_model = None
+draft_cache = None
+
+if args.draft_model_dir:
+
+    print(f" -- Draft model: {args.draft_model_dir}")
+
+    draft_config = ExLlamaV2Config()
+    draft_config.model_dir = args.draft_model_dir
+    draft_config.prepare()
+
+    if draft_config.max_seq_len < model.config.max_seq_len:
+        print(f" !! Warning: Draft model native max sequence length is less than sequence length for model. Speed may decrease after {draft_config.max_seq_len} tokens.")
+
+    draft_config.max_seq_len = model.config.max_seq_len
+    draft_config.no_flash_attn = args.no_flash_attn
+
+    print(" -- Loading draft model...")
+
+    draft_model = ExLlamaV2(draft_config)
+    draft_model.load()
+
+    draft_cache = ExLlamaV2Cache(draft_model)
+
 # Create cache
 
 cache = ExLlamaV2Cache(model)
-
 
 # Chat context
 
@@ -128,7 +155,7 @@ def get_tokenized_context(max_len):
 
 # Generator
 
-generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
+generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer, draft_model, draft_cache)
 
 settings = ExLlamaV2Sampler.Settings()
 settings.temperature = args.temperature
