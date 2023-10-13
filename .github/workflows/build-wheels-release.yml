@@ -77,23 +77,24 @@ jobs:
       - name: Build Wheel
         id: build-wheel
         run: |
-          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(')
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
           {
-              Write-Output $('::notice file=build-wheels-release.yml,line=82,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output $('::notice file=build-wheels-release.yml,line=83,title=Package Version::Detected package version is: {0}' -f $Matches[1])
               Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
           } else {
-              Write-Output '::error file=build-wheels-release.yml,line=85::Could not parse version from setup.py! You must upload wheels manually!'
+              Write-Output '::error file=build-wheels-release.yml,line=86::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
               Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
           }
           
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
+          if ($IsLinux) {$env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH}
           
           $cudaVersion = $env:CUDAVER
           $cudaVersionPytorch = $env:CUDAVER.Remove($env:CUDAVER.LastIndexOf('.')).Replace('.','')
           $BUILDTAG = "+cu$cudaVersionPytorch"
           
-          if ($IsLinux) {$env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH}
           $env:TORCH_CUDA_ARCH_LIST = if ([version]$env:CUDAVER -lt [version]'11.8') {'6.0 6.1 7.0 7.5 8.0 8.6+PTX'} else {'6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX'}
           python -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
         
@@ -166,7 +167,7 @@ jobs:
               Write-Output $('::notice file=build-wheels-release.yml,line=166,title=Package Version::Detected package version is: {0}' -f $Matches[1])
               Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
           } else {
-              Write-Output '::error file=build-wheels-release.yml,line=169::Could not parse version from setup.py! You must upload wheels manually!'
+              Write-Output '::error file=build-wheels-release.yml,line=169::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
               Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
           }
           
