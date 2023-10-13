@@ -15,7 +15,7 @@ def _tsize(st, key):
     shape = tslice.get_shape()
     numel = 1
     for x in shape: numel *= x
-    dtype = tslice.get_dtype()
+    dtype = "F16" #tslice.get_dtype()
     if dtype == "I32": return numel * 4
     elif dtype == "I16": return numel * 2
     elif dtype == "F16": return numel * 2
