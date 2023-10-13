@@ -28,15 +28,33 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     first_token = False
     heal_next_token = False
 
+    draft_model: ExLlamaV2 or None = None
+    draft_cache: ExLlamaV2Cache or None = None
+
+    future_logits: torch.tensor or None = None
+    future_tokens: torch.tensor or None = None
+    num_speculative_tokens: int
+    speculative_prob_threshold: float = 0.25
+
     active_loras = []
 
-    def __init__(self, model, cache, tokenizer):
+    def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
         super().__init__(model, cache, tokenizer)
 
         self.stop_strings = []
         self.stop_tokens = [tokenizer.eos_token_id]
 
         self.no_tokens = torch.empty((1, 0), dtype = torch.long)
+
+        if draft_model:
+            self.draft_model = draft_model
+            self.num_speculative_tokens = num_speculative_tokens
+            if draft_cache:
+                self.draft_cache = draft_cache
+            else:
+                self.draft_cache = ExLlamaV2Cache(draft_model,
+                                                  batch_size = cache.batch_size,
+                                                  max_seq_len = cache.max_seq_len)
 
 
     def set_stop_conditions(self, stop_conditions):
@@ -170,6 +188,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.cache.current_seq_len = 0
         self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True, loras = self.active_loras)
 
+        if self.draft_model is not None:
+            self.draft_cache.current_seq_len = 0
+            self.draft_model.forward(self.sequence_ids[:, :-1], self.draft_cache, preprocess_only = True)
+            self.future_logits = None
+            self.future_tokens = None
+
         self.first_token = True
 
 
@@ -191,7 +215,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.sequence_ids = in_tokens[:, :reuse]
 
         if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings)
-    
+
+        if self.draft_model is not None:
+            self.future_logits = None
+            self.future_tokens = None
+
 
     def _gen_feed_tokens(self, in_tokens, gen_settings):
 
@@ -204,11 +232,80 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True, loras = self.active_loras)
 
+        if self.draft_model is not None:
+            self.draft_model.forward(self.sequence_ids[:, start: -1], self.draft_cache, preprocess_only = True)
+            self.future_logits = None
+            self.future_tokens = None
+
 
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
-        logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras).float().cpu()
-        token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        if self.draft_model is None:
+
+            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras).float().cpu()
+            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+
+        else:
+
+            token, eos = self._gen_single_token_speculative(gen_settings, prefix_token)
+
         self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
         gen_settings.feed_filters(token)
         return token, eos
+
+
+    def _gen_single_token_speculative(self, gen_settings, prefix_token = None):
+
+        if self.future_tokens is None:
+
+            # Generate draft
+
+            draft_gen_settings = gen_settings.greedy_clone()
+            draft_sequence_ids = self.sequence_ids.clone()
+            num_drafted_tokens = 0
+
+            for k in range(self.num_speculative_tokens):
+
+                logits = self.draft_model.forward(draft_sequence_ids[:, -1:], self.draft_cache).float().cpu()
+                token, prob, _ = ExLlamaV2Sampler.sample(logits, draft_gen_settings, draft_sequence_ids, random.random(), self.tokenizer, prefix_token and k == 0)
+
+                if prob < self.speculative_prob_threshold:
+                    self.draft_cache.current_seq_len -= 1
+                    break
+
+                draft_sequence_ids = torch.cat((draft_sequence_ids, token), dim = 1)
+                num_drafted_tokens += 1
+
+            # Rewind draft cache
+
+            self.draft_cache.current_seq_len -= num_drafted_tokens
+
+            # Forward last sampled token plus draft through model
+
+            self.future_tokens = draft_sequence_ids[:, -1 - num_drafted_tokens:]
+            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras).float().cpu()
+
+            # Rewind model cache
+
+            self.cache.current_seq_len -= num_drafted_tokens + 1
+
+        # Sample the first future logits
+
+        token, _, eos = ExLlamaV2Sampler.sample(self.future_logits[:, :1, :], gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        self.future_logits = self.future_logits[:, 1:, :]
+        self.future_tokens = self.future_tokens[:, 1:]
+        self.cache.current_seq_len += 1
+        self.draft_cache.current_seq_len += 1
+
+        # If sampled token doesn't match future token or no more future tokens
+
+        if self.future_tokens.shape[-1] == 0 or self.future_tokens[0, 0] != token[0, 0]:
+            self.future_tokens = None
+            self.future_logits = None
+
+        return token, eos
+
+
+
+
+
