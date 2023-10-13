@@ -56,8 +56,11 @@ jobs:
           while ($cudaNum -ge 0) { $cudaChannels += '-c nvidia/label/cuda-' + $cudaVersion.Remove($cudaVersion.LastIndexOf('.')+1) + $cudaNum + ' '; $cudaNum-- }
           mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()
           
-          if ([version]$env:CUDAVER -gt [version]'11.8.0') {$torchver = "torch==2.1.0.* --pre --index-url https://download.pytorch.org/whl/nightly/cu$cudaVersionPytorch"} else {$torchver = "torch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch"}
-          python -m pip install $torchver.split()
+          if (!(mamba list cuda)[-1].contains('cuda')) {sleep -s 10; mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()}
+          if (!(mamba list cuda)[-1].contains('cuda')) {throw 'CUDA Toolkit failed to install!'}
+          
+          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
+          python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
           python -m pip install build wheel safetensors sentencepiece ninja
         

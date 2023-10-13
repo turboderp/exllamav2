@@ -66,15 +66,25 @@ jobs:
           while ($cudaNum -ge 0) { $cudaChannels += '-c nvidia/label/cuda-' + $cudaVersion.Remove($cudaVersion.LastIndexOf('.')+1) + $cudaNum + ' '; $cudaNum-- }
           mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()
           
-          if ([version]$env:CUDAVER -gt [version]'11.8.0') {$torchver = "torch==2.1.0.* --pre --index-url https://download.pytorch.org/whl/nightly/cu$cudaVersionPytorch"} else {$torchver = "torch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch"}
-          python -m pip install $torchver.split()
+          if (!(mamba list cuda)[-1].contains('cuda')) {sleep -s 10; mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()}
+          if (!(mamba list cuda)[-1].contains('cuda')) {throw 'CUDA Toolkit failed to install!'}
+          
+          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
+          python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
           python -m pip install build wheel safetensors sentencepiece ninja
         
       - name: Build Wheel
         id: build-wheel
         run: |
-          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(') {Write-Output $('::notice file=build-wheels-release.yml,line=53,title=Package Version::Detected package version is: {0}' -f $Matches[1]); Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"} else {Write-Output '::error file=build-wheels-release.yml,line=41::Could not parse version from setup.py! You must upload wheels manually!'; Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"}
+          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(')
+          {
+              Write-Output $('::notice file=build-wheels-release.yml,line=82,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=85::Could not parse version from setup.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
           
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
@@ -109,30 +119,30 @@ jobs:
     with:
       pypi: '0'
       
-  publish-wheels-to-pypi:
-    name: Publish Python distribution to PyPI
-    if: inputs.pypi == '1'
-    needs: ['build_wheels','build_rocm']
-    runs-on: ubuntu-latest
-    
-    environment:
-      name: pypi
-      url: https://pypi.org/p/exllamav2
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
-      
-    steps:
-      - name: Download all the wheels
-        uses: actions/download-artifact@v3
-        with:
-          name: wheels
-          path: dist/
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.10
+  # publish-wheels-to-pypi:
+  #   name: Publish Python distribution to PyPI
+  #   if: inputs.pypi == '1'
+  #   needs: ['build_wheels','build_rocm']
+  #   runs-on: ubuntu-latest
+  #   
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/exllamav2
+  #   permissions:
+  #     id-token: write  # IMPORTANT: mandatory for trusted publishing
+  #     
+  #   steps:
+  #     - name: Download all the wheels
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: wheels
+  #         path: dist/
+  #     - name: Publish distribution to PyPI
+  #       uses: pypa/gh-action-pypi-publish@v1.8.10
         
   build_sdist:
     name: Build sdist
-    needs: publish-wheels-to-pypi
+    needs: ['build_wheels','build_rocm'] # publish-wheels-to-pypi
     runs-on: ubuntu-20.04
     defaults:
       run:
@@ -151,14 +161,22 @@ jobs:
       - name: Build Wheel
         id: build-wheel-sdist
         run: |
-          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(') {Write-Output $('::notice file=build-wheels-release.yml,line=53,title=Package Version::Detected package version is: {0}' -f $Matches[1]); Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"} else {Write-Output '::error file=build-wheels-release.yml,line=41::Could not parse version from setup.py! You must upload wheels manually!'; Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"}
+          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(')
+          {
+              Write-Output $('::notice file=build-wheels-release.yml,line=166,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=169::Could not parse version from setup.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
           $env:EXLLAMA_NOCOMPILE=1
           python -m build
         
       - uses: actions/upload-artifact@v3
         with:
           name: 'sdist'
-          path: ./dist/*
+          path: ./dist/* # Use ./dist/*.whl to only upload the JIT compile wheel
           
       - name: Upload files to a GitHub release
         if: steps.build-wheel-sdist.outputs.PACKAGE_VERSION != 'None'
