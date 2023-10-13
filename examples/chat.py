@@ -1,5 +1,5 @@
 
-import sys, os, re
+import sys, os, time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from exllamav2 import(
@@ -43,6 +43,8 @@ parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
+
+parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
 
 # Arrrgs
 
@@ -186,6 +188,10 @@ in_code_block = False
 
 delim_overflow = ""
 
+# Other options
+
+print_timings = args.print_timings
+
 # Main loop
 
 print(f" -- Prompt format: {args.mode}")
@@ -219,6 +225,8 @@ while True:
     response_tokens = 0
     response_text = ""
     responses_ids.append(torch.empty((1, 0), dtype = torch.long))
+
+    if print_timings: time_begin_stream = time.time()
 
     while True:
 
@@ -301,3 +309,12 @@ while True:
 
             break
 
+    # Prompt timings
+
+    if print_timings:
+
+        time_end_stream = time.time()
+        speed = response_tokens / (time_end_stream - time_begin_stream)
+
+        print()
+        print(col_sysprompt + f"(Response: {response_tokens} tokens, {speed:.2f} tokens/second)" + col_default)
