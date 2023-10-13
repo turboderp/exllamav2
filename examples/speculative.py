@@ -42,62 +42,82 @@ draft_cache = ExLlamaV2Cache(draft)
 
 tokenizer = ExLlamaV2Tokenizer(model_config)
 
-# Initialize generator
+# Initialize generators
 
-# generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer)
-generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, 5)
-
-# Settings
-
-settings = ExLlamaV2Sampler.Settings()
-settings.temperature = 0.6
-settings.top_k = 50
-settings.top_p = 0.6
-settings.token_repetition_penalty = 1.0
-settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
-
-max_new_tokens = 250
-
-# Prompt
-
-prompt = "Here is a simple Quicksort implementation in C++:"
-
-input_ids = tokenizer.encode(prompt)
-prompt_tokens = input_ids.shape[-1]
+normal_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer)
+speculative_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, 5)
 
 # Make sure CUDA is initialized so we can measure performance
 
-generator.warmup()
+normal_generator.warmup()
 
-# Send prompt to generator to begin stream
 
-time_begin_prompt = time.time()
+def test_gen(generator, prompt, settings, max_new_tokens):
+    global tokenizer
 
-print (prompt, end = "")
-sys.stdout.flush()
+    # Prompt
 
-generator.set_stop_conditions([])
-generator.begin_stream(input_ids, settings)
+    input_ids = tokenizer.encode(prompt)
+    prompt_tokens = input_ids.shape[-1]
 
-# Streaming loop. Note that repeated calls to sys.stdout.flush() adds some latency, but some
-# consoles won't update partial lines without it.
+    # Send prompt to generator to begin stream
 
-time_begin_stream = time.time()
-generated_tokens = 0
+    time_begin_prompt = time.time()
 
-while True:
-    chunk, eos, _ = generator.stream()
-    generated_tokens += 1
-    print (chunk, end = "")
-    # sys.stdout.flush()
-    if eos or generated_tokens == max_new_tokens: break
+    print (prompt, end = "")
+    sys.stdout.flush()
 
-time_end = time.time()
+    generator.set_stop_conditions([])
+    generator.begin_stream(input_ids, settings)
 
-time_prompt = time_begin_stream - time_begin_prompt
-time_tokens = time_end - time_begin_stream
+    # Streaming loop. Note that repeated calls to sys.stdout.flush() adds some latency, but some
+    # consoles won't update partial lines without it.
+
+    time_begin_stream = time.time()
+    generated_tokens = 0
+
+    while True:
+        chunk, eos, _ = generator.stream()
+        generated_tokens += 1
+        print (chunk, end = "")
+        sys.stdout.flush()
+        if eos or generated_tokens == max_new_tokens: break
+
+    time_end = time.time()
+
+    time_prompt = time_begin_stream - time_begin_prompt
+    time_tokens = time_end - time_begin_stream
+
+    print()
+    print()
+    print(f"Prompt processed in {time_prompt:.2f} seconds, {prompt_tokens} tokens, {prompt_tokens / time_prompt:.2f} tokens/second")
+    print(f"Response generated in {time_tokens:.2f} seconds, {generated_tokens} tokens, {generated_tokens / time_tokens:.2f} tokens/second")
+
+
+# Settings
+
+gen_prompt = "Here is a simple Quicksort implementation in C++:"
+
+gen_settings = ExLlamaV2Sampler.Settings()
+gen_settings.temperature = 0.6
+gen_settings.top_k = 50
+gen_settings.top_p = 0.6
+gen_settings.token_repetition_penalty = 1.0
+gen_settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
+
+gen_max_tokens = 250
 
 print()
+print("---------------------------------------------------------------------------------")
+print("Normal decoding:")
 print()
-print(f"Prompt processed in {time_prompt:.2f} seconds, {prompt_tokens} tokens, {prompt_tokens / time_prompt:.2f} tokens/second")
-print(f"Response generated in {time_tokens:.2f} seconds, {generated_tokens} tokens, {generated_tokens / time_tokens:.2f} tokens/second")
+
+test_gen(normal_generator, gen_prompt, gen_settings, gen_max_tokens)
+
+print()
+print("---------------------------------------------------------------------------------")
+print("Speculative decoding:")
+print()
+
+test_gen(speculative_generator, gen_prompt, gen_settings, gen_max_tokens)
+
