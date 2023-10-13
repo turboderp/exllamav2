@@ -278,8 +278,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             if direct:
 
-                batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
-                batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
+                batch_keys = cache.get_key_state(self.layer_idx).narrow(0, 0, batch_size)
+                batch_values = cache.get_value_state(self.layer_idx).narrow(0, 0, batch_size)
                 k_states = batch_keys.narrow(1, past_len, q_len)
                 v_states = batch_values.narrow(1, past_len, q_len)
 
@@ -389,6 +389,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
                 attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+
+            cache.store_tmp_key_state(self.layer_idx)
+            cache.store_tmp_value_state(self.layer_idx)
 
             # xformers memory_efficient_attention
 
@@ -543,15 +546,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if cache is not None:
 
-            new_keys = cache.key_states[self.layer_idx].narrow(1, past_len, q_len).narrow(0, 0, batch_size)
-            new_values = cache.value_states[self.layer_idx].narrow(1, past_len, q_len).narrow(0, 0, batch_size)
+            new_keys = cache.get_key_state(self.layer_idx).narrow(1, past_len, q_len).narrow(0, 0, batch_size)
+            new_values = cache.get_value_state(self.layer_idx).narrow(1, past_len, q_len).narrow(0, 0, batch_size)
             new_keys.copy_(key_states)
             new_values.copy_(value_states)
 
             # Key/value tensors with past
 
-            key_states = cache.key_states[self.layer_idx].narrow(1, 0, past_len + q_len)
-            value_states = cache.value_states[self.layer_idx].narrow(1, 0, past_len + q_len)
+            key_states = cache.get_key_state(self.layer_idx).narrow(1, 0, past_len + q_len)
+            value_states = cache.get_value_state(self.layer_idx).narrow(1, 0, past_len + q_len)
 
         # Torch matmul attention
 
@@ -582,6 +585,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
             attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
+        if cache is not None:
+            cache.store_tmp_key_state(self.layer_idx)
+            cache.store_tmp_value_state(self.layer_idx)
         # Output projection
 
         attn_proj = self.o_proj.forward(attn_output, loras = loras)

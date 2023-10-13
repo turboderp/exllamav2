@@ -1,4 +1,5 @@
 import torch
+from exllamav2.ext import exllamav2_ext as ext_c
 
 class ExLlamaV2Cache:
 
@@ -22,8 +23,9 @@ class ExLlamaV2Cache:
 
             if copy_from is None:
 
-                p_key_states = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[i])
-                p_value_states = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[i])
+                # create kv cache use uint8
+                p_key_states = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.uint8, device = self.model.cache_map[i])
+                p_value_states = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.uint8, device = self.model.cache_map[i])
 
             else:
 
@@ -33,6 +35,24 @@ class ExLlamaV2Cache:
             self.key_states.append(p_key_states)
             self.value_states.append(p_value_states)
 
+        # create temp kv cache
+        self.tmp_key_state = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[0])
+        self.tmp_value_state = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[0])
+        self.tensor_data_length = self.batch_size * self.max_seq_len * num_key_value_heads * head_dim
+
+    def get_key_state(self, layer_idx: int) -> torch.Tensor:
+        ext_c.array_fp8_to_fp16(self.key_states[layer_idx], self.tmp_key_state, self.tensor_data_length)
+        return self.tmp_key_state
+
+    def get_value_state(self, layer_idx: int) -> torch.Tensor:
+        ext_c.array_fp8_to_fp16(self.value_states[layer_idx], self.tmp_value_state, self.tensor_data_length)
+        return self.tmp_value_state
+
+    def store_tmp_key_state(self, layer_idx: int):
+        ext_c.array_fp16_to_fp8(self.tmp_key_state, self.key_states[layer_idx], self.tensor_data_length)
+
+    def store_tmp_value_state(self, layer_idx: int):
+        ext_c.array_fp16_to_fp8(self.tmp_value_state, self.value_states[layer_idx], self.tensor_data_length)
 
     def footprint(self):
 
