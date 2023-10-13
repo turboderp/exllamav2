@@ -162,7 +162,8 @@ jobs:
       - name: Build Wheel
         id: build-wheel-sdist
         run: |
-          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(')
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
           {
               Write-Output $('::notice file=build-wheels-release.yml,line=166,title=Package Version::Detected package version is: {0}' -f $Matches[1])
               Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
