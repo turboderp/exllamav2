@@ -19,7 +19,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     
     remaining_tokens: int = 0
     held_text: str = ""
-    held_tokens: torch.Tensor = None
+    held_utf8_tokens: torch.tensor = None
+    expect_utf8: int = 0
+    held_tokens: torch.Tensor or None = None
     settings: ExLlamaV2Sampler.Settings = None
     stop_strings: list = []
     stop_tokens: list = []
@@ -76,6 +78,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.active_loras = loras
 
         self.held_text = ""
+        self.held_utf8_tokens = self.no_tokens
+        self.expect_utf8 = 0
         self.held_tokens = self.no_tokens
         self.settings = gen_settings
         self._gen_begin_reuse(input_ids, gen_settings)
@@ -143,7 +147,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         # Decode the tail end of the sequence with the added token to get (actual) characters added
 
         new_tail = self.tokenizer.decode(self.sequence_ids[:, -(self.tail_decode_tokens + 1):])[0]
-        self.held_text += new_tail[len(old_tail):]
+        new_text = new_tail[len(old_tail):]
+
+        next_token, new_text = self._catch_utf8(next_token, new_text)
+
+        self.held_text += new_text
         self.held_tokens = torch.cat([self.held_tokens, next_token], dim = -1)
 
         # Return now if newly added token ends a filter
@@ -182,6 +190,55 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return stream_text, False, stream_tokens
     
 
+    def _decode_utf8(self):
+
+        if self.held_utf8_tokens.shape[-1] == 0: return self.no_tokens, ""
+
+        try:
+            id_to_ord = self.tokenizer.get_id_to_ord_list()
+            b = [id_to_ord[x] for x in self.held_utf8_tokens[0].tolist()]
+            c = bytes(b).decode('utf-8')
+        except UnicodeDecodeError:
+            c = "�"
+
+        pre_t = self.held_utf8_tokens
+        self.held_utf_tokens = self.no_tokens
+        return pre_t, c
+
+
+    def _catch_utf8(self, next_token, new_text):
+
+        if self.expect_utf8 == 0:
+
+            if new_text != "�": return next_token, new_text
+
+            id_to_ord = self.tokenizer.get_id_to_ord_list()
+            t = next_token[0, 0].item()
+            b = id_to_ord[t]
+
+            if 0 < b < 256:
+                if b & 0b1110000 == 0b1100000: self.expect_utf8 = 3
+                if b & 0b1111000 == 0b1110000: self.expect_utf8 = 4
+                if b & 0b1111100 == 0b1111000: self.expect_utf8 = 5
+            self.held_utf8_tokens = self.no_tokens
+            if self.expect_utf8 == 0: return next_token, new_text
+            new_text = ""
+
+        if self.expect_utf8:
+
+            if len(new_text) > 1:
+
+                pre_t, pre_c = self._decode_utf8()
+                next_token = torch.cat((pre_t, next_token), dim = -1)
+                new_text = pre_c + new_text
+                return next_token, new_text
+
+            self.held_utf8_tokens = torch.cat((self.held_utf8_tokens, next_token), dim = -1)
+            self.expect_utf8 -= 1
+            if self.expect_utf8 == 0: return self._decode_utf8()
+            return self.no_tokens, ""
+
+
     def _gen_begin(self, in_tokens, gen_settings):
 
         self.sequence_ids = in_tokens.clone()
@@ -212,6 +269,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             return
 
         self.cache.current_seq_len = reuse - 1
+        if self.draft_model is not None:
+            self.draft_cache.current_seq_len = reuse - 1
         self.sequence_ids = in_tokens[:, :reuse]
 
         if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings)
