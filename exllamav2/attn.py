@@ -344,8 +344,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 else:
 
-                    batch_keys = cache.key_states[self.layer_idx].narrow(0, 0, batch_size)
-                    batch_values = cache.value_states[self.layer_idx].narrow(0, 0, batch_size)
+                    batch_keys = cache.key_states(self.layer_idx).narrow(0, 0, batch_size)
+                    batch_values = cache.value_states(self.layer_idx).narrow(0, 0, batch_size)
 
                     new_keys = batch_keys.narrow(1, past_len, q_len)
                     new_values = batch_values.narrow(1, past_len, q_len)
@@ -390,9 +390,6 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
                 attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
-            cache.store_tmp_key_state(self.layer_idx)
-            cache.store_tmp_value_state(self.layer_idx)
-
             # xformers memory_efficient_attention
 
             # attn_output = xops.memory_efficient_attention(q_states, k_states, v_states, attn_bias = xops.LowerTriangularMask())
@@ -410,6 +407,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # attn_output = F.scaled_dot_product_attention(q_states, k_states, v_states, attn_mask = attn_mask, is_causal = False)
             # attn_output = attn_output.transpose(1, 2)
             # attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+
+            # Update 8-bit cache
+
+            if cache is not None:
+
+                cache.store_tmp_key_state(self.layer_idx)
+                cache.store_tmp_value_state(self.layer_idx)
 
         # Multiple caches
 
@@ -468,7 +472,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = attn_output.transpose(1, 2)
             attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
-            # Output projection
+        # Output projection
 
         ext_c.q_attn_forward_2(self.q_handle,
                                hidden_states,
@@ -585,9 +589,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
             attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
+        # Update 8-bit cache
+
         if cache is not None:
             cache.store_tmp_key_state(self.layer_idx)
             cache.store_tmp_value_state(self.layer_idx)
+
         # Output projection
 
         attn_proj = self.o_proj.forward(attn_output, loras = loras)
