@@ -37,6 +37,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     future_tokens: torch.tensor or None = None
     num_speculative_tokens: int
     speculative_prob_threshold: float = 0.25
+    total_draft_tokens: int = 0
+    total_tokens: int = 0
+    accepted_draft_tokens: int = 0
 
     active_loras = []
 
@@ -335,6 +338,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 draft_sequence_ids = torch.cat((draft_sequence_ids, token), dim = 1)
                 num_drafted_tokens += 1
 
+            self.total_draft_tokens += num_drafted_tokens
+
             # Rewind draft cache
 
             self.draft_cache.current_seq_len -= num_drafted_tokens
@@ -361,10 +366,22 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if self.future_tokens.shape[-1] == 0 or self.future_tokens[0, 0] != token[0, 0]:
             self.future_tokens = None
             self.future_logits = None
+        else:
+            self.accepted_draft_tokens += 1
+        self.total_tokens += 1
 
         return token, eos
 
 
+    def reset_sd_stats(self):
+
+        self.total_tokens = 0
+        self.total_draft_tokens = 0
+        self.accepted_draft_tokens = 0
 
 
+    def get_sd_stats(self):
 
+        efficiency = self.accepted_draft_tokens / self.total_tokens
+        accuracy = self.accepted_draft_tokens / self.total_draft_tokens
+        return efficiency, accuracy, self.total_tokens, self.total_draft_tokens, self.accepted_draft_tokens
