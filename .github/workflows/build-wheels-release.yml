@@ -174,7 +174,7 @@ jobs:
           }
           
           $env:EXLLAMA_NOCOMPILE=1
-          python -m build
+          python -m build -n
         
       - uses: actions/upload-artifact@v3
         with:
