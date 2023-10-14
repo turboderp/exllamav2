@@ -1,5 +1,7 @@
 #include "cache.cuh"
 
+// TODO: Kernel profiling
+
 __global__ void nv_fp16_to_fp8(const half* pIn, unsigned char *pOut, int size) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < size) {

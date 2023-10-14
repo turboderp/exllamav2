@@ -344,8 +344,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 else:
 
-                    batch_keys = cache.key_states(self.layer_idx).narrow(0, 0, batch_size)
-                    batch_values = cache.value_states(self.layer_idx).narrow(0, 0, batch_size)
+                    batch_keys = cache.get_key_state(self.layer_idx).narrow(0, 0, batch_size)
+                    batch_values = cache.get_value_state(self.layer_idx).narrow(0, 0, batch_size)
 
                     new_keys = batch_keys.narrow(1, past_len, q_len)
                     new_values = batch_values.narrow(1, past_len, q_len)
@@ -409,6 +409,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
             # Update 8-bit cache
+            # TODO: Only update changed positions of the cache
 
             if cache is not None:
 
@@ -426,8 +427,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 # Add keys and values to cache
 
-                batch_keys = cache[i].key_states[self.layer_idx]
-                batch_values = cache[i].value_states[self.layer_idx]
+                batch_keys = cache[i].get_key_state(self.layer_idx)
+                batch_values = cache[i].get_value_state(self.layer_idx)
 
                 new_keys = batch_keys.narrow(1, past_len[1][i], q_len)
                 new_values = batch_values.narrow(1, past_len[1][i], q_len)
@@ -590,6 +591,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
         # Update 8-bit cache
+        # TODO: Only update changed positions of the cache
 
         if cache is not None:
             cache.store_tmp_key_state(self.layer_idx)
