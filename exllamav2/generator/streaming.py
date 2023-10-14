@@ -269,6 +269,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             return
 
         self.cache.current_seq_len = reuse - 1
+        if self.draft_model is not None:
+            self.draft_cache.current_seq_len = reuse - 1
         self.sequence_ids = in_tokens[:, :reuse]
 
         if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings)
