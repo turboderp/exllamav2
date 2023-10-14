@@ -174,3 +174,6 @@ from PyPI is still pending. Updated installation instructions above.
 encode/decode sequences with special tokens. Added Orca template to the chatbot example.
 
 **2023-10-07**: (Multi) LoRA support as well as some experimental optimizations.
+
+**2023-10-13**: Merged speculative sampling into streaming generator. Now supports streaming and stop conditions.
+Chat example updated to take draft model.

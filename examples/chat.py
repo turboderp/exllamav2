@@ -1,5 +1,5 @@
 
-import sys, os, re
+import sys, os, time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from exllamav2 import(
@@ -27,6 +27,8 @@ import time
 # Options
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
+parser.add_argument("-dm", "--draft_model_dir", type = str, default = None, help = "Path to draft model directory")
+
 parser.add_argument("-modes", "--modes", action = "store_true", help = "List available modes and exit.")
 parser.add_argument("-mode", "--mode", choices = prompt_formats_list, help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
@@ -41,6 +43,8 @@ parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
+
+parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
 
 # Arrrgs
 
@@ -74,10 +78,35 @@ model_init.check_args(args)
 model_init.print_options(args)
 model, tokenizer = model_init.init(args)
 
+# Initialize draft model if provided
+
+draft_model = None
+draft_cache = None
+
+if args.draft_model_dir:
+
+    print(f" -- Draft model: {args.draft_model_dir}")
+
+    draft_config = ExLlamaV2Config()
+    draft_config.model_dir = args.draft_model_dir
+    draft_config.prepare()
+
+    if draft_config.max_seq_len < model.config.max_seq_len:
+        print(f" !! Warning: Draft model native max sequence length is less than sequence length for model. Speed may decrease after {draft_config.max_seq_len} tokens.")
+
+    draft_config.max_seq_len = model.config.max_seq_len
+    draft_config.no_flash_attn = args.no_flash_attn
+
+    print(" -- Loading draft model...")
+
+    draft_model = ExLlamaV2(draft_config)
+    draft_model.load()
+
+    draft_cache = ExLlamaV2Cache(draft_model)
+
 # Create cache
 
 cache = ExLlamaV2Cache(model)
-
 
 # Chat context
 
@@ -128,7 +157,7 @@ def get_tokenized_context(max_len):
 
 # Generator
 
-generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
+generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer, draft_model, draft_cache)
 
 settings = ExLlamaV2Sampler.Settings()
 settings.temperature = args.temperature
@@ -158,6 +187,10 @@ codeblock_formatter = None if args.no_code_formatting else CodeBlockFormatter()
 in_code_block = False
 
 delim_overflow = ""
+
+# Other options
+
+print_timings = args.print_timings
 
 # Main loop
 
@@ -192,6 +225,8 @@ while True:
     response_tokens = 0
     response_text = ""
     responses_ids.append(torch.empty((1, 0), dtype = torch.long))
+
+    if print_timings: time_begin_stream = time.time()
 
     while True:
 
@@ -274,3 +309,12 @@ while True:
 
             break
 
+    # Prompt timings
+
+    if print_timings:
+
+        time_end_stream = time.time()
+        speed = response_tokens / (time_end_stream - time_begin_stream)
+
+        print()
+        print(col_sysprompt + f"(Response: {response_tokens} tokens, {speed:.2f} tokens/second)" + col_default)
