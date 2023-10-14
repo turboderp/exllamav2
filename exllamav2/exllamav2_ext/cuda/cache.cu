@@ -1,5 +1,9 @@
 #include "cache.cuh"
 
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 11080
+
+#include <cuda_fp8.h>
+
 // TODO: Kernel profiling
 
 __global__ void nv_fp16_to_fp8(const half* pIn, unsigned char *pOut, int size) {
@@ -34,3 +38,11 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int size) {
     int blocks = (size + threads - 1) / threads;
     nv_fp8_to_fp16<<<blocks, threads>>>(pIn, pOut, size);
 }
+
+#else
+
+void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int size) { }
+
+void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int size) { }
+
+#endif

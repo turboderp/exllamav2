@@ -98,6 +98,9 @@ class ExLlamaV2Cache:
         self.is_8bit = self.model.config.kv_cache_mask is not None and self.model.config.kv_cache_mask == '8bit'
 
         if self.is_8bit:
+            cuda_version = torch.version.cuda.split('.')
+            cuda_version = [int(x) for x in cuda_version[:2]]
+            assert cuda_version >= [11, 8], " ## 8-bit (FP8) cache requires CUDA version 11.8 or greater"
             self.cached = Cache8Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, num_hidden_layers, copy_from)
         else:
             self.cached = Cache16Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, num_hidden_layers, copy_from)
