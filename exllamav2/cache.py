@@ -63,7 +63,7 @@ class Cache8Bit(CacheBase):
         self.tmp_key_state = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[0])
         self.tmp_value_state = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[0])
         self.tensor_data_length = self.batch_size * self.max_seq_len * num_key_value_heads * head_dim
-        print("stats layers: {}, tensor_length: {}".format(len(self.key_states), self.tensor_data_length))
+        # print("stats layers: {}, tensor_length: {}".format(len(self.key_states), self.tensor_data_length))
 
     def get_key_state(self, layer_idx: int) -> torch.Tensor:
         ext_c.array_fp8_to_fp16(self.key_states[layer_idx], self.tmp_key_state, self.tensor_data_length)
@@ -95,7 +95,9 @@ class ExLlamaV2Cache:
         num_hidden_layers = self.model.config.num_hidden_layers
         head_dim = self.model.config.head_dim
 
-        if self.model.config.kv_cache_mask is not None and self.model.config.kv_cache_mask == '8bit':
+        self.is_8bit = self.model.config.kv_cache_mask is not None and self.model.config.kv_cache_mask == '8bit'
+
+        if self.is_8bit:
             self.cached = Cache8Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, num_hidden_layers, copy_from)
         else:
             self.cached = Cache16Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, num_hidden_layers, copy_from)
@@ -118,7 +120,7 @@ class ExLlamaV2Cache:
         for layer in self.cached.key_states + self.cached.value_states:
             dev = layer.device.index
             while len(fp) <= dev: fp.append(0)
-            fp[dev] += layer.numel() * 2
+            fp[dev] += layer.numel() * (1 if self.is_8bit else 2)
 
         return fp
 
