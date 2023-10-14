@@ -111,6 +111,7 @@ except ModuleNotFoundError:
         "cuda/q_gemm.cu",
         "cuda/rms_norm.cu",
         "cuda/rope.cu",
+        "cuda/cache.cu",
         "cpp/quantize_func.cpp",
         "cpp/sampling.cpp"
     ]
