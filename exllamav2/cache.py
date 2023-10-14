@@ -3,10 +3,10 @@ from exllamav2.ext import exllamav2_ext as ext_c
 
 
 class CacheBase:
-    def __init__(self, batch_size: int, max_seq_len: int, num_key_value_heads: int):
+    def __init__(self, batch_size: int, max_seq_len: int, num_key_value_heads: int, num_hidden_layers: int):
         self.batch_size = batch_size
         self.max_seq_len = max_seq_len
-        self.num_hidden_layers = num_key_value_heads
+        self.num_hidden_layers = num_hidden_layers
         self.num_key_value_heads = num_key_value_heads
         self.key_states = []
         self.value_states = []
@@ -25,8 +25,8 @@ class CacheBase:
 
 
 class Cache16Bit(CacheBase):
-    def __init__(self, model, batch_size: int, max_seq_len: int, num_key_value_heads: int, head_dim: int, copy_from = None):
-        CacheBase.__init__(self, batch_size, max_seq_len, num_key_value_heads)
+    def __init__(self, model, batch_size: int, max_seq_len: int, num_key_value_heads: int, head_dim: int, num_hidden_layers: int, copy_from):
+        CacheBase.__init__(self, batch_size, max_seq_len, num_key_value_heads, num_hidden_layers)
 
         self.model = model
         for i in range(self.num_hidden_layers):
@@ -44,8 +44,8 @@ class Cache16Bit(CacheBase):
 
 
 class Cache8Bit(CacheBase):
-    def __init__(self, model, batch_size: int, max_seq_len: int, num_key_value_heads: int, head_dim: int, copy_from = None):
-        CacheBase.__init__(self, batch_size, max_seq_len, num_key_value_heads)
+    def __init__(self, model, batch_size: int, max_seq_len: int, num_key_value_heads: int, head_dim: int, num_hidden_layers: int, copy_from):
+        CacheBase.__init__(self, batch_size, max_seq_len, num_key_value_heads, num_hidden_layers)
         self.model = model
         for i in range(self.num_hidden_layers):
             if copy_from is None:
@@ -63,6 +63,7 @@ class Cache8Bit(CacheBase):
         self.tmp_key_state = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[0])
         self.tmp_value_state = torch.zeros(self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, dtype = torch.float16, device = self.model.cache_map[0])
         self.tensor_data_length = self.batch_size * self.max_seq_len * num_key_value_heads * head_dim
+        print("stats layers: {}, tensor_length: {}".format(len(self.key_states), self.tensor_data_length))
 
     def get_key_state(self, layer_idx: int) -> torch.Tensor:
         ext_c.array_fp8_to_fp16(self.key_states[layer_idx], self.tmp_key_state, self.tensor_data_length)
@@ -91,12 +92,13 @@ class ExLlamaV2Cache:
 
         # Preallocate full-length cache
         num_key_value_heads = self.model.config.num_key_value_heads
+        num_hidden_layers = self.model.config.num_hidden_layers
         head_dim = self.model.config.head_dim
 
         if self.model.config.kv_cache_mask is not None and self.model.config.kv_cache_mask == '8bit':
-            self.cached = Cache8Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, copy_from)
+            self.cached = Cache8Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, num_hidden_layers, copy_from)
         else:
-            self.cached = Cache16Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, copy_from)
+            self.cached = Cache16Bit(model, self.batch_size, self.max_seq_len, num_key_value_heads, head_dim, num_hidden_layers, copy_from)
 
     def get_key_state(self, layer_idx: int) -> torch.Tensor:
         return self.cached.get_key_state(layer_idx)
