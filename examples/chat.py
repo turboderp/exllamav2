@@ -6,6 +6,7 @@ from exllamav2 import(
     ExLlamaV2,
     ExLlamaV2Config,
     ExLlamaV2Cache,
+    ExLlamaV2Cache_8bit,
     ExLlamaV2Tokenizer,
     model_init,
 )
@@ -42,6 +43,8 @@ parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
+
+parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit cache")
 
 parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
 
@@ -108,11 +111,17 @@ if args.draft_model_dir:
     draft_model = ExLlamaV2(draft_config)
     draft_model.load()
 
-    draft_cache = ExLlamaV2Cache(draft_model)
+    if args.cache_8bit:
+        draft_cache = ExLlamaV2Cache_8bit(draft_model)
+    else:
+        draft_cache = ExLlamaV2Cache(draft_model)
 
 # Create cache
 
-cache = ExLlamaV2Cache(model)
+if args.cache_8bit:
+    cache = ExLlamaV2Cache_8bit(model)
+else:
+    cache = ExLlamaV2Cache(model)
 
 # Chat context
 
