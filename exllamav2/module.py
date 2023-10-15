@@ -124,3 +124,7 @@ class ExLlamaV2Module:
     def set_device_idx(self, idx):
 
         self.device_idx = idx
+
+
+    def is_quant(self):
+        return False

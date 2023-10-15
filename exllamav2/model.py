@@ -295,6 +295,15 @@ class ExLlamaV2:
             if isinstance(module, ExLlamaV2MLP): module.update_loras()
 
 
+    def is_quant(self):
+
+        for module in self.modules:
+            if isinstance(module, ExLlamaV2Attention):
+                if module.is_quant(): return True
+
+        return False
+
+
     def build_attn_mask(self, batch_size, seq_len, past_len, input_mask, device):
 
         if input_mask is None and seq_len == 1: return None

@@ -192,4 +192,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.temp_lora_size = temp_lora_size * self.model.config.max_batch_size * self.model.config.max_input_len
 
 
+    def is_quant(self):
+        return self.q_handle is not None
+
 
