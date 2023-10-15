@@ -84,7 +84,13 @@ class ExLlamaV2BaseGenerator:
 
         # Begin filters
 
-        gen_settings.begin_filters(self.tokenizer.get_id_to_piece_list()[unhealed_token] if unhealed_token is not None else None)
+        id_to_piece = self.tokenizer.get_id_to_piece_list()
+        if unhealed_token is not None:
+            unhealed_token_list = unhealed_token.flatten().tolist()
+            heal = [id_to_piece[x] for x in unhealed_token_list]
+        else:
+            heal = None
+        gen_settings.begin_filters(heal)
 
         # Generate tokens
 
