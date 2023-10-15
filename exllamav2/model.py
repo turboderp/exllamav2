@@ -247,6 +247,16 @@ class ExLlamaV2:
             else: return gpu_split
 
 
+    def unload(self):
+
+        for module in self.modules:
+            module.unload()
+
+        self.modules = []
+        self.modules_dict = {}
+        self.device_tensors = []
+
+
     def set_cache_map(self):
 
         for module in self.modules:
