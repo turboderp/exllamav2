@@ -43,7 +43,6 @@ class ExLlamaV2Config:
 
     qkv_embed: bool = False
 
-    kv_cache_mask: str = "16bit"                # kv_cache config 16bit/8bit
 
     def __init__(self):
         pass

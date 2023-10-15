@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.linear import ExLlamaV2Linear
-from exllamav2.cache import ExLlamaV2Cache
+from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.embedding import ExLlamaV2Embedding
 import math
 from exllamav2 import ext
@@ -250,7 +250,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             batch_size = hidden_states.shape[0]
             q_len = hidden_states.shape[1]
 
-        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2Cache)) and not qkv_embed
+        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2CacheBase)) and not qkv_embed
 
         # past_len = 0
         # if cache is not None:
@@ -278,10 +278,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             if direct:
 
-                batch_keys = cache.get_key_state(self.layer_idx).narrow(0, 0, batch_size)
-                batch_values = cache.get_value_state(self.layer_idx).narrow(0, 0, batch_size)
-                k_states = batch_keys.narrow(1, past_len, q_len)
-                v_states = batch_values.narrow(1, past_len, q_len)
+                batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+                k_states = batch_keys.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
+                v_states = batch_values.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
 
             else:
 
@@ -331,7 +330,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Regular (batched) attention with optional padding mask
 
-        if cache is None or isinstance(cache, ExLlamaV2Cache):
+        if cache is None or isinstance(cache, ExLlamaV2CacheBase):
 
             # Add keys and values to cache
 
@@ -339,16 +338,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 if direct:
 
-                    k_states = batch_keys.narrow(1, 0, past_len + q_len)
-                    v_states = batch_values.narrow(1, 0, past_len + q_len)
+                    k_states = batch_keys.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
+                    v_states = batch_values.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
 
                 else:
 
-                    batch_keys = cache.get_key_state(self.layer_idx).narrow(0, 0, batch_size)
-                    batch_values = cache.get_value_state(self.layer_idx).narrow(0, 0, batch_size)
-
-                    new_keys = batch_keys.narrow(1, past_len, q_len)
-                    new_values = batch_values.narrow(1, past_len, q_len)
+                    batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+                    new_keys = batch_keys.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
+                    new_values = batch_values.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
                     new_keys.copy_(k_states)
                     new_values.copy_(v_states)
 
@@ -409,12 +406,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
             # Update 8-bit cache
-            # TODO: Only update changed positions of the cache
 
             if cache is not None:
-
-                cache.store_tmp_key_state(self.layer_idx)
-                cache.store_tmp_value_state(self.layer_idx)
+                cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
 
         # Multiple caches
 
@@ -427,9 +421,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 # Add keys and values to cache
 
-                batch_keys = cache[i].get_key_state(self.layer_idx)
-                batch_values = cache[i].get_value_state(self.layer_idx)
-
+                batch_keys, batch_values = cache[i].get_kv_state(self.layer_idx, batch_size, 0, past_len)
                 new_keys = batch_keys.narrow(1, past_len[1][i], q_len)
                 new_values = batch_values.narrow(1, past_len[1][i], q_len)
                 new_keys.copy_(k_states.narrow(0, i, 1))
@@ -551,15 +543,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if cache is not None:
 
-            new_keys = cache.get_key_state(self.layer_idx).narrow(1, past_len, q_len).narrow(0, 0, batch_size)
-            new_values = cache.get_value_state(self.layer_idx).narrow(1, past_len, q_len).narrow(0, 0, batch_size)
+            batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+            new_keys = batch_keys.narrow(1, past_len, q_len).narrow(0, 0, batch_size)
+            new_values = batch_values.narrow(1, past_len, q_len).narrow(0, 0, batch_size)
             new_keys.copy_(key_states)
             new_values.copy_(value_states)
 
             # Key/value tensors with past
 
-            key_states = cache.get_key_state(self.layer_idx).narrow(1, 0, past_len + q_len)
-            value_states = cache.get_value_state(self.layer_idx).narrow(1, 0, past_len + q_len)
+            key_states = batch_keys.narrow(1, 0, past_len + q_len).narrow(0, 0, batch_size)
+            value_states = batch_values.narrow(1, 0, past_len + q_len).narrow(0, 0, batch_size)
 
         # Torch matmul attention
 
@@ -594,8 +587,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # TODO: Only update changed positions of the cache
 
         if cache is not None:
-            cache.store_tmp_key_state(self.layer_idx)
-            cache.store_tmp_value_state(self.layer_idx)
+            cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
 
         # Output projection
 

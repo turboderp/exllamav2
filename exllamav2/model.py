@@ -263,6 +263,11 @@ class ExLlamaV2:
             if isinstance(module, ExLlamaV2Attention): self.cache_map[module.layer_idx] = module.device()
 
 
+    def get_cache_devices(self):
+
+        return list(set(self.cache_map.values()))
+
+
     def create_device_tensors(self, scratch_bytes):
 
         for idx, bytes in enumerate(scratch_bytes):
@@ -350,7 +355,7 @@ class ExLlamaV2:
         # Without a cache we can't process the sequence in chunks, so forward the whole thing and assume the input length
         # is less than config.max_input_len
 
-        if cache is None or not isinstance(cache, ExLlamaV2Cache):
+        if cache is None or not isinstance(cache, ExLlamaV2CacheBase):
 
             assert q_len <= effective_max_input_len, "Maximum input length exceeded in model.forward"
 
@@ -436,7 +441,7 @@ class ExLlamaV2:
         batch_size, seq_len = input_ids.shape
         past_len = 0
         if cache is not None:
-            if isinstance(cache, ExLlamaV2Cache):
+            if isinstance(cache, ExLlamaV2CacheBase):
                 past_len = cache.current_seq_len
             else:
                 pl = [c.current_seq_len for c in cache]
