@@ -158,11 +158,6 @@ There are still things that need to be ported over from V1, and other planned fe
 
 ## Recent updates
 
-**2023-09-16**: Reworked the quantizer a bit, now gives somewhat more precise quants and uses less VRAM, and it should
-be more resilient. The quantizer now saves sharded models (default size of 8 GB) to prevent massive system RAM usage
-when compiling large output files. The kernels should be slightly more precise as well, especially for GPTQ files.
-Flash Attention is used now, when available, requiring at least version **2.2.1** installed.
-
 **2023-09-18**: Some minor changes to allow models with higher bitrates (it used to cap at around 6), and changes to
 the converter to better facilitate scripted jobs.
 
@@ -177,3 +172,6 @@ encode/decode sequences with special tokens. Added Orca template to the chatbot 
 
 **2023-10-13**: Merged speculative sampling into streaming generator. Now supports streaming and stop conditions.
 Chat example updated to take draft model.
+
+**2023-10-15**: Got the 8-bit cache mode to a fairly working state. Added the `-c8` option to the chatbot. Big VRAM
+savings for CodeLlama-13B, at least.
