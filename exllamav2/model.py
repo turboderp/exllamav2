@@ -8,7 +8,7 @@ if sys.version_info < min_version:
 import torch
 import math
 from exllamav2.config import ExLlamaV2Config
-from exllamav2.cache import ExLlamaV2Cache
+from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
@@ -354,13 +354,18 @@ class ExLlamaV2:
 
             assert q_len <= effective_max_input_len, "Maximum input length exceeded in model.forward"
 
-            return self._forward(input_ids = input_ids,
-                                 cache = cache,
-                                 input_mask = input_mask,
-                                 preprocess_only = preprocess_only,
-                                 last_id_only = last_id_only,
-                                 loras = loras,
-                                 return_last_state = return_last_state)
+            result, last_state = self._forward(input_ids = input_ids,
+                                               cache = cache,
+                                               input_mask = input_mask,
+                                               preprocess_only = preprocess_only,
+                                               last_id_only = last_id_only,
+                                               loras = loras,
+                                               return_last_state = return_last_state)
+
+            if last_state is None:
+                return result
+            else:
+                return result, last_state
 
         # Confirm that the input fits within the allocated cache space
 
