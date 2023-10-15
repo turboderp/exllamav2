@@ -852,13 +852,35 @@ void logit_filter_exclusive
     }
 }
 
-void array_fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int size) {
+// For cache conversion
+
+void array_fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
+{
+    TORCH_CHECK_DTYPE(in_tensor, kHalf);
+    TORCH_CHECK_DTYPE(out_tensor, kUInt8);
     array_fp16_to_fp8_cuda((const half*) (in_tensor.data_ptr()), (unsigned char*)(out_tensor.data_ptr()), size);
 }
 
-void array_fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int size) {
+void array_fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
+{
+    TORCH_CHECK_DTYPE(in_tensor, kUInt8);
+    TORCH_CHECK_DTYPE(out_tensor, kHalf);
     array_fp8_to_fp16_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
 }
+
+//void array_fp16_to_fp8_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
+//{
+//    TORCH_CHECK_DTYPE(in_tensor, kHalf);
+//    TORCH_CHECK_DTYPE(out_tensor, kUInt8);
+//    array_fp16_to_fp8_ref_cuda((const half*) (in_tensor.data_ptr()), (unsigned char*)(out_tensor.data_ptr()), size);
+//}
+//
+//void array_fp8_to_fp16_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
+//{
+//    TORCH_CHECK_DTYPE(in_tensor, kUInt8);
+//    TORCH_CHECK_DTYPE(out_tensor, kHalf);
+//    array_fp8_to_fp16_ref_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
+//}
 
 // Bindings
 
@@ -889,4 +911,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
     m.def("array_fp16_to_fp8", &array_fp16_to_fp8, "array_fp16_to_fp8");
     m.def("array_fp8_to_fp16", &array_fp8_to_fp16, "array_fp8_to_fp16");
+//    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
+//    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 }
