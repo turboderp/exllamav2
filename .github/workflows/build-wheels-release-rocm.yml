@@ -1,13 +1,13 @@
-name: Build ROCm 5.4.2 Wheels & Release
+name: Build ROCm 5.6 Wheels & Release
 
 on:
   workflow_dispatch:
-    inputs:
-      pypi:
-        description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
-        default: '1'
-        required: true
-        type: string
+    # inputs:
+    #   pypi:
+    #     description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
+    #     default: '0'
+    #     required: true
+    #     type: string
   workflow_call:
     inputs:
       pypi:
@@ -61,13 +61,22 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          pip3 install torch==2.1.0.dev20230903 --pre --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION" --extra-index-url="https://download.pytorch.org/whl/nightly/rocm$ROCM_VERSION"
-          pip3 install build wheel safetensors sentencepiece ninja
+          pip3 install torch==2.1.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          pip3 install --upgrade build setuptools wheel safetensors sentencepiece ninja
         
       - name: Build Wheel
         id: build-wheel
         run: |
-          if ($(Get-Content 'setup.py' -raw) -match 'version = "(\d+\.(?:\d+\.?)*)" \+ \(') {Write-Output $('::notice file=build-wheels-release-rocm.yml,line=54,title=Package Version::Detected package version is: {0}' -f $Matches[1]); Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"} else {Write-Output '::error file=build-wheels-release.yml,line=41::Could not parse version from setup.py! You must upload wheels manually!'; Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"}
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
+          {
+              Write-Output $('::notice file=build-wheels-release-rocm.yml,line=73,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=76::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
           $BUILDTAG = "+rocm$env:ROCM_VERSION"
           python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
         shell: pwsh
@@ -82,28 +91,28 @@ jobs:
         uses: svenstaro/upload-release-action@2.6.1
         with:
           file: ./dist/*.whl
-          tag: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+          tag: ${{ format('v{0}', steps.build-wheel.outputs.PACKAGE_VERSION) }}
           file_glob: true
           overwrite: true
           release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
       
-  publish-to-pypi:
-    name: Publish Python distribution to PyPI
-    if: inputs.pypi == '1' && github.event_name != 'workflow_call'
-    needs: ['build_wheels','build_rocm']
-    runs-on: ubuntu-latest
-    
-    environment:
-      name: pypi
-      url: https://pypi.org/p/exllamav2
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
-      
-    steps:
-      - name: Download all the wheels
-        uses: actions/download-artifact@v3
-        with:
-          name: wheels
-          path: dist/
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.10
+  # publish-to-pypi:
+  #   name: Publish Python distribution to PyPI
+  #   if: inputs.pypi == '1' && github.event_name != 'workflow_call'
+  #   needs: ['build_wheels']
+  #   runs-on: ubuntu-latest
+  #   
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/exllamav2
+  #   permissions:
+  #     id-token: write  # IMPORTANT: mandatory for trusted publishing
+  #     
+  #   steps:
+  #     - name: Download all the wheels
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: wheels
+  #         path: dist/
+  #     - name: Publish distribution to PyPI
+  #       uses: pypa/gh-action-pypi-publish@v1.8.10

@@ -19,7 +19,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     
     remaining_tokens: int = 0
     held_text: str = ""
-    held_tokens: torch.Tensor = None
+    held_utf8_tokens: torch.tensor = None
+    expect_utf8: int = 0
+    held_tokens: torch.Tensor or None = None
     settings: ExLlamaV2Sampler.Settings = None
     stop_strings: list = []
     stop_tokens: list = []
@@ -28,15 +30,36 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     first_token = False
     heal_next_token = False
 
+    draft_model: ExLlamaV2 or None = None
+    draft_cache: ExLlamaV2Cache or None = None
+
+    future_logits: torch.tensor or None = None
+    future_tokens: torch.tensor or None = None
+    num_speculative_tokens: int
+    speculative_prob_threshold: float = 0.25
+    total_draft_tokens: int = 0
+    total_tokens: int = 0
+    accepted_draft_tokens: int = 0
+
     active_loras = []
 
-    def __init__(self, model, cache, tokenizer):
+    def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
         super().__init__(model, cache, tokenizer)
 
         self.stop_strings = []
         self.stop_tokens = [tokenizer.eos_token_id]
 
         self.no_tokens = torch.empty((1, 0), dtype = torch.long)
+
+        if draft_model:
+            self.draft_model = draft_model
+            self.num_speculative_tokens = num_speculative_tokens
+            if draft_cache:
+                self.draft_cache = draft_cache
+            else:
+                self.draft_cache = ExLlamaV2Cache(draft_model,
+                                                  batch_size = cache.batch_size,
+                                                  max_seq_len = cache.max_seq_len)
 
 
     def set_stop_conditions(self, stop_conditions):
@@ -58,6 +81,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.active_loras = loras
 
         self.held_text = ""
+        self.held_utf8_tokens = self.no_tokens
+        self.expect_utf8 = 0
         self.held_tokens = self.no_tokens
         self.settings = gen_settings
         self._gen_begin_reuse(input_ids, gen_settings)
@@ -125,7 +150,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         # Decode the tail end of the sequence with the added token to get (actual) characters added
 
         new_tail = self.tokenizer.decode(self.sequence_ids[:, -(self.tail_decode_tokens + 1):])[0]
-        self.held_text += new_tail[len(old_tail):]
+        new_text = new_tail[len(old_tail):]
+
+        next_token, new_text = self._catch_utf8(next_token, new_text)
+
+        self.held_text += new_text
         self.held_tokens = torch.cat([self.held_tokens, next_token], dim = -1)
 
         # Return now if newly added token ends a filter
@@ -164,11 +193,66 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return stream_text, False, stream_tokens
     
 
+    def _decode_utf8(self):
+
+        if self.held_utf8_tokens.shape[-1] == 0: return self.no_tokens, ""
+
+        try:
+            id_to_ord = self.tokenizer.get_id_to_ord_list()
+            b = [id_to_ord[x] for x in self.held_utf8_tokens[0].tolist()]
+            c = bytes(b).decode('utf-8')
+        except UnicodeDecodeError:
+            c = "�"
+
+        pre_t = self.held_utf8_tokens
+        self.held_utf_tokens = self.no_tokens
+        return pre_t, c
+
+
+    def _catch_utf8(self, next_token, new_text):
+
+        if self.expect_utf8 == 0:
+
+            if new_text != "�": return next_token, new_text
+
+            id_to_ord = self.tokenizer.get_id_to_ord_list()
+            t = next_token[0, 0].item()
+            b = id_to_ord[t]
+
+            if 0 < b < 256:
+                if b & 0b1110000 == 0b1100000: self.expect_utf8 = 3
+                if b & 0b1111000 == 0b1110000: self.expect_utf8 = 4
+                if b & 0b1111100 == 0b1111000: self.expect_utf8 = 5
+            self.held_utf8_tokens = self.no_tokens
+            if self.expect_utf8 == 0: return next_token, new_text
+            new_text = ""
+
+        if self.expect_utf8:
+
+            if len(new_text) > 1:
+
+                pre_t, pre_c = self._decode_utf8()
+                next_token = torch.cat((pre_t, next_token), dim = -1)
+                new_text = pre_c + new_text
+                return next_token, new_text
+
+            self.held_utf8_tokens = torch.cat((self.held_utf8_tokens, next_token), dim = -1)
+            self.expect_utf8 -= 1
+            if self.expect_utf8 == 0: return self._decode_utf8()
+            return self.no_tokens, ""
+
+
     def _gen_begin(self, in_tokens, gen_settings):
 
         self.sequence_ids = in_tokens.clone()
         self.cache.current_seq_len = 0
         self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True, loras = self.active_loras)
+
+        if self.draft_model is not None:
+            self.draft_cache.current_seq_len = 0
+            self.draft_model.forward(self.sequence_ids[:, :-1], self.draft_cache, preprocess_only = True)
+            self.future_logits = None
+            self.future_tokens = None
 
         self.first_token = True
 
@@ -188,10 +272,16 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             return
 
         self.cache.current_seq_len = reuse - 1
+        if self.draft_model is not None:
+            self.draft_cache.current_seq_len = reuse - 1
         self.sequence_ids = in_tokens[:, :reuse]
 
         if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings)
-    
+
+        if self.draft_model is not None:
+            self.future_logits = None
+            self.future_tokens = None
+
 
     def _gen_feed_tokens(self, in_tokens, gen_settings):
 
@@ -204,11 +294,94 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True, loras = self.active_loras)
 
+        if self.draft_model is not None:
+            self.draft_model.forward(self.sequence_ids[:, start: -1], self.draft_cache, preprocess_only = True)
+            self.future_logits = None
+            self.future_tokens = None
+
 
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
-        logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras).float().cpu()
-        token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        if self.draft_model is None:
+
+            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras).float().cpu()
+            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+
+        else:
+
+            token, eos = self._gen_single_token_speculative(gen_settings, prefix_token)
+
         self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
         gen_settings.feed_filters(token)
         return token, eos
+
+
+    def _gen_single_token_speculative(self, gen_settings, prefix_token = None):
+
+        if self.future_tokens is None:
+
+            # Generate draft
+
+            draft_gen_settings = gen_settings.greedy_clone()
+            draft_sequence_ids = self.sequence_ids.clone()
+            num_drafted_tokens = 0
+
+            for k in range(self.num_speculative_tokens):
+
+                logits = self.draft_model.forward(draft_sequence_ids[:, -1:], self.draft_cache).float().cpu()
+                token, prob, _ = ExLlamaV2Sampler.sample(logits, draft_gen_settings, draft_sequence_ids, random.random(), self.tokenizer, prefix_token and k == 0)
+
+                if prob < self.speculative_prob_threshold:
+                    self.draft_cache.current_seq_len -= 1
+                    break
+
+                draft_sequence_ids = torch.cat((draft_sequence_ids, token), dim = 1)
+                num_drafted_tokens += 1
+
+            self.total_draft_tokens += num_drafted_tokens
+
+            # Rewind draft cache
+
+            self.draft_cache.current_seq_len -= num_drafted_tokens
+
+            # Forward last sampled token plus draft through model
+
+            self.future_tokens = draft_sequence_ids[:, -1 - num_drafted_tokens:]
+            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras).float().cpu()
+
+            # Rewind model cache
+
+            self.cache.current_seq_len -= num_drafted_tokens + 1
+
+        # Sample the first future logits
+
+        token, _, eos = ExLlamaV2Sampler.sample(self.future_logits[:, :1, :], gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        self.future_logits = self.future_logits[:, 1:, :]
+        self.future_tokens = self.future_tokens[:, 1:]
+        self.cache.current_seq_len += 1
+        self.draft_cache.current_seq_len += 1
+
+        # If sampled token doesn't match future token or no more future tokens
+
+        if self.future_tokens.shape[-1] == 0 or self.future_tokens[0, 0] != token[0, 0]:
+            self.future_tokens = None
+            self.future_logits = None
+        else:
+            self.accepted_draft_tokens += 1
+        self.total_tokens += 1
+
+        return token, eos
+
+
+    def reset_sd_stats(self):
+
+        self.total_tokens = 0
+        self.total_draft_tokens = 0
+        self.accepted_draft_tokens = 0
+
+
+    def get_sd_stats(self):
+
+        efficiency = self.accepted_draft_tokens / self.total_tokens
+        accuracy = self.accepted_draft_tokens / self.total_draft_tokens
+        return efficiency, accuracy, self.total_tokens, self.total_draft_tokens, self.accepted_draft_tokens

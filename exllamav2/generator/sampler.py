@@ -35,6 +35,19 @@ class ExLlamaV2Sampler:
             return c
 
 
+        def greedy_clone(self):
+
+            c = ExLlamaV2Sampler.Settings()
+            c.top_k = 1
+            c.top_p = 0
+            c.token_repetition_penalty = self.token_repetition_penalty
+            c.token_repetition_range = self.token_repetition_range
+            c.token_repetition_decay = self.token_repetition_decay
+            c.token_bias = self.token_bias
+            c.filters = []
+            return c
+
+
         def disallow_tokens(self, tokenizer, tokens):
 
             if self.token_bias is None:

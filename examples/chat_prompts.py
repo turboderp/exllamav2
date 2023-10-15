@@ -161,6 +161,45 @@ class PromptFormat_tinyllama(PromptFormat_chatml):
         return False, False, False
 
 
+class PromptFormat_zephyr(PromptFormat):
+
+    description = "Zephyr 7b alpha prompt format."
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are {self.botname}, a large language model. Answer as concisely as possible."""
+
+    def first_prompt(self):
+        return \
+            """<|system|>\n""" + \
+            """<|system_prompt|>\n""" + \
+            """</s>\n""" + \
+            """<|user|>\n""" + \
+            """<|user_prompt|></s>\n""" + \
+            """<|assistant|>\n"""
+
+    def subs_prompt(self):
+        return \
+            """<|user|>\n""" + \
+            """<|user_prompt|></s>\n""" + \
+            """<|assistant|>\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """<|user|>""",
+             """</s>"""]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
 prompt_formats = \
 {
     "raw": PromptFormat_raw,
@@ -168,6 +207,7 @@ prompt_formats = \
     "codellama": PromptFormat_codellama,
     "chatml": PromptFormat_chatml,
     "tinyllama": PromptFormat_tinyllama,
+    "zephyr": PromptFormat_zephyr
 }
 
 

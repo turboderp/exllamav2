@@ -29,6 +29,8 @@ class ExLlamaV2Tokenizer:
     pad_token_id: int
     newline_token_id: int = 13
 
+    ord_exp = re.compile(r"^<0x([0-9A-Fa-f]+)>$")
+    id_to_ord: list = None
     id_to_piece: list = None
     piece_to_id: dict = None
     prefix_to_ids: dict = None
@@ -92,6 +94,7 @@ class ExLlamaV2Tokenizer:
 
         if not lazy_init:
 
+            self.get_id_to_ord_list()
             self.get_id_to_piece_list()
             self.get_piece_to_id_dict()
             self.get_prefix_to_ids_dict()
@@ -236,6 +239,32 @@ class ExLlamaV2Tokenizer:
 
         ids = self.tokenizer.Encode(text)
         return len(ids)
+
+
+    # Get ordinals of single-strings tokens
+
+    def get_id_to_ord_list(self):
+
+        if self.id_to_ord is not None: return self.id_to_ord
+
+        all_tokens = list(range(self.tokenizer.vocab_size()))
+        self.id_to_ord = []
+        for idx, p in enumerate(self.tokenizer.id_to_piece(all_tokens)):
+            match = self.ord_exp.match(p)
+            if match:
+                h = match.group(1)
+                o = int(h, 16)
+            elif len(p) == 1:
+                o = ord(p)
+                if o > 255: o = -1
+            else:
+                o = -1
+            self.id_to_ord.append(o)
+
+        i = self.tokenizer.vocab_size()
+        while i in self.extended_id_to_piece:
+            self.id_to_ord.append(-1)
+            i += 1
 
 
     # Copy vocabulary from SP model

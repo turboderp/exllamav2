@@ -3,3 +3,6 @@ build/
 
 *.pyc
 __pycache__/
+.idea
+venv
+dist

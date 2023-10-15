@@ -18,6 +18,7 @@
 #include "cuda/q_gemm.cuh"
 #include "cuda/rms_norm.cuh"
 #include "cuda/rope.cuh"
+#include "cuda/cache.cuh"
 
 #include "cpp/quantize_func.h"
 #include "cpp/sampling.h"
@@ -851,6 +852,14 @@ void logit_filter_exclusive
     }
 }
 
+void array_fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int size) {
+    array_fp16_to_fp8_cuda((const half*) (in_tensor.data_ptr()), (unsigned char*)(out_tensor.data_ptr()), size);
+}
+
+void array_fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int size) {
+    array_fp8_to_fp16_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -878,4 +887,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
+    m.def("array_fp16_to_fp8", &array_fp16_to_fp8, "array_fp16_to_fp8");
+    m.def("array_fp8_to_fp16", &array_fp8_to_fp16, "array_fp8_to_fp16");
 }
