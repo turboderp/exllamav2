@@ -1,9 +1,15 @@
+
 import sys
 min_version = (3, 8)
 if sys.version_info < min_version:
     print("")
     print(f" ## Warning: this project requires Python {min_version[0]}.{min_version[1]} or higher.")
     print("")
+
+# Set CUDA context to lazy loading since we won't need 95% of the modules in Torch
+
+import os
+os.environ['CUDA_MODULE_LOADING']='LAZY'
 
 import torch
 import math
