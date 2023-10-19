@@ -69,7 +69,7 @@ prompt = \
 
 def generate_with_lora(prompt_, lora_, max_new_tokens, streaming_ = True):
 
-    print(prompt, end="")
+    print(prompt_, end="")
     sys.stdout.flush()
 
     if streaming_:
@@ -89,9 +89,9 @@ def generate_with_lora(prompt_, lora_, max_new_tokens, streaming_ = True):
 
     else:
 
-        output = simple_generator.generate_simple(prompt, settings, max_new_tokens, loras = lora_)
+        output = simple_generator.generate_simple(prompt_, settings, max_new_tokens, loras = lora_)
 
-        print (output[len(prompt):])
+        print (output[len(prompt_):])
         print()
 
 
