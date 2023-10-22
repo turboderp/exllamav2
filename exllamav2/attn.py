@@ -209,7 +209,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         att_max = min(self.model.config.max_attention_size, self.model.config.max_seq_len ** 2)
 
         if has_flash_attn and not self.model.config.no_flash_attn:
-            eff = self.model.config.max_attention_size ** 0.5 / 220  # based on supposed memory savings listed in flash-attn repo + some fudging
+            eff = self.model.config.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
             att_max //= eff
 
         return 2 * att_max * self.model.config.num_attention_heads * 2 + 128
