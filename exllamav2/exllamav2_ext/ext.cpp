@@ -537,6 +537,15 @@ uintptr_t make_q_mlp
     return reinterpret_cast<uintptr_t> (mlp);
 }
 
+void free_q_mlp
+(
+   uintptr_t handle
+)
+{
+    QMLP* mlp = reinterpret_cast<QMLP*> (handle);
+    delete mlp;
+}
+
 void q_mlp_forward_
 (
     uintptr_t q_mlp,
@@ -922,6 +931,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("free_q_matrix", &free_q_matrix, "free_q_matrix");
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
+    m.def("free_q_mlp", &free_q_mlp, "free_q_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");

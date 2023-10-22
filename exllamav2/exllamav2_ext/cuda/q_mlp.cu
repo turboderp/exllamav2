@@ -124,6 +124,9 @@ QMLP::QMLP
 {
 }
 
+QMLP::~QMLP() {
+}
+
 void QMLP::forward_
 (
     cublasHandle_t cublas_handle,
