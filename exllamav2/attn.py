@@ -129,6 +129,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     def unload(self):
+        if self.q_handle is not None:
+            ext_c.free_q_attn(self.q_handle)
+            self.q_handle = None
 
         if self.input_layernorm is not None: self.input_layernorm.unload()
         if self.q_proj is not None: self.q_proj.unload()

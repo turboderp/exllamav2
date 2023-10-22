@@ -64,6 +64,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
 
     def unload(self):
+        if self.q_handle is not None:
+            ext_c.free_q_mlp(self.q_handle)
+            self.q_handle = None
 
         self.post_attention_layernorm.unload()
         self.gate_proj.unload()
