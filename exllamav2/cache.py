@@ -15,6 +15,8 @@ class ExLlamaV2CacheBase:
     num_hidden_layers: int
     head_dim: int
 
+    dtype = None
+
 
     def __init__(self, model, batch_size, max_seq_len):
 
@@ -31,19 +33,48 @@ class ExLlamaV2CacheBase:
         self.head_dim = self.model.config.head_dim
 
 
-    def create_state_tensors(self, dtype, copy_from):
+    def create_state_tensors(self, copy_from, lazy = False):
 
-        for i in range(self.num_hidden_layers):
+        assert copy_from is None or lazy == False, "Cannot use lazy cache initialization while copying"
 
-            if copy_from is None:
-                p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = dtype, device = self.model.cache_map[i]).contiguous()
-                p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = dtype, device = self.model.cache_map[i]).contiguous()
-            else:
-                p_key_states = copy_from.key_states[i].clone()
-                p_value_states = copy_from.value_states[i].clone()
+        if not lazy:
 
-            self.key_states.append(p_key_states)
-            self.value_states.append(p_value_states)
+            for i in range(self.num_hidden_layers):
+
+                if copy_from is None:
+                    p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = self.model.cache_map[i]).contiguous()
+                    p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = self.model.cache_map[i]).contiguous()
+                else:
+                    p_key_states = copy_from.key_states[i].clone()
+                    p_value_states = copy_from.value_states[i].clone()
+
+                self.key_states.append(p_key_states)
+                self.value_states.append(p_value_states)
+
+        else:
+
+            for i in range(self.num_hidden_layers):
+
+                self.key_states.append(None)
+                self.value_states.append(None)
+
+
+    def update_cache_tensors(self):
+
+        for k, v in self.model.cache_map.items():
+
+            self.touch_device(v)
+
+            if self.key_states[k] is not None:
+
+                if str(self.key_states[k].device) == v: continue
+                self.key_states[k] = None
+                self.value_states[k] = None
+
+            p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = v).contiguous()
+            p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = v).contiguous()
+            self.key_states[k] = p_key_states
+            self.value_states[k] = p_value_states
 
 
     def roll_left(self):
@@ -89,12 +120,17 @@ class ExLlamaV2CacheBase:
             target_view_v.copy_(source_view_v)
 
 
+    def touch_device(self, device):
+        pass
+
+
 class ExLlamaV2Cache(ExLlamaV2CacheBase):
 
-    def __init__(self, model, batch_size = 1, max_seq_len = -1, copy_from = None):
+    def __init__(self, model, batch_size = 1, max_seq_len = -1, copy_from = None, lazy = False):
         super().__init__(model, batch_size, max_seq_len)
 
-        self.create_state_tensors(torch.half, copy_from)
+        self.dtype = torch.half
+        self.create_state_tensors(copy_from, lazy)
 
 
     def get_kv_state(self, layer_idx: int, batch_size: int, offset: int, width: int) -> (torch.Tensor, torch.Tensor):
@@ -121,20 +157,26 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
 
 class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
 
-    def __init__(self, model, batch_size = 1, max_seq_len = -1, copy_from = None):
+    def __init__(self, model, batch_size = 1, max_seq_len = -1, copy_from = None, lazy = False):
         super().__init__(model, batch_size, max_seq_len)
 
-        self.create_state_tensors(torch.uint8, copy_from)
+        self.dtype = torch.uint8
+        self.create_state_tensors(copy_from, lazy)
 
         # Create temp FP16 tensors for accessing FP8 layers
 
         self.temp_tensors = {}
-        for device in self.model.get_cache_devices():
-            k = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = torch.float16, device = device).contiguous()
-            v = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = torch.float16, device = device).contiguous()
-            self.temp_tensors[device] = (k, v)
 
-        self.tensor_data_length = self.batch_size * self.max_seq_len * self.num_key_value_heads * self.head_dim
+        if not lazy:
+            for device in self.model.get_cache_devices(): self.touch_device(device)
+
+
+    def touch_device(self, device):
+
+        if device in self.temp_tensors: return
+        k = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = torch.float16, device = device).contiguous()
+        v = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = torch.float16, device = device).contiguous()
+        self.temp_tensors[device] = (k, v)
 
 
     def get_kv_state(self, layer_idx: int, batch_size: int, offset: int, width: int) -> (torch.Tensor, torch.Tensor):

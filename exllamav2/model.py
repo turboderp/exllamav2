@@ -24,6 +24,7 @@ from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.compat import safe_move_tensor
+import gc
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -231,26 +232,155 @@ class ExLlamaV2:
         return [(ab - rb - rba) / 1024**3 for (ab, rb, rba) in zip(allocation_bytes, reserve_bytes, reserve_bytes_attn)]
 
 
-    def load(self, gpu_split = None, lazy = False, stats = False):
+    def load(self, gpu_split = None, lazy = False, stats = False, callback = None):
 
         assert not self.config.qkv_embed or not lazy, "Lazy initialization is unsupported when config.qkv_embed = True"
 
         with torch.inference_mode():
 
-            stats = self.set_device_map(gpu_split or [99999])
+            stats_ = self.set_device_map(gpu_split or [99999])
 
             # Load module weights
 
             if not lazy:
 
-                for module in self.modules: module.load()
+                for idx, module in enumerate(self.modules):
+                    if callback is not None: callback(idx, len(self.modules))
+                    module.load()
+
+                if callback is not None: callback(len(self.modules), len(self.modules))
 
             # Cache map
 
             self.set_cache_map()
 
-            if stats: return gpu_split, stats
+            if stats: return gpu_split, stats_
             else: return gpu_split
+
+
+    def load_autosplit(self, cache, reserve_vram = None, last_id_only = False, callback = None):
+
+        assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
+
+        minimum_reserve_vram = 16 * 1024**2
+        last_touched_device = -1
+        current_device = 0
+        num_devices = torch.torch.cuda.device_count()
+        loras = None  # TODO:
+
+        with torch.inference_mode():
+
+            self.device_tensors = []
+
+            # Reserved space
+
+            if reserve_vram is None:
+                reserve_vram = [32 * 1024**2] + [0] * (num_devices - 1)
+
+            reserved_vram_tensors = []
+
+            # Largest hidden state to ever forward through model
+
+            hidden_state = torch.zeros((1, self.config.max_input_len), dtype = torch.long)
+            batch_size, seq_len = hidden_state.shape
+            past_len = 0
+            attn_mask = None
+
+            # Size of fixed scratch space
+
+            scratch_fixed = 0
+            for module in self.modules:
+                scratch_fixed = max(scratch_fixed, module.scratch_space_fixed())
+
+            # Load modules and create cache tensors sequentially
+
+            self.cache_map = {}
+            for idx, module in enumerate(self.modules):
+
+                if callback is not None: callback(idx, len(self.modules))
+
+                # Embedding layer on CPU
+
+                if idx == 0:
+
+                    module.set_device_idx(-1)
+                    module.load()
+                    hidden_state = module.forward(hidden_state)
+                    continue
+
+                while True:
+
+                    # If we've reached a new device, allocate fixed tensors and attention mask
+
+                    if current_device > last_touched_device:
+
+                        self.device_tensors.append(ExLlamaV2DeviceTensors(self, current_device, scratch_fixed))
+                        if attn_mask is not None: reserved_vram_tensors.append(attn_mask)
+                        attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, None, _torch_device(current_device))
+
+                        b = reserve_vram[current_device] + minimum_reserve_vram
+                        reserved_vram_tensors.append(torch.empty((b,), dtype = torch.int8, device = _torch_device(current_device)))
+
+                        last_touched_device = current_device
+
+                    # Assign module and possibly cache layer to current device
+
+                    module.set_device_idx(current_device)
+
+                    if isinstance(module, ExLlamaV2Attention):
+                        self.cache_map[module.layer_idx] = module.device()
+                        cache.update_cache_tensors()
+
+                    # Attempt to load module and forward state
+
+                    hidden_state_backup = safe_move_tensor(hidden_state, "cpu").clone()
+
+                    try:
+
+                        module.load()
+
+                        if idx == self.head_layer_idx:
+                            if last_id_only:
+                                hidden_state = hidden_state.narrow(-2, -1, 1)
+
+                        hidden_state = safe_move_tensor(hidden_state, _torch_device(current_device))
+                        hidden_state = module.forward(hidden_state, cache = cache, attn_mask = attn_mask, past_len = past_len, loras = loras)
+                        fail = False
+
+                    except Exception as e:
+
+                        test = 0
+                        if "CUDA out of memory" in str(e):
+                            fail = True  # Exception object will hold references to tensors so we can't free them here
+                        else:
+                            raise
+
+                    # If we failed, roll back and advance to next device
+
+                    if fail:
+
+                        module.unload()
+                        hidden_state = None
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        hidden_state = hidden_state_backup.clone()
+
+                        current_device += 1
+                        if current_device >= num_devices:
+                            raise RuntimeError("Insufficient VRAM for model and cache")
+
+                        continue
+
+                    break
+
+            if callback is not None: callback(len(self.modules), len(self.modules))
+
+            hidden_state = None
+            attn_mask = None
+            reserved_vram_tensors = None
+
+            gc.collect()
+            torch.cuda.empty_cache()
 
 
     def unload(self):
