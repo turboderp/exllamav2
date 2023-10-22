@@ -5,7 +5,7 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
-    weight: nn.Parameter or None
+    weight: nn.Parameter or None = None
     variance_epsilon: float
 
     name: str = "RMSNorm"
@@ -25,8 +25,9 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
     def unload(self):
 
-        del self.weight
-        self.weight = None
+        if self.weight is not None:
+            del self.weight
+            self.weight = None
 
 
     def get_weight(self):
