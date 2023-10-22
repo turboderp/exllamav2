@@ -234,7 +234,11 @@ class ExLlamaV2:
         return [(ab - rb - rba) / 1024**3 for (ab, rb, rba) in zip(allocation_bytes, reserve_bytes, reserve_bytes_attn)]
 
 
-    def load(self, gpu_split = None, lazy = False, stats = False, callback = None):
+    def load(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
+        f = self.load_gen(gpu_split, lazy, stats, callback, callback_gen)
+        for item in f: return item
+
+    def load_gen(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
 
         assert not self.config.qkv_embed or not lazy, "Lazy initialization is unsupported when config.qkv_embed = True"
 
@@ -247,21 +251,29 @@ class ExLlamaV2:
             if not lazy:
 
                 for idx, module in enumerate(self.modules):
+
                     if callback is not None: callback(idx, len(self.modules))
+                    if callback_gen is not None: yield from callback_gen(idx, len(self.modules))
+
                     module.load()
 
                 if callback is not None: callback(len(self.modules), len(self.modules))
+                if callback_gen is not None: yield from callback_gen(len(self.modules), len(self.modules))
 
             # Cache map
 
             self.set_cache_map()
 
             self.loaded = True
-            if stats: return gpu_split, stats_
-            else: return gpu_split
+            if stats: yield gpu_split, stats_
+            else: yield gpu_split
 
 
-    def load_autosplit(self, cache, reserve_vram = None, last_id_only = False, callback = None):
+    def load_autosplit(self, cache, reserve_vram = None, last_id_only = False, callback = None, callback_gen = None):
+        f = self.load_autosplit_gen(cache, reserve_vram, last_id_only, callback, callback_gen)
+        for item in f: x = item
+
+    def load_autosplit_gen(self, cache, reserve_vram = None, last_id_only = False, callback = None, callback_gen = None):
 
         assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
 
@@ -301,6 +313,7 @@ class ExLlamaV2:
             for idx, module in enumerate(self.modules):
 
                 if callback is not None: callback(idx, len(self.modules))
+                if callback_gen is not None: yield from callback_gen(idx, len(self.modules))
 
                 # Embedding layer on CPU
 
@@ -375,6 +388,7 @@ class ExLlamaV2:
                     break
 
             if callback is not None: callback(len(self.modules), len(self.modules))
+            if callback_gen is not None: yield from callback_gen(len(self.modules), len(self.modules))
 
             hidden_state = None
             attn_mask = None
@@ -383,6 +397,9 @@ class ExLlamaV2:
             gc.collect()
             torch.cuda.empty_cache()
             self.loaded = True
+
+        if 'yield' in locals():
+            yield
 
 
     def unload(self):

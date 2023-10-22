@@ -32,10 +32,13 @@ model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
 
 def progress_rep(module, num_modules):
-    print(f"Progress: {100 * module / num_modules:.2f}%")
+    yield f"Progress: {100 * module / num_modules:.2f}%"
 
 cache = ExLlamaV2Cache_8bit(model, lazy = True)
-model.load_autosplit(cache, last_id_only = True, callback = progress_rep)
+
+f = model.load_autosplit_gen(cache, last_id_only = True, callback_gen = progress_rep)
+for item in f:
+    print(item)
 
 tokenizer = ExLlamaV2Tokenizer(config)
 
