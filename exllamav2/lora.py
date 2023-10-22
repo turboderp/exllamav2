@@ -33,7 +33,7 @@ class ExLlamaV2Lora:
 
     def __init__(self, model, lora_config_path, lora_path):
 
-        with torch.no_grad():
+        with torch.inference_mode():
 
             self.lora_config_path = lora_config_path
             self.lora_path = lora_path

@@ -90,7 +90,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
     def make_qkv(self, norm, q, k, v):
 
-        with torch.no_grad():
+        with torch.inference_mode():
 
             vocab_size = self.model.config.vocab_size
             hidden_size = self.model.config.hidden_size

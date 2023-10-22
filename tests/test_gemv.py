@@ -12,7 +12,7 @@ from conversion.tokenize import get_tokens
 from conversion.quantize import list_live_tensors
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
-with torch.no_grad():
+with torch.inference_mode():
 
     # Full-precision model
 

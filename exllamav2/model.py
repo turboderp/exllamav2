@@ -480,7 +480,7 @@ class ExLlamaV2:
 
             return attn_mask
 
-
+    @torch.inference_mode()
     def forward(self,
                 input_ids,
                 cache = None,
@@ -576,6 +576,7 @@ class ExLlamaV2:
             return result, last_state
 
 
+    @torch.inference_mode()
     def _forward(self,
                  input_ids,
                  cache = None,
