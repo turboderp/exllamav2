@@ -242,7 +242,6 @@ class AdaptiveGPTQ:
                     # The Cholesky inverse will sometimes fail to compute due to accumulated rounding errors when H
                     # is very large (e.g. 70B MLP down proj) and a lot of calibration data is used (e.g. 100 rows of
                     # 4096 tokens). This won't always throw an exception and sometimes just results in a NaN tensor.
-                    # TODO: Consider if it's feasible to maintain H in double precision
 
                     if torch.any(torch.isnan(hessian_inv)): raise RuntimeError
 
