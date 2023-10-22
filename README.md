@@ -158,9 +158,6 @@ There are still things that need to be ported over from V1, and other planned fe
 
 ## Recent updates
 
-**2023-09-18**: Some minor changes to allow models with higher bitrates (it used to cap at around 6), and changes to
-the converter to better facilitate scripted jobs.
-
 **2023-09-27**: Prebuilt wheels are now available, credit to [@jllllll](https://github.com/jllllll). They're on the
 [releases page here](https://github.com/turboderp/exllamav2/releases). A solution to installing prebuilt wheels straight
 from PyPI is still pending. Updated installation instructions above.
@@ -175,3 +172,7 @@ Chat example updated to take draft model.
 
 **2023-10-15**: Got the 8-bit cache mode to a fairly working state. Added the `-c8` option to the chatbot. Big VRAM
 savings for CodeLlama-13B, at least.
+
+**2023-10-22**: Added auto GPU split option. `-gs auto` will load the model while allocating the cache and running a
+forward pass to precisely measure VRAM usage, then automatically use all available VRAM starting from the first CUDA
+device.
