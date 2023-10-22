@@ -32,13 +32,11 @@ draft_config.prepare()
 draft_config.max_seq_len = 2048
 
 draft = ExLlamaV2(draft_config)
-draft.load([24, 0])
-
 model = ExLlamaV2(model_config)
-model.load([14, 24])
-
-model_cache = ExLlamaV2Cache(model)
-draft_cache = ExLlamaV2Cache(draft)
+model_cache = ExLlamaV2Cache(model, lazy = True)
+draft_cache = ExLlamaV2Cache(draft, lazy = True)
+draft.load_autosplit(draft_cache)
+model.load_autosplit(model_cache)
 
 tokenizer = ExLlamaV2Tokenizer(model_config)
 

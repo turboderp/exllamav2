@@ -78,9 +78,9 @@ if system_prompt is None: system_prompt = prompt_format.default_system_prompt()
 
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args)
+model, tokenizer = model_init.init(args, allow_auto_split = True)
 
-# Initialize draft model if provided
+# Initialize draft model if provided, assume it always fits on first device
 
 draft_model = None
 draft_cache = None
@@ -119,9 +119,16 @@ if args.draft_model_dir:
 # Create cache
 
 if args.cache_8bit:
-    cache = ExLlamaV2Cache_8bit(model)
+    cache = ExLlamaV2Cache_8bit(model, lazy = not model.loaded)
 else:
-    cache = ExLlamaV2Cache(model)
+    cache = ExLlamaV2Cache(model, lazy = not model.loaded)
+
+# Load model now if auto split enabled
+
+if not model.loaded:
+
+    print(" -- Loading model...")
+    model.load_autosplit(cache)
 
 # Chat context
 

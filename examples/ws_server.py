@@ -25,11 +25,18 @@ model_init.add_args(parser)
 args = parser.parse_args()
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args)
+model, tokenizer = model_init.init(args, allow_auto_split = True)
 
-# Create cache
+# Load model after cache if --gpu_split auto
 
-cache = ExLlamaV2Cache(model)
+if not model.loaded:
+    cache = ExLlamaV2Cache(model, lazy = True)
+    model.load_autosplit(cache)
+
+# Else create cache
+
+else:
+    cache = ExLlamaV2Cache(model)
 
 # Create server
 

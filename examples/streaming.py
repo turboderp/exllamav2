@@ -26,11 +26,11 @@ config.prepare()
 
 model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
-model.load([16, 24])
+
+cache = ExLlamaV2Cache(model, lazy = True)
+model.load_autosplit(cache)
 
 tokenizer = ExLlamaV2Tokenizer(config)
-
-cache = ExLlamaV2Cache(model)
 
 # Initialize generator
 
