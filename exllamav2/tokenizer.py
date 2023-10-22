@@ -131,7 +131,7 @@ class ExLlamaV2Tokenizer:
 
     # Encode string
 
-    # TODO: Handle added tokens for "special" models
+    # TODO: Deal with rstrip and lstrip for added tokens
 
     def encode(self, text, add_bos = False, add_eos = False, encode_special_tokens = False):
 
