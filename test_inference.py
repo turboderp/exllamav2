@@ -43,7 +43,16 @@ model_init.add_args(parser)
 args = parser.parse_args()
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args)
+model, tokenizer = model_init.init(args, allow_auto_split = True)
+
+# Auto split
+
+if not model.loaded:
+
+    print(" -- Loading model...")
+    cache = ExLlamaV2Cache(model, lazy = True)
+    model.load_autosplit(cache)
+    cache = None
 
 # Test generation
 

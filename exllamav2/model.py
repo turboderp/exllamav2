@@ -112,6 +112,7 @@ class ExLlamaV2:
     cache_map: dict
     last_kv_layer_idx: int
     head_layer_idx: int
+    loaded: bool
 
 
     def __init__(self, config: ExLlamaV2Config, lazy_load = False):
@@ -121,6 +122,7 @@ class ExLlamaV2:
         self.modules_dict = {}
         self.device_tensors = []
         self.cache_map = {}
+        self.loaded = False
 
         # Build model
 
@@ -254,6 +256,7 @@ class ExLlamaV2:
 
             self.set_cache_map()
 
+            self.loaded = True
             if stats: return gpu_split, stats_
             else: return gpu_split
 
@@ -323,19 +326,17 @@ class ExLlamaV2:
 
                         last_touched_device = current_device
 
-                    # Assign module and possibly cache layer to current device
+                    # Attempt to load module and forward state
 
                     module.set_device_idx(current_device)
-
-                    if isinstance(module, ExLlamaV2Attention):
-                        self.cache_map[module.layer_idx] = module.device()
-                        cache.update_cache_tensors()
-
-                    # Attempt to load module and forward state
 
                     hidden_state_backup = safe_move_tensor(hidden_state, "cpu").clone()
 
                     try:
+
+                        if isinstance(module, ExLlamaV2Attention):
+                            self.cache_map[module.layer_idx] = module.device()
+                            cache.update_cache_tensors()
 
                         module.load()
 
@@ -381,6 +382,7 @@ class ExLlamaV2:
 
             gc.collect()
             torch.cuda.empty_cache()
+            self.loaded = True
 
 
     def unload(self):

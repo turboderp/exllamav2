@@ -10,7 +10,7 @@ from exllamav2 import(
 def add_args(parser):
 
     parser.add_argument("-m", "--model_dir", type = str, help = "Path to model directory")
-    parser.add_argument("-gs", "--gpu_split", type = str, help = "VRAM allocation per GPU in GB")
+    parser.add_argument("-gs", "--gpu_split", type = str, help = "\"auto\", or VRAM allocation per GPU in GB")
     parser.add_argument("-l", "--length", type = int, help = "Maximum sequence length")
     parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
     parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
@@ -55,7 +55,7 @@ def check_args(args):
             sys.exit()
 
 
-def init(args, quiet = False):
+def init(args, quiet = False, allow_auto_split = False):
 
     # Create config
 
@@ -75,14 +75,20 @@ def init(args, quiet = False):
     if args.low_mem: config.set_low_mem()
 
     # Load model
-
-    if not quiet: print(" -- Loading model...")
+    # If --gpu_split auto, return unloaded model. Model must be loaded with model.load_autosplit() supplying cache
+    # created in lazy mode
 
     model = ExLlamaV2(config)
 
     split = None
-    if args.gpu_split: split = [float(alloc) for alloc in args.gpu_split.split(",")]
-    model.load(split)
+    if args.gpu_split and args.gpu_split != "auto":
+        split = [float(alloc) for alloc in args.gpu_split.split(",")]
+
+    if args.gpu_split != "auto":
+        if not quiet: print(" -- Loading model...")
+        model.load(split)
+    else:
+        assert allow_auto_split, "Auto split not allowed."
 
     # Load tokenizer
 
