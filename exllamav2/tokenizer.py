@@ -18,7 +18,7 @@ class ExLlamaV2Tokenizer:
     config: ExLlamaV2Config
     tokenizer: SentencePieceProcessor
 
-    unk_token: str = ""
+    unk_token: str = "<unk>"
     bos_token: str = "<s>"
     eos_token: str = "</s>"
     pad_token: str = ""
@@ -81,14 +81,22 @@ class ExLlamaV2Tokenizer:
 
         self.pad_token_id = 0
 
-        # Make sure extended vocab contains control tokens
+        # Special case if <unk> and <pad> have the same ID
 
-        self.extended_id_to_piece[self.unk_token_id] = self.unk_token
-        self.extended_id_to_piece[self.bos_token_id] = self.bos_token
-        self.extended_id_to_piece[self.eos_token_id] = self.eos_token
-        self.extended_piece_to_id[self.unk_token] = self.unk_token_id
-        self.extended_piece_to_id[self.bos_token] = self.bos_token_id
-        self.extended_piece_to_id[self.eos_token] = self.eos_token_id
+        if self.unk_token_id == self.pad_token_id:
+            self.unk_token = self.pad_token
+
+        # Make sure extended vocab contains control tokens, but avoid empty pieces
+
+        if self.unk_token != "":
+            self.extended_piece_to_id[self.unk_token] = self.unk_token_id
+            self.extended_id_to_piece[self.unk_token_id] = self.unk_token
+        if self.bos_token != "":
+            self.extended_piece_to_id[self.bos_token] = self.bos_token_id
+            self.extended_id_to_piece[self.bos_token_id] = self.bos_token
+        if self.eos_token != "":
+            self.extended_piece_to_id[self.eos_token] = self.eos_token_id
+            self.extended_id_to_piece[self.eos_token_id] = self.eos_token
 
         # Create dictionaries on init
 
