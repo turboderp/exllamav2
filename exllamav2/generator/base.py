@@ -51,9 +51,15 @@ class ExLlamaV2BaseGenerator:
                         token_healing = False,
                         encode_special_tokens = False,
                         decode_special_tokens = False,
-                        loras = None):
+                        loras = None,
+                        stop_token = -1):
+
+        # Default stop token
+
+        if stop_token == -1: stop_token = self.tokenizer.eos_token_id
 
         # Accept LoRA or list of LoRAs
+
         if loras is not None and isinstance(loras, ExLlamaV2Lora): loras = [loras]
 
         # Apply seed
@@ -94,10 +100,22 @@ class ExLlamaV2BaseGenerator:
 
         # Generate tokens
 
+        batch_eos = [False] * batch_size
+
         for i in range(num_tokens):
 
             logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask, loras = loras).float().cpu()
-            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
+            token, _, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
+
+            eos = False
+            if stop_token is not None:
+                for b in range(batch_size):
+                    if token[b, 0].item() == stop_token:
+                        batch_eos[b] = True
+                        if all(batch_eos): eos = True
+                    if batch_eos[b]:
+                        token[b, 0] = self.tokenizer.pad_token_id
+
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
             gen_settings.feed_filters(token)
 

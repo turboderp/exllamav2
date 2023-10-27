@@ -18,7 +18,7 @@ class ExLlamaV2Tokenizer:
     config: ExLlamaV2Config
     tokenizer: SentencePieceProcessor
 
-    unk_token: str = "<unk>"
+    unk_token: str = ""
     bos_token: str = "<s>"
     eos_token: str = "</s>"
     pad_token: str = ""
@@ -220,7 +220,7 @@ class ExLlamaV2Tokenizer:
         else:
 
             ids = ids.tolist()
-            text = self.tokenizer.Decode(ids)
+            text = self.decode_(ids, decode_special_tokens)
             return text
 
 
