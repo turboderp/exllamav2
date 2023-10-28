@@ -72,6 +72,8 @@ QMatrix::QMatrix
 {
     cudaSetDevice(device);
 
+    failed = false;
+
     cuda_q_weight = _q_weight;
     cuda_q_perm = _q_perm;
     cuda_q_invperm = _q_invperm;
@@ -125,7 +127,14 @@ QMatrix::QMatrix
         rows_3 = height;
         rows_2 = height;
 
-        if (_gptq_g_idx) make_sequential(_gptq_g_idx);
+        if (_gptq_g_idx)
+        {
+            if (!make_sequential(_gptq_g_idx))
+            {
+                failed = true;
+                return;
+            }
+        }
     }
 
     // Shuffle quantized data
@@ -527,10 +536,11 @@ __global__ void make_sequential_kernel
     w_new2[w_new2_row * w2_stride + w2_column] = dst;
 }
 
-void QMatrix::make_sequential(const uint32_t* cpu_g_idx)
+bool QMatrix::make_sequential(const uint32_t* cpu_g_idx)
 {
     uint32_t* cuda_new_qweight = NULL;
-    cudaMalloc(&cuda_new_qweight, height / 8 * width * sizeof(uint32_t));
+    cudaError_t err = cudaMalloc(&cuda_new_qweight, height / 8 * width * sizeof(uint32_t));
+    if (err != cudaSuccess) return false;
 
     uint32_t* cpu_g_idx_map = (uint32_t*) calloc(groups, sizeof(uint32_t));
     uint32_t* cpu_x_map = (uint32_t*) malloc(height * sizeof(uint32_t));
@@ -604,4 +614,6 @@ void QMatrix::make_sequential(const uint32_t* cpu_g_idx)
     free(cpu_g_idx_map);
     free(cpu_x_map);
     free(cpu_x_map_inv);
+
+    return true;
 }

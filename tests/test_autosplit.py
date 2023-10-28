@@ -19,7 +19,7 @@ import time
 
 # Initialize model and cache
 
-model_directory =  "/mnt/str/models/_exl2/llama2-70b-exl2/2.5bpw/"
+model_directory =  "/mnt/str/models/_gptq/TheBloke_Spicyboros-70B-2.2-GPTQ/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
@@ -34,7 +34,7 @@ print("Loading model: " + model_directory)
 def progress_rep(module, num_modules):
     yield f"Progress: {100 * module / num_modules:.2f}%"
 
-cache = ExLlamaV2Cache_8bit(model, lazy = True)
+cache = ExLlamaV2Cache(model, lazy = True)
 
 f = model.load_autosplit_gen(cache, last_id_only = True, callback_gen = progress_rep)
 for item in f:

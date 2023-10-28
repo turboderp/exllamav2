@@ -233,6 +233,8 @@ uintptr_t make_q_matrix
         (half*) temp_dq.data_ptr()
     );
 
+    if (m->failed) throw std::runtime_error("CUDA out of memory");
+
     return reinterpret_cast<uintptr_t> (m);
 }
 

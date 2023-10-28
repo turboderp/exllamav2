@@ -277,7 +277,7 @@ class ExLlamaV2:
 
         assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
 
-        minimum_reserve_vram = 16 * 1024**2
+        minimum_reserve_vram = 32 * 1024**2
         last_touched_device = -1
         current_device = 0
         num_devices = torch.torch.cuda.device_count()
@@ -293,6 +293,7 @@ class ExLlamaV2:
                 reserve_vram = [32 * 1024**2] + [0] * (num_devices - 1)
 
             reserved_vram_tensors = []
+            minimum_reserve_tensor = None
 
             # Largest hidden state to ever forward through model
 
@@ -334,8 +335,9 @@ class ExLlamaV2:
                         if attn_mask is not None: reserved_vram_tensors.append(attn_mask)
                         attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, None, _torch_device(current_device))
 
-                        b = reserve_vram[current_device] + minimum_reserve_vram
+                        b = reserve_vram[current_device]
                         reserved_vram_tensors.append(torch.empty((b,), dtype = torch.int8, device = _torch_device(current_device)))
+                        minimum_reserve = torch.empty((minimum_reserve_vram,), dtype = torch.int8, device = _torch_device(current_device))
 
                         last_touched_device = current_device
 
@@ -375,6 +377,10 @@ class ExLlamaV2:
 
                         module.unload()
                         hidden_state = None
+
+                        if minimum_reserve_tensor is not None: del minimum_reserve_tensor
+                        minimum_reserve_tensor = None
+
                         gc.collect()
                         torch.cuda.empty_cache()
                         hidden_state = hidden_state_backup.clone()
@@ -469,7 +475,7 @@ class ExLlamaV2:
 
             for i in range(len(past_len[1])):
 
-                attn_mask = torch.zeros(1, 1, seq_len, past_len[1][i] + seq_len, dtype = torch.float16, device = device)
+                attn_mask = torch.zeros((1, 1, seq_len, past_len[1][i] + seq_len), dtype = torch.float16, device = device)
                 attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
                 attn_mask[:, :, : seq_len - 1, past_len[1][i] + 1: past_len[1][i] + seq_len] = attn_mask_triu
 
@@ -485,7 +491,7 @@ class ExLlamaV2:
 
         else:
 
-            attn_mask = torch.zeros(batch_size, 1, seq_len, past_len + seq_len, dtype = torch.float16, device = device)
+            attn_mask = torch.zeros((batch_size, 1, seq_len, past_len + seq_len), dtype = torch.float16, device = device)
             attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
             attn_mask[:, :, : seq_len - 1, past_len + 1: past_len + seq_len] = attn_mask_triu
 
