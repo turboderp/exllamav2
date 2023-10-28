@@ -332,12 +332,15 @@ class ExLlamaV2:
                     if current_device > last_touched_device:
 
                         self.device_tensors.append(ExLlamaV2DeviceTensors(self, current_device, scratch_fixed))
-                        if attn_mask is not None: reserved_vram_tensors.append(attn_mask)
-                        attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, None, _torch_device(current_device))
+                        if attn_mask is not None:
+                            reserved_vram_tensors.append(attn_mask)
+                            attn_mask = safe_move_tensor(attn_mask, _torch_device(current_device))
+                        else:
+                            attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, None, _torch_device(current_device))
 
                         b = reserve_vram[current_device]
                         reserved_vram_tensors.append(torch.empty((b,), dtype = torch.int8, device = _torch_device(current_device)))
-                        minimum_reserve = torch.empty((minimum_reserve_vram,), dtype = torch.int8, device = _torch_device(current_device))
+                        minimum_reserve_tensor = torch.empty((minimum_reserve_vram,), dtype = torch.int8, device = _torch_device(current_device))
 
                         last_touched_device = current_device
 
@@ -348,7 +351,6 @@ class ExLlamaV2:
                     hidden_state_backup = safe_move_tensor(hidden_state, "cpu").clone()
 
                     try:
-
                         if isinstance(module, ExLlamaV2Attention):
                             self.cache_map[module.layer_idx] = module.device()
                             cache.update_cache_tensors()
