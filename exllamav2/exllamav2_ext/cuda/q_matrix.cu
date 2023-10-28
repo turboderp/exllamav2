@@ -132,6 +132,7 @@ QMatrix::QMatrix
             if (!make_sequential(_gptq_g_idx))
             {
                 failed = true;
+                //printf("FAIL\n");
                 return;
             }
         }
@@ -540,7 +541,10 @@ bool QMatrix::make_sequential(const uint32_t* cpu_g_idx)
 {
     uint32_t* cuda_new_qweight = NULL;
     cudaError_t err = cudaMalloc(&cuda_new_qweight, height / 8 * width * sizeof(uint32_t));
-    if (err != cudaSuccess) return false;
+    if (err != cudaSuccess) {
+        cudaError_t cuda_status = cudaGetLastError(); // Clear error
+        return false;
+    }
 
     uint32_t* cpu_g_idx_map = (uint32_t*) calloc(groups, sizeof(uint32_t));
     uint32_t* cpu_x_map = (uint32_t*) malloc(height * sizeof(uint32_t));
