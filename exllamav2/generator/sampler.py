@@ -120,6 +120,10 @@ class ExLlamaV2Sampler:
 
             ext_c.logit_filter_exclusive(logit_filter, valid_token_lists)
 
+        # for i in range(logit_filter.shape[-1]):
+        #     if logit_filter[0, i].item():
+        #         print(i)
+
         # Sampling
 
         batch_size = logits.shape[0]

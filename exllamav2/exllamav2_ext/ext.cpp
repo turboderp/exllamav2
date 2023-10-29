@@ -789,7 +789,7 @@ void sample_basic
 
         if (top_k == 1)
         {
-            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size);
+            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size, logits_filter_ptr + i * vocab_size);
             output_tokens[i] = index;
             output_probs[i] = temp_probs[index];
             continue;

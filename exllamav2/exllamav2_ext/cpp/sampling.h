@@ -35,7 +35,8 @@ void normalize_cpu
 int greedy_sample
 (
     const int num_candidates,
-    const float* probs
+    const float* probs,
+    const bool* logits_filter
 );
 
 void sort_descending

@@ -89,6 +89,18 @@ void softmax_cpu
         else
             output[i] = 0.0f;
     }
+
+//    printf("Softmax:");
+//    float summ = 0.0f;
+//    for (int i = 0; i < vocab_size; i++)
+//    {
+//        if (logits_filter[i])
+//        {
+//            printf("%d, %f\n", i, output[i]);
+//            summ += output[i];
+//        }
+//    }
+//    printf("sum: %f\n", summ);
 }
 
 void normalize_cpu
@@ -108,15 +120,16 @@ void normalize_cpu
 int greedy_sample
 (
     const int num_candidates,
-    const float* probs
+    const float* probs,
+    const bool* logits_filter
 )
 {
-    int maxidx = 0;
-    float max = probs[0];
+    int maxidx = -1;
+    float max = -1e38;
 
     for(int i = 1; i < num_candidates; i++)
     {
-        if (probs[i] > max)
+        if (logits_filter[i] && (maxidx == -1 || probs[i] > max))
         {
             max = probs[i];
             maxidx = i;
