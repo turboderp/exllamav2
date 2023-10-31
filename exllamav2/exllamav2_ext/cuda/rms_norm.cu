@@ -3,12 +3,15 @@
 
 #if defined(USE_ROCM)
 #define __shfl_xor_sync(mask, var, laneMask) __shfl_xor(var, laneMask)
+#define NUM_WARPS 16
+#define WARP_SIZE 64
+#else
+#define NUM_WARPS 32
+#define WARP_SIZE 32
 #endif
 
 // y = x * w / sqrt(row_mean(x * x) + epsilon)
 
-#define NUM_WARPS 32
-#define WARP_SIZE 32
 #define BLOCK_SIZE WARP_SIZE
 #define NUM_THREADS (NUM_WARPS * WARP_SIZE)
 
