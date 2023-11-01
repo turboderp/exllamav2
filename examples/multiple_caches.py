@@ -17,7 +17,7 @@ import torch
 import time
 import random
 
-# Initialize model and cache
+# Initialize model
 
 model_directory =  "/mnt/str/models/_exl2/llama2-7b-exl2/4.0bpw/"
 
@@ -28,8 +28,7 @@ config.prepare()
 model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
 
-cache = ExLlamaV2Cache(model, lazy = True)
-model.load_autosplit(cache)
+model.load()
 
 tokenizer = ExLlamaV2Tokenizer(config)
 
