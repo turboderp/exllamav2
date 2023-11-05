@@ -10,7 +10,11 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
     name: str = "RMSNorm"
 
+
     def __init__(self, model, key):
+        if model.config.architecture == "Yi":
+            key = key.replace(".input_layernorm", ".ln1")
+            key = key.replace(".post_attention_layernorm", ".ln2")
         super().__init__(model, key)
 
 

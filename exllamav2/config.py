@@ -19,6 +19,8 @@ class ExLlamaV2Config:
 
     # Loaded/set by .prepare():
 
+    architecture: str
+
     model_config: str
     tensor_file_map: dict
     tensor_files: list
@@ -72,6 +74,14 @@ class ExLlamaV2Config:
         with open(self.model_config) as f:
             read_config = json.load(f)
 
+            if "LlamaForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
+            elif "MistralForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
+            elif "YiForCausalLM" in read_config["architectures"]: self.architecture = "Yi"
+            else:
+                print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
+                print(f" !! Loading as LlamaForCausalLM")
+                self.architecture = "Llama"
+
             self.bos_token_id = read_config["bos_token_id"] if "bos_token_id" in read_config else 1
             self.eos_token_id = read_config["eos_token_id"] if "eos_token_id" in read_config else 2
             self.pad_token_id = read_config["pad_token_id"] if "pad_token_id" in read_config else 0
@@ -114,22 +124,35 @@ class ExLlamaV2Config:
 
         # Make sure we found all the layers we need
 
-        layer_keys = ["input_layernorm",
-                      "self_attn.q_proj",
-                      "self_attn.k_proj",
-                      "self_attn.v_proj",
-                      "self_attn.o_proj",
-                      "post_attention_layernorm",
-                      "mlp.down_proj",
-                      "mlp.gate_proj",
-                      "mlp.up_proj"]
+        layer_keys = [
+            ["input_layernorm", "ln1"],
+            ["post_attention_layernorm", "ln2"],
+            ["self_attn.q_proj"],
+            ["self_attn.k_proj"],
+            ["self_attn.v_proj"],
+            ["self_attn.o_proj"],
+            ["mlp.down_proj"],
+            ["mlp.gate_proj"],
+            ["mlp.up_proj"]
+        ]
 
         expect_keys = []
-        expect_keys += ["lm_head", "model.norm", "model.embed_tokens"]
-        expect_keys += [f"model.layers.{layer_idx}.{k}" for layer_idx in range(self.num_hidden_layers) for k in layer_keys]
+        expect_keys += [
+            ["lm_head"],
+            ["model.norm"],
+            ["model.embed_tokens"]
+        ]
 
-        for prefix in expect_keys:
-            if not any(key.startswith(prefix) for key in self.tensor_file_map):
+        for layer_idx in range(self.num_hidden_layers):
+            for ks in layer_keys:
+                prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
+                expect_keys.append(prefixes)
+
+        for prefixes in expect_keys:
+            for prefix in prefixes:
+                if any(key.startswith(prefix) for key in self.tensor_file_map):
+                    break
+            else:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
         # Model dimensions
