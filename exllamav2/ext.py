@@ -82,6 +82,8 @@ except ModuleNotFoundError:
     extra_cuda_cflags = ["-lineinfo", "-O3"]
     # extra_cuda_cflags += ["-maxrregcount=128"]
 
+    if torch.version.hip:
+        extra_cuda_cflags += ["-DHIPBLAS_USE_HIP_HALF"]
 
     # linker flags
 

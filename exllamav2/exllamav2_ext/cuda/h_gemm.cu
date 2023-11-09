@@ -3,8 +3,6 @@
 #include "../config.h"
 #include "matrix_view.cuh"
 
-#include "compat_gemm.cuh"
-
 // union half2_uint32
 // {
 //     uint32_t as_uint32;
