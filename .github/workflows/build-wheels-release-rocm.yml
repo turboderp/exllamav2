@@ -1,4 +1,4 @@
-name: Build ROCm 5.5 Wheels & Release
+name: Build ROCm 5.6 Wheels & Release
 
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
           
       - name: Install ROCm SDK
         run: |
-          export ROCM_VERSION=5.5
+          export ROCM_VERSION=5.6
           
           [ ! -d /etc/apt/keyrings ] && sudo mkdir --parents --mode=0755 /etc/apt/keyrings
           wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
