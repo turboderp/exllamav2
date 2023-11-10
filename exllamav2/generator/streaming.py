@@ -220,6 +220,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             b = id_to_ord[t]
 
             if 0 < b < 256:
+                if b & 0b1100000 == 0b1000000: self.expect_utf8 = 2
                 if b & 0b1110000 == 0b1100000: self.expect_utf8 = 3
                 if b & 0b1111000 == 0b1110000: self.expect_utf8 = 4
                 if b & 0b1111100 == 0b1111000: self.expect_utf8 = 5
