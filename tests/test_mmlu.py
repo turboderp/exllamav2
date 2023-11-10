@@ -14,18 +14,21 @@ import torch
 
 # Models to test
 
-model_base = "/mnt/str/models/_exl2/llama2-70b-chat-exl2/"
+#model_base = "/mnt/str/models/_exl2"
+
+model_base = "/mnt/str/models/_gptq/TheBloke_Yi-34B-GPTQ/"
 
 # variants = [v for v in os.listdir(model_base) if os.path.isdir(os.path.join(model_base, v))]
 
 variants = \
 [
-    "3.0bpw",
-    "4.0bpw",
-    "4.65bpw",
+    "",
+    # "goliath-120b-exl2/3.0bpw",
+    # "llama2-70b-exl2/3.0bpw",
+    # "llama2-70b-exl2/4.65bpw",
 ]
 
-gpu_split = (19.5, 24)
+gpu_split = (21.2, 24)
 
 qa_set = "cais/mmlu"
 qa_split = "test"
@@ -33,12 +36,12 @@ qa_split = "test"
 categories = \
 [
     "anatomy",
-    "computer_security",
-    "formal_logic",
-    "logical_fallacies",
-    "computer_security",
-    "philosophy",
-    "nutrition",
+    # "computer_security",
+    # "formal_logic",
+    # "logical_fallacies",
+    # "computer_security",
+    # "philosophy",
+    # "nutrition",
 ]
 
 examples_per_category = 3
