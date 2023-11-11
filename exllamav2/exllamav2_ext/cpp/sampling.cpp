@@ -276,7 +276,7 @@ int pre_sort_descending
     return i;
 }
 
-void sort_descending
+int sort_descending
 (
     const int num_candidates,
     float* temp_probs,
@@ -290,6 +290,8 @@ void sort_descending
 //    int m = (max_index == 0 ? num_candidates : max_index);
 //    for (int i = 0; i < m; i++) printf("%i - %f \n", temp_indices[i], temp_probs[i] * 10000.0);
 //    for (int i = 0; i < m - 1; i++) if (temp_probs[i] < temp_probs[i + 1] - 2e-8) DBGI(i);
+
+    return pre;
 }
 
 int top_k_cpu
@@ -386,22 +388,14 @@ int top_p_cpu
     return k;
 }
 
-int min_p_cpu
+int keep_threshold
 (
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float min_p
+    float threshold
 )
 {
-//    TIME_START;
-
-    float top_prob = temp_probs[0];
-    for (int i = 1; i < num_candidates; i++)
-        if (temp_probs[i] > top_prob) top_prob = temp_probs[i];
-
-    float threshold = top_prob * min_p;
-
     int i = 0;
     int j = num_candidates - 1;
 
@@ -416,10 +410,76 @@ int min_p_cpu
         }
         j--;
     }
-
-//    TIME_STOP;
-
     return i;
+}
+
+int min_p_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float min_p
+)
+{
+    //TIME_START;
+
+    float top_prob = temp_probs[0];
+    for (int i = 1; i < num_candidates; i++)
+        if (temp_probs[i] > top_prob) top_prob = temp_probs[i];
+
+    float threshold = top_prob * min_p;
+    int n = keep_threshold(num_candidates, temp_probs, temp_indices, threshold);
+
+    //TIME_STOP;
+
+    return n;
+}
+
+int tfs_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float tfs
+)
+{
+    //TIME_START;
+
+    if (num_candidates < 3) return num_candidates;  // Discrete 2nd derivative undefined
+
+    // 2nd derivative of sorted probs
+
+    int nc = sort_descending(num_candidates, temp_probs, temp_indices, num_candidates);
+
+    float* derivative = (float*) malloc(nc * sizeof(float));
+    float dsum = 0.0f;
+    for (int i = 0; i < nc - 2; i++)
+    {
+        float d = fabs(- temp_probs[i] + 2 * temp_probs[i + 1] - temp_probs[i + 2]);
+        dsum += d;
+        derivative[i] = d;
+    }
+
+    // Keep probs for cumulative sum of normalized 2nd derivative <= threshold
+
+    float dsum_i = 1.0f / dsum;
+    int k = 0;
+    float cumsum = 0.0f;
+    while (k < nc - 2)
+    {
+        cumsum += derivative[k] * dsum_i;
+        if (cumsum > tfs) break;
+        k++;
+    }
+
+    // Center distribution on the cutoff point
+
+    k++;
+
+    //TIME_STOP;
+
+    free(derivative);
+    return k;
 }
 
 int typical_cpu

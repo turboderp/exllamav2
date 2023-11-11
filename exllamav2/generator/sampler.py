@@ -15,6 +15,7 @@ class ExLlamaV2Sampler:
         top_k = 40
         top_p = 0.9
         min_p = 0
+        tfs = 0
         typical = 0
 
         token_bias = None
@@ -136,6 +137,7 @@ class ExLlamaV2Sampler:
                            settings.top_k,
                            settings.top_p,
                            settings.min_p,
+                           settings.tfs,
                            settings.typical,
                            random,
                            output_tokens,

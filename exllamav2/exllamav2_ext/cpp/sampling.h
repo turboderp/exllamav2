@@ -39,7 +39,7 @@ int greedy_sample
     const bool* logits_filter
 );
 
-void sort_descending
+int sort_descending
 (
     const int num_candidates,
     float* temp_probs,
@@ -69,6 +69,14 @@ int min_p_cpu
     float* temp_probs,
     int* temp_indices,
     float min_p
+);
+
+int tfs_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float tfs
 );
 
 int typical_cpu
