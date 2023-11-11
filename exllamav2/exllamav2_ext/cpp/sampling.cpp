@@ -386,6 +386,42 @@ int top_p_cpu
     return k;
 }
 
+int min_p_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float min_p
+)
+{
+//    TIME_START;
+
+    float top_prob = temp_probs[0];
+    for (int i = 1; i < num_candidates; i++)
+        if (temp_probs[i] > top_prob) top_prob = temp_probs[i];
+
+    float threshold = top_prob * min_p;
+
+    int i = 0;
+    int j = num_candidates - 1;
+
+    while (j >= i)
+    {
+        while (temp_probs[i] >= threshold && j >= i) i++;
+        if (temp_probs[j] >= threshold)
+        {
+            swap<float>(temp_probs[i], temp_probs[j]);
+            swap<int>(temp_indices[i], temp_indices[j]);
+            i++;
+        }
+        j--;
+    }
+
+//    TIME_STOP;
+
+    return i;
+}
+
 int typical_cpu
 (
     const int num_candidates,

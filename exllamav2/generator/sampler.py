@@ -7,14 +7,15 @@ class ExLlamaV2Sampler:
 
     class Settings:
 
-        temperature = 0.9
-        top_k = 40
-        top_p = 0.9
-        typical = 0
-
         token_repetition_penalty = 1.15
         token_repetition_range = -1
         token_repetition_decay = 0
+
+        temperature = 0.9
+        top_k = 40
+        top_p = 0.9
+        min_p = 0
+        typical = 0
 
         token_bias = None
 
@@ -134,6 +135,7 @@ class ExLlamaV2Sampler:
                            settings.temperature,
                            settings.top_k,
                            settings.top_p,
+                           settings.min_p,
                            settings.typical,
                            random,
                            output_tokens,

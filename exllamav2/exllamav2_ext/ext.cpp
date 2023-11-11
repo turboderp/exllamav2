@@ -748,6 +748,7 @@ void sample_basic
     float temperature,
     int top_k,
     float top_p,
+    float min_p,
     float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
@@ -807,6 +808,12 @@ void sample_basic
         if (top_p > 0.0f && top_p < 1.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (min_p > 0.0f && min_p < 1.0f)
+        {
+            num_candidates = min_p_cpu(num_candidates, temp_probs, temp_indices, min_p);
             normalize_cpu(num_candidates, temp_probs);
         }
 
