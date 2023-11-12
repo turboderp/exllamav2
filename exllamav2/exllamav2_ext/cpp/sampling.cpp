@@ -506,9 +506,7 @@ int mirostat_pre_cpu
     float target_prob = powf(2, -mu);
     int k = 1;
     for (; k < nc; k++)
-    {
-        if (-log2(temp_probs[k]) > mu) break;
-    }
+        if (temp_probs[k] < target_prob) break;
 
     //TIME_STOP;
 
