@@ -87,6 +87,26 @@ int typical_cpu
     float typical
 );
 
+int mirostat_pre_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
+);
+
+float mirostat_post_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
+);
+
 int multinomial_cpu
 (
     const int num_candidates,

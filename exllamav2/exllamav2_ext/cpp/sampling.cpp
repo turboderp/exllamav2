@@ -482,6 +482,62 @@ int tfs_cpu
     return k;
 }
 
+int mirostat_pre_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
+)
+{
+    //TIME_START;
+
+    // If mu not yet initialized, initialize here
+
+    float mu = mirostat_mu;
+    if (mu == 0.0f) mu = mirostat_tau * 2.0f;
+
+    // Discard tokens with surprise greater than mu
+
+    int nc = sort_descending(num_candidates, temp_probs, temp_indices, num_candidates);
+
+    float target_prob = powf(2, -mu);
+    int k = 1;
+    for (; k < nc; k++)
+    {
+        if (-log2(temp_probs[k]) > mu) break;
+    }
+
+    //TIME_STOP;
+
+    return k;
+}
+
+float mirostat_post_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
+)
+{
+    // If mu not yet initializer, initialize here
+
+    float mu = mirostat_mu;
+    if (mu == 0.0f) mu = mirostat_tau * 2.0f;
+
+    // Adjust mu based on probability of final choice
+
+    float observed_surprise = -log2(temp_probs[0]);
+    mu += mirostat_eta * (mirostat_tau - observed_surprise);
+
+    return mu;
+}
+
 int typical_cpu
 (
     const int num_candidates,

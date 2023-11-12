@@ -18,6 +18,11 @@ class ExLlamaV2Sampler:
         tfs = 0
         typical = 0
 
+        mirostat = False
+        mirostat_tau = 1.5
+        mirostat_eta = 0.1
+        mirostat_mu = None  # (re)initialized from mirostat_tau on first sample
+
         token_bias = None
 
         filters = []
@@ -26,14 +31,26 @@ class ExLlamaV2Sampler:
         def clone(self):
 
             c = ExLlamaV2Sampler.Settings()
-            c.temperature = self.temperature
-            c.top_k = self.top_k
-            c.top_p = self.top_p
+
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
+
+            c.temperature = self.temperature
+            c.top_k = self.top_k
+            c.top_p = self.top_p
+            c.min_p = self.min_p
+            c.tfs = self.tfs
+            c.typical = self.typical
+
+            c.mirostat = self.mirostat
+            c.mirostat_tau = self.mirostat_tau
+            c.mirostat_eta = self.mirostat_eta
+            c.mirostat_mu = None if self.mirostat_mu is None else self.mirostat_mu.copy()
+
             c.token_bias = self.token_bias
             c.filters = [f.clone() for f in self.filters]
+
             return c
 
 
@@ -126,23 +143,36 @@ class ExLlamaV2Sampler:
         #     if logit_filter[0, i].item():
         #         print(i)
 
+        # Begin Mirostat
+
+        if settings.mirostat:
+            if settings.mirostat_mu is None:
+                settings.mirostat_mu = [0.0] * batch_size
+
         # Sampling
 
         batch_size = logits.shape[0]
 
         output_tokens = torch.empty((batch_size, 1), device = "cpu", dtype = torch.long)
         output_probs = torch.empty((batch_size, 1), device = "cpu", dtype = torch.float)
-        ext_c.sample_basic(logits,
-                           settings.temperature,
-                           settings.top_k,
-                           settings.top_p,
-                           settings.min_p,
-                           settings.tfs,
-                           settings.typical,
-                           random,
-                           output_tokens,
-                           output_probs,
-                           logit_filter)
+
+        m = ext_c.sample_basic(logits,
+                               settings.temperature,
+                               settings.top_k,
+                               settings.top_p,
+                               settings.min_p,
+                               settings.tfs,
+                               settings.typical,
+                               random,
+                               output_tokens,
+                               output_probs,
+                               logit_filter,
+                               settings.mirostat,
+                               settings.mirostat_mu if settings.mirostat else [],
+                               settings.mirostat_tau,
+                               settings.mirostat_eta)
+
+        if settings.mirostat: settings.mirostat_mu = m
 
         # Stop condition from filters
 
@@ -150,12 +180,3 @@ class ExLlamaV2Sampler:
         if len(settings.filters) > 0 and output_tokens[0].item() in end_tokens: end_filter = True
 
         return output_tokens, output_probs, end_filter
-
-
-
-
-
-
-
-
-
