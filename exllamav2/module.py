@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from exllamav2.config import ExLlamaV2Config
-from safetensors import safe_open
+import json
+import numpy as np
 
 
 def _torch_device(idx):
@@ -62,12 +63,24 @@ class ExLlamaV2Module:
             submap_i[v].append(k)
 
         for v, ks in submap_i.items():
-            with safe_open(v, framework="pt", device="cpu") as st:
+            with open(v, 'rb') as fp:
+                header_size = np.fromfile(fp, dtype=np.int64, count=1).item()
+                header_json = fp.read(header_size)
+                byte_buffer_start = fp.tell()
+                header = json.loads(header_json.decode('utf-8'))
                 for k in ks:
+                    meta = header[self.key + "." + k]
+                    data_start, data_end = meta['data_offsets']
                     if measure:
-                        size += _tsize(st, self.key + "." + k)
+                        size += data_end - data_start
                     else:
-                        tensors[k] = st.get_tensor(self.key + "." + k).to(self.device())
+                        fp.seek(data_start+byte_buffer_start)
+                        shape = meta['shape']
+                        tensor_size = np.prod(shape)
+                        dtype = {'I16': torch.int16, 'I32': torch.int32, 'F16': torch.float16, 'F32': torch.float32, 'F64': torch.float64, 'BF16': torch.bfloat16}[meta['dtype']]
+                        buf = bytearray(fp.read(data_end-data_start))
+                        t = torch.frombuffer(buf, dtype=dtype, count=tensor_size).reshape(shape)
+                        tensors[k] = t.to(self.device())
 
         return size if measure else tensors
 
