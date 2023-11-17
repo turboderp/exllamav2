@@ -18,8 +18,6 @@
 #include "q_gemm_kernel.cuh"
 #include "q_gemm_kernel_gptq.cuh"
 
-#include "compat_gemm.cuh"
-
 void gemm_half_q_half_cuda_part
 (
     const half* a,

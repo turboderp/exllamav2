@@ -191,7 +191,7 @@ class ExLlamaV2Tokenizer:
         if not decode_special_tokens:
 
             max_token = self.tokenizer.vocab_size()
-            seq = [t for t in seq if (t != self.pad_token_id and t < max_token)]
+            seq = [t for t in seq if (t != self.pad_token_id and t < max_token and t!= self.eos_token_id)]
             if self.eos_token_id in seq: seq = seq[:seq.index(self.eos_token_id)]
             return self.tokenizer.Decode(seq)
 

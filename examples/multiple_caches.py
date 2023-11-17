@@ -34,9 +34,12 @@ tokenizer = ExLlamaV2Tokenizer(config)
 
 # Create some sampling settings
 
-settings = ExLlamaV2Sampler.Settings()
-settings.temperature = 0.8
-settings.top_p = 0.75
+settings_proto = ExLlamaV2Sampler.Settings()
+settings_proto.temperature = 0.8
+settings_proto.top_p = 0.75
+# settings_proto.mirostat = True
+# settings_proto.mirostat_tau = 5
+# settings_proto.top_k = 1000
 
 # Define some prompts to inference in parallel
 
@@ -50,10 +53,11 @@ prompts = ["Once you eliminate all the",
 
 max_parallel_seqs = 3
 
-# Active sequences and corresponding caches
+# Active sequences and corresponding caches and settings
 
 input_ids = []
 caches = []
+settings = []
 
 # Stats
 
@@ -80,6 +84,7 @@ while len(prompts) or len(input_ids):
         model.forward(ids[:, :-1], cache, preprocess_only = True)
         input_ids.append(ids)
         caches.append(cache)
+        settings.append(settings_proto.clone())  # Need individual settings per prompt to support Mirostat
 
         total_prompt_tokens += ids.shape[-1] -1
         prompt_time += time.time() - time_begin
@@ -97,7 +102,7 @@ while len(prompts) or len(input_ids):
     r = random.random()
     for i in range(len(input_ids)):
 
-        token, _, _ = ExLlamaV2Sampler.sample(logits[i:i+1, :, :], settings, input_ids[i], r, tokenizer)
+        token, _, _ = ExLlamaV2Sampler.sample(logits[i:i+1, :, :], settings[i], input_ids[i], r, tokenizer)
         input_ids[i] = torch.cat([input_ids[i], token], dim = 1)
         total_gen_tokens += 1
 
@@ -116,6 +121,7 @@ while len(prompts) or len(input_ids):
 
         input_ids.pop(i)
         caches.pop(i)
+        settings.pop(i)
 
 # Stats
 

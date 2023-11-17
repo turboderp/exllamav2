@@ -119,3 +119,10 @@ print()
 
 test_gen(speculative_generator, gen_prompt, gen_settings, gen_max_tokens)
 
+efficiency, accuracy, total_tokens, total_draft_tokens, accepted_draft_tokens = speculative_generator.get_sd_stats()
+
+print("efficiency:", efficiency)
+print("accuracy:", accuracy)
+print("total_tokens:", total_tokens)
+print("total_draft_tokens:", total_draft_tokens)
+print("accepted_draft_tokens:", accepted_draft_tokens)

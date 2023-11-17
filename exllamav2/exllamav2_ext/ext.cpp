@@ -742,17 +742,23 @@ void apply_rep_penalty
     }
 }
 
-void sample_basic
+std::vector<float> sample_basic
 (
     torch::Tensor logits,           // shape [bsz, vocab_size]
     float temperature,
     int top_k,
     float top_p,
+    float min_p,
+    float tfs,
     float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
     torch::Tensor output_probs,     // shape [bsz, 1]
-    torch::Tensor logit_filter      // shape [bsz, vocab_size]
+    torch::Tensor logit_filter,     // shape [bsz, vocab_size]
+    bool mirostat,
+    std::vector<float>& mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -810,19 +816,44 @@ void sample_basic
             normalize_cpu(num_candidates, temp_probs);
         }
 
+        if (min_p > 0.0f && min_p < 1.0f)
+        {
+            num_candidates = min_p_cpu(num_candidates, temp_probs, temp_indices, min_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (tfs > 0.0f && tfs < 1.0f)
+        {
+            num_candidates = tfs_cpu(num_candidates, temp_probs, temp_indices, tfs);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
         if (typical > 0.0f && typical < 1.0f)
         {
             num_candidates = typical_cpu(num_candidates, temp_probs, temp_indices, typical);
             normalize_cpu(num_candidates, temp_probs);
         }
 
+        if (mirostat)
+        {
+            num_candidates = mirostat_pre_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
         num_candidates = multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
         output_tokens[i] = temp_indices[0];
         output_probs[i] = temp_probs[0];
+
+        if (mirostat)
+        {
+            mirostat_mu[i] = mirostat_post_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
+        }
     }
 
     free(temp_probs);
     free(temp_indices);
+
+    return mirostat_mu;
 }
 
 

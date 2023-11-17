@@ -1,5 +1,6 @@
 from setuptools import setup, Extension
 from torch.utils import cpp_extension
+from torch import version as torch_version
 import os
 
 extension_name = "exllamav2_ext"
@@ -15,9 +16,14 @@ extra_cflags = ["/Ox"] if windows else ["-O3"]
 if ext_debug:
     extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
 
+extra_cuda_cflags = ["-lineinfo", "-O3"]
+
+if torch_version.hip:
+    extra_cuda_cflags += ["-DHIPBLAS_USE_HIP_HALF"]
+
 extra_compile_args = {
     "cxx": extra_cflags,
-    "nvcc": ["-lineinfo", "-O3"],
+    "nvcc": extra_cuda_cflags,
 }
 
 setup_kwargs = {

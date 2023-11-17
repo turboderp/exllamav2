@@ -15,9 +15,11 @@ from exllamav2.generator import (
 
 async def dispatch(request, ws, server):
 
-    request_id = request["request_id"]
     action_ = request["action"]
-    response = { "action": action_, "request_id": request_id }
+
+    response = { "action": action_ }
+    if "request_id" in request: response["request_id"] = request["request_id"]
+    if "response_id" in request: response["response_id"] = request["response_id"]
 
     if action_ == "echo": echo(request, ws, server, response)
     elif action_ == "estimate_token": estimate_token(request, ws, server, response)
@@ -35,10 +37,12 @@ def echo(request, ws, server, response):
 
     """
     request:  { action: str = "echo",
-                request_id: str }
+                request_id: str,                    # (optional) request ID to echo in response packet
+                response_id: str }                  # (optional) response ID to echo in response packet
 
     response: { action: str = "echo",
-                request_id: str }
+                request_id: str,                    # (optional)
+                response_id: str }                  # (optional)
     """
 
     pass
@@ -48,11 +52,13 @@ def estimate_token(request, we, server, response):
 
     """
     request:  { action: str = "estimate_token",
-                request_id: str,
+                request_id: str,                    # (optional) request ID to echo in response packet
+                response_id: str,                   # (optional) response ID to echo in response packet
                 text: str }                         # text to measure
 
     response: { action: str = "estimate_token",
-                request_id: str,
+                request_id: str,                    # (optional)
+                response_id: str,                   # (optional)
                 num_tokens: int }                   # length of input text, in tokens
     """
 
@@ -65,12 +71,14 @@ def lefttrim_token(request, ws, server, response):
 
     """
     request:  { action: str = "lefttrim_token",
-                request_id: str,
+                request_id: str,                    # (optional) request ID to echo in response packet
+                response_id: str,                   # (optional) response ID to echo in response packet
                 text: str,                          # text to trim
                 trimmed_length: int }               # num tokens to keep, from right
 
     response: { action: str = "lefttrim_token",
-                request_id: str,
+                request_id: str,                    # (optional)
+                response_id: str,                   # (optional)
                 trimmed_text: str }                 # input, trimmed
     """
 
@@ -88,10 +96,12 @@ async def infer(request, ws, server, response):
 
     """
     request:  { action: str = "infer",
-                request_id: str,
+                request_id: str,                    # (optional) request ID to echo in response packet
+                response_id: str,                   # (optional) response ID to echo in response packet
                 text: str,                          # input prompt
                 max_new_tokens: int,                # max num new tokens
                 stream: bool,                       # stream response
+                stream_full: bool,                  # return full response-so-far with each streamed chunk
                 top_p: float,                       # (optional) top-P threshold (0 to disable)
                 top_k: int,                         # (optional) top-K count (0 to disable)
                 typical: float,                     # (optional) typical threshold (0 to disable)
@@ -102,13 +112,15 @@ async def infer(request, ws, server, response):
                 tag: str }                          # (optional) tag to echo in response packet
 
     streams:  { action: str = "infer",
-                request_id: str,
+                request_id: str,                    # (optional)
+                response_id: str,                   # (optional)
                 response_type: str = "chunk",
                 chunk: str,                         # next chunk of response
                 tag: str }                          # (optional)
 
     response: { action: str = "infer",
-                request_id: str,
+                request_id: str,                    # (optional)
+                response_id: str,                   # (optional)
                 response_type: str = "full",
                 util_text: str,                     # input context (pruned if max_seq_len exceeded)
                 response: str,                      # full response excluding input prompt
@@ -128,6 +140,10 @@ async def infer(request, ws, server, response):
         ss = request["stop_conditions"]
         if not isinstance(ss, list): ss = [ss]
         sc += ss
+
+    # Full response
+
+    full_response = request.get("full_response", False)
 
     # Tokenize and trim prompt
 
@@ -167,6 +183,7 @@ async def infer(request, ws, server, response):
         if stream and chunk != "":
             response["response_type"] = "chunk"
             response["chunk"] = chunk
+            if full_response: response["response"] = completion
             await ws.send(json.dumps(response))
 
         if eos or gen_tokens >= num_tokens: break

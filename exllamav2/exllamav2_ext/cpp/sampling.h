@@ -39,7 +39,7 @@ int greedy_sample
     const bool* logits_filter
 );
 
-void sort_descending
+int sort_descending
 (
     const int num_candidates,
     float* temp_probs,
@@ -63,12 +63,48 @@ int top_p_cpu
     float top_p
 );
 
+int min_p_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float min_p
+);
+
+int tfs_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float tfs
+);
+
 int typical_cpu
 (
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
     float typical
+);
+
+int mirostat_pre_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
+);
+
+float mirostat_post_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
 );
 
 int multinomial_cpu
