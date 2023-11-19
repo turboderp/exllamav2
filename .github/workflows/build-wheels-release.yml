@@ -1,0 +1,213 @@
+name: Build Wheels & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      pypi:
+        description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
+        default: '1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build_wheels:
+    name: ${{ matrix.os }} Python ${{ matrix.pyver }} CUDA ${{ matrix.cuda }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, windows-latest]
+        pyver: ["3.8", "3.9", "3.10", "3.11"]
+        cuda: ["11.7.0", "11.8.0", "12.1.1"]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CUDAVER: ${{ matrix.cuda }}
+      PYVER: ${{ matrix.pyver }}
+
+    steps:
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.2.0
+        if: runner.os == 'Linux'
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+          
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.pyver }}
+        
+      - name: Setup Mamba
+        uses: conda-incubator/setup-miniconda@v2.2.0
+        with:
+          activate-environment: "build"
+          python-version: ${{ matrix.pyver }}
+          miniforge-variant: Mambaforge
+          miniforge-version: latest
+          use-mamba: true
+          add-pip-as-python-dependency: true
+          auto-activate-base: false
+          
+      - name: Install Dependencies
+        run: |
+          $cudaVersion = $env:CUDAVER
+          $cudaVersionPytorch = $env:CUDAVER.Remove($env:CUDAVER.LastIndexOf('.')).Replace('.','')
+          
+          $cudaChannels = ''
+          $cudaNum = [int]$cudaVersion.substring($cudaVersion.LastIndexOf('.')+1)
+          while ($cudaNum -ge 0) { $cudaChannels += '-c nvidia/label/cuda-' + $cudaVersion.Remove($cudaVersion.LastIndexOf('.')+1) + $cudaNum + ' '; $cudaNum-- }
+          mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()
+          
+          if (!(mamba list cuda)[-1].contains('cuda')) {sleep -s 10; mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()}
+          if (!(mamba list cuda)[-1].contains('cuda')) {throw 'CUDA Toolkit failed to install!'}
+          
+          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
+          python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
+          
+          python -m pip install build wheel safetensors sentencepiece ninja
+        
+      - name: Build Wheel
+        id: build-wheel
+        run: |
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
+          {
+              Write-Output $('::notice file=build-wheels-release.yml,line=83,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=86::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
+          $env:CUDA_PATH = $env:CONDA_PREFIX
+          $env:CUDA_HOME = $env:CONDA_PREFIX
+          if ($IsLinux) {$env:LD_LIBRARY_PATH = $env:CONDA_PREFIX + '/lib:' + $env:LD_LIBRARY_PATH}
+          
+          $cudaVersion = $env:CUDAVER
+          $cudaVersionPytorch = $env:CUDAVER.Remove($env:CUDAVER.LastIndexOf('.')).Replace('.','')
+          $BUILDTAG = "+cu$cudaVersionPytorch"
+          
+          $env:TORCH_CUDA_ARCH_LIST = if ([version]$env:CUDAVER -lt [version]'11.8') {'6.0 6.1 7.0 7.5 8.0 8.6+PTX'} else {'6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX'}
+          python -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+        
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'wheels'
+          path: ./dist/*
+          
+      - name: Upload files to a GitHub release
+        if: steps.build-wheel.outputs.PACKAGE_VERSION != 'None'
+        uses: svenstaro/upload-release-action@2.6.1
+        with:
+          file: ./dist/*.whl
+          tag: ${{ format('v{0}', steps.build-wheel.outputs.PACKAGE_VERSION) }}
+          file_glob: true
+          overwrite: true
+          release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+          
+  build_rocm:
+    name: Build ROCm Wheels & Release
+    needs: build_wheels
+    uses: ./.github/workflows/build-wheels-release-rocm.yml
+    with:
+      pypi: '0'
+      
+  # publish-wheels-to-pypi:
+  #   name: Publish Python distribution to PyPI
+  #   if: inputs.pypi == '1'
+  #   needs: ['build_wheels','build_rocm']
+  #   runs-on: ubuntu-latest
+  #   
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/exllamav2
+  #   permissions:
+  #     id-token: write  # IMPORTANT: mandatory for trusted publishing
+  #     
+  #   steps:
+  #     - name: Download all the wheels
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: wheels
+  #         path: dist/
+  #     - name: Publish distribution to PyPI
+  #       uses: pypa/gh-action-pypi-publish@v1.8.10
+        
+  build_sdist:
+    name: Build sdist
+    needs: ['build_wheels','build_rocm'] # publish-wheels-to-pypi
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+        with:
+          python-version: "3.11"
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install build wheel ninja
+        
+      - name: Build Wheel
+        id: build-wheel-sdist
+        run: |
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
+          {
+              Write-Output $('::notice file=build-wheels-release.yml,line=166,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=169::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
+          $env:EXLLAMA_NOCOMPILE=1
+          python -m build -n
+        
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'sdist'
+          path: ./dist/* # Use ./dist/*.whl to only upload the JIT compile wheel
+          
+      - name: Upload files to a GitHub release
+        if: steps.build-wheel-sdist.outputs.PACKAGE_VERSION != 'None'
+        uses: svenstaro/upload-release-action@2.6.1
+        with:
+          file: ./dist/*.whl
+          tag: ${{ format('v{0}', steps.build-wheel-sdist.outputs.PACKAGE_VERSION) }}
+          file_glob: true
+          overwrite: true
+          release_name: ${{ steps.build-wheel-sdist.outputs.PACKAGE_VERSION }}
+      
+  publish-sdist-to-pypi:
+    name: Publish Python distribution to PyPI
+    if: inputs.pypi == '1'
+    needs: build_sdist
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: pypi
+      url: https://pypi.org/p/exllamav2
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      
+    steps:
+      - name: Download the sdist
+        uses: actions/download-artifact@v3
+        with:
+          name: sdist
+          path: dist/
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.8.10

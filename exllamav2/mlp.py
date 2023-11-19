@@ -4,6 +4,7 @@ from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2 import ext
 
 class ExLlamaV2MLP(ExLlamaV2Module):
 
@@ -17,6 +18,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     submodules: list
 
     q_handle: int or None = None
+
+    temp_lora_size: int = 0
 
     def __init__(self, model, key, layer_idx):
         super().__init__(model, key)
@@ -61,6 +64,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
 
     def unload(self):
+        if self.q_handle is not None:
+            ext_c.free_q_mlp(self.q_handle)
+            self.q_handle = None
 
         self.post_attention_layernorm.unload()
         self.gate_proj.unload()
@@ -123,25 +129,36 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.up_proj.set_device_idx(idx)
         self.down_proj.set_device_idx(idx)
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_mask, intermediates)
+            return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
-        ext_c.q_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]))
+        if loras is None or self.temp_lora_size == 0:
+            pass_loras = []
+            pass_lora_temp = ext.none_tensor
+        else:
+            pass_loras = [id(x) for x in loras]
+            pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
+
+        ext_c.q_mlp_forward_(self.q_handle,
+                             hidden_states.view(-1, hidden_states.shape[-1]),
+                             pass_loras,
+                             pass_lora_temp)
+
         return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, intermediates = False):
+    def forward_torch(self, hidden_states, cache = None, attn_mask = None, intermediates = False, loras = None):
 
         residual = hidden_states
         post_norm = self.post_attention_layernorm.forward(hidden_states)
 
-        gate = self.gate_proj.forward(post_norm)
+        gate = self.gate_proj.forward(post_norm, loras = loras)
         y = F.silu(gate)
-        up = self.up_proj.forward(post_norm)
+        up = self.up_proj.forward(post_norm, loras = loras)
         y *= up
-        down = self.down_proj.forward(y)
+        down = self.down_proj.forward(y, loras = loras)
 
         hidden_states = down + residual
 
@@ -156,28 +173,29 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             return hidden_states
 
 
-class ExLlamaV2QMLP(ExLlamaV2Module):
+    def update_loras(self):
 
-    layer_idx: int
+        if self.q_handle is None: return
 
-    q_post_attention_layernorm: int or None = None
-    q_gate_proj: int or None = None
-    q_up_proj: int or None = None
-    q_down_proj: int or None = None
+        gate_proj_lora_a = { id(k): v for k, v in self.gate_proj.lora_a_tensors.items() }
+        gate_proj_lora_b = { id(k): v for k, v in self.gate_proj.lora_b_tensors.items() }
+        up_proj_lora_a = { id(k): v for k, v in self.up_proj.lora_a_tensors.items() }
+        up_proj_lora_b = { id(k): v for k, v in self.up_proj.lora_b_tensors.items() }
+        down_proj_lora_a = { id(k): v for k, v in self.down_proj.lora_a_tensors.items() }
+        down_proj_lora_b = { id(k): v for k, v in self.down_proj.lora_b_tensors.items() }
 
-    q_tensors: dict or None = None
+        temp_lora_size = ext_c.q_mlp_set_loras(self.q_handle,
+                                               gate_proj_lora_a,
+                                               gate_proj_lora_b,
+                                               up_proj_lora_a,
+                                               up_proj_lora_b,
+                                               down_proj_lora_a,
+                                               down_proj_lora_b)
 
-    def __init__(self, original):
-        super().__init__(original.model, original.key)
+        self.temp_lora_size = temp_lora_size * self.model.config.max_batch_size * self.model.config.max_input_len
 
-        q_post_attention_layernorm = original.post_attention_layernorm.q_handle
-        q_gate_proj = original.gate_proj.q_handle
-        q_up_proj = original.up_proj.q_handle
-        q_down_proj = original.down_proj.q_handle
 
-        q_tensors = {}
-        q_tensors += original.post_attention_layernorm.q_tensors
-        q_tensors += original.gate_proj.q_tensors
-        q_tensors += original.up_proj.q_tensors
-        q_tensors += original.down_proj.q_tensors
+    def is_quant(self):
+        return self.q_handle is not None
+
 

@@ -10,121 +10,129 @@ ext_debug = False
 
 windows = (os.name == "nt")
 
-# Kludge to get compilation working on Windows
+try:
+    import exllamav2_ext
+except ModuleNotFoundError:
+    # Kludge to get compilation working on Windows
 
-if windows:
+    if windows:
 
-    def find_msvc():
+        def find_msvc():
 
-        # Possible locations for MSVC, in order of preference
+            # Possible locations for MSVC, in order of preference
 
-        program_files_x64 = os.environ["ProgramW6432"]
-        program_files_x86 = os.environ["ProgramFiles(x86)"]
+            program_files_x64 = os.environ["ProgramW6432"]
+            program_files_x86 = os.environ["ProgramFiles(x86)"]
 
-        msvc_dirs = \
-        [
-            a + "\\Microsoft Visual Studio\\" + b + "\\" + c + "\\VC\Tools\\MSVC\\"
-            for b in ["2022", "2019", "2017"]
-            for a in [program_files_x64, program_files_x86]
-            for c in ["BuildTools", "Community", "Professional", "Enterprise", "Preview"]
-        ]
+            msvc_dirs = \
+            [
+                a + "\\Microsoft Visual Studio\\" + b + "\\" + c + "\\VC\Tools\\MSVC\\"
+                for b in ["2022", "2019", "2017"]
+                for a in [program_files_x64, program_files_x86]
+                for c in ["BuildTools", "Community", "Professional", "Enterprise", "Preview"]
+            ]
 
-        for msvc_dir in msvc_dirs:
-            if not os.path.exists(msvc_dir): continue
+            for msvc_dir in msvc_dirs:
+                if not os.path.exists(msvc_dir): continue
 
-            # Prefer the latest version
+                # Prefer the latest version
 
-            versions = sorted(os.listdir(msvc_dir), reverse = True)
-            for version in versions:
+                versions = sorted(os.listdir(msvc_dir), reverse = True)
+                for version in versions:
 
-                compiler_dir = msvc_dir + version + "\\bin\\Hostx64\\x64"
-                if os.path.exists(compiler_dir) and os.path.exists(compiler_dir + "\\cl.exe"):
-                    return compiler_dir
+                    compiler_dir = msvc_dir + version + "\\bin\\Hostx64\\x64"
+                    if os.path.exists(compiler_dir) and os.path.exists(compiler_dir + "\\cl.exe"):
+                        return compiler_dir
 
-        # No path found
+            # No path found
 
-        return None
+            return None
 
-    import subprocess
+        import subprocess
 
-    # Check if cl.exe is already in the path
+        # Check if cl.exe is already in the path
 
-    try:
+        try:
 
-        subprocess.check_output(["where", "/Q", "cl"])
+            subprocess.check_output(["where", "/Q", "cl"])
 
-    # If not, try to find an installation of Visual Studio and append the compiler dir to the path
+        # If not, try to find an installation of Visual Studio and append the compiler dir to the path
 
-    except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError as e:
 
-        cl_path = find_msvc()
-        if cl_path:
-            if verbose:
-                print(" -- Injected compiler path:", cl_path)
-            os.environ["path"] += ";" + cl_path
-        else:
-            print(" !! Unable to find cl.exe; compilation will probably fail", file = sys.stderr)
-
-
-# gcc / cl.exe flags
-
-extra_cflags = ["/Ox"] if windows else ["-O3"]
-
-if ext_debug:
-    extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
+            cl_path = find_msvc()
+            if cl_path:
+                if verbose:
+                    print(" -- Injected compiler path:", cl_path)
+                os.environ["path"] += ";" + cl_path
+            else:
+                print(" !! Unable to find cl.exe; compilation will probably fail", file = sys.stderr)
 
 
-# nvcc flags
+    # gcc / cl.exe flags
 
-extra_cuda_cflags = ["-lineinfo", "-O3"]
-# extra_cuda_cflags += ["-maxrregcount=128"]
+    extra_cflags = ["/Ox"] if windows else ["-O3"]
 
-
-# linker flags
-
-extra_ldflags = []
-
-if windows:
-    extra_ldflags += ["cublas.lib"]
-    if sys.base_prefix != sys.prefix:
-        extra_ldflags += [f"/LIBPATH:{os.path.join(sys.base_prefix, 'libs')}"]
+    if ext_debug:
+        extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
 
 
-# sources
+    # nvcc flags
 
-library_dir = os.path.dirname(os.path.abspath(__file__))
-sources_dir = os.path.join(library_dir, extension_name)
+    extra_cuda_cflags = ["-lineinfo", "-O3"]
+    # extra_cuda_cflags += ["-maxrregcount=128"]
 
-sources_ = \
-[
-    "ext.cpp",
-    "cuda/pack_tensor.cu",
-    "cuda/quantize.cu",
-    "cuda/q_matrix.cu",
-    "cuda/q_attn.cu",
-    "cuda/q_mlp.cu",
-    "cuda/q_gemm.cu",
-    "cuda/rms_norm.cu",
-    "cuda/rope.cu",
-    "cpp/quantize_func.cpp",
-    "cpp/sampling.cpp"
-]
+    if torch.version.hip:
+        extra_cuda_cflags += ["-DHIPBLAS_USE_HIP_HALF"]
 
-sources = [os.path.join(sources_dir, s) for s in sources_]
+    # linker flags
+
+    extra_ldflags = []
+
+    if windows:
+        extra_ldflags += ["cublas.lib"]
+        if sys.base_prefix != sys.prefix:
+            extra_ldflags += [f"/LIBPATH:{os.path.join(sys.base_prefix, 'libs')}"]
 
 
-# Load extension
+    # sources
 
-exllamav2_ext = load \
-(
-    name = extension_name,
-    sources = sources,
-    extra_include_paths = [sources_dir],
-    verbose = verbose,
-    extra_ldflags = extra_ldflags,
-    extra_cuda_cflags = extra_cuda_cflags,
-    extra_cflags = extra_cflags
-)
+    library_dir = os.path.dirname(os.path.abspath(__file__))
+    sources_dir = os.path.join(library_dir, extension_name)
+
+    sources_ = \
+    [
+        "ext.cpp",
+        "cuda/h_gemm.cu",
+        "cuda/lora.cu",
+        "cuda/pack_tensor.cu",
+        "cuda/quantize.cu",
+        "cuda/q_matrix.cu",
+        "cuda/q_attn.cu",
+        "cuda/q_mlp.cu",
+        "cuda/q_gemm.cu",
+        "cuda/rms_norm.cu",
+        "cuda/rope.cu",
+        "cuda/cache.cu",
+        "cpp/quantize_func.cpp",
+        "cpp/sampling.cpp"
+    ]
+
+    sources = [os.path.join(sources_dir, s) for s in sources_]
+
+
+    # Load extension
+
+    exllamav2_ext = load \
+    (
+        name = extension_name,
+        sources = sources,
+        extra_include_paths = [sources_dir],
+        verbose = verbose,
+        extra_ldflags = extra_ldflags,
+        extra_cuda_cflags = extra_cuda_cflags,
+        extra_cflags = extra_cflags
+    )
 
 ext_c = exllamav2_ext
 

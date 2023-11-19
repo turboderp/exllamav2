@@ -3,7 +3,7 @@
 #include "rms_norm.cuh"
 #include "rope.cuh"
 #include "util.cuh"
-
+#include "lora.cuh"
 
 const int THREADS_X = 32;
 const int THREADS_Y = 1;
@@ -107,6 +107,10 @@ QAttn::QAttn
 {
 }
 
+QAttn::~QAttn()
+{
+}
+
 void QAttn::forward_cuda_1
 (
     cublasHandle_t cublas_handle,
@@ -119,7 +123,9 @@ void QAttn::forward_cuda_1
     half* temp_k,
     half* temp_v,
     const half* sin,
-    const half* cos
+    const half* cos,
+    const std::vector<uintptr_t>& loras,
+    half* lora_temp
 )
 {
     rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
@@ -127,6 +133,10 @@ void QAttn::forward_cuda_1
     gemm_half_q_half_cuda(cublas_handle, temp_state, q_proj, temp_q, q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, temp_state, k_proj, temp_k, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, temp_state, v_proj, temp_v, q_len * batch_size, v_proj->width, hidden_size, true, temp_dq);
+
+    apply_loras_cuda(cublas_handle, q_proj_lora, loras, q_proj, temp_state, temp_q, lora_temp, q_len * batch_size);
+    apply_loras_cuda(cublas_handle, k_proj_lora, loras, k_proj, temp_state, temp_k, lora_temp, q_len * batch_size);
+    apply_loras_cuda(cublas_handle, v_proj_lora, loras, v_proj, temp_state, temp_v, lora_temp, q_len * batch_size);
 
     rope_cuda(temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
     rope_cuda(temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
@@ -138,10 +148,12 @@ void QAttn::forward_cuda_2
     const half* attn_output,
     half* hidden_state,
     int q_len,
-    int batch_size
+    int batch_size,
+    const std::vector<uintptr_t>& loras,
+    half* lora_temp
 )
 {
     gemm_half_q_half_cuda(cublas_handle, attn_output, o_proj, hidden_state, q_len * batch_size, o_proj->width, hidden_size, false, temp_dq);
+
+    apply_loras_cuda(cublas_handle, o_proj_lora, loras, o_proj, attn_output, hidden_state, lora_temp, q_len * batch_size);
 }
-
-

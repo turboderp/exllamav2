@@ -5,6 +5,8 @@
 #include <cuda_fp16.h>
 #include <cstdint>
 #include <cstdio>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include "config.h"
 
@@ -16,6 +18,7 @@
 #include "cuda/q_gemm.cuh"
 #include "cuda/rms_norm.cuh"
 #include "cuda/rope.cuh"
+#include "cuda/cache.cuh"
 
 #include "cpp/quantize_func.h"
 #include "cpp/sampling.h"
@@ -230,7 +233,18 @@ uintptr_t make_q_matrix
         (half*) temp_dq.data_ptr()
     );
 
+    if (m->failed) throw std::runtime_error("CUDA out of memory");
+
     return reinterpret_cast<uintptr_t> (m);
+}
+
+void free_q_matrix
+(
+    uintptr_t handle
+)
+{
+    QMatrix* m = reinterpret_cast<QMatrix*> (handle);
+    delete m;
 }
 
 void reconstruct
@@ -313,16 +327,16 @@ uintptr_t make_q_attn
     QMatrix* qm_v_proj = reinterpret_cast<QMatrix*> (q_v_proj);
     QMatrix* qm_o_proj = reinterpret_cast<QMatrix*> (q_o_proj);
 
-    TORCH_CHECK_DTYPE(layernorm, kHalf);
+    TORCH_CHECK_DTYPE_OPT(layernorm, kHalf);
 
-    TORCH_CHECK(qm_q_proj->height == layernorm.size(0), "q_proj is wrong shape")
-    TORCH_CHECK(qm_k_proj->height == layernorm.size(0), "k_proj is wrong shape")
-    TORCH_CHECK(qm_v_proj->height == layernorm.size(0), "v_proj is wrong shape")
-    TORCH_CHECK(qm_o_proj->height == layernorm.size(0), "o_proj is wrong shape")
+    if (qm_q_proj && !layernorm.is_meta()) TORCH_CHECK(qm_q_proj->height == layernorm.size(0), "q_proj is wrong shape")
+    if (qm_k_proj && !layernorm.is_meta()) TORCH_CHECK(qm_k_proj->height == layernorm.size(0), "k_proj is wrong shape")
+    if (qm_v_proj && !layernorm.is_meta()) TORCH_CHECK(qm_v_proj->height == layernorm.size(0), "v_proj is wrong shape")
+    if (!layernorm.is_meta()) TORCH_CHECK(qm_o_proj->height == layernorm.size(0), "o_proj is wrong shape")
 
     QAttn* attn = new QAttn
     (
-        (half*) layernorm.data_ptr(),
+        (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
         norm_epsilon,
         qm_q_proj,
         qm_k_proj,
@@ -344,6 +358,15 @@ uintptr_t make_q_attn
     return reinterpret_cast<uintptr_t> (attn);
 }
 
+void free_q_attn
+(
+    uintptr_t handle
+)
+{
+    QAttn* attn = reinterpret_cast<QAttn*> (handle);
+    delete attn;
+}
+
 void q_attn_forward_1
 (
     uintptr_t q_attn,
@@ -356,7 +379,9 @@ void q_attn_forward_1
     torch::Tensor k_temp,
     torch::Tensor v_temp,
     torch::Tensor sin,
-    torch::Tensor cos
+    torch::Tensor cos,
+    const std::vector<uintptr_t>& loras,
+    torch::Tensor loras_temp
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
@@ -377,7 +402,9 @@ void q_attn_forward_1
         (half*) k_temp.data_ptr(),
         (half*) v_temp.data_ptr(),
         (half*) sin.data_ptr(),
-        (half*) cos.data_ptr()
+        (half*) cos.data_ptr(),
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
 }
 
@@ -387,7 +414,9 @@ void q_attn_forward_2
     torch::Tensor x,
     torch::Tensor attn_output,
     int batch_size,
-    int q_len
+    int q_len,
+    const std::vector<uintptr_t>& loras,
+    torch::Tensor loras_temp
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
@@ -402,8 +431,71 @@ void q_attn_forward_2
         (const half*) attn_output.data_ptr(),
         (half*) x.data_ptr(),
         q_len,
-        batch_size
+        batch_size,
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
+}
+
+int q_attn_set_loras
+(
+    uintptr_t q_attn,
+    std::unordered_map<uintptr_t, torch::Tensor>& q_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& q_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& k_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& k_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& v_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& v_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& o_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& o_proj_lora_b
+)
+{
+    QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
+
+    attn->q_proj_lora.clear();
+    attn->k_proj_lora.clear();
+    attn->v_proj_lora.clear();
+    attn->o_proj_lora.clear();
+
+    int max_rank = 0;
+
+    for (const auto& pair : q_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) q_proj_lora_b[pair.first].data_ptr();
+        attn->q_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : k_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) k_proj_lora_b[pair.first].data_ptr();
+        attn->k_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : v_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) v_proj_lora_b[pair.first].data_ptr();
+        attn->v_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : o_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) o_proj_lora_b[pair.first].data_ptr();
+        attn->o_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    return max_rank;
 }
 
 // Quant MLP
@@ -447,10 +539,21 @@ uintptr_t make_q_mlp
     return reinterpret_cast<uintptr_t> (mlp);
 }
 
+void free_q_mlp
+(
+   uintptr_t handle
+)
+{
+    QMLP* mlp = reinterpret_cast<QMLP*> (handle);
+    delete mlp;
+}
+
 void q_mlp_forward_
 (
     uintptr_t q_mlp,
-    torch::Tensor x
+    torch::Tensor x,
+    const std::vector<uintptr_t>& loras,
+    torch::Tensor loras_temp
 )
 {
     QMLP* mlp = reinterpret_cast<QMLP*> (q_mlp);
@@ -466,8 +569,59 @@ void q_mlp_forward_
         at::cuda::getCurrentCUDABlasHandle(),
         (half*) x.data_ptr(),
         x.size(0), // rows
-        x.size(1)  // columns == hidden_size
+        x.size(1), // columns == hidden_size
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
+}
+
+int q_mlp_set_loras
+(
+    uintptr_t q_mlp,
+    std::unordered_map<uintptr_t, torch::Tensor>& gate_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& gate_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& up_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& up_proj_lora_b,
+    std::unordered_map<uintptr_t, torch::Tensor>& down_proj_lora_a,
+    std::unordered_map<uintptr_t, torch::Tensor>& down_proj_lora_b
+)
+{
+    QMLP* mlp = reinterpret_cast<QMLP*> (q_mlp);
+
+    mlp->gate_proj_lora.clear();
+    mlp->up_proj_lora.clear();
+    mlp->down_proj_lora.clear();
+
+    int max_rank = 0;
+
+    for (const auto& pair : gate_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) gate_proj_lora_b[pair.first].data_ptr();
+        mlp->gate_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : up_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) up_proj_lora_b[pair.first].data_ptr();
+        mlp->up_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    for (const auto& pair : down_proj_lora_a)
+    {
+        int rank = pair.second.size(-1);
+        if (rank > max_rank) max_rank = rank;
+        half* a = (half*) pair.second.data_ptr();
+        half* b = (half*) down_proj_lora_b[pair.first].data_ptr();
+        mlp->down_proj_lora[pair.first] = std::make_tuple(a, b, rank);
+    }
+
+    return max_rank;
 }
 
 
@@ -588,21 +742,33 @@ void apply_rep_penalty
     }
 }
 
-void sample_basic
+std::vector<float> sample_basic
 (
     torch::Tensor logits,           // shape [bsz, vocab_size]
     float temperature,
     int top_k,
     float top_p,
+    float min_p,
+    float tfs,
+    float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
-    torch::Tensor output_probs      // shape [bsz, 1]
+    torch::Tensor output_probs,     // shape [bsz, 1]
+    torch::Tensor logit_filter,     // shape [bsz, vocab_size]
+    bool mirostat,
+    std::vector<float>& mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
     TORCH_CHECK_DTYPE(output_tokens, kLong);
     TORCH_CHECK_DTYPE(output_probs, kFloat);
     TORCH_CHECK_DTYPE(logits, kFloat);
+    TORCH_CHECK_DTYPE(logit_filter, kBool);
+
+    TORCH_CHECK_SHAPES(logit_filter, 0, logits, 0, 1);
+    TORCH_CHECK_SHAPES(logit_filter, 1, logits, 1, 1);
 
     int vocab_size = logits.size(-1);
     int bsz = logits.size(0);
@@ -610,58 +776,181 @@ void sample_basic
     float* temp_probs = (float*) malloc(vocab_size * sizeof(float));
     int* temp_indices = (int*) malloc(vocab_size * sizeof(int));
 
-    int64_t* output_tokens_ptr = (int64_t*) output_tokens.data_ptr();
-    float* output_probs_ptr = (float*) output_tokens.data_ptr();
+//    int64_t* output_tokens_ptr = (int64_t*) output_tokens.data_ptr();
+//    float* output_probs_ptr = (float*) output_tokens.data_ptr();
     float* logits_ptr = (float*) logits.data_ptr();
+
+    bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
 
     for (int i = 0; i < bsz; i++)
     {
-        softmax_cpu(vocab_size, temperature, logits_ptr + i * vocab_size, temp_probs);
+        softmax_cpu
+        (
+            vocab_size,
+            temperature,
+            logits_ptr + i * vocab_size,
+            logits_filter_ptr + i * vocab_size,
+            temp_probs
+        );
 
         if (top_k == 1)
         {
-            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size);
+            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size, logits_filter_ptr + i * vocab_size);
             output_tokens[i] = index;
             output_probs[i] = temp_probs[index];
             continue;
         }
 
-//        if (top_k == 1)
-//        {
-//            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size);
-//            output_tokens[i] = index;
-//            output_probs[i] = temp_probs[index];
-//            continue;
-//        }
-//
-//        softmax_cpu(vocab_size, temperature, logits_ptr + i * vocab_size, temp_probs);
-
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
-        sort_descending(num_candidates, temp_probs, temp_indices, top_k);
-
-        if (top_k > 0)
+        if (top_k > 0 && top_k < vocab_size)
         {
             num_candidates = top_k_cpu(num_candidates, temp_probs, temp_indices, top_k);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (top_p > 0.0f)
+        if (top_p > 0.0f && top_p < 1.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (min_p > 0.0f && min_p < 1.0f)
+        {
+            num_candidates = min_p_cpu(num_candidates, temp_probs, temp_indices, min_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (tfs > 0.0f && tfs < 1.0f)
+        {
+            num_candidates = tfs_cpu(num_candidates, temp_probs, temp_indices, tfs);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (typical > 0.0f && typical < 1.0f)
+        {
+            num_candidates = typical_cpu(num_candidates, temp_probs, temp_indices, typical);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (mirostat)
+        {
+            num_candidates = mirostat_pre_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
             normalize_cpu(num_candidates, temp_probs);
         }
 
         num_candidates = multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
         output_tokens[i] = temp_indices[0];
         output_probs[i] = temp_probs[0];
+
+        if (mirostat)
+        {
+            mirostat_mu[i] = mirostat_post_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
+        }
     }
 
     free(temp_probs);
     free(temp_indices);
+
+    return mirostat_mu;
 }
 
+
+// Filtering
+
+void logit_filter_exclusive
+(
+    torch::Tensor filter,                                       // shape [bsz, vocab_size]
+    const std::vector<std::vector<int>> &exclusive_lists
+)
+{
+    TORCH_CHECK_DTYPE(filter, kBool);
+    TORCH_CHECK((uint64_t) filter.size(0) == exclusive_lists.size(), "Number of lists does not match batch size")
+
+    bool* filter_ptr = (bool*) filter.data_ptr();
+    unsigned int vocab_size = filter.size(1);
+
+    for(const auto& list : exclusive_lists)
+    {
+        unsigned int id = 0;
+        unsigned int next_id_idx = 0;
+        unsigned int next_id = list[next_id_idx];
+
+        while (id < vocab_size)
+        {
+            while (id < next_id)
+            {
+                filter_ptr[id] = false;
+                id++;
+            }
+            id++;
+            next_id_idx++;
+            if (next_id_idx >= list.size()) next_id = vocab_size;
+            else next_id = list[next_id_idx];
+        }
+
+        filter_ptr += vocab_size;
+    }
+}
+
+// For cache conversion
+
+void fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_size, int offset, int width)
+{
+    TORCH_CHECK_DTYPE(in_tensor, kHalf);
+    TORCH_CHECK_DTYPE(out_tensor, kUInt8);
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(in_tensor));
+
+    TORCH_CHECK_SHAPES(in_tensor, 0, out_tensor, 0, 1);
+    TORCH_CHECK_SHAPES(in_tensor, 1, out_tensor, 1, 1);
+    TORCH_CHECK_SHAPES(in_tensor, 2, out_tensor, 2, 1);
+    TORCH_CHECK_SHAPES(in_tensor, 3, out_tensor, 3, 1);
+
+    int stride = in_tensor.size(1) * in_tensor.size(2) * in_tensor.size(3);
+    int height = batch_size;
+
+    int tsize = in_tensor.size(2) * in_tensor.size(3);
+    offset *= tsize;
+    width *= tsize;
+
+    array_fp16_to_fp8_cuda((const half*) (in_tensor.data_ptr()), (unsigned char*)(out_tensor.data_ptr()), stride, height, offset, width);
+}
+
+void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_size, int offset, int width)
+{
+    TORCH_CHECK_DTYPE(in_tensor, kUInt8);
+    TORCH_CHECK_DTYPE(out_tensor, kHalf);
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(in_tensor));
+
+    TORCH_CHECK_SHAPES(in_tensor, 0, out_tensor, 0, 1);
+    TORCH_CHECK_SHAPES(in_tensor, 1, out_tensor, 1, 1);
+    TORCH_CHECK_SHAPES(in_tensor, 2, out_tensor, 2, 1);
+    TORCH_CHECK_SHAPES(in_tensor, 3, out_tensor, 3, 1);
+
+    int stride = in_tensor.size(1) * in_tensor.size(2) * in_tensor.size(3);
+    int height = batch_size;
+
+    int tsize = in_tensor.size(2) * in_tensor.size(3);
+    offset *= tsize;
+    width *= tsize;
+
+    array_fp8_to_fp16_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), stride, height, offset, width);
+}
+
+//void array_fp16_to_fp8_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
+//{
+//    TORCH_CHECK_DTYPE(in_tensor, kHalf);
+//    TORCH_CHECK_DTYPE(out_tensor, kUInt8);
+//    array_fp16_to_fp8_ref_cuda((const half*) (in_tensor.data_ptr()), (unsigned char*)(out_tensor.data_ptr()), size);
+//}
+//
+//void array_fp8_to_fp16_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
+//{
+//    TORCH_CHECK_DTYPE(in_tensor, kUInt8);
+//    TORCH_CHECK_DTYPE(out_tensor, kHalf);
+//    array_fp8_to_fp16_ref_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
+//}
 
 // Bindings
 
@@ -672,12 +961,17 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("quantize_err", &quantize_err, "quantize_err");
     m.def("quantize", &quantize, "quantize");
     m.def("make_q_matrix", &make_q_matrix, "make_q_matrix");
+    m.def("free_q_matrix", &free_q_matrix, "free_q_matrix");
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
+    m.def("free_q_mlp", &free_q_mlp, "free_q_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
+    m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
+    m.def("free_q_attn", &free_q_attn, "free_q_attn");
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");
     m.def("q_attn_forward_2", &q_attn_forward_2, "q_attn_forward_2");
+    m.def("q_attn_set_loras", &q_attn_set_loras, "q_attn_set_loras");
     m.def("quantize_range", &quantize_range, "quantize_range");
     m.def("gemm_half_q_half", &gemm_half_q_half, "gemm_half_q_half");
     m.def("rms_norm", &rms_norm, "rms_norm");
@@ -685,4 +979,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("rope_", &rope_, "rope_");
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
+    m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
+    m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");
+    m.def("fp8_to_fp16", &fp8_to_fp16, "fp8_to_fp16");
+//    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
+//    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 }

@@ -5,12 +5,16 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
-    weight: nn.Parameter or None
+    weight: nn.Parameter or None = None
     variance_epsilon: float
 
     name: str = "RMSNorm"
 
+
     def __init__(self, model, key):
+        if model.config.architecture == "Yi":
+            key = key.replace(".input_layernorm", ".ln1")
+            key = key.replace(".post_attention_layernorm", ".ln2")
         super().__init__(model, key)
 
 
@@ -25,8 +29,9 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
     def unload(self):
 
-        del self.weight
-        self.weight = None
+        if self.weight is not None:
+            del self.weight
+            self.weight = None
 
 
     def get_weight(self):
@@ -50,7 +55,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -64,7 +69,10 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, intermediates = False):
+    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+
+        hidden_states[hidden_states == -float('inf')] = -65504.0
+        hidden_states[hidden_states == float('inf')] = 65504.0
 
         variance = hidden_states.to(torch.float32).pow(2).mean(-1, keepdim = True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)

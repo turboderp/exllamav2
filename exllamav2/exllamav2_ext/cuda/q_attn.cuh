@@ -35,6 +35,11 @@ public:
     int head_dim;
     int max_seq_len;
 
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> q_proj_lora;
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> k_proj_lora;
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> v_proj_lora;
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> o_proj_lora;
+
     QAttn
     (
         half* _layernorm,
@@ -70,7 +75,9 @@ public:
         half* temp_k,
         half* temp_v,
         const half* sin,
-        const half* cos
+        const half* cos,
+        const std::vector<uintptr_t>& loras,
+        half* lora_temp
     );
 
     void forward_cuda_2
@@ -79,7 +86,9 @@ public:
         const half* attn_output,
         half* hidden_state,
         int q_len,
-        int batch_size
+        int batch_size,
+        const std::vector<uintptr_t>& loras,
+        half* lora_temp
     );
 
 private:

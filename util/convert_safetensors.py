@@ -15,8 +15,7 @@ if len(tensor_files) == 0:
 
 for file in tensor_files:
     print(f" -- Loading {file}...")
-
-    state_dict = torch.load(file)
+    state_dict = torch.load(file, map_location = "cpu")
 
     out_file = os.path.splitext(file)[0] + ".safetensors"
     print(f" -- Saving {out_file}...")

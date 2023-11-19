@@ -61,7 +61,7 @@ def rfn_error(q_linear: nn.Linear, inputs, outputs):
         ox_cuda = ox.to("cuda:0")
 
         qx_cuda = q_linear.forward(ix_cuda)
-        rfn = torch.linalg.norm(qx_cuda[0] - ox_cuda[0], 'fro') / torch.linalg.norm(ox_cuda[0], 'fro')
+        rfn = torch.linalg.norm(qx_cuda[0].float() - ox_cuda[0].float(), 'fro') / torch.linalg.norm(ox_cuda[0].float(), 'fro')
 
         dsum += rfn * ix_cuda.shape[0]
         dcount += ix_cuda.shape[0]
@@ -75,10 +75,12 @@ def rfn_error(q_linear: nn.Linear, inputs, outputs):
 # Measure quantization impact per layer
 
 def test_quants(source: ExLlamaV2Linear,
+                lq: AdaptiveGPTQ,
                 inputs: list,
                 outputs: list,
                 qparams: list,
-                results: list):
+                results: list,
+                skip_prep: bool = False):
 
     with torch.inference_mode():
 
@@ -92,17 +94,17 @@ def test_quants(source: ExLlamaV2Linear,
         original = nn.Linear(source.in_features, source.out_features, False, device = "meta", dtype = torch.float16)
         original.weight = nn.Parameter(source.linear.weight.clone())
 
-        lq = AdaptiveGPTQ(original)
+        # lq = AdaptiveGPTQ(original)
 
-        b = 0
-        while b < len(inputs):
-            a = b
-            b = min(b + 8, len(inputs))
-            inputs_cuda = inputs[a:b]
-            lq.add_batch(inputs_cuda)
-            inputs_cuda = None
+        # b = 0
+        # while b < len(inputs):
+        #     a = b
+        #     b = min(b + 8, len(inputs))
+        #     inputs_cuda = inputs[a:b]
+        #     lq.add_batch(inputs_cuda)
+        #     inputs_cuda = None
 
-        lq.prepare()
+        if not skip_prep: lq.prepare()
 
         for qp in qparams:
 
@@ -153,7 +155,6 @@ def measure_quant(job, save_fn, model):
         module = model.modules[index]
         module.load()
 
-
         print(f" -- Layer: {module.key} ({module.name})")
 
         # Reference forward pass
@@ -168,13 +169,20 @@ def measure_quant(job, save_fn, model):
             with safe_open(in_name, framework = "pt", device = "cpu" if page_rows else "cuda:0") as f:
                 input_states = f.get_tensor("hidden_state")
 
-        output_states_list = []
-        all_outputs_list = []
-        results = None
-
         with torch.inference_mode():
 
+            output_states_list = []
+            all_outputs_list = []
+            quantizers = {}
+            results = None
+
+            batchsize = 1
+            batch1 = []
+            batch2 = []
+
             for b in range(input_states.shape[0]):
+
+                last = (b == input_states.shape[0] - 1)
 
                 x = input_states[b:b+1, :, :].to("cuda:0")
                 cache = None
@@ -183,8 +191,48 @@ def measure_quant(job, save_fn, model):
                     attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
 
                 outputs = module.forward(x, cache, attn_mask, intermediates = True)
+
+                for k, v in outputs.items():
+                    v[v == -float('inf')] = -65504.0
+                    v[v == float('inf')] = 65504.0
+
                 if page_rows:
                     for k in outputs.keys(): outputs[k] = outputs[k].to("cpu")
+
+                if isinstance(module, ExLlamaV2Attention):
+                    if not "q_proj" in quantizers: quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
+                    if not "k_proj" in quantizers: quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
+                    if not "v_proj" in quantizers: quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
+                    if not "o_proj" in quantizers: quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
+
+                    batch1.append(outputs["post_norm"])
+                    if len(batch1) == batchsize or last:
+                        quantizers["q_proj"].add_batch(batch1)
+                        batch1 = []
+
+                    batch2.append(outputs["attn_output"])
+                    if len(batch2) == batchsize or last:
+                        quantizers["o_proj"].add_batch(batch2)
+                        batch2 = []
+
+                elif isinstance(module, ExLlamaV2MLP):
+                    if not "gate_proj" in quantizers: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
+                    if not "up_proj"   in quantizers: quantizers["up_proj"  ] = AdaptiveGPTQ(module.up_proj.linear)
+                    if not "down_proj" in quantizers: quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
+
+                    batch1.append(outputs["post_norm"])
+                    if len(batch1) == batchsize or last:
+                        quantizers["gate_proj"].add_batch(batch1)
+                        batch1 = []
+
+                    batch2.append(outputs["pre_down"])
+                    if len(batch2) == batchsize or last:
+                        quantizers["down_proj"].add_batch(batch2)
+                        batch2 = []
+
+                # elif module.key == "lm_head":
+                #     if not "lm_head" in quantizers: quantizers["lm_head"] = AdaptiveGPTQ(module.linear)
+                #     quantizers["lm_head"].add_batch([x])
 
                 output_states_list.append(outputs["hidden_states"])
                 del outputs["hidden_states"]
@@ -198,102 +246,118 @@ def measure_quant(job, save_fn, model):
             input_states = None
             save_file({ "hidden_state": output_states }, out_name)
 
-        # Attention layer
+            # Attention layer
 
-        if isinstance(module, ExLlamaV2Attention):
+            if isinstance(module, ExLlamaV2Attention):
 
-            results = []
+                results = []
 
-            post_norm     = [x["post_norm"] for x in all_outputs_list]
-            query_states  = [x["query_states"] for x in all_outputs_list]
-            key_states    = [x["key_states"] for x in all_outputs_list]
-            value_states  = [x["value_states"] for x in all_outputs_list]
-            attn_output   = [x["attn_output"] for x in all_outputs_list]
-            attn_proj     = [x["attn_proj"] for x in all_outputs_list]
-            
+                post_norm     = [x["post_norm"] for x in all_outputs_list]
+                query_states  = [x["query_states"] for x in all_outputs_list]
+                key_states    = [x["key_states"] for x in all_outputs_list]
+                value_states  = [x["value_states"] for x in all_outputs_list]
+                attn_output   = [x["attn_output"] for x in all_outputs_list]
+                attn_proj     = [x["attn_proj"] for x in all_outputs_list]
+
+                all_outputs_list = None
+                torch.cuda.empty_cache()
+
+                test_quants(module.q_proj, quantizers["q_proj"], post_norm, query_states, qparams_options, results)
+                quantizers["k_proj"].reuse_h(quantizers["q_proj"])
+                quantizers["v_proj"].reuse_h(quantizers["q_proj"])
+                del quantizers["q_proj"]
+                torch.cuda.empty_cache()
+
+                test_quants(module.k_proj, quantizers["k_proj"], post_norm, key_states, qparams_options, results, skip_prep = True)
+                del quantizers["k_proj"]
+                torch.cuda.empty_cache()
+
+                test_quants(module.v_proj, quantizers["v_proj"], post_norm, value_states, qparams_options, results, skip_prep = True)
+                post_norm = None
+                del quantizers["v_proj"]
+                torch.cuda.empty_cache()
+
+                test_quants(module.o_proj, quantizers["o_proj"], attn_output, attn_proj, qparams_options, results)
+                del quantizers["o_proj"]
+                query_states = None
+                key_states = None
+                value_states = None
+                attn_output = None
+                attn_proj = None
+                torch.cuda.empty_cache()
+
+            # MLP layer
+
+            if isinstance(module, ExLlamaV2MLP):
+
+                results = []
+
+                post_norm     = [x["post_norm"] for x in all_outputs_list]
+                gate          = [x["gate"] for x in all_outputs_list]
+                up            = [x["up"] for x in all_outputs_list]
+                pre_down      = [x["pre_down"] for x in all_outputs_list]
+                down          = [x["down"] for x in all_outputs_list]
+
+                all_outputs_list = None
+
+                test_quants(module.gate_proj, quantizers["gate_proj"], post_norm, gate, qparams_options, results)
+                quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+                del quantizers["gate_proj"]
+                gate = None
+                torch.cuda.empty_cache()
+
+                test_quants(module.up_proj, quantizers["up_proj"], post_norm, up, qparams_options, results, skip_prep = True)
+                del quantizers["up_proj"]
+                up = None
+                post_norm = None
+                torch.cuda.empty_cache()
+
+                test_quants(module.down_proj, quantizers["down_proj"], pre_down, down, qparams_options, results)
+                del quantizers["down_proj"]
+                pre_down = None
+                down = None
+                torch.cuda.empty_cache()
+
+            # Free up some VRAM
+
             all_outputs_list = None
             torch.cuda.empty_cache()
 
-            test_quants(module.q_proj, post_norm, query_states, qparams_options, results)
-            test_quants(module.k_proj, post_norm, key_states, qparams_options, results)
-            test_quants(module.v_proj, post_norm, value_states, qparams_options, results)
-            test_quants(module.o_proj, attn_output, attn_proj, qparams_options, results)
-            post_norm = None
-            query_states = None
-            key_states = None
-            value_states = None
-            attn_output = None
-            attn_proj = None
+            # Head module
 
-        # MLP layer
+            if module.key == "lm_head":
 
-        if isinstance(module, ExLlamaV2MLP):
+                if module.padding > 0: output_states = output_states[:, :, :-module.padding]
 
-            results = []
+                with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
+                    cal_ids = f.get_tensor("input_ids")
 
-            post_norm     = [x["post_norm"] for x in all_outputs_list]
-            gate          = [x["gate"] for x in all_outputs_list]
-            up            = [x["up"] for x in all_outputs_list]
-            pre_down      = [x["pre_down"] for x in all_outputs_list]
-            down          = [x["down"] for x in all_outputs_list]
-            
-            all_outputs_list = None
-            torch.cuda.empty_cache()
+                with torch.inference_mode():
 
-            # list_live_tensors()
-            test_quants(module.gate_proj, post_norm, gate, qparams_options, results)
-            gate = None
-            # list_live_tensors()
-            test_quants(module.up_proj, post_norm, up, qparams_options, results)
-            up = None
-            post_norm = None
-            # list_live_tensors()
-            test_quants(module.down_proj, pre_down, down, qparams_options, results)
-            # list_live_tensors()
-            pre_down = None
-            down = None
+                    logprob_sum = 0.0
+                    logprob_count = 0
 
-        # Free up some VRAM
+                    for i in range(output_states.shape[0]):
 
-        all_outputs_list = None
-        torch.cuda.empty_cache()
+                        logits = output_states[i:i+1, :, :].to("cuda:0")
 
-        # Head module
+                        target_ids = cal_ids[i:i+1, 1:].to("cuda:0")
+                        logits = logits[:, :-1, :]
 
-        if module.key == "lm_head":
+                        log_probs = F.log_softmax(logits, dim = -1)
+                        token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+                        logprob_sum += token_log_probs.sum().item()
+                        logprob_count += target_ids.numel()
 
-            if module.padding > 0: output_states = output_states[:, :, :-module.padding]
+                    mean_log_prob = logprob_sum / logprob_count
+                    perplexity = math.exp(-mean_log_prob)
 
-            with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
-                cal_ids = f.get_tensor("input_ids")
+                    print(f" -- Calibration perplexity (base): {perplexity:.4f}")
+                    job["base_perplexity"] = perplexity
 
-            with torch.inference_mode():
+            # Unload module
 
-                logprob_sum = 0.0
-                logprob_count = 0
-
-                for i in range(output_states.shape[0]):
-
-                    logits = output_states[i:i+1, :, :].to("cuda:0")
-                    ids = cal_ids[i]
-
-                    target_ids = ids.unsqueeze(0)[:, 1:].to("cuda:0")
-                    logits = logits[:, :-1, :]
-
-                    log_probs = F.log_softmax(logits, dim = -1)
-                    token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
-                    logprob_sum += token_log_probs.sum().item()
-                    logprob_count += target_ids.numel()
-
-                mean_log_prob = logprob_sum / logprob_count
-                perplexity = math.exp(-mean_log_prob)
-
-                print(f" -- Calibration perplexity (base): {perplexity:.4f}")
-                job["base_perplexity"] = perplexity
-
-        # Unload module
-
-        module.unload()
+            module.unload()
 
         # Advance
 
@@ -319,42 +383,37 @@ def measure_quant(job, save_fn, model):
                         "last_module_idx": job["last_module_idx"],
                         "base_perplexity": job["base_perplexity"] }
 
-    with open(os.path.join(job["out_dir"], "measurement.json"), "w") as f:
-        f.write(json.dumps(exp_measurement, indent = 4))
+
+    measurement_files = [os.path.join(job["out_dir"], "measurement.json")]
+    if job["output_measurement"] is not None:
+        measurement_files += [job["output_measurement"]]
+        print(f" -- Writing {job['output_measurement']}")
+
+    for filename in measurement_files:
+        with open(filename, "w") as f:
+            f.write(json.dumps(exp_measurement, indent = 4))
 
 
 # Quantize
 
 def do_quant(source: ExLlamaV2Linear,
-             inputs: list,
+             lq: AdaptiveGPTQ,
              qparams: dict,
-             job: dict):
+             job: dict,
+             skip_prep: bool = False):
 
     with torch.inference_mode():
 
-        # Prepare quantizer and supply input batches
-
-        lq = AdaptiveGPTQ(source.linear)
-
-        b = 0
-        while b < len(inputs):
-            a = b
-            b = min(b + 8, len(inputs))
-            inputs_cuda = inputs[a:b]
-            lq.add_batch(inputs_cuda)
-            inputs_cuda = None
-
-        lq.prepare()
         qp = QParams.from_dict(qparams)
+        print(f" -- Linear: {source.key} -> {qp.get_desc()}, {qp.bpw(source.linear.weight.T.shape):.2f} bpw")
 
-        # qp.bits = [2]
-        # qp.bits_prop = [1]
+        # Prepare quantizer
 
+        if not skip_prep: lq.prepare()
         lq.configure(qp.group_size, qp.bits, qp.bits_prop, qp.scale_bits)
 
         # Perform final quant
 
-        print(f" -- Linear: {source.key} -> {qp.get_desc()}, {qp.bpw(source.linear.weight.T.shape):.2f} bpw")
         lq.quantize(keep_qweight = True)
 
         # Sanity test to ensure quantized matrix resembles original
@@ -431,11 +490,12 @@ def quant(job, save_fn, model):
         # Prepare module
 
         module = model.modules[index]
+        print(f" -- Layer: {module.key} ({module.name})")
         module.load()
 
-        print(f" -- Layer: {module.key} ({module.name})")
+        time_begin = time.time()
 
-        # Reference forward pass
+         # Reference forward pass
 
         in_name = os.path.join(job["out_dir"], "input_states.safetensors")
 
@@ -447,11 +507,17 @@ def quant(job, save_fn, model):
                 input_states = f.get_tensor("hidden_state")
 
         output_states_list = []
-        all_outputs_list = []
+        quantizers = {}
 
         with torch.inference_mode():
 
+            batchsize = 1  # Keeping this at 1 seems to help with numerical precision
+            batch1 = []
+            batch2 = []
+
             for b in range(input_states.shape[0]):
+
+                last = (b == input_states.shape[0] - 1)
 
                 x = input_states[b:b+1, :, :].to("cuda:0")
                 cache = None
@@ -460,11 +526,56 @@ def quant(job, save_fn, model):
                     attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
 
                 outputs = module.forward(x, cache, attn_mask, intermediates = True)
-                if page_rows:
-                    for k in outputs.keys(): outputs[k] = outputs[k].to("cpu")
 
-                output_states_list.append(outputs["hidden_states"])
-                all_outputs_list.append(outputs)
+                # Clamp state values to FP16 range
+
+                for k, v in outputs.items():
+                    v[v == -float('inf')] = -65504.0
+                    v[v == float('inf')] = 65504.0
+
+                # Add batches to quantizers
+
+                if isinstance(module, ExLlamaV2Attention):
+                    if not "q_proj" in quantizers: quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
+                    if not "k_proj" in quantizers: quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
+                    if not "v_proj" in quantizers: quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
+                    if not "o_proj" in quantizers: quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
+
+                    batch1.append(outputs["post_norm"])
+                    if len(batch1) == batchsize or last:
+                        quantizers["q_proj"].add_batch(batch1)
+                        batch1 = []
+
+                    batch2.append(outputs["attn_output"])
+                    if len(batch2) == batchsize or last:
+                        quantizers["o_proj"].add_batch(batch2)
+                        batch2 = []
+
+                elif isinstance(module, ExLlamaV2MLP):
+                    if not "gate_proj" in quantizers: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
+                    if not "up_proj"   in quantizers: quantizers["up_proj"  ] = AdaptiveGPTQ(module.up_proj.linear)
+                    if not "down_proj" in quantizers: quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
+
+                    batch1.append(outputs["post_norm"])
+                    if len(batch1) == batchsize or last:
+                        quantizers["gate_proj"].add_batch(batch1)
+                        batch1 = []
+
+                    batch2.append(outputs["pre_down"])
+                    if len(batch2) == batchsize or last:
+                        quantizers["down_proj"].add_batch(batch2)
+                        batch2 = []
+
+                elif module.key == "lm_head":
+                    if not "lm_head" in quantizers: quantizers["lm_head"] = AdaptiveGPTQ(module.linear)
+
+                    batch1.append(x)
+                    if len(batch1) == batchsize or last:
+                        quantizers["lm_head"].add_batch(batch1)
+                        batch1 = []
+
+                output_states_list.append(outputs["hidden_states"].to("cpu"))
+
                 outputs = None
                 attn_mask = None
                 x = None
@@ -473,35 +584,35 @@ def quant(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2Attention):
 
-            post_norm     = [x["post_norm"] for x in all_outputs_list]
-            attn_output   = [x["attn_output"] for x in all_outputs_list]
-            all_outputs_list = None
-
-            do_quant(module.q_proj, post_norm, qparams[module.q_proj.key], job)
-            do_quant(module.k_proj, post_norm, qparams[module.k_proj.key], job)
-            do_quant(module.v_proj, post_norm, qparams[module.v_proj.key], job)
-            do_quant(module.o_proj, attn_output, qparams[module.o_proj.key], job)
-            post_norm = None
-            attn_output = None
+            do_quant(module.q_proj, quantizers["q_proj"], qparams[module.q_proj.key], job)
+            quantizers["k_proj"].reuse_h(quantizers["q_proj"])
+            quantizers["v_proj"].reuse_h(quantizers["q_proj"])
+            del quantizers["q_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.k_proj, quantizers["k_proj"], qparams[module.k_proj.key], job, skip_prep = True)
+            del quantizers["k_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.v_proj, quantizers["v_proj"], qparams[module.v_proj.key], job, skip_prep = True)
+            del quantizers["v_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.o_proj, quantizers["o_proj"], qparams[module.o_proj.key], job)
+            del quantizers["o_proj"]
+            torch.cuda.empty_cache()
 
         # MLP layer
 
         if isinstance(module, ExLlamaV2MLP):
 
-            post_norm     = [x["post_norm"] for x in all_outputs_list]
-            pre_down      = [x["pre_down"] for x in all_outputs_list]
-            all_outputs_list = None
-
-            do_quant(module.gate_proj, post_norm, qparams[module.gate_proj.key], job)
-            do_quant(module.up_proj, post_norm, qparams[module.up_proj.key], job)
-            do_quant(module.down_proj, pre_down, qparams[module.down_proj.key], job)
-            post_norm = None
-            pre_down = None
-
-        # Free up some VRAM
-
-        all_outputs_list = None
-        torch.cuda.empty_cache()
+            do_quant(module.gate_proj, quantizers["gate_proj"], qparams[module.gate_proj.key], job)
+            quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+            del quantizers["gate_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.up_proj,   quantizers["up_proj"  ], qparams[module.up_proj.key  ], job, skip_prep = True)
+            del quantizers["up_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.down_proj, quantizers["down_proj"], qparams[module.down_proj.key], job)
+            del quantizers["down_proj"]
+            torch.cuda.empty_cache()
 
         # Head module
 
@@ -511,7 +622,9 @@ def quant(job, save_fn, model):
             qp = qparams_headoptions[bits]
             if qp is not None:
 
-                do_quant(module, [input_states], qp.get_dict(), job)
+                do_quant(module, quantizers["lm_head"], qp.get_dict(), job)
+                del quantizers["lm_head"]
+                torch.cuda.empty_cache()
 
             # Start computing perplexity on last layer
 
@@ -539,6 +652,11 @@ def quant(job, save_fn, model):
 
                 outputs = module.forward(x, cache, attn_mask)
 
+                # Clamp state values to FP16 range
+
+                outputs[outputs == -float('inf')] = -65504.0
+                outputs[outputs == float('inf')] = 65504.0
+
                 # Compute perplexity for head layer without saving output state
 
                 if module.key == "lm_head" and b < job["measurement_rows"]:
@@ -546,29 +664,37 @@ def quant(job, save_fn, model):
                     if module.padding > 0: outputs = outputs[:, :, :-module.padding]
 
                     logits = outputs[:, :-1, :]
-                    target_ids = cal_ids[b].unsqueeze(0)[:, 1:].to("cuda:0")
+                    logits = logits.float() + 1e-10
+                    target_ids = cal_ids[b:b+1, 1:].to("cuda:0")
 
                     log_probs = F.log_softmax(logits, dim = -1)
                     token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
                     logprob_sum += token_log_probs.sum().item()
                     logprob_count += target_ids.numel()
 
-                else:
+                # Measure error
 
-                    # Measure error
+                target = output_states_list[b]
+                if target.device == torch.device("cpu"): target = target.to("cuda:0")
+                a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
 
-                    target = output_states_list[b]
-                    if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                    a_ = outputs.narrow(-1, 0, target.shape[-1])
-                    b_ = target
-                    rfn = torch.linalg.norm(a_[0] - b_[0], 'fro') / torch.linalg.norm(b_[0], 'fro')
-                    rfn_sum += rfn
-                    target = None
+                # diff = torch.max(torch.abs(a_[0] - b_[0]))
+                # max_diff = max(diff, max_diff)
+                #
+                # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
+                # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
+                # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
+                # print(f"abs(a-b) min, max: {torch.min()}, {torch.max(torch.abs(a_[0] - b_[0]))}")
 
-                    if page_rows:
-                        outputs = outputs.to("cpu")
+                rfn_sum += rfn
+                target = None
 
-                    output_states_list[b] = outputs
+                if page_rows:
+                    outputs = outputs.to("cpu")
+
+                output_states_list[b] = outputs
 
                 outputs = None
                 x = None
@@ -604,10 +730,6 @@ def quant(job, save_fn, model):
         output_states_list = None
         module.unload()
 
-        # gc.collect()
-        # torch.cuda.empty_cache()
-        # list_live_tensors()
-
         # Advance
 
         job["invalid"] = True
@@ -621,6 +743,12 @@ def quant(job, save_fn, model):
 
         if "invalid" in job: del job["invalid"]
         save_fn()
+
+        # Report time taken
+
+        time_end = time.time()
+        layer_time = time_end - time_begin
+        print(f" -- Module quantized, time: {layer_time:.2f} seconds")
 
     # Export measurement
 

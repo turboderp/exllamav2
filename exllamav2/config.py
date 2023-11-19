@@ -15,7 +15,11 @@ class ExLlamaV2Config:
     scale_pos_emb: float = 1.0                  # Factor by which to scale positional embeddings, e.g. for 4096-token sequence use a scaling factor of 2.0, requires finetuned model or LoRA
     scale_alpha_value: float = 1.0              # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model
 
+    no_flash_attn: bool = False                 # Implementation will automatically use flash-attn-2 when available
+
     # Loaded/set by .prepare():
+
+    architecture: str
 
     model_config: str
     tensor_file_map: dict
@@ -39,8 +43,21 @@ class ExLlamaV2Config:
     rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
     head_dim: int = 128                         # Constant for all Llama models, except 3b
 
+    qkv_embed: bool = False
+
+
     def __init__(self):
         pass
+
+
+    # Set low-mem options
+
+    def set_low_mem(self):
+
+        self.qkv_embed = True
+        self.max_input_len = 1024
+        self.max_attention_size = 1024 ** 2
+
 
     # Populate config with required files from model_dir
 
@@ -56,6 +73,14 @@ class ExLlamaV2Config:
 
         with open(self.model_config) as f:
             read_config = json.load(f)
+
+            if "LlamaForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
+            elif "MistralForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
+            elif "YiForCausalLM" in read_config["architectures"]: self.architecture = "Yi"
+            else:
+                print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
+                print(f" !! Loading as LlamaForCausalLM")
+                self.architecture = "Llama"
 
             self.bos_token_id = read_config["bos_token_id"] if "bos_token_id" in read_config else 1
             self.eos_token_id = read_config["eos_token_id"] if "eos_token_id" in read_config else 2
@@ -99,22 +124,35 @@ class ExLlamaV2Config:
 
         # Make sure we found all the layers we need
 
-        layer_keys = ["input_layernorm",
-                      "self_attn.q_proj",
-                      "self_attn.k_proj",
-                      "self_attn.v_proj",
-                      "self_attn.o_proj",
-                      "post_attention_layernorm",
-                      "mlp.down_proj",
-                      "mlp.gate_proj",
-                      "mlp.up_proj"]
+        layer_keys = [
+            ["input_layernorm", "ln1"],
+            ["post_attention_layernorm", "ln2"],
+            ["self_attn.q_proj"],
+            ["self_attn.k_proj"],
+            ["self_attn.v_proj"],
+            ["self_attn.o_proj"],
+            ["mlp.down_proj"],
+            ["mlp.gate_proj"],
+            ["mlp.up_proj"]
+        ]
 
         expect_keys = []
-        expect_keys += ["lm_head", "model.norm", "model.embed_tokens"]
-        expect_keys += [f"model.layers.{layer_idx}.{k}" for layer_idx in range(self.num_hidden_layers) for k in layer_keys]
+        expect_keys += [
+            ["lm_head"],
+            ["model.norm"],
+            ["model.embed_tokens"]
+        ]
 
-        for prefix in expect_keys:
-            if not any(key.startswith(prefix) for key in self.tensor_file_map):
+        for layer_idx in range(self.num_hidden_layers):
+            for ks in layer_keys:
+                prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
+                expect_keys.append(prefixes)
+
+        for prefixes in expect_keys:
+            for prefix in prefixes:
+                if any(key.startswith(prefix) for key in self.tensor_file_map):
+                    break
+            else:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
         # Model dimensions

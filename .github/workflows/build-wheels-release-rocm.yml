@@ -1,0 +1,118 @@
+name: Build ROCm 5.6 Wheels & Release
+
+on:
+  workflow_dispatch:
+    # inputs:
+    #   pypi:
+    #     description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
+    #     default: '0'
+    #     required: true
+    #     type: string
+  workflow_call:
+    inputs:
+      pypi:
+        description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
+        default: '0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build_wheels:
+    name: Build ROCm wheel for Python ${{ matrix.pyver }}
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        pyver: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.2.0
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+    
+      - uses: actions/checkout@v3
+          
+      - name: Install ROCm SDK
+        run: |
+          export ROCM_VERSION=5.6
+          
+          [ ! -d /etc/apt/keyrings ] && sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+          wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION focal main" | sudo tee --append /etc/apt/sources.list.d/rocm.list
+          echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt update
+          sudo apt install rocm-hip-sdk -y
+          echo "/opt/rocm/bin" >> $GITHUB_PATH
+          echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
+          echo "ROCM_VERSION=$ROCM_VERSION" >> $GITHUB_ENV
+          echo "USE_ROCM=1" >> $GITHUB_ENV
+          
+      - uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.pyver }}
+          
+      - name: Install Dependencies
+        run: |
+          pip3 install torch==2.1.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          pip3 install --upgrade build setuptools wheel safetensors sentencepiece ninja
+        
+      - name: Build Wheel
+        id: build-wheel
+        run: |
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
+          {
+              Write-Output $('::notice file=build-wheels-release-rocm.yml,line=73,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=76::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
+          $BUILDTAG = "+rocm$env:ROCM_VERSION"
+          python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+        shell: pwsh
+        
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'wheels'
+          path: ./dist/*.whl
+          
+      - name: Upload files to a GitHub release
+        if: steps.build-wheel.outputs.PACKAGE_VERSION != 'None'
+        uses: svenstaro/upload-release-action@2.6.1
+        with:
+          file: ./dist/*.whl
+          tag: ${{ format('v{0}', steps.build-wheel.outputs.PACKAGE_VERSION) }}
+          file_glob: true
+          overwrite: true
+          release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}
+      
+  # publish-to-pypi:
+  #   name: Publish Python distribution to PyPI
+  #   if: inputs.pypi == '1' && github.event_name != 'workflow_call'
+  #   needs: ['build_wheels']
+  #   runs-on: ubuntu-latest
+  #   
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/exllamav2
+  #   permissions:
+  #     id-token: write  # IMPORTANT: mandatory for trusted publishing
+  #     
+  #   steps:
+  #     - name: Download all the wheels
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: wheels
+  #         path: dist/
+  #     - name: Publish distribution to PyPI
+  #       uses: pypa/gh-action-pypi-publish@v1.8.10

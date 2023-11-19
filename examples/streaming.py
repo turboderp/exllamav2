@@ -18,7 +18,7 @@ import time
 
 # Initialize model and cache
 
-model_directory =  "/mnt/str/models/_exl2/llama2-70b-3.0bpw-h6-exl2/"
+model_directory = "/mnt/str/models/_exl2/mistral-7b-instruct-exl2/4.0bpw/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
@@ -26,11 +26,11 @@ config.prepare()
 
 model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
-model.load([16, 24])
+
+cache = ExLlamaV2Cache(model, lazy = True)
+model.load_autosplit(cache)
 
 tokenizer = ExLlamaV2Tokenizer(config)
-
-cache = ExLlamaV2Cache(model)
 
 # Initialize generator
 

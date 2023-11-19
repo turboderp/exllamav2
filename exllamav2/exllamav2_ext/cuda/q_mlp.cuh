@@ -28,6 +28,10 @@ public:
     int device;
     int max_rows;
 
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> gate_proj_lora;
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> up_proj_lora;
+    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> down_proj_lora;
+
     QMLP
     (
         half* _layernorm,
@@ -49,7 +53,9 @@ public:
         cublasHandle_t cublas_handle,
         half* x,
         int rows,
-        int columns
+        int columns,
+        const std::vector<uintptr_t>& loras,
+        half* lora_temp
     );
 
 private:

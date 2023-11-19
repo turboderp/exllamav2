@@ -94,6 +94,10 @@ class ExLlamaV2Module:
             tensor = tensor.half()
             return nn.Parameter(tensor)
 
+        # No weights found for key
+
+        return None
+
 
     def weight_footprint(self):
 
@@ -124,3 +128,7 @@ class ExLlamaV2Module:
     def set_device_idx(self, idx):
 
         self.device_idx = idx
+
+
+    def is_quant(self):
+        return False

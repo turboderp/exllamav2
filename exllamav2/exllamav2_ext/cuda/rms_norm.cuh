@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cstdint>
+#include <cstdio>
 
 void rms_norm_cuda
 (

@@ -1,0 +1,60 @@
+name: Build ROCm 5.6 Wheels
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build_wheels:
+    name: Build ROCm wheel for Python ${{ matrix.pyver }}
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        pyver: ["3.8", "3.9", "3.10", "3.11"]
+
+    steps:
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.2.0
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+    
+      - uses: actions/checkout@v3
+          
+      - name: Install ROCm SDK
+        run: |
+          export ROCM_VERSION=5.6
+          
+          [ ! -d /etc/apt/keyrings ] && sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+          wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION focal main" | sudo tee --append /etc/apt/sources.list.d/rocm.list
+          echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt update
+          sudo apt install rocm-hip-sdk -y
+          echo "/opt/rocm/bin" >> $GITHUB_PATH
+          echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
+          echo "ROCM_VERSION=$ROCM_VERSION" >> $GITHUB_ENV
+          echo "USE_ROCM=1" >> $GITHUB_ENV
+          
+      - uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.pyver }}
+          
+      - name: Install Dependencies
+        run: |
+          pip3 install torch==2.1.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          pip3 install --upgrade build setuptools wheel safetensors sentencepiece ninja
+        
+      - name: Build Wheel
+        run: |
+          BUILDTAG="+rocm$ROCM_VERSION"
+          python3 -m build -n --wheel -C--build-option=egg_info -C--build-option=--tag-build=$BUILDTAG
+        
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'wheels'
+          path: ./dist/*.whl

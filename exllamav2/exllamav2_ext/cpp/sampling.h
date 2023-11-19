@@ -22,6 +22,7 @@ void softmax_cpu
     const int vocab_size,
     const float temperature,
     const float* logits,
+    const bool* logits_filter,
     float* output
 );
 
@@ -34,10 +35,11 @@ void normalize_cpu
 int greedy_sample
 (
     const int num_candidates,
-    const float* probs
+    const float* probs,
+    const bool* logits_filter
 );
 
-void sort_descending
+int sort_descending
 (
     const int num_candidates,
     float* temp_probs,
@@ -59,6 +61,50 @@ int top_p_cpu
     float* temp_probs,
     int* temp_indices,
     float top_p
+);
+
+int min_p_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float min_p
+);
+
+int tfs_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float tfs
+);
+
+int typical_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float typical
+);
+
+int mirostat_pre_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
+);
+
+float mirostat_post_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float mirostat_mu,
+    float mirostat_tau,
+    float mirostat_eta
 );
 
 int multinomial_cpu

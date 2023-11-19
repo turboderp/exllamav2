@@ -1,6 +1,9 @@
 pandas
 ninja
 fastparquet
-torch>=2.0.1
+torch>=2.1.0
 safetensors>=0.3.2
 sentencepiece>=0.1.97
+pygments
+websockets
+regex

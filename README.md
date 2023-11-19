@@ -46,28 +46,69 @@ pip install -r requirements.txt
 python test_inference.py -m <path_to_model> -p "Once upon a time,"
 ```
 
-For now, a simple console chatbot is included. Run it with:
+A simple console chatbot is included. Run it with:
 
 ```
 python examples/chat.py -m <path_to_model> -mode llama
 ```
+
+For a chat with colored code, run:
+```
+python examples/chatcode.py -m <path_to_model> -mode llama
+```
+
 
 The `-mode` argument chooses the prompt format to use. `llama` is for the Llama(2)-chat finetunes, while `codellama`
 probably works better for CodeLlama-instruct. `raw` will produce a simple chatlog-style chat that works with base 
 models and various other finetunes. You can also provide a custom system prompt with `-sp`. 
 
 
-### Installation
+## Installation
 
-To install as a library (not required for the included examples), clone the repository and run:
+### Method 1: Install from source
+
+To install the current dev version, clone the repo and run the setup script:
 
 ```
+git clone https://github.com/turboderp/exllamav2
+cd exllamav2
 python setup.py install --user
 ```
 
-ExLlamaV2 relies on a Torch C++ extension for its CUDA functions, which is compiled at runtime. This means the first
-time the library is used it will take 10-20 seconds (depending on your hardware) to start, but the extension gets cached
-for subsequent use. A PyPI package will evantually be available with an option to install a precompiled extension. 
+By default this will also compile and install the Torch C++ extension (`exllamav2_ext`) that the library relies on. 
+You can skip this step by setting the `EXLLAMA_NOCOMPILE` environment variable:
+
+```
+EXLLAMA_NOCOMPILE= python setup.py install --user
+```
+
+This will install the "JIT version" of the package, i.e. it will install the Python components without building the
+C++ extension in the process. Instead, the extension will be built the first time the library is used, then cached in 
+`~/.cache/torch_extensions` for subsequent use.
+
+### Method 2: Install from release (with prebuilt extension)
+
+Releases are available [here](https://github.com/turboderp/exllamav2/releases), with prebuilt wheels that contain the
+extension binaries. Make sure to grab the right version, matching your platform, Python version (`cp`) and CUDA version.
+Download an appropriate wheel, then run:
+
+```
+pip install exllamav2-0.0.4+cu118-cp310-cp310-linux_x86_64.whl
+```
+
+The `py3-none-any.whl` version is the JIT version which will build the extension on first launch. The `.tar.gz` file
+can also be installed this way, and it will build the extension while installing.
+
+### Method 3: Install from PyPI
+
+A PyPI package is available as well. It can be installed with:
+
+```
+pip install exllamav2
+```
+
+The version available through PyPI is the JIT version (see above). Still working on a solution for distributing
+prebuilt wheels via PyPI.
 
 
 ## EXL2 quantization
@@ -96,26 +137,8 @@ will fit alongside a desktop environment. For now.
 
 ### Conversion
 
-A script is provided to quantize models. Converting large models can be somewhat slow, so be warned. To use it: 
-
-```
-python convert.py \
-    -i <input_HF_model> \
-    -o <output_work_directory> \
-    -c <calibration_data_file> \
-    -b <target_bits_per_weight>
-```
-
-The output directory should be empty when you start converting. The script will dump a bunch of files there as it
-works, so it can resume an interrupted job if you point it to the same output directory a second time.
-
-After the first pass is completed, a `measurement.json` file will be written to the output directory. This can be
-supplied (with the `-m` argument) to subsequent conversion jobs to skip the first pass and save some time when quantizing
-the same model to different bitrates. Once complete, the quantized tensors will be compiled into `output.safetensors`,
-and this file can replace the safetensors file in the original HF model.
-
-Roughly speaking, you'll need about 24 GB of VRAM to convert a 70B model, while 7B seems to require about 8 GB. There
-are optimizations planned to accelerate conversion, utilizing more or larger GPUs.
+A script is provided to quantize models. Converting large models can be somewhat slow, so be warned. The conversion
+script and its options are explained in [detail here](doc/convert.md)
 
 ### HuggingFace repos
 
@@ -129,12 +152,27 @@ that purpose.
 
 There are still things that need to be ported over from V1, and other planned features. Among them:
 
-- PyPi package with prebuilt extensions
-- LoRA support
 - Example web UI
 - Web server
 - More samplers
 
-## Updates
+## Recent updates
 
-**2023-09-13**: Preliminary ROCm support added, thanks to @ardfork. Bumped to 0.0.1
+**2023-09-27**: Prebuilt wheels are now available, credit to [@jllllll](https://github.com/jllllll). They're on the
+[releases page here](https://github.com/turboderp/exllamav2/releases). A solution to installing prebuilt wheels straight
+from PyPI is still pending. Updated installation instructions above.
+
+**2023-10-03**: Added support for extended vocabularies and alternative BOS/EOS/UNK tokens and the ability to 
+encode/decode sequences with special tokens. Added Orca template to the chatbot example.
+
+**2023-10-07**: (Multi) LoRA support as well as some experimental optimizations.
+
+**2023-10-13**: Merged speculative sampling into streaming generator. Now supports streaming and stop conditions.
+Chat example updated to take draft model.
+
+**2023-10-15**: Got the 8-bit cache mode to a fairly working state. Added the `-c8` option to the chatbot. Big VRAM
+savings for CodeLlama-13B, at least.
+
+**2023-10-22**: Added auto GPU split option. `-gs auto` will load the model while allocating the cache and running a
+forward pass to precisely measure VRAM usage, then automatically use all available VRAM starting from the first CUDA
+device.
