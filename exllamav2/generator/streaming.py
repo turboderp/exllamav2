@@ -330,7 +330,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             for k in range(self.num_speculative_tokens):
 
                 logits = self.draft_model.forward(draft_sequence_ids[:, -1:], self.draft_cache).float().cpu()
-                token, prob, _ = ExLlamaV2Sampler.sample(logits, draft_gen_settings, draft_sequence_ids, random.random(), self.tokenizer, prefix_token and k == 0)
+                token, prob, _ = ExLlamaV2Sampler.sample(logits, draft_gen_settings, draft_sequence_ids, random.random(), self.tokenizer, prefix_token if k == 0 else None)
 
                 if prob < self.speculative_prob_threshold:
                     self.draft_cache.current_seq_len -= 1
