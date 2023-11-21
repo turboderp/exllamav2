@@ -68,9 +68,17 @@ to run without swapping for smaller models and have to set **-gr** to zero for l
 - **-hb / --bits *int***: Number of bits for the lm_head (output) layer of the model. Default is 6, although that
 value actually results in a mixed-precision quantization of about 6.3 bits. Options are 2, 3, 4, 5, 6 and 8. (Only 6
 and 8 appear to be useful.)
+
   
 - **-ss / --shard_size *float***: Output shard size, in megabytes. Default is 8192. Set this to 0 to disable sharding.
 Note that writing a very large `.safetensors` file can require a lot of system RAM.
+
+
+- **-ra / --rope_alpha *float***: RoPE (NTK) alpha to apply to base model for calibration.
+
+
+- **-rs / --rope_scale *float***: RoPE scaling factor to apply to base model for calibration.
+
 
 ### Notes
 

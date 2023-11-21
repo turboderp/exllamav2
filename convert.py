@@ -27,6 +27,8 @@ parser.add_argument("-b", "--bits", type = float, default = 4.125, help = "Targe
 parser.add_argument("-hb", "--head_bits", type = int, default = 6, help = "Target bits per weight (head layer)")
 parser.add_argument("-m", "--measurement", type = str, help = "Reuse previous measurement")
 parser.add_argument("-ss", "--shard_size", type = float, help = "Max shard size in MB (default: 8192)", default = 8192)
+parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
+parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
 
 args = parser.parse_args()
 
@@ -77,6 +79,8 @@ output_measurement = args.output_measurement
 if output_measurement is not None:
     if os.path.isdir(output_measurement):
         output_measurement = os.path.join(output_measurement, "measurement.json")
+rope_scale = args.rope_scale
+rope_alpha = args.rope_alpha
 
 compile_full = args.compile_full
 
@@ -142,7 +146,9 @@ if no_resume or not os.path.exists(job_file):
             "progress": "begin",
             "shard_size": shard_size,
             "output_measurement": output_measurement,
-            "compile_full": compile_full
+            "compile_full": compile_full,
+            "rope_scale": rope_scale,
+            "rope_alpha": rope_alpha
             }
 
     if reuse_measurement is not None:
@@ -190,6 +196,12 @@ else:
     print(f" -- Measurement will be saved to {job['output_measurement']}")
     print(f" !! Conversion script will end after measurement pass")
 
+if job["rope_scale"] is not None:
+    print(f" -- RoPE scale: {job['rope_scale']:.2f}")
+
+if job["rope_alpha"] is not None:
+    print(f" -- RoPE alpha: {job['rope_alpha']:.2f}")
+
 # Make sure subfolders exist
 
 if job["compile_full"] is not None:
@@ -210,6 +222,14 @@ if not os.path.exists(out_tensor_dir):
 max_l = max(job["measurement_length"], job["length"])
 config.max_input_len = max_l
 config.max_attention_size = max_l ** 2
+
+# Set scaling for input model
+
+if job["rope_scale"] is not None:
+    config.scale_pos_emb = job["rope_scale"]
+
+if job["rope_alpha"] is not None:
+    config.scale_alpha_value = job["rope_alpha"]
 
 # Create model without loading weights
 
