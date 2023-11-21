@@ -103,6 +103,42 @@ void softmax_cpu
 //    printf("sum: %f\n", summ);
 }
 
+int post_softmax_temperature
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float temperature
+)
+{
+//    printf("---- pre\n");
+//    for (int i = 0; i < num_candidates; ++i)
+//        DBGIF(i, temp_probs[i]);
+
+    float psum = 0.0f;
+    float itemp = 1.0f / temperature;
+    for (int i = 0; i < num_candidates; ++i)
+    {
+        float p = powf(temp_probs[i], itemp);
+        psum += p;
+        temp_probs[i] = p;
+    }
+
+    float ipsum = 1.0f / psum;
+    for (int i = 0; i < num_candidates; ++i)
+        temp_probs[i] *= ipsum;
+
+//    printf("---- post\n");
+//    DBGF(temperature);
+//    printf("----\n");
+//    for (int i = 0; i < num_candidates; ++i)
+//        DBGIF(i, temp_probs[i]);
+//    printf("\n");
+
+    return num_candidates;
+}
+
+
 void normalize_cpu
 (
     const int num_candidates,

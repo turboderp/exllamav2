@@ -758,7 +758,8 @@ std::vector<float> sample_basic
     bool mirostat,
     std::vector<float>& mirostat_mu,
     float mirostat_tau,
-    float mirostat_eta
+    float mirostat_eta,
+    float post_temperature
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -838,6 +839,11 @@ std::vector<float> sample_basic
         {
             num_candidates = mirostat_pre_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
             normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (post_temperature != 1.0f)
+        {
+            num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature);
         }
 
         num_candidates = multinomial_cpu(num_candidates, temp_probs, temp_indices, random);

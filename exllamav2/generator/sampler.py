@@ -18,6 +18,8 @@ class ExLlamaV2Sampler:
         tfs = 0
         typical = 0
 
+        temperature_last = False
+
         mirostat = False
         mirostat_tau = 1.5
         mirostat_eta = 0.1
@@ -157,7 +159,7 @@ class ExLlamaV2Sampler:
         output_probs = torch.empty((batch_size, 1), device = "cpu", dtype = torch.float)
 
         m = ext_c.sample_basic(logits,
-                               settings.temperature,
+                               1.0 if settings.temperature_last else settings.temperature,
                                settings.top_k,
                                settings.top_p,
                                settings.min_p,
@@ -170,7 +172,8 @@ class ExLlamaV2Sampler:
                                settings.mirostat,
                                settings.mirostat_mu if settings.mirostat else [],
                                settings.mirostat_tau,
-                               settings.mirostat_eta)
+                               settings.mirostat_eta,
+                               settings.temperature if settings.temperature_last else 1.0)
 
         if settings.mirostat: settings.mirostat_mu = m
 
