@@ -39,8 +39,7 @@ generator = ExLlamaV2BaseGenerator(model, cache, tokenizer)
 # Generate some text
 
 settings = ExLlamaV2Sampler.Settings()
-settings.temperature = 1.85
-settings.temperature_last = True
+settings.temperature = 0.85
 settings.top_k = 50
 settings.top_p = 0.8
 settings.token_repetition_penalty = 1.15
