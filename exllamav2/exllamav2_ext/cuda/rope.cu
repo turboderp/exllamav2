@@ -121,7 +121,7 @@ void rope_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_X;
     blockDim.y = threads_y;
-    gridDim.x = DIVIDE(head_dim, THREADS_X) / (use_half2 ? 2 : 1);
+    gridDim.x = DIVIDE(head_dim / (use_half2 ? 2 : 1), THREADS_X);
     gridDim.y = DIVIDE(rows_per_batch, threads_y);
     gridDim.z = batch_size;
 
