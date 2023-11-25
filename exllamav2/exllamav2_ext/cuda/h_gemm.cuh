@@ -22,5 +22,18 @@ void h_gemm_cuda
     const float beta
 );
 
+void h_gemm_cublas
+(
+    cublasHandle_t cublas_handle,
+    const int size_m,
+    const int size_n,
+    const int size_k,
+    const half* a,
+    const half* b,
+    half* c,
+    const float alpha,
+    const float beta
+);
+
 #endif
 

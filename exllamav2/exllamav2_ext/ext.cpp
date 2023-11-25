@@ -19,6 +19,7 @@
 #include "cuda/rms_norm.cuh"
 #include "cuda/rope.cuh"
 #include "cuda/cache.cuh"
+#include "cuda/h_gemm.cuh"
 
 #include "cpp/quantize_func.h"
 #include "cpp/sampling.h"
@@ -958,6 +959,56 @@ void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_si
 //    array_fp8_to_fp16_ref_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
 //}
 
+void gemm_half_half_half
+(
+    torch::Tensor a,
+    torch::Tensor b,
+    torch::Tensor c,
+    const float alpha,
+    const float beta,
+    bool force_cublas
+)
+{
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(a));
+
+    TORCH_CHECK_DTYPE(a, kHalf);
+    TORCH_CHECK_DTYPE(c, kHalf);
+    TORCH_CHECK_SHAPES(a, 0, c, 0, 1);
+    TORCH_CHECK_SHAPES(a, 1, b, 0, 1);
+    TORCH_CHECK_SHAPES(b, 1, c, 1, 1);
+
+    if (force_cublas)
+    {
+        h_gemm_cublas
+        (
+            at::cuda::getCurrentCUDABlasHandle(),
+            c.size(0), // m
+            c.size(1), // n
+            a.size(1), // k
+            (const half*) a.data_ptr(),
+            (const half*) b.data_ptr(),
+            (half*) c.data_ptr(),
+            alpha,
+            beta
+        );
+    }
+    else
+    {
+        h_gemm_cuda
+        (
+            at::cuda::getCurrentCUDABlasHandle(),
+            c.size(0), // m
+            c.size(1), // n
+            a.size(1), // k
+            (const half*) a.data_ptr(),
+            (const half*) b.data_ptr(),
+            (half*) c.data_ptr(),
+            alpha,
+            beta
+        );
+    }
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -988,6 +1039,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");
     m.def("fp8_to_fp16", &fp8_to_fp16, "fp8_to_fp16");
+    m.def("gemm_half_half_half", &gemm_half_half_half, "gemm_half_half_half");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 }
