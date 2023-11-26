@@ -142,6 +142,8 @@ __global__ void h_gemm_wide_kernel
     int m = blockIdx.y * W_THREADS_M + threadIdx.y;
     int n = blockIdx.x * W_THREADS_N + threadIdx.x;
 
+    if (m >= size_m) return;
+
     MatrixView_half a_(a, size_m, size_k);
     MatrixView_half b_(b, size_k, size_n);
     MatrixView_half_rw c_(c, size_m, size_n);
@@ -158,7 +160,6 @@ __global__ void h_gemm_wide_kernel
     __syncthreads();
 
     if (n >= size_n) return;
-    if (m >= size_m) return;
 
     half r = {};
 

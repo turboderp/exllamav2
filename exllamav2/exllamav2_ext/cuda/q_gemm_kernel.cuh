@@ -70,7 +70,7 @@ typedef void (*fp_gemm_half_q_half_kernel)
     const int,
     const int,
     const int,
-    const int,
+    const uint16_t*,
     const uint16_t*,
     const int,
     const int,
@@ -93,7 +93,7 @@ __global__ void gemm_half_q_half_kernel
     const int size_n,
     const int size_k,
     const int groups,
-    const int groupsize,
+    const uint16_t* __restrict__ b_q_group_map,
     const uint16_t* __restrict__ b_q_perm,
     const int rows_8,
     const int rows_6,
@@ -150,14 +150,19 @@ __global__ void gemm_half_q_half_kernel
 
     // Find initial group
 
-    int group = offset_k / groupsize;
+    //int group = offset_k / groupsize;
+    int group = b_q_group_map[offset_k * 2];
+
+//    if (offset_m == 0 && t == 0)
+//        DBGI2(offset_k, group);
 
     // Preload scales
 
     float scales[MAX_GROUPS_IN_BLOCK][4];
 
-    int groups_in_block = DIVIDE((end_k - offset_k), groupsize);
-    for (int g = 0; g < groups_in_block; g++)
+    //int groups_in_block = DIVIDE((end_k - offset_k), groupsize);
+    int temp_k = offset_k;
+    for (int g = 0; temp_k < end_k; g++)
     {
         int qscales[4];
         b_q_scale_.item4(qscales, group + g, n);
@@ -170,6 +175,7 @@ __global__ void gemm_half_q_half_kernel
         scales[g][1] = __int2float_rn(qscales[1] * qscales[1]) * maxscale;
         scales[g][2] = __int2float_rn(qscales[2] * qscales[2]) * maxscale;
         scales[g][3] = __int2float_rn(qscales[3] * qscales[3]) * maxscale;
+        temp_k += b_q_group_map[temp_k * 2 + 1];
     }
 
     // a, b offset
@@ -199,7 +205,7 @@ __global__ void gemm_half_q_half_kernel
     float qs_f1 = scales[scales_idx][1];
     float qs_f2 = scales[scales_idx][2];
     float qs_f3 = scales[scales_idx][3];
-    int nextgroup = offset_k + groupsize;
+    int nextgroup = offset_k + b_q_group_map[offset_k * 2 + 1];
 
     // Column result
 
@@ -219,7 +225,7 @@ __global__ void gemm_half_q_half_kernel
             qs_f1 = scales[scales_idx][1];
             qs_f2 = scales[scales_idx][2];
             qs_f3 = scales[scales_idx][3];
-            nextgroup += groupsize;
+            nextgroup += b_q_group_map[k * 2 + 1];
         }
 
         #pragma unroll
@@ -257,7 +263,7 @@ __global__ void gemm_half_q_half_kernel
             qs_f1 = scales[scales_idx][1];
             qs_f2 = scales[scales_idx][2];
             qs_f3 = scales[scales_idx][3];
-            nextgroup += groupsize;
+            nextgroup += b_q_group_map[k * 2 + 1];
         }
 
         #pragma unroll
@@ -296,7 +302,7 @@ __global__ void gemm_half_q_half_kernel
             qs_f1 = scales[scales_idx][1];
             qs_f2 = scales[scales_idx][2];
             qs_f3 = scales[scales_idx][3];
-            nextgroup += groupsize;
+            nextgroup += b_q_group_map[k * 2 + 1];
         }
 
         #pragma unroll
@@ -338,7 +344,7 @@ __global__ void gemm_half_q_half_kernel
             qs_f1 = scales[scales_idx][1];
             qs_f2 = scales[scales_idx][2];
             qs_f3 = scales[scales_idx][3];
-            nextgroup += groupsize;
+            nextgroup += b_q_group_map[k * 2 + 1];
         }
 
         #pragma unroll
@@ -375,7 +381,7 @@ __global__ void gemm_half_q_half_kernel
             qs_f1 = scales[scales_idx][1];
             qs_f2 = scales[scales_idx][2];
             qs_f3 = scales[scales_idx][3];
-            nextgroup += groupsize;
+            nextgroup += b_q_group_map[k * 2 + 1];
         }
 
         #pragma unroll
@@ -414,7 +420,7 @@ __global__ void gemm_half_q_half_kernel
             qs_f1 = scales[scales_idx][1];
             qs_f2 = scales[scales_idx][2];
             qs_f3 = scales[scales_idx][3];
-            nextgroup += groupsize;
+            nextgroup += b_q_group_map[k * 2 + 1];
         }
 
         #pragma unroll

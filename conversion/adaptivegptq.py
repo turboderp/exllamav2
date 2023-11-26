@@ -121,7 +121,7 @@ class AdaptiveGPTQ:
 
 
     def configure(self,
-                  group_size: int = 128,
+                  group_size: dict,
                   bits = None,
                   bits_prop = None,
                   scale_bits: int = 4
@@ -129,40 +129,58 @@ class AdaptiveGPTQ:
 
         self.group_size = group_size
         self.scale_bits = scale_bits
+        self.bits = bits
 
-        self.total_groups = (self.rows + self.group_size - 1) // self.group_size
+        assert isinstance(bits, list)
+        assert isinstance(bits_prop, list)
+        assert sum(bits_prop) == 1
 
-        if isinstance(bits, list):
+        groups = 0
+        remaining_rows = self.rows
+        self.bits_groups = []
+        for b, p in zip(self.bits, bits_prop):
+            assert p > 0
+            gsz = self.group_size[b]
+            g = math.ceil(min(self.rows * p, remaining_rows) / gsz)
+            groups += g
+            remaining_rows -= g * gsz
+            self.bits_groups.append(g)
 
-            self.bits = bits
-            g128 = (self.rows + 128 - 1) // 128
-            self.bits_groups = [max(round(g128 * p), 1) * 128 // self.group_size for p in bits_prop]
-            e = sum(self.bits_groups) - self.total_groups
-            self.bits_groups[-1] -= e
+        assert remaining_rows <= 0
 
-        else:
+        self.total_groups = groups
 
-            self.bits = [bits]
-            self.bits_groups = [self.total_groups]
+        # if isinstance(bits, list):
+        #
+        #     self.bits = bits
+        #     g128 = (self.rows + 128 - 1) // 128
+        #     self.bits_groups = [max(round(g128 * p), 1) * 128 // self.group_size for p in bits_prop]
+        #     e = sum(self.bits_groups) - self.total_groups
+        #     self.bits_groups[-1] -= e
+        #
+        # else:
+        #
+        #     self.bits = [bits]
+        #     self.bits_groups = [self.total_groups]
 
 
-    def num_bits(self, subtract_columns = 0):
-
-        gi = self.g_idx.numel() * 32
-        qs = self.qscale.numel() * self.scale_bits
-        qss = self.qscale_max.numel() * 16
-
-        w = 0
-        tr = self.rows
-        for g, b in zip(self.bits_groups, self.bits):
-
-            c = self.columns - subtract_columns
-            r = self.group_size * g
-            if r > tr: r = tr
-            tr -= r
-            w += r * c * b
-
-        return w + gi + qs + qss
+    # def num_bits(self, subtract_columns = 0):
+    #
+    #     gi = self.g_idx.numel() * 32
+    #     qs = self.qscale.numel() * self.scale_bits
+    #     qss = self.qscale_max.numel() * 16
+    #
+    #     w = 0
+    #     tr = self.rows
+    #     for g, b in zip(self.bits_groups, self.bits):
+    #
+    #         c = self.columns - subtract_columns
+    #         r = self.group_size * g
+    #         if r > tr: r = tr
+    #         tr -= r
+    #         w += r * c * b
+    #
+    #     return w + gi + qs + qss
 
 
     def add_batch(self, inputs):
@@ -299,46 +317,44 @@ class AdaptiveGPTQ:
             qscale_max = []
             qgroups = []
 
-            bits_idx = -1
-            bits_idx_r = 1
-
             error = weights.clone()
+            group_idx = 0
+            group_idx_list = []
 
-            for group in range(self.total_groups):
+            b = 0
+            for bits_idx, bits in enumerate(self.bits):
+                quantizer = AdaptiveQuantizer(bits = bits, scale_bits = self.scale_bits)
 
-                a = group * self.group_size
-                b = min(a + self.group_size, self.rows)
+                for group in range(self.bits_groups[bits_idx]):
+                    a = b
+                    b = min(a + self.group_size[bits], self.rows)
 
-                bits_idx_r -= 1
-                if bits_idx_r == 0:
-                    bits_idx += 1
-                    bits_idx_r = self.bits_groups[bits_idx]
-                    bits = self.bits[bits_idx]
-                    quantizer = AdaptiveQuantizer(bits = bits, scale_bits = self.scale_bits)
+                    qgroups.append(bits)
+                    qgroups.append(0)
 
-                qgroups.append(bits)
-                qgroups.append(0)
+                    quantizer.find_params(weights[a : b, :])
+                    scale.append(quantizer.scale)
+                    qscale.append(quantizer.qscale)
+                    qscale_max.append(quantizer.qscale_max)
 
-                quantizer.find_params(weights[a : b, :])
-                scale.append(quantizer.scale)
-                qscale.append(quantizer.qscale)
-                qscale_max.append(quantizer.qscale_max)
+                    ext_c.quantize_range(self.quant,
+                                         quantizer.scale,
+                                         self.qweight if keep_qweight else none_tensor,
+                                         quantizer.qzero,
+                                         quantizer.maxq,
+                                         self.hessian_inv,
+                                         weights,
+                                         error,
+                                         a,
+                                         b)
 
-                ext_c.quantize_range(self.quant,
-                                     quantizer.scale,
-                                     self.qweight if keep_qweight else none_tensor,
-                                     quantizer.qzero,
-                                     quantizer.maxq,
-                                     self.hessian_inv,
-                                     weights,
-                                     error,
-                                     a,
-                                     b)
+                    group_idx_list += [group_idx] * (b - a)
+                    group_idx += 1
+
 
             # Create g_idx to store inverse activation order
 
-            rows = [i // self.group_size for i in range(self.rows)]
-            self.g_idx = torch.tensor(rows, dtype = torch.int32, device = self.device)
+            self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32, device = self.device)
 
             self.invperm = torch.argsort(self.perm)
             self.g_idx = self.g_idx[self.invperm]
@@ -414,7 +430,7 @@ class AdaptiveGPTQ:
             self.qgroups[i * 2 + 1] = out_row
             i += 1
 
-            rows = min(self.group_size, rem_rows)
+            rows = min(self.group_size[bits], rem_rows)
             wpqr = 32 / bits
             qrows = rows / wpqr
             assert i == self.qgroups.shape[-1] or qrows == int(qrows)
@@ -428,9 +444,12 @@ class AdaptiveGPTQ:
             ext_c.pack_columns(g_qwt, g_qwt_packed, bits)
             qwt_packed.append(g_qwt_packed)
 
+            # print(row, rows, bits)
+
             row += rows
             out_row += qrows
             rem_rows -= rows
+
 
         qwt_packed = torch.cat(qwt_packed, dim = 0)
         output[key + ".q_weight"] = qwt_packed

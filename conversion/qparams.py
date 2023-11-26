@@ -1,7 +1,9 @@
 
+import math
+
 class QParams:
 
-    group_size: int
+    group_size: dict
     bits: list
     bits_prop: list
     scale_bits: int
@@ -10,12 +12,21 @@ class QParams:
 
     def __init__(self, group_size, bits, bits_prop, scale_bits):
 
-        self.group_size = group_size
         self.bits = bits
         self.bits_prop = bits_prop
         self.scale_bits = scale_bits
-        self.desc = self.get_desc()
 
+        # Allow group size per bitrate
+
+        if isinstance(group_size, dict):
+            self.group_size = { int(b): g for b, g in group_size.items() }
+        elif isinstance(group_size, list):
+            assert len(group_size) == len(bits)
+            self.group_size = { b: g for g, b in zip(group_size, bits) }
+        else:
+            self.group_size = { b: group_size for b in bits }
+
+        self.desc = self.get_desc()
 
     def get_dict(self):
 
@@ -40,19 +51,24 @@ class QParams:
         columns = shape[1]
         numel = rows * columns
 
-        groups = (rows + self.group_size - 1) // self.group_size
+        groups = 0
+        remaining_rows = rows
+        bits_groups = []
+        for b, p in zip(self.bits, self.bits_prop):
+            gsz = self.group_size[b]
+            g = math.ceil(min(rows * p, remaining_rows) / gsz)
+            groups += g
+            remaining_rows -= g * gsz
+            bits_groups.append(g)
 
-        g128 = (rows + 128 - 1) // 128
-        bits_groups = [max(round(g128 * p), 1) * 128 // self.group_size for p in self.bits_prop]
-        e = sum(bits_groups) - groups
-        bits_groups[-1] -= e
+        assert remaining_rows <= 0
 
         total_bits = 0
         tr = rows
 
         for g, b in zip(bits_groups, self.bits):
 
-            r = self.group_size * g
+            r = self.group_size[b] * g
             c = columns
             if r > tr: r = tr
             tr -= r
@@ -64,6 +80,38 @@ class QParams:
         total_bits ++ rows * 32                             # q_invperm
 
         return total_bits
+
+
+    # def total_bits_(self, shape):
+    #
+    #     rows = shape[0]
+    #     columns = shape[1]
+    #     numel = rows * columns
+    #
+    #     groups = (rows + self.group_size - 1) // self.group_size
+    #
+    #     g128 = (rows + 128 - 1) // 128
+    #     bits_groups = [max(round(g128 * p), 1) * 128 // self.group_size for p in self.bits_prop]
+    #     e = sum(bits_groups) - groups
+    #     bits_groups[-1] -= e
+    #
+    #     total_bits = 0
+    #     tr = rows
+    #
+    #     for g, b in zip(bits_groups, self.bits):
+    #
+    #         r = self.group_size * g
+    #         c = columns
+    #         if r > tr: r = tr
+    #         tr -= r
+    #         total_bits += r * c * b                         # q_weight
+    #
+    #     total_bits += groups * 16                           # q_scale_max
+    #     total_bits += groups * (16 + 16)                    # q_groups
+    #     total_bits += groups * columns * self.scale_bits    # q_scale
+    #     total_bits ++ rows * 32                             # q_invperm
+    #
+    #     return total_bits
 
 
     def bpw(self, shape):
@@ -80,9 +128,10 @@ class QParams:
         s = ""
         for b, p in zip(self.bits, self.bits_prop):
             if s != "": s += "/"
-            s += f"{p}:{b}b"
+            g = self.group_size[b]
+            s += f"{p}:{b}b_{g}g"
 
-        s += f" {self.group_size}g s{self.scale_bits}"
+        s += f" s{self.scale_bits}"
 
         return s
 
@@ -91,6 +140,19 @@ class QParams:
 
 qparams_options = \
 [
+    # QParams([128, 32], [4, 2], [0.12, 0.88], 4),
+    # QParams([128, 32], [4, 3], [0.12, 0.88], 4),
+    # QParams([128, 64, 32], [6, 4, 3], [0.05, 0.10, 0.85], 4),
+    # QParams([128, 64], [6, 4], [0.1, 0.9], 4),
+
+    # QParams(32, [4, 3], [0.1, 0.9], 4),
+    # QParams(128, [4], [1], 4),
+    # QParams(32, [4], [1], 4),
+    # QParams(32, [5, 4], [0.1, 0.9], 4),
+    # QParams(128, [5], [1], 4),
+    # QParams(32, [6, 4], [0.1, 0.9], 4),
+    # QParams(32, [6, 5], [0.1, 0.9], 4),
+
     QParams(32, [3, 2], [0.05, 0.95], 4),
     QParams(32, [3, 2], [0.25, 0.75], 4),
     QParams(32, [4, 2], [0.25, 0.75], 4),

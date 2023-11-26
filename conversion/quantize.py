@@ -116,7 +116,7 @@ def test_quants(source: ExLlamaV2Linear,
             desc = qp.desc
             err = rfn_error(quantized, inputs, outputs).item()
 
-            print(f" -- {desc:30} {bpw:2.2f} bpw    rfn_error: {err:2.5f}")
+            print(f" -- {desc:50} {bpw:2.2f} bpw    rfn_error: {err:2.5f}")
 
             option = { "desc": desc,
                        "bpw": bpw,
@@ -452,6 +452,19 @@ def do_quant(source: ExLlamaV2Linear,
 
         ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
         recons_w2 = recons_linear.forward(ident, force_cuda = True)
+
+        # for i in range(quant_w.shape[0]):
+        #     d = quant_w[i, :] - recons_w2[i, :]
+        #     dd = torch.max(torch.abs(d))
+        #     if (dd > 0.01):
+        #         print("------", i)
+        #         print(d)
+        # print("-------------------------")
+        # for i in range(recons_dict["q_perm"].shape[0]):
+        #     print(i, recons_dict["q_perm"][i].item())
+        # print("-------------------------")
+        # for i in range(recons_dict["q_invperm"].shape[0]):
+        #     print(i, recons_dict["q_invperm"][i].item())
 
         diff1 = torch.max(torch.abs(quant_w - recons_w))
         diff2 = torch.max(torch.abs(quant_w - recons_w2))

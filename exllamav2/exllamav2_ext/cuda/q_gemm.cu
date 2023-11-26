@@ -53,7 +53,7 @@ void gemm_half_q_half_cuda_part
             size_n,
             size_k,
             b->groups,
-            b->groupsize,
+            b->cuda_q_group_map,
             b->cuda_q_perm,
             b->rows_8,
             b->rows_6,
@@ -91,7 +91,7 @@ void gemm_half_q_half_cuda_part
             size_n,
             size_k,
             b->groups,
-            b->groupsize,
+            b->gptq_groupsize,
             b->cuda_q_perm,
             b->rows_4,
             clear
