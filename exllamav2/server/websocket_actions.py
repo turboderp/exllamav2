@@ -143,8 +143,7 @@ async def infer(request, ws, server, response):
 
     # Full response
 
-    full_response = request.get("full_response", False)
-
+    full_response = request['stream_full'] if 'stream_full' in request else False
     # Tokenize and trim prompt
 
     full_ctx = request["text"]
@@ -174,7 +173,7 @@ async def infer(request, ws, server, response):
 
     completion = ""
     gen_tokens = 0
-
+    response["util_text"] = util_ctx
     while True:
         chunk, eos, _ = server.generator.stream()
         completion += chunk
@@ -185,10 +184,10 @@ async def infer(request, ws, server, response):
             response["chunk"] = chunk
             if full_response: response["response"] = completion
             await ws.send(json.dumps(response))
-
+        response["chunk"] = ''
         if eos or gen_tokens >= num_tokens: break
-
-    if stream: del response["chunk"]
+    
+    #if stream: del response["chunk"]
     response["response_type"] = "full"
-    response["util_text"] = util_ctx
+    
     response["response"] = completion
