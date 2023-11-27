@@ -45,6 +45,8 @@ class ExLlamaV2Tokenizer:
     tokenized_str_cache = {}
     max_cached_strings = 100
 
+    enable_special_tokens = False
+
     def __init__(self, config, lazy_init = False):
 
         self.config = config
@@ -55,6 +57,9 @@ class ExLlamaV2Tokenizer:
 
         added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
         if os.path.exists(added_tokens_path):
+
+            self.encode_special_tokens = True
+            
             with open(added_tokens_path) as f:
                 self.extended_piece_to_id = json.load(f)
 
@@ -141,13 +146,13 @@ class ExLlamaV2Tokenizer:
 
     # TODO: Deal with rstrip and lstrip for added tokens
 
-    def encode(self, text, add_bos = False, add_eos = False, encode_special_tokens = False):
+    def encode(self, text, add_bos = False, add_eos = False):
 
         if isinstance(text, list):
 
             # text is a list of strings
 
-            if encode_special_tokens:
+            if self.enable_special_tokens:
                 list_ids = [self.encode_special(t) for t in text]
             else:
                 list_ids = self.tokenizer.EncodeAsIds(text)
@@ -171,7 +176,7 @@ class ExLlamaV2Tokenizer:
 
             # text is a single string
 
-            if encode_special_tokens:
+            if self.enable_special_tokens:
                 ids = self.encode_special(text)
             else:
                 ids = self.tokenizer.EncodeAsIds(text)
@@ -186,9 +191,9 @@ class ExLlamaV2Tokenizer:
 
     # Decode sequence with or without special tokens
 
-    def decode_(self, seq, decode_special_tokens):
+    def decode_(self, seq):
 
-        if not decode_special_tokens:
+        if not self.enable_special_tokens:
 
             max_token = self.tokenizer.vocab_size()
             seq = [t for t in seq if (t != self.pad_token_id and t < max_token and t!= self.eos_token_id)]
@@ -215,20 +220,20 @@ class ExLlamaV2Tokenizer:
 
     # Decode IDs
 
-    def decode(self, ids, decode_special_tokens = False):
+    def decode(self, ids):
 
         if ids.dim() > 1:
 
             texts = []
             for i in range(ids.shape[0]):
                 seq = ids[i].tolist()
-                texts.append(self.decode_(seq, decode_special_tokens))
+                texts.append(self.decode_(seq, self.enable_special_tokens))
             return texts
 
         else:
 
             ids = ids.tolist()
-            text = self.decode_(ids, decode_special_tokens)
+            text = self.decode_(ids, self.enable_special_tokens)
             return text
 
 
@@ -404,3 +409,4 @@ class ExLlamaV2Tokenizer:
         new_enc = self.encode(text)
         self.tokenized_str_cache[text] = new_enc
         return new_enc
+
