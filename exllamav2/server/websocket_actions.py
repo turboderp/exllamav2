@@ -104,6 +104,7 @@ async def infer(request, ws, server, response):
                 stream_full: bool,                  # return full response-so-far with each streamed chunk
                 top_p: float,                       # (optional) top-P threshold (0 to disable)
                 top_k: int,                         # (optional) top-K count (0 to disable)
+                min_p: float,                       # (optional) min-P threshold (0 to disable)
                 typical: float,                     # (optional) typical threshold (0 to disable)
                 temperature: float,                 # (optional) sampling temperature (1.0 = no temp adjust)
                 rep_pen: float,                     # (optional) repetition penalty (1.0 = no penalty)
@@ -163,6 +164,7 @@ async def infer(request, ws, server, response):
     gs = ExLlamaV2Sampler.Settings()
     gs.top_k = int(request["top_k"]) if "top_k" in request else 100
     gs.top_p = float(request["top_p"]) if "top_p" in request else 0.8
+    gs.min_p = float(request["min_p"]) if "min_p" in request else 0
     gs.typical = float(request["typical"]) if "typical" in request else 0
     gs.temperature = float(request["temperature"]) if "temperature" in request else 0.95
     gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.15
