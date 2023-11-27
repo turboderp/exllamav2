@@ -507,297 +507,297 @@ def do_quant(source: ExLlamaV2Linear,
 
 def quant(job, save_fn, model):
 
-    with torch.inference_mode():
+    qparams = {}
+    for layer in job["measurement"]:
+        qparams[layer["key"]] = layer["best_option"]["qparams"]
 
-        qparams = {}
-        for layer in job["measurement"]:
-            qparams[layer["key"]] = layer["best_option"]["qparams"]
+    # Quantize
 
-        # Quantize
+    if not "q_last_module_idx" in job:
+        job["q_last_module_idx"] = 0
 
-        if not "q_last_module_idx" in job:
-            job["q_last_module_idx"] = 0
+    input_states = None
+    output_states = None
 
-        input_states = None
-        output_states = None
+    page_rows = (job["gpu_rows"] < job["dataset_rows"])
 
-        page_rows = (job["gpu_rows"] < job["dataset_rows"])
+    while True:
 
-        while True:
+        index = job["q_last_module_idx"]
+        index += 1
+        if index >= len(model.modules): break
 
-            index = job["q_last_module_idx"]
-            index += 1
-            if index >= len(model.modules): break
+        # Prepare module
 
-            # Prepare module
+        module = model.modules[index]
+        print(f" -- Layer: {module.key} ({module.name})")
+        module.load()
 
-            module = model.modules[index]
-            print(f" -- Layer: {module.key} ({module.name})")
-            module.load()
+        time_begin = time.time()
 
-            time_begin = time.time()
+         # Reference forward pass
 
-             # Reference forward pass
+        in_name = os.path.join(job["out_dir"], "input_states.safetensors")
 
-            in_name = os.path.join(job["out_dir"], "input_states.safetensors")
+        if output_states is not None:
+            input_states = output_states
+            output_states = None
+        else:
+            with safe_open(in_name, framework = "pt", device = "cpu" if page_rows else "cuda:0") as f:
+                input_states = f.get_tensor("hidden_state")
 
-            if output_states is not None:
-                input_states = output_states
-                output_states = None
-            else:
-                with safe_open(in_name, framework = "pt", device = "cpu" if page_rows else "cuda:0") as f:
-                    input_states = f.get_tensor("hidden_state")
+        output_states_list = []
+        quantizers = {}
 
-            output_states_list = []
-            quantizers = {}
+        with torch.inference_mode():
 
-            with torch.inference_mode():
+            batchsize = 1  # Keeping this at 1 seems to help with numerical precision
+            batch1 = []
+            batch2 = []
 
-                batchsize = 1  # Keeping this at 1 seems to help with numerical precision
-                batch1 = []
-                batch2 = []
+            for b in range(input_states.shape[0]):
 
-                for b in range(input_states.shape[0]):
+                last = (b == input_states.shape[0] - 1)
 
-                    last = (b == input_states.shape[0] - 1)
+                x = input_states[b:b+1, :, :].to("cuda:0")
+                cache = None
+                attn_mask = None
+                if isinstance(module, ExLlamaV2Attention):
+                    attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
 
-                    x = input_states[b:b+1, :, :].to("cuda:0")
-                    cache = None
-                    attn_mask = None
-                    if isinstance(module, ExLlamaV2Attention):
-                        attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
+                outputs = module.forward(x, cache, attn_mask, intermediates = True)
 
-                    outputs = module.forward(x, cache, attn_mask, intermediates = True)
+                # Clamp state values to FP16 range
 
-                    # Clamp state values to FP16 range
+                for k, v in outputs.items():
+                    v[v == -float('inf')] = -65504.0
+                    v[v == float('inf')] = 65504.0
 
-                    for k, v in outputs.items():
-                        v[v == -float('inf')] = -65504.0
-                        v[v == float('inf')] = 65504.0
+                # Add batches to quantizers
 
-                    # Add batches to quantizers
+                if isinstance(module, ExLlamaV2Attention):
+                    if not "q_proj" in quantizers: quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
+                    if not "k_proj" in quantizers: quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
+                    if not "v_proj" in quantizers: quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
+                    if not "o_proj" in quantizers: quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
 
-                    if isinstance(module, ExLlamaV2Attention):
-                        if not "q_proj" in quantizers: quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
-                        if not "k_proj" in quantizers: quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
-                        if not "v_proj" in quantizers: quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
-                        if not "o_proj" in quantizers: quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
+                    batch1.append(outputs["post_norm"])
+                    if len(batch1) == batchsize or last:
+                        quantizers["q_proj"].add_batch(batch1)
+                        batch1 = []
 
-                        batch1.append(outputs["post_norm"])
-                        if len(batch1) == batchsize or last:
-                            quantizers["q_proj"].add_batch(batch1)
-                            batch1 = []
+                    batch2.append(outputs["attn_output"])
+                    if len(batch2) == batchsize or last:
+                        quantizers["o_proj"].add_batch(batch2)
+                        batch2 = []
 
-                        batch2.append(outputs["attn_output"])
-                        if len(batch2) == batchsize or last:
-                            quantizers["o_proj"].add_batch(batch2)
-                            batch2 = []
+                elif isinstance(module, ExLlamaV2MLP):
+                    if not "gate_proj" in quantizers: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
+                    if not "up_proj"   in quantizers: quantizers["up_proj"  ] = AdaptiveGPTQ(module.up_proj.linear)
+                    if not "down_proj" in quantizers: quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
 
-                    elif isinstance(module, ExLlamaV2MLP):
-                        if not "gate_proj" in quantizers: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
-                        if not "up_proj"   in quantizers: quantizers["up_proj"  ] = AdaptiveGPTQ(module.up_proj.linear)
-                        if not "down_proj" in quantizers: quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
+                    batch1.append(outputs["post_norm"])
+                    if len(batch1) == batchsize or last:
+                        quantizers["gate_proj"].add_batch(batch1)
+                        batch1 = []
 
-                        batch1.append(outputs["post_norm"])
-                        if len(batch1) == batchsize or last:
-                            quantizers["gate_proj"].add_batch(batch1)
-                            batch1 = []
+                    batch2.append(outputs["pre_down"])
+                    if len(batch2) == batchsize or last:
+                        quantizers["down_proj"].add_batch(batch2)
+                        batch2 = []
 
-                        batch2.append(outputs["pre_down"])
-                        if len(batch2) == batchsize or last:
-                            quantizers["down_proj"].add_batch(batch2)
-                            batch2 = []
+                elif module.key == "lm_head":
+                    if not "lm_head" in quantizers: quantizers["lm_head"] = AdaptiveGPTQ(module.linear)
 
-                    elif module.key == "lm_head":
-                        if not "lm_head" in quantizers: quantizers["lm_head"] = AdaptiveGPTQ(module.linear)
+                    batch1.append(x)
+                    if len(batch1) == batchsize or last:
+                        quantizers["lm_head"].add_batch(batch1)
+                        batch1 = []
 
-                        batch1.append(x)
-                        if len(batch1) == batchsize or last:
-                            quantizers["lm_head"].add_batch(batch1)
-                            batch1 = []
+                output_states_list.append(outputs["hidden_states"].to("cpu"))
 
-                    output_states_list.append(outputs["hidden_states"].to("cpu"))
+                outputs = None
+                attn_mask = None
+                x = None
 
-                    outputs = None
-                    attn_mask = None
-                    x = None
+        # Attention layer
 
-            # Attention layer
+        if isinstance(module, ExLlamaV2Attention):
 
-            if isinstance(module, ExLlamaV2Attention):
+            do_quant(module.q_proj, quantizers["q_proj"], qparams[module.q_proj.key], job)
+            quantizers["k_proj"].reuse_h(quantizers["q_proj"])
+            quantizers["v_proj"].reuse_h(quantizers["q_proj"])
+            del quantizers["q_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.k_proj, quantizers["k_proj"], qparams[module.k_proj.key], job, skip_prep = True)
+            del quantizers["k_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.v_proj, quantizers["v_proj"], qparams[module.v_proj.key], job, skip_prep = True)
+            del quantizers["v_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.o_proj, quantizers["o_proj"], qparams[module.o_proj.key], job)
+            del quantizers["o_proj"]
+            torch.cuda.empty_cache()
 
-                do_quant(module.q_proj, quantizers["q_proj"], qparams[module.q_proj.key], job)
-                quantizers["k_proj"].reuse_h(quantizers["q_proj"])
-                quantizers["v_proj"].reuse_h(quantizers["q_proj"])
-                del quantizers["q_proj"]
+        # MLP layer
+
+        if isinstance(module, ExLlamaV2MLP):
+
+            do_quant(module.gate_proj, quantizers["gate_proj"], qparams[module.gate_proj.key], job)
+            quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+            del quantizers["gate_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.up_proj,   quantizers["up_proj"  ], qparams[module.up_proj.key  ], job, skip_prep = True)
+            del quantizers["up_proj"]
+            torch.cuda.empty_cache()
+            do_quant(module.down_proj, quantizers["down_proj"], qparams[module.down_proj.key], job)
+            del quantizers["down_proj"]
+            torch.cuda.empty_cache()
+
+        # Head module
+
+        if module.key == "lm_head" and isinstance(module, ExLlamaV2Linear):
+
+            bits = job["head_bits"]
+            qp = qparams_headoptions[bits]
+            if qp is not None:
+
+                do_quant(module, quantizers["lm_head"], qp.get_dict(), job)
+                del quantizers["lm_head"]
                 torch.cuda.empty_cache()
-                do_quant(module.k_proj, quantizers["k_proj"], qparams[module.k_proj.key], job, skip_prep = True)
-                del quantizers["k_proj"]
-                torch.cuda.empty_cache()
-                do_quant(module.v_proj, quantizers["v_proj"], qparams[module.v_proj.key], job, skip_prep = True)
-                del quantizers["v_proj"]
-                torch.cuda.empty_cache()
-                do_quant(module.o_proj, quantizers["o_proj"], qparams[module.o_proj.key], job)
-                del quantizers["o_proj"]
-                torch.cuda.empty_cache()
 
-            # MLP layer
+            # Start computing perplexity on last layer
 
-            if isinstance(module, ExLlamaV2MLP):
+            with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
+                cal_ids = f.get_tensor("input_ids")
 
-                do_quant(module.gate_proj, quantizers["gate_proj"], qparams[module.gate_proj.key], job)
-                quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
-                del quantizers["gate_proj"]
-                torch.cuda.empty_cache()
-                do_quant(module.up_proj,   quantizers["up_proj"  ], qparams[module.up_proj.key  ], job, skip_prep = True)
-                del quantizers["up_proj"]
-                torch.cuda.empty_cache()
-                do_quant(module.down_proj, quantizers["down_proj"], qparams[module.down_proj.key], job)
-                del quantizers["down_proj"]
-                torch.cuda.empty_cache()
+            logprob_sum = 0.0
+            logprob_count = 0
 
-            # Head module
+        # Post-quantization forward pass
 
-            if module.key == "lm_head" and isinstance(module, ExLlamaV2Linear):
+        out_name = os.path.join(job["out_dir"], "output_states.safetensors")
 
-                bits = job["head_bits"]
-                qp = qparams_headoptions[bits]
-                if qp is not None:
+        with torch.inference_mode():
 
-                    do_quant(module, quantizers["lm_head"], qp.get_dict(), job)
-                    del quantizers["lm_head"]
-                    torch.cuda.empty_cache()
+            rfn_sum = 0.0
+            # error_states_list = output_states_list.copy()
 
-                # Start computing perplexity on last layer
+            for b in range(input_states.shape[0]):
 
-                with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
-                    cal_ids = f.get_tensor("input_ids")
+                x = input_states[b:b+1, :, :].to("cuda:0")
+                cache = None
+                attn_mask = None
+                if isinstance(module, ExLlamaV2Attention):
+                    attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
 
-                logprob_sum = 0.0
-                logprob_count = 0
+                outputs = module.forward(x, cache, attn_mask)
 
-            # Post-quantization forward pass
+                # Clamp state values to FP16 range
 
-            out_name = os.path.join(job["out_dir"], "output_states.safetensors")
+                outputs[outputs == -float('inf')] = -65504.0
+                outputs[outputs == float('inf')] = 65504.0
 
-            with torch.inference_mode():
+                # Compute perplexity for head layer without saving output state
 
-                rfn_sum = 0.0
+                if module.key == "lm_head" and b < job["measurement_rows"]:
 
-                for b in range(input_states.shape[0]):
+                    if module.padding > 0: outputs = outputs[:, :, :-module.padding]
 
-                    x = input_states[b:b+1, :, :].to("cuda:0")
-                    cache = None
-                    attn_mask = None
-                    if isinstance(module, ExLlamaV2Attention):
-                        attn_mask = model.build_attn_mask(1, x.shape[1], 0, None, "cuda:0")
+                    logits = outputs[:, :-1, :]
+                    logits = logits.float() + 1e-10
+                    target_ids = cal_ids[b:b+1, 1:].to("cuda:0")
 
-                    outputs = module.forward(x, cache, attn_mask)
+                    log_probs = F.log_softmax(logits, dim = -1)
+                    token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+                    logprob_sum += token_log_probs.sum().item()
+                    logprob_count += target_ids.numel()
 
-                    # Clamp state values to FP16 range
+                # Measure error
 
-                    outputs[outputs == -float('inf')] = -65504.0
-                    outputs[outputs == float('inf')] = 65504.0
+                target = output_states_list[b]
+                if target.device == torch.device("cpu"): target = target.to("cuda:0")
+                a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
 
-                    # Compute perplexity for head layer without saving output state
+                # diff = torch.max(torch.abs(a_[0] - b_[0]))
+                # max_diff = max(diff, max_diff)
+                #
+                # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
+                # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
+                # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
+                # print(f"abs(a-b) min, max: {torch.min()}, {torch.max(torch.abs(a_[0] - b_[0]))}")
 
-                    if module.key == "lm_head" and b < job["measurement_rows"]:
+                rfn_sum += rfn
+                target = None
 
-                        if module.padding > 0: outputs = outputs[:, :, :-module.padding]
+                if page_rows:
+                    outputs = outputs.to("cpu")
 
-                        logits = outputs[:, :-1, :]
-                        logits = logits.float() + 1e-10
-                        target_ids = cal_ids[b:b+1, 1:].to("cuda:0")
+                output_states_list[b] = outputs
+                # error_states_list[b] -= outputs
 
-                        log_probs = F.log_softmax(logits, dim = -1)
-                        token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
-                        logprob_sum += token_log_probs.sum().item()
-                        logprob_count += target_ids.numel()
+                outputs = None
+                x = None
+                attn_mask = None
 
-                    # Measure error
+            rfn_avg = rfn_sum / input_states.shape[0]
+            print(f" -- Layer rfn_error: {rfn_avg:.6f}")
 
-                    target = output_states_list[b]
-                    if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                    a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
-                    b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
-                    rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
-
-                    # diff = torch.max(torch.abs(a_[0] - b_[0]))
-                    # max_diff = max(diff, max_diff)
-                    #
-                    # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
-                    # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
-                    # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
-                    # print(f"abs(a-b) min, max: {torch.min()}, {torch.max(torch.abs(a_[0] - b_[0]))}")
-
-                    rfn_sum += rfn
-                    target = None
-
-                    if page_rows:
-                        outputs = outputs.to("cpu")
-
-                    output_states_list[b] = outputs
-
-                    outputs = None
-                    x = None
-                    attn_mask = None
-
-                rfn_avg = rfn_sum / input_states.shape[0]
-                print(f" -- Layer rfn_error: {rfn_avg:.6f}")
-
-                if math.isnan(rfn_avg) or rfn_avg > 1.0:
-                    print(" ## Quantization error (3)")
-                    os._exit(0)
-
-                if module.key != "lm_head":
-
-                    output_states = torch.cat(output_states_list, dim = 0)
-                    save_file({ "hidden_state": output_states }, out_name)
-
-                input_states = None
-                del input_states
-
-            # Perplexity
-
-            if module.key == "lm_head" and isinstance(module, ExLlamaV2Linear):
-
-                mean_log_prob = logprob_sum / logprob_count
-                perplexity = math.exp(-mean_log_prob)
-
-                print(f" -- Calibration perplexity (quant): {perplexity:.4f}")
-                job["cal_perplexity"] = perplexity
-
-            # Unload module
-
-            output_states_list = None
-            module.unload()
-
-            # Advance
-
-            job["invalid"] = True
-            save_fn()
-
-            job["q_last_module_idx"] = index
+            if math.isnan(rfn_avg) or rfn_avg > 1.0:
+                print(" ## Quantization error (3)")
+                os._exit(0)
 
             if module.key != "lm_head":
-                os.remove(in_name)
-                os.rename(out_name, in_name)
 
-            if "invalid" in job: del job["invalid"]
-            save_fn()
+                output_states = torch.cat(output_states_list, dim = 0)
+                save_file({ "hidden_state": output_states }, out_name)
 
-            # Report time taken
+            input_states = None
+            del input_states
 
-            time_end = time.time()
-            layer_time = time_end - time_begin
-            print(f" -- Module quantized, time: {layer_time:.2f} seconds")
+        # Perplexity
 
-        # Export measurement
+        if module.key == "lm_head" and isinstance(module, ExLlamaV2Linear):
 
-        exp_measurement = { "measurement": job["measurement"],
-                            "last_module_idx": job["last_module_idx"],
-                            "base_perplexity": job["base_perplexity"] }
+            mean_log_prob = logprob_sum / logprob_count
+            perplexity = math.exp(-mean_log_prob)
 
-        with open(os.path.join(job["out_dir"], "measurement.json"), "w") as f:
-            f.write(json.dumps(exp_measurement, indent = 4))
+            print(f" -- Calibration perplexity (quant): {perplexity:.4f}")
+            job["cal_perplexity"] = perplexity
+
+        # Unload module
+
+        output_states_list = None
+        module.unload()
+
+        # Advance
+
+        job["invalid"] = True
+        save_fn()
+
+        job["q_last_module_idx"] = index
+
+        if module.key != "lm_head":
+            os.remove(in_name)
+            os.rename(out_name, in_name)
+
+        if "invalid" in job: del job["invalid"]
+        save_fn()
+
+        # Report time taken
+
+        time_end = time.time()
+        layer_time = time_end - time_begin
+        print(f" -- Module quantized, time: {layer_time:.2f} seconds")
+
+    # Export measurement
+
+    exp_measurement = { "measurement": job["measurement"],
+                        "last_module_idx": job["last_module_idx"],
+                        "base_perplexity": job["base_perplexity"] }
+
+    with open(os.path.join(job["out_dir"], "measurement.json"), "w") as f:
+        f.write(json.dumps(exp_measurement, indent = 4))
 
