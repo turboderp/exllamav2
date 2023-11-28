@@ -1,7 +1,108 @@
 from exllamav2.config import ExLlamaV2Config
 from sentencepiece import SentencePieceProcessor
+from transformers import AutoTokenizer
+from typing import List, Union
 import torch
 import os, json, re
+import warnings
+
+class BaseTokenizer:
+    def __init__(self, model) -> None:
+        self.tokenizer_model = model
+
+    def unk_id(self) -> int:
+        return self.tokenizer_model.unk_id()
+    
+    def pad_id(self) -> int:
+        return self.tokenizer_model.pad_id()
+    
+    def pad_token(self) -> str:
+        return None
+    
+    def bos_id(self) -> int:
+        return self.tokenizer_model.bos_id()
+    
+    def bos_token(self) -> str:
+        return None
+
+    def eos_id(self) -> int:
+        return self.tokenizer_model.eos_id()
+    
+    def eos_token(self) -> str:
+        return None
+    
+    def vocab_size(self) -> int:
+        return self.tokenizer_model.vocab_size()
+    
+    def id_to_piece(self, idx: Union[int, List[int]]) -> str:
+        return self.tokenizer_model.id_to_piece(idx)
+    
+    def decode(self, idx: int) -> str:
+        return self.tokenizer_model.decode(idx)
+    
+    def Decode(self, ids: List[int]) -> str:
+        return self.tokenizer_model.Decode(ids)
+    
+    def Encode(self, text: str) -> list:
+        return self.tokenizer_model.Encode(text)
+    
+    def EncodeAsIds(self, text: str) -> list:
+        return self.tokenizer_model.EncodeAsIds(text)
+
+
+class SentencePieceTokenizer(BaseTokenizer):
+    def __init__(self, model_file:str) -> None:
+        super().__init__(SentencePieceProcessor(model_file=model_file))
+
+
+class HuggingFaceAutoTokenizer(BaseTokenizer):
+    def __init__(self, model_name:str) -> None:
+        super().__init__(AutoTokenizer.from_pretrained(model_name, trust_remote_code=True))
+    
+    def unk_id(self) -> int:
+        return self.tokenizer_model.unk_token_id
+    
+    def eos_id(self) -> int:
+        return self.tokenizer_model.eos_token_id
+    
+    def eos_token(self) -> str:
+        return self.tokenizer_model.eos_token
+    
+    def bos_id(self) -> int:
+        return self.tokenizer_model.bos_token_id
+    
+    def bos_token(self) -> str:
+        return self.tokenizer_model.bos_token
+    
+    def pad_id(self) -> int:
+        return self.tokenizer_model.pad_token_id
+    
+    def pad_token(self) -> str:
+        return self.tokenizer_model.pad_token
+    
+    def vocab_size(self) -> int:
+        return self.tokenizer_model.vocab_size
+    
+    def id_to_piece(self, idx: Union[int, List[int]]) -> str:
+        if isinstance(idx, int):
+            return self.tokenizer_model.decode(idx)
+        elif isinstance(idx, list):
+            return [self.tokenizer_model.decode(i) for i in idx]
+    
+    def decode(self, id: int) -> str:
+        return self.tokenizer_model.decode(id)
+    
+    def Decode(self, ids: List[int]) -> str:
+        return self.tokenizer_model.decode(ids)
+    
+    def Encode(self, text: str) -> list:
+        return self.tokenizer_model.encode(text)
+    
+    def EncodeAsIds(self, text: str) -> list:
+        if self.tokenizer_model.is_fast or not self.tokenizer_model.split_special_tokens:
+            warnings.warn("Current HuggingFace tokenizer doesn't support encode ignoring special token")
+        return self.tokenizer_model.encode(text)
+
 
 class ExLlamaV2Tokenizer:
 
@@ -16,7 +117,7 @@ class ExLlamaV2Tokenizer:
 
 
     config: ExLlamaV2Config
-    tokenizer: SentencePieceProcessor
+    tokenizer: BaseTokenizer
 
     unk_token: str = "<unk>"
     bos_token: str = "<s>"
@@ -49,7 +150,9 @@ class ExLlamaV2Tokenizer:
 
         self.config = config
 
-        self.tokenizer = SentencePieceProcessor(model_file = self.config.tokenizer_path)
+        self.tokenizer = SentencePieceTokenizer(model_file = self.config.tokenizer_path) \
+            if os.path.exists(self.config.tokenizer_path) \
+            else HuggingFaceAutoTokenizer(model_name = os.path.dirname(self.config.tokenizer_path))
 
         # Load added_tokens.json if present
 
@@ -72,11 +175,11 @@ class ExLlamaV2Tokenizer:
 
         # Get control token strings
 
-        try: self.unk_token = self.extended_id_to_piece[self.unk_token_id] or self.tokenizer.id_to_piece(self.unk_token_id)
+        try: self.unk_token = (self.tokenizer.unk_token() or self.extended_id_to_piece.get(self.unk_token_id, None)) or self.tokenizer.id_to_piece(self.unk_token_id)
         except: pass
-        try: self.bos_token = self.extended_id_to_piece[self.bos_token_id] or self.tokenizer.id_to_piece(self.bos_token_id)
+        try: self.bos_token = (self.tokenizer.bos_token() or self.extended_id_to_piece.get(self.bos_token_id, None)) or self.tokenizer.id_to_piece(self.bos_token_id)
         except: pass
-        try: self.eos_token = self.extended_id_to_piece[self.eos_token_id] or self.tokenizer.id_to_piece(self.eos_token_id)
+        try: self.eos_token = (self.tokenizer.eos_token() or self.extended_id_to_piece.get(self.eos_token_id, None)) or self.tokenizer.id_to_piece(self.eos_token_id)
         except: pass
 
         self.pad_token_id = 0
@@ -88,15 +191,17 @@ class ExLlamaV2Tokenizer:
 
         # Make sure extended vocab contains control tokens, but avoid empty pieces
 
-        if self.unk_token != "":
-            self.extended_piece_to_id[self.unk_token] = self.unk_token_id
-            self.extended_id_to_piece[self.unk_token_id] = self.unk_token
-        if self.bos_token != "":
-            self.extended_piece_to_id[self.bos_token] = self.bos_token_id
-            self.extended_id_to_piece[self.bos_token_id] = self.bos_token
-        if self.eos_token != "":
-            self.extended_piece_to_id[self.eos_token] = self.eos_token_id
-            self.extended_id_to_piece[self.eos_token_id] = self.eos_token
+        if isinstance(self.tokenizer, SentencePieceTokenizer):
+
+            if self.unk_token != "":
+                self.extended_piece_to_id[self.unk_token] = self.unk_token_id
+                self.extended_id_to_piece[self.unk_token_id] = self.unk_token
+            if self.bos_token != "":
+                self.extended_piece_to_id[self.bos_token] = self.bos_token_id
+                self.extended_id_to_piece[self.bos_token_id] = self.bos_token
+            if self.eos_token != "":
+                self.extended_piece_to_id[self.eos_token] = self.eos_token_id
+                self.extended_id_to_piece[self.eos_token_id] = self.eos_token
 
         # Create dictionaries on init
 
@@ -122,18 +227,20 @@ class ExLlamaV2Tokenizer:
 
     def encode_special(self, text: str):
 
-        if self.special_delimiters is None:
-            self.special_delimiters = re.compile("(" + "|".join(map(re.escape, self.extended_piece_to_id.keys())) + ")")
+        if isinstance(self.tokenizer, SentencePieceTokenizer):
+            if self.special_delimiters is None:
+                self.special_delimiters = re.compile("(" + "|".join(map(re.escape, self.extended_piece_to_id.keys())) + ")")
 
-        split = self.special_delimiters.split(text)
-        encoded = []
+            split = self.special_delimiters.split(text)
+            encoded = []
 
-        i = 0
-        while i < len(split):
-            if split[i] != "": encoded += self.tokenizer.EncodeAsIds(split[i])
-            if i + 1 < len(split): encoded += [self.extended_piece_to_id[split[i + 1]]]
-            i += 2
-
+            i = 0
+            while i < len(split):
+                if split[i] != "": encoded += self.tokenizer.EncodeAsIds(split[i])
+                if i + 1 < len(split): encoded += [self.extended_piece_to_id[split[i + 1]]]
+                i += 2
+        else:
+            encoded = self.tokenizer.Encode(text)
         return encoded
 
 
