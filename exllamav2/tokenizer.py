@@ -11,48 +11,93 @@ class BaseTokenizer:
         self.tokenizer_model = model
 
     def unk_id(self) -> int:
-        return self.tokenizer_model.unk_id()
+        raise NotImplementedError()
     
     def pad_id(self) -> int:
-        return self.tokenizer_model.pad_id()
+        raise NotImplementedError()
     
-    def pad_token(self) -> str:
-        return None
+    def pad_token(self) -> str or None:
+        raise NotImplementedError()
     
     def bos_id(self) -> int:
-        return self.tokenizer_model.bos_id()
-    
-    def bos_token(self) -> str:
-        return None
+        raise NotImplementedError()
+
+    def unk_token(self) -> str or None:
+        raise NotImplementedError()
+
+    def bos_token(self) -> str or None:
+        raise NotImplementedError()
 
     def eos_id(self) -> int:
-        return self.tokenizer_model.eos_id()
+        raise NotImplementedError()
     
-    def eos_token(self) -> str:
-        return None
+    def eos_token(self) -> str or None:
+        raise NotImplementedError()
     
     def vocab_size(self) -> int:
-        return self.tokenizer_model.vocab_size()
-    
+        raise NotImplementedError()
+
     def id_to_piece(self, idx: Union[int, List[int]]) -> str:
-        return self.tokenizer_model.id_to_piece(idx)
+        raise NotImplementedError()
     
     def decode(self, idx: int) -> str:
-        return self.tokenizer_model.decode(idx)
+        raise NotImplementedError()
     
     def Decode(self, ids: List[int]) -> str:
-        return self.tokenizer_model.Decode(ids)
+        raise NotImplementedError()
     
     def Encode(self, text: str) -> list:
-        return self.tokenizer_model.Encode(text)
+        raise NotImplementedError()
     
     def EncodeAsIds(self, text: str) -> list:
-        return self.tokenizer_model.EncodeAsIds(text)
+        raise NotImplementedError()
 
 
 class SentencePieceTokenizer(BaseTokenizer):
     def __init__(self, model_file:str) -> None:
         super().__init__(SentencePieceProcessor(model_file=model_file))
+
+    def unk_id(self) -> int:
+        return self.tokenizer_model.unk_id()
+
+    def pad_id(self) -> int:
+        return self.tokenizer_model.pad_id()
+
+    def pad_token(self) -> str or None:
+        return None
+
+    def bos_id(self) -> int:
+        return self.tokenizer_model.bos_id()
+
+    def unk_token(self) -> str or None:
+        return None
+
+    def bos_token(self) -> str or None:
+        return None
+
+    def eos_id(self) -> int:
+        return self.tokenizer_model.eos_id()
+
+    def eos_token(self) -> str or None:
+        return None
+
+    def vocab_size(self) -> int:
+        return self.tokenizer_model.vocab_size()
+
+    def id_to_piece(self, idx: Union[int, List[int]]) -> str:
+        return self.tokenizer_model.id_to_piece(idx)
+
+    def decode(self, idx: int) -> str:
+        return self.tokenizer_model.decode(idx)
+
+    def Decode(self, ids: List[int]) -> str:
+        return self.tokenizer_model.Decode(ids)
+
+    def Encode(self, text: str) -> list:
+        return self.tokenizer_model.Encode(text)
+
+    def EncodeAsIds(self, text: str) -> list:
+        return self.tokenizer_model.EncodeAsIds(text)
 
 
 class HuggingFaceAutoTokenizer(BaseTokenizer):
@@ -83,7 +128,7 @@ class HuggingFaceAutoTokenizer(BaseTokenizer):
     def vocab_size(self) -> int:
         return self.tokenizer_model.vocab_size
     
-    def id_to_piece(self, idx: Union[int, List[int]]) -> str:
+    def id_to_piece(self, idx: Union[int, List[int]]) -> str or list:
         if isinstance(idx, int):
             return self.tokenizer_model.decode(idx)
         elif isinstance(idx, list):
