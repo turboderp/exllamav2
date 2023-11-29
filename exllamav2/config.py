@@ -158,7 +158,3 @@ class ExLlamaV2Config:
         # Model dimensions
 
         self.head_dim = self.hidden_size // self.num_attention_heads
-
-        # Tokenizer
-
-        self.tokenizer_path = os.path.join(self.model_dir, "tokenizer.model")
