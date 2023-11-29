@@ -200,6 +200,44 @@ class PromptFormat_zephyr(PromptFormat):
     def print_extra_newline(self):
         return True
 
+
+class PromptFormat_deepseek(PromptFormat):
+
+    description = "DeepSeek Coder Instruct"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."""
+
+    def first_prompt(self):
+        return \
+            """<|system_prompt|>\n""" + \
+            """### Instruction:\n""" + \
+            """<|user_prompt|>\n""" + \
+            """### Response:\n"""
+
+    def subs_prompt(self):
+        return \
+            """### Instruction:\n""" + \
+            """<|user_prompt|>\n""" + \
+            """### Response:\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """### Instruction"""]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+    
+
 prompt_formats = \
 {
     "raw": PromptFormat_raw,
@@ -207,7 +245,8 @@ prompt_formats = \
     "codellama": PromptFormat_codellama,
     "chatml": PromptFormat_chatml,
     "tinyllama": PromptFormat_tinyllama,
-    "zephyr": PromptFormat_zephyr
+    "zephyr": PromptFormat_zephyr,
+    "deepseek": PromptFormat_deepseek
 }
 
 
