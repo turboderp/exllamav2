@@ -61,7 +61,7 @@ void softmax_cpu
 {
     float esum = 0.0f;
     float itemp = 1.0f / temperature;
-    float maxl = 0.0f;
+    float maxl = -1e38;
 
     #pragma unroll(32)
     for (int i = 0; i < vocab_size; i++)
