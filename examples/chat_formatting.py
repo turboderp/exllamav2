@@ -63,8 +63,8 @@ class BlackBackgroundTerminalFormatter(TerminalFormatter):
 
         # Padding of code
         lines = content.split('\n')
-        padded_lines = [f"{lines[0]}{' ' * self.code_pad * 2}"] + [f"{' ' * self.code_pad}{line}{' ' * self.code_pad}" for line in
-                                                                   lines[1:-1]] + [lines[-1]]
+        padded_lines = [f"{' ' * self.code_pad}{line}{' ' * self.code_pad}" for line in lines][:-1]
+
         content = '\n'.join(padded_lines)
 
         # Modify the ANSI codes to include a black background
@@ -73,6 +73,9 @@ class BlackBackgroundTerminalFormatter(TerminalFormatter):
         # Offset codeblock
         modified_content = '\n'.join([modified_content.split('\n')[0]] + [f"{' ' * self.block_pad_left}{line}" for line in
                                                                           modified_content.split('\n')[1:]])
+        
+        # add newline
+        modified_content += '\n'
 
         # Relay the modified content to the outfile
         outfile.write(modified_content)
