@@ -864,6 +864,20 @@ std::vector<float> sample_basic
         {
             mirostat_mu[i] = mirostat_post_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
         }
+
+        // Derive some more totally random numbers for subsequent samples in the same batch
+
+        if (bsz > 1)
+        {
+            float r = random;
+            for (int j = 0; j < 10; ++j)
+            {
+                r += 1.337 + random;
+                r *= r;
+                r = fmod(r, 1.0f);
+            }
+            random = r;
+        }
     }
 
     free(temp_probs);
