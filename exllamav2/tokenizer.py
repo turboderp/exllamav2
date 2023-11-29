@@ -115,7 +115,10 @@ class ExLlamaV2Tokenizer:
         self.bos_token = (self.tokenizer.bos_token() or self.extended_id_to_piece.get(self.bos_token_id, None)) or self.tokenizer.id_to_piece(self.bos_token_id)
         self.eos_token = (self.tokenizer.eos_token() or self.extended_id_to_piece.get(self.eos_token_id, None)) or self.tokenizer.id_to_piece(self.eos_token_id)
 
-        self.pad_token_id = 0
+        # Some tokenizers use token ID zero for text but don't explicitly define a padding token but provide one anyway
+
+        pad_test = self.tokenizer.piece_to_id("<pad>")
+        self.pad_token_id = pad_test or 0
 
         # Special case if <unk> and <pad> have the same ID
 
