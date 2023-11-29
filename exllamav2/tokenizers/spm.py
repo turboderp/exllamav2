@@ -6,7 +6,7 @@ class ExLlamaV2TokenizerSPM(ExLlamaV2TokenizerBase):
 
     def __init__(self, tokenizer_model: str):
         super().__init__()
-        self.spm = SentencePieceProcessor(model_file = model_file)
+        self.spm = SentencePieceProcessor(model_file = tokenizer_model)
 
     def unk_id(self) -> int or None: return self.spm.unk_id()
     def pad_id(self) -> int or None: return self.spm.pad_id()
@@ -24,21 +24,19 @@ class ExLlamaV2TokenizerSPM(ExLlamaV2TokenizerBase):
         all_tokens = list(range(self.vocab_size()))
         return enumerate(self.spm.id_to_piece(all_tokens))
 
-    def id_to_piece(self, idx: int) -> str: raise NotImplementedError()
+    def id_to_piece(self, idx: int) -> str:
+        return self.spm.id_to_piece(idx)
 
-    def piece_to_id(self, text: str) -> int: raise NotImplementedError()
+    def piece_to_id(self, text: str) -> int:
+        return self.spm.piece_to_id(text)
 
     def vocab_size(self) -> int:
         return self.spm.vocab_size()
 
-    def decode(self, idx: int) -> str:
-        return self.spm.decode(idx)
+    def decode(self, ids: List[int]) -> str:
+        text = self.spm.decode(ids)
+        return text
 
-    def Decode(self, ids: List[int]) -> str:
-        return self.spm.Decode(ids)
-
-    def Encode(self, text: str) -> list:
-        return self.spm.Encode(text)
-
-    def EncodeAsIds(self, text: str) -> list:
-        return self.spm.EncodeAsIds(text)
+    def encode(self, text: list or str) -> list:
+        encoding = self.spm.EncodeAsIds(text)
+        return encoding

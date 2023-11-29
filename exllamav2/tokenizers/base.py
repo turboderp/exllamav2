@@ -47,3 +47,16 @@ class ExLlamaV2TokenizerBase:
     def id_to_ord(self, idx: int) -> int:
         piece = self.id_to_piece(idx)
         return self.piece_to_ord(piece)
+
+    def deduce_char_map(self, input_char):
+        char_id = self.encode(input_char)[-1]
+        char_str = self.id_to_piece(char_id)
+        match = self.ord_exp.match(char_str)
+        if match:
+            h = match.group(1)
+            o = int(h, 16)
+            char_str = chr(o)
+        else:
+            char_str = char_str[-1]
+        return char_str
+

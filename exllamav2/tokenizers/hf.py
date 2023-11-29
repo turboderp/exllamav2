@@ -22,8 +22,9 @@ class ExLlamaV2TokenizerHF(ExLlamaV2TokenizerBase):
 
         m = self.hf_tokenizer.model
         if isinstance(m, models.BPE):
-            self.space_char_ = "Ġ"
-            self.newline_char_ = "Ċ"
+            self.space_char_ = self.deduce_char_map(" ")  # "Ġ"
+            self.newline_char_ = self.deduce_char_map("\n")  # "Ċ"
+
 
     @staticmethod
     def is_supported():

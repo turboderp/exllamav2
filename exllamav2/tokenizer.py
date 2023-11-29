@@ -53,7 +53,7 @@ class ExLlamaV2Tokenizer:
     tokenized_str_cache = {}
     max_cached_strings = 100
 
-    def __init__(self, config, lazy_init = False):
+    def __init__(self, config, lazy_init = False, force_json = False):
 
         self.config = config
 
@@ -62,7 +62,7 @@ class ExLlamaV2Tokenizer:
         path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
         path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
 
-        if os.path.exists(path_spm): self.tokenizer = ExLlamaV2TokenizerSPM(path_spm)
+        if os.path.exists(path_spm) and not force_json: self.tokenizer = ExLlamaV2TokenizerSPM(path_spm)
         elif os.path.exists(path_hf): self.tokenizer = ExLlamaV2TokenizerHF(path_hf)
         else: raise FileNotFoundError("No supported tokenizer found.")
 
@@ -83,11 +83,10 @@ class ExLlamaV2Tokenizer:
 
         # Add tokens from added_tokens.json if present, assume they're all special
 
-        if self.extended_piece_to_id is None:
-            added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
-            if os.path.exists(added_tokens_path):
-                with open(added_tokens_path) as f:
-                    self.extended_piece_to_id = json.load(f)
+        added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
+        if os.path.exists(added_tokens_path):
+            with open(added_tokens_path) as f:
+                self.extended_piece_to_id = json.load(f)
 
         # Remove unspecial added tokens that exist in the base tokenizer already, but only if they decode correctly
         # see https://github.com/huggingface/tokenizers/issues/1392
@@ -139,8 +138,8 @@ class ExLlamaV2Tokenizer:
 
         # Useful token IDs
 
-        self.newline_token_id = self.tokenizer.encode(self.newline_token)[0]
-        self.space_token_id = self.tokenizer.encode(self.space_token)[0]
+        self.newline_token_id = self.tokenizer.encode(self.newline_token)[-1]
+        self.space_token_id = self.tokenizer.encode(self.space_token)[-1]
 
         # Create dictionaries on init
 
@@ -338,10 +337,10 @@ class ExLlamaV2Tokenizer:
         for idx, p in self.tokenizer.enumerate_tokens():
             self.id_to_ord[idx] = self.tokenizer.piece_to_ord(p)
 
-        # i = self.tokenizer.vocab_size()
-        # while i in self.extended_id_to_piece:
-        #     self.id_to_ord.append(-1)
-        #     i += 1
+        i = self.tokenizer.vocab_size()
+        while i in self.extended_id_to_piece or i in self.unspecial_id_to_piece:
+            self.id_to_ord.append(self.tokenizer.piece_to_ord(p))
+            i += 1
 
         return self.id_to_ord
 
@@ -360,10 +359,15 @@ class ExLlamaV2Tokenizer:
             else:
                 self.id_to_piece[idx] = self.tokenizer.clean_special_chars(p)
 
-        # i = self.tokenizer.vocab_size()
-        # while i in self.extended_id_to_piece:
-        #     self.id_to_piece.append(self.extended_id_to_piece[i])
-        #     i += 1
+        i = self.tokenizer.vocab_size()
+        while True:
+            if i in self.extended_id_to_piece:
+                self.id_to_piece.append(self.extended_id_to_piece[i])
+            elif i in self.unspecial_id_to_piece:
+                self.id_to_piece.append(self.unspecial_id_to_piece[i])
+            else:
+                break
+            i += 1
 
         return self.id_to_piece
 
