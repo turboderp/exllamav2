@@ -67,6 +67,7 @@ class ExLlamaV2Tokenizer:
         else: raise FileNotFoundError("No supported tokenizer found.")
 
         # Attempt to load added tokens from tokenizer.json
+        # TODO: Deal with rstrip and lstrip for added, non-control tokens
 
         self. unspecial_piece_to_id = {}
 
@@ -203,7 +204,7 @@ class ExLlamaV2Tokenizer:
 
 
     # Encode string
-    # TODO: Deal with rstrip and lstrip for added tokens
+    # TODO: Deal with rstrip and lstrip for control tokens
 
     def encode(self, text, add_bos = False, add_eos = False, encode_special_tokens = False):
 
@@ -338,8 +339,13 @@ class ExLlamaV2Tokenizer:
             self.id_to_ord[idx] = self.tokenizer.piece_to_ord(p)
 
         i = self.tokenizer.vocab_size()
-        while i in self.extended_id_to_piece or i in self.unspecial_id_to_piece:
-            self.id_to_ord.append(self.tokenizer.piece_to_ord(p))
+        while True:
+            if i in self.extended_id_to_piece:
+                self.id_to_ord.append(self.tokenizer.piece_to_ord(self.extended_id_to_piece[i]))
+            elif i in self.unspecial_id_to_piece:
+                self.id_to_ord.append(self.tokenizer.piece_to_ord(self.unspecial_id_to_piece[i]))
+            else:
+                break
             i += 1
 
         return self.id_to_ord
