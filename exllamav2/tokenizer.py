@@ -155,6 +155,14 @@ class ExLlamaV2Tokenizer:
             self.get_char_trie_ci()
 
 
+    # Return size of valid vocabulary
+
+    def get_vocab_size(self):
+
+        id_to_piece = self.get_id_to_piece_list()
+        return len(id_to_piece)
+
+
     # Get single token
 
     def single_token(self, token_id: int):
