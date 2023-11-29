@@ -151,6 +151,12 @@ class ExLlamaV2Sampler:
             if settings.mirostat_mu is None:
                 settings.mirostat_mu = [0.0] * batch_size
 
+        # Mask off logits if tokenizer's vocabulary is smaller than head layer
+
+        vs = tokenizer.get_vocab_size()
+        if vs < logits.shape[-1]:
+            logits[:, vs:] = float("-inf")
+
         # Sampling
 
         batch_size = logits.shape[0]
