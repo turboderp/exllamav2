@@ -787,6 +787,12 @@ std::vector<float> sample_basic
 
     bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
 
+    if (temperature < 0.01)
+    {
+        temperature = 1.0f;
+        top_k = 1;
+    }
+
     for (int i = 0; i < bsz; i++)
     {
         softmax_cpu
