@@ -107,7 +107,7 @@ job_file = os.path.join(out_dir, "job.json")
 
 def save_job():
     global job_file, job
-    with open(job_file, "w") as f:
+    with open(job_file, "w", encoding = "utf8") as f:
         f.write(json.dumps(job, indent = 4))
 
 if no_resume or not os.path.exists(job_file):
@@ -153,7 +153,7 @@ if no_resume or not os.path.exists(job_file):
 
     if reuse_measurement is not None:
 
-        with open(reuse_measurement, "r") as f:
+        with open(reuse_measurement, "r", encoding = "utf8") as f:
 
             imp_measurement = json.load(f)
             job["measurement"] = imp_measurement["measurement"]
@@ -170,7 +170,7 @@ else:
     print(f" -- Resuming job")
     print(f" !! Note: Overriding options with settings from existing job")
 
-    with open(job_file, "r") as f:
+    with open(job_file, "r", encoding = "utf8") as f:
         job = json.load(f)
 
     if "invalid" in job:
