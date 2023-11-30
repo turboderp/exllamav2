@@ -614,7 +614,8 @@ def quant(job, save_fn, model):
                         quantizers["lm_head"].add_batch(batch1)
                         batch1 = []
 
-                output_states_list.append(outputs["hidden_states"].to("cpu"))
+                if module.key != "lm_head":
+                    output_states_list.append(outputs["hidden_states"].to("cpu"))
 
                 outputs = None
                 attn_mask = None
@@ -715,41 +716,30 @@ def quant(job, save_fn, model):
 
                 # Measure error
 
-                target = output_states_list[b]
-                if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
-                b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
-                rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
+                if module.key != "lm_head":
+                    target = output_states_list[b]
+                    if target.device == torch.device("cpu"): target = target.to("cuda:0")
+                    a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                    b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                    rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
+                    rfn_sum += rfn
+                    target = None
 
-                # diff = torch.max(torch.abs(a_[0] - b_[0]))
-                # max_diff = max(diff, max_diff)
-                #
-                # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
-                # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
-                # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
-                # print(f"abs(a-b) min, max: {torch.min()}, {torch.max(torch.abs(a_[0] - b_[0]))}")
-
-                rfn_sum += rfn
-                target = None
-
-                if page_rows:
-                    outputs = outputs.to("cpu")
-
-                output_states_list[b] = outputs
-                # error_states_list[b] -= outputs
+                    if page_rows: outputs = outputs.to("cpu")
+                    output_states_list[b] = outputs
 
                 outputs = None
                 x = None
                 attn_mask = None
 
-            rfn_avg = rfn_sum / input_states.shape[0]
-            print(f" -- Layer rfn_error: {rfn_avg:.6f}")
-
-            if math.isnan(rfn_avg) or rfn_avg > 1.0:
-                print(" ## Quantization error (3)")
-                os._exit(0)
-
             if module.key != "lm_head":
+
+                rfn_avg = rfn_sum / input_states.shape[0]
+                print(f" -- Layer rfn_error: {rfn_avg:.6f}")
+
+                if math.isnan(rfn_avg) or rfn_avg > 1.0:
+                    print(" ## Quantization error (3)")
+                    os._exit(0)
 
                 output_states = torch.cat(output_states_list, dim = 0)
                 save_file({ "hidden_state": output_states }, out_name)
