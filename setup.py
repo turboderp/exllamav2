@@ -53,7 +53,7 @@ setup_kwargs = {
 } if precompile else {}
 
 version_py = {}
-with open("exllamav2/version.py") as fp:
+with open("exllamav2/version.py", encoding = "utf8") as fp:
     exec(fp.read(), version_py)
 version = version_py["__version__"]
 print("Version:", version)

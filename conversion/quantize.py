@@ -417,7 +417,7 @@ def measure_quant(job, save_fn, model):
         print(f" -- Writing {job['output_measurement']}")
 
     for filename in measurement_files:
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding = "utf8") as f:
             f.write(json.dumps(exp_measurement, indent = 4))
 
 
@@ -798,6 +798,6 @@ def quant(job, save_fn, model):
                         "last_module_idx": job["last_module_idx"],
                         "base_perplexity": job["base_perplexity"] }
 
-    with open(os.path.join(job["out_dir"], "measurement.json"), "w") as f:
+    with open(os.path.join(job["out_dir"], "measurement.json"), "w", encoding = "utf8") as f:
         f.write(json.dumps(exp_measurement, indent = 4))
 

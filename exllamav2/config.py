@@ -71,7 +71,7 @@ class ExLlamaV2Config:
         self.model_config = os.path.join(self.model_dir, "config.json")
         assert os.path.exists(self.model_config), "Can't find " + self.model_config
 
-        with open(self.model_config) as f:
+        with open(self.model_config, encoding = "utf8") as f:
             read_config = json.load(f)
 
             if "LlamaForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
