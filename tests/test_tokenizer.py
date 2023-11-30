@@ -3,7 +3,8 @@ from exllamav2 import ExLlamaV2Config
 from exllamav2 import ExLlamaV2Tokenizer
 import random
 
-model_path = "/mnt/str/models/_exl2/deepseek-coder-1.3b"
+# model_path = "/mnt/str/models/_exl2/deepseek-coder-1.3b"
+model_path = "/mnt/str/models/_exl2/deepseek-67b-chat/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_path
@@ -14,8 +15,7 @@ reference_tokenizer = AutoTokenizer.from_pretrained(model_path)
 
 # Bunch of text
 
-text = """
-
+xtext = """
 Following added tokens are encoded correctly but decoded incorrectly by the HF tokenizer:
 
 ö
@@ -33,8 +33,9 @@ Following added tokens are encoded correctly but decoded incorrectly by the HF t
 û
 
 (workaround seems to be working for now)
+"""
 
-
+text = """
 
 This command might take a bit of time if your corpus is very large, but for this dataset of 1.6 GB of texts it’s blazing fast (1 minute 16 seconds on an AMD Ryzen 9
  3900X CPU with 12 cores). Note that AutoTokenizer.train_new_from_iterator() only works if the tokenizer you are using is a “fast” tokenizer. As you’ll see in the next section,
