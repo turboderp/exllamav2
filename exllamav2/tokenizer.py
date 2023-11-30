@@ -86,7 +86,7 @@ class ExLlamaV2Tokenizer:
 
         added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
         if os.path.exists(added_tokens_path):
-            with open(added_tokens_path) as f:
+            with open(added_tokens_path, encoding="utf-8") as f:
                 self.extended_piece_to_id = json.load(f)
 
         # Remove unspecial added tokens that exist in the base tokenizer already, but only if they decode correctly
