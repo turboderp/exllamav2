@@ -4,6 +4,7 @@ from torch import nn
 import torch.nn.functional as F
 import math
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.util import list_live_tensors
 
 
 class AdaptiveQuantizer:
@@ -118,6 +119,25 @@ class AdaptiveGPTQ:
         self.hessian = None
         self.num_samples = 0
         self.num_batches = 0
+
+
+    def drop_buffers(self):
+
+        self.perm = None
+        self.invperm = None
+        self.g_idx = None
+        self.scale = None
+        self.qscale = None
+        self.qscale_max = None
+        self.qweight = None
+        self.qgroups = None
+        self.quant = None
+        self.weights = None
+        self.hessian = None
+        self.hessian_inv = None
+
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
     def configure(self,
@@ -300,11 +320,16 @@ class AdaptiveGPTQ:
             self.weights = self.weights[self.perm, :]
 
 
-    def quantize(self, keep_qweight = False):
+    def quantize(self, keep_qweight = False, apply = False, drop = False):
 
         with torch.inference_mode():
 
-            weights = self.weights.clone()
+            if apply:
+                weights = self.weights
+                self.layer.weight.data = torch.zeros((1, 1), dtype = torch.float32, device = weights.device)
+            else:
+                weights = self.weights.clone()
+
             self.quant = torch.zeros_like(self.weights)
 
             if keep_qweight:
@@ -366,6 +391,21 @@ class AdaptiveGPTQ:
             self.qscale_max = torch.tensor(qscale_max, dtype = torch.float16, device = self.device)
             self.qgroups = torch.tensor(qgroups, dtype = torch.short, device = self.device)
 
+            # Apply
+
+            if apply:
+                if drop:
+                    weights = None
+                    error = None
+                    scale = None
+                    qscale = None
+                    qscale_max = None
+                    qgroups = None
+                    group_idx_list = None
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                self.apply_quant()
+
 
     def quant_error(self):
 
@@ -381,9 +421,12 @@ class AdaptiveGPTQ:
 
     def apply_quant(self):
 
-        q = self.quant[self.invperm, :].T
-        # q = self.quant.T
-        self.layer.weight.data = q.reshape(self.layer.weight.shape).type_as(self.layer.weight.data)
+        qc = self.quant.cpu()
+        invperm = self.invperm.cpu()
+        q = qc[invperm, :].T
+        q = q.reshape(self.quant.T.shape)
+        q = q.to(self.quant.device)
+        self.layer.weight.data = q
 
 
     def apply_temp(self):
@@ -410,9 +453,11 @@ class AdaptiveGPTQ:
 
         if padding != 0:
             print(f" !! Note: Padding quantized tensor {key}")
-
-        qst = F.pad(self.qscale, (0, padding)).contiguous()
-        qwt = F.pad(self.qweight, (0, padding)).contiguous()
+            qst = F.pad(self.qscale, (0, padding)).contiguous()
+            qwt = F.pad(self.qweight, (0, padding)).contiguous()
+        else:
+            qst = self.qscale
+            qwt = self.qweight
 
         qst_packed = torch.zeros((qst.shape[0], qst.shape[1] * qparams.scale_bits // 32), dtype = torch.int32, device = self.device)
         if qparams.scale_bits == 4: ext_c.pack_rows_4(qst, qst_packed)

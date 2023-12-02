@@ -61,7 +61,7 @@ class ExLlamaV2Config:
 
     # Populate config with required files from model_dir
 
-    def prepare(self):
+    def prepare(self, no_tensors = False):
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
         assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
@@ -106,7 +106,13 @@ class ExLlamaV2Config:
             if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
             elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
 
+        # Model dimensions
+
+        self.head_dim = self.hidden_size // self.num_attention_heads
+
         # Create map of model tensors
+
+        if no_tensors: return
 
         self.tensor_file_map = {}
 
@@ -155,6 +161,3 @@ class ExLlamaV2Config:
             else:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
-        # Model dimensions
-
-        self.head_dim = self.hidden_size // self.num_attention_heads
