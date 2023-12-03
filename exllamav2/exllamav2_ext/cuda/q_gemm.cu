@@ -10,9 +10,14 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
-#define BLOCK_KN_SIZE 128
-#define BLOCK_M_SIZE_MAX 8
-#define MAX_GROUPS_IN_BLOCK (BLOCK_KN_SIZE / 32)
+#define GPTQ_BLOCK_KN_SIZE 128
+#define GPTQ_BLOCK_M_SIZE_MAX 8
+#define GPTQ_MAX_GROUPS_IN_BLOCK (GPTQ_BLOCK_KN_SIZE / 32)
+
+#define EXL2_BLOCK_KN_SIZE 64
+#define EXL2_BLOCK_M_SIZE_MAX 8
+#define EXL2_MAX_GROUPS_IN_BLOCK (EXL2_BLOCK_KN_SIZE / 32)
+
 #define CLEAR_N_SIZE 256
 
 #include "q_gemm_kernel.cuh"
@@ -33,12 +38,12 @@ void gemm_half_q_half_cuda_part
     if (!b->is_gptq)
     {
         dim3 blockDim, gridDim;
-        blockDim.x = BLOCK_KN_SIZE;
+        blockDim.x = EXL2_BLOCK_KN_SIZE;
         blockDim.y = 1;
         blockDim.z = 1;
-        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 4);
+        gridDim.x = DIVIDE(size_n, EXL2_BLOCK_KN_SIZE * 4);
         gridDim.y = DIVIDE(size_m, m_count);
-        gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
+        gridDim.z = DIVIDE(size_k, EXL2_BLOCK_KN_SIZE);
 
         fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(true, m_count);
 
@@ -67,12 +72,12 @@ void gemm_half_q_half_cuda_part
     else
     {
         dim3 blockDim, gridDim;
-        blockDim.x = BLOCK_KN_SIZE;
+        blockDim.x = GPTQ_BLOCK_KN_SIZE;
         blockDim.y = 1;
         blockDim.z = 1;
-        gridDim.x = DIVIDE(size_n, BLOCK_KN_SIZE * 4);
+        gridDim.x = DIVIDE(size_n, GPTQ_BLOCK_KN_SIZE * 4);
         gridDim.y = DIVIDE(size_m, m_count);
-        gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
+        gridDim.z = DIVIDE(size_k, GPTQ_BLOCK_KN_SIZE);
 
         fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(true, m_count);
 
@@ -137,12 +142,12 @@ void gemm_half_q_half_cuda
         //const float alpha = 1.0f;
         //const float beta = clear ? 0.0f : 1.0f;
         //cublasSgemmEx(cublas_handle,
-        //              CUBLAS_OP_N,
-        //              CUBLAS_OP_N,
-        //              size_n, size_m, size_k,
-        //              &alpha, temp_dq, CUDA_R_16F, size_n,
-        //                      a,       CUDA_R_16F, size_k,
-        //              &beta,  c,       CUDA_R_16F, size_n);
+        //             CUBLAS_OP_N,
+        //             CUBLAS_OP_N,
+        //             size_n, size_m, size_k,
+        //             &alpha, temp_dq, CUDA_R_16F, size_n,
+        //                     a,       CUDA_R_16F, size_k,
+        //             &beta,  c,       CUDA_R_16F, size_n);
 
         //const float alpha = 1.0f;
         //const float beta = clear ? 0.0f : 1.0f;
@@ -162,13 +167,14 @@ void gemm_half_q_half_cuda
 
         //if (clear) clear_tensor_cuda(c, size_m, size_n);
 
-        int max_chunks = size_m / BLOCK_M_SIZE_MAX;
-        int last_chunk = max_chunks * BLOCK_M_SIZE_MAX;
+        int block_m_size_max = b->is_gptq ? GPTQ_BLOCK_M_SIZE_MAX : EXL2_BLOCK_M_SIZE_MAX;
+        int max_chunks = size_m / block_m_size_max;
+        int last_chunk = max_chunks * block_m_size_max;
         int last_chunk_size = size_m - last_chunk;
 
         if (max_chunks)
         {
-            gemm_half_q_half_cuda_part(a, b, c, last_chunk, size_n, size_k, BLOCK_M_SIZE_MAX, clear);
+            gemm_half_q_half_cuda_part(a, b, c, last_chunk, size_n, size_k, block_m_size_max, clear);
         }
 
         if (last_chunk_size)
