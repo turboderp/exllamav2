@@ -32,8 +32,8 @@ class ExLlamaV2Tokenizer:
     bos_token_id: int
     eos_token_id: int
     pad_token_id: int
-    newline_token_id: int
-    space_token_id: int
+    newline_token_id: int or None
+    space_token_id: int or None
 
     id_to_ord: list = None
     id_to_piece: list = None
@@ -94,8 +94,11 @@ class ExLlamaV2Tokenizer:
 
         ok_tokens = []
         for p, i in self.unspecial_piece_to_id.items():
-            itp = self.tokenizer.decode([i])
-            if itp == p: ok_tokens.append(p)
+            try:
+                itp = self.tokenizer.decode([i])
+                if itp == p: ok_tokens.append(p)
+            except IndexError:
+                pass
         for t in ok_tokens: del self.unspecial_piece_to_id[t]
 
         # Invert extended dictionaries
@@ -139,8 +142,10 @@ class ExLlamaV2Tokenizer:
 
         # Useful token IDs
 
-        self.newline_token_id = self.tokenizer.encode(self.newline_token)[-1]
-        self.space_token_id = self.tokenizer.encode(self.space_token)[-1]
+        try: self.newline_token_id = self.tokenizer.encode(self.newline_token)[-1]
+        except: self.newline_token_id = None
+        try: self.space_token_id = self.tokenizer.encode(self.space_token)[-1]
+        except: self.space_token_id = None
 
         # Create dictionaries on init
 

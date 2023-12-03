@@ -4,14 +4,17 @@ from exllamav2 import ExLlamaV2Tokenizer
 import random
 
 # model_path = "/mnt/str/models/_exl2/deepseek-coder-1.3b"
-model_path = "/mnt/str/models/_exl2/deepseek-67b-chat/"
+# model_path = "/mnt/str/models/_exl2/deepseek-67b-chat/"
+# model_path =  "/mnt/str/models/_exl2/deepseek-coder-33b-instruct-exl2/6.0bpw/"
+model_path = "/mnt/str/models/_exl2/qwen-72b-llamafied/"
+
+reference_tokenizer = AutoTokenizer.from_pretrained(model_path)
+# reference_tokenizer.save_pretrained("/mnt/str/temp/tok/tokenizer.json")
 
 config = ExLlamaV2Config()
 config.model_dir = model_path
-config.prepare()
+config.prepare(no_tensors = True)
 exl2_tokenizer = ExLlamaV2Tokenizer(config)
-
-reference_tokenizer = AutoTokenizer.from_pretrained(model_path)
 
 # Bunch of text
 
