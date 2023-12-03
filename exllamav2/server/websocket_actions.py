@@ -165,8 +165,8 @@ async def infer(request, ws, server, response):
     gs.top_p = float(request["top_p"]) if "top_p" in request else 0.8
     gs.min_p = float(request["min_p"]) if "min_p" in request else 0
     gs.typical = float(request["typical"]) if "typical" in request else 0
-    gs.temperature = float(request["temperature"]) if "temperature" in request else 0.95
-    gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.15
+    gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
+    gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
 
     # Generate
 

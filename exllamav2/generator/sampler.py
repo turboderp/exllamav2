@@ -7,13 +7,13 @@ class ExLlamaV2Sampler:
 
     class Settings:
 
-        token_repetition_penalty = 1.15
+        token_repetition_penalty = 1.05
         token_repetition_range = -1
         token_repetition_decay = 0
 
-        temperature = 0.9
-        top_k = 40
-        top_p = 0.9
+        temperature = 0.8
+        top_k = 50
+        top_p = 0.8
         min_p = 0
         tfs = 0
         typical = 0
