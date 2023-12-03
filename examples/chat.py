@@ -47,6 +47,7 @@ parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help 
 parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit cache")
 
 parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
+parser.add_argument("-amnesia", "--amnesia", action = "store_true", help = "Forget context after every response")
 
 # Arrrgs
 
@@ -213,6 +214,7 @@ delim_overflow = ""
 # Other options
 
 print_timings = args.print_timings
+amnesia = args.amnesia
 
 # Main loop
 
@@ -348,3 +350,9 @@ while True:
 
         print()
         print(col_sysprompt + f"(Response: {response_tokens} tokens, {speed:.2f} tokens/second{sd_stats})" + col_default)
+
+    # Optionally forget context after each response
+
+    if amnesia:
+        user_prompts = []
+        responses_ids = []

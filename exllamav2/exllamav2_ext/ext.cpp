@@ -787,6 +787,12 @@ std::vector<float> sample_basic
 
     bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
 
+    if (temperature < 0.01)
+    {
+        temperature = 1.0f;
+        top_k = 1;
+    }
+
     for (int i = 0; i < bsz; i++)
     {
         softmax_cpu
@@ -857,6 +863,20 @@ std::vector<float> sample_basic
         if (mirostat)
         {
             mirostat_mu[i] = mirostat_post_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
+        }
+
+        // Derive some more totally random numbers for subsequent samples in the same batch
+
+        if (bsz > 1)
+        {
+            float r = random;
+            for (int j = 0; j < 10; ++j)
+            {
+                r += 1.337 + random;
+                r *= r;
+                r = fmod(r, 1.0f);
+            }
+            random = r;
         }
     }
 

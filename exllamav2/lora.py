@@ -50,7 +50,7 @@ class ExLlamaV2Lora:
 
             # Grab relevant items from LoRA config
 
-            with open(lora_config_path) as f:
+            with open(lora_config_path, encoding = "utf8") as f:
                 read_config = json.load(f)
 
             self.lora_r = read_config["r"]
