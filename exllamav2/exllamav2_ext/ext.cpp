@@ -390,6 +390,7 @@ void q_attn_forward_1
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
     TORCH_CHECK_DTYPE(x, kHalf);
+    TORCH_CHECK_DTYPE_OPT(past_lens, kInt);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
@@ -401,7 +402,7 @@ void q_attn_forward_1
         batch_size,
         q_len,
         past_len,
-        past_lens.device().is_meta() ? NULL : (uint32_t*) past_lens.data_ptr(),
+        past_lens.device().is_meta() ? NULL : (int32_t*) past_lens.data_ptr(),
         (half*) q_temp.data_ptr(),
         (half*) k_temp.data_ptr(),
         (half*) v_temp.data_ptr(),
@@ -638,7 +639,8 @@ void rope_
     torch::Tensor cos,
     int past_len,
     int num_heads,
-    int head_dim
+    int head_dim,
+    torch::Tensor offsets
 )
 {
     TORCH_CHECK_DTYPE(x, kHalf);
@@ -646,6 +648,7 @@ void rope_
     TORCH_CHECK_DTYPE(cos, kHalf);
     TORCH_CHECK(head_dim == cos.size(-1), "cos table does not match head_dim");
     TORCH_CHECK(head_dim == sin.size(-1), "sin table does not match head_dim");
+    TORCH_CHECK_DTYPE_OPT(offsets, kInt);
 
     int batch_size = x.size(0);
     int rows_per_batch = x.numel() / head_dim / batch_size;
@@ -662,7 +665,7 @@ void rope_
         head_dim,
         num_heads,
         past_len,
-        NULL
+        offsets.device().is_meta() ? NULL : (int32_t*) offsets.data_ptr()
     );
 }
 
@@ -867,7 +870,7 @@ std::vector<float> sample_basic
 
         // Derive some more totally random numbers for subsequent samples in the same batch
 
-        if (bsz > 1)
+        if (bsz > 10000)
         {
             float r = random;
             for (int j = 0; j < 10; ++j)

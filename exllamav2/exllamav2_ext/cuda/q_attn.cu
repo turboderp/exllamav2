@@ -118,7 +118,7 @@ void QAttn::forward_cuda_1
     int batch_size,
     int q_len,
     int past_len,
-    const uint32_t* past_lens,
+    const int32_t* past_lens,
     half* temp_q,
     half* temp_k,
     half* temp_v,

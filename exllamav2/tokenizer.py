@@ -214,7 +214,7 @@ class ExLlamaV2Tokenizer:
     # Encode string
     # TODO: Deal with rstrip and lstrip for control tokens
 
-    def encode(self, text, add_bos = False, add_eos = False, encode_special_tokens = False):
+    def encode(self, text, add_bos = False, add_eos = False, encode_special_tokens = False, return_offsets = False):
 
         if isinstance(text, list):
 
@@ -230,12 +230,19 @@ class ExLlamaV2Tokenizer:
             max_length = max([len(ids) for ids in list_ids])
 
             padded_ids = []
+            offsets = []
             for ids in list_ids:
-                padding = torch.full((max_length - len(ids),), self.pad_token_id)
-                sequence = torch.tensor(ids)
-                padded_ids.append(torch.cat((padding, sequence), dim = 0))
+                padding_length = max_length - len(ids)
+                padding = torch.full((padding_length,), self.pad_token_id)
+                padded_ids.append(torch.cat((padding, torch.tensor(ids)), dim = 0))
+                offsets.append(-padding_length)
 
-            return torch.stack(padded_ids, dim = 0)
+            stacked_ids = torch.stack(padded_ids, dim=0)
+
+            if return_offsets:
+                return stacked_ids, torch.tensor(offsets, dtype = torch.int)
+            else:
+                return stacked_ids
 
         else:
 
@@ -245,7 +252,11 @@ class ExLlamaV2Tokenizer:
             if add_bos: ids.insert(0, self.bos_token_id)
             if add_eos: ids.append(self.eos_token_id)
 
-            return torch.tensor(ids).to(torch.long).unsqueeze(0)
+            ids = torch.tensor(ids).to(torch.long).unsqueeze(0)
+            if return_offsets:
+                return ids, torch.tensor([0], dtype = torch.int)
+            else:
+                return ids
 
 
     # Decode sequence with added, unspecial tokens
@@ -323,9 +334,9 @@ class ExLlamaV2Tokenizer:
 
     def padding_mask(self, ids):
 
-        mask = (ids == self.pad_token_id)
-        mask = mask.int()
-        mask *= -65504
+        mask_bool = (ids == self.pad_token_id)
+        mask = mask_bool.int()
+        mask *= -65505
         mask = mask.half()
         return mask
 
