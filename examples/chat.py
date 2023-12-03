@@ -106,6 +106,7 @@ if args.draft_model_dir:
 
     draft_config.max_seq_len = model.config.max_seq_len
     draft_config.no_flash_attn = args.no_flash_attn
+    draft_config.scale_pos_emb = args.rope_scale
 
     print(" -- Loading draft model...")
 
