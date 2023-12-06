@@ -94,6 +94,12 @@ class ExLlamaV2Module:
             tensor = tensor.half()
             return nn.Parameter(tensor)
 
+        # QuiP
+            
+        if self.key + ".Qidxs" in self.model.config.tensor_file_map:
+            qtensors = self.load_multi(["Qidxs", "SU", "SV", "Wscale", "codebook_id", "down_scale", "up_scale", "gate_scale", "k_scale", "q_scale", "o_scale", "v_scale"])
+            return qtensors
+            
         # No weights found for key
 
         return None
@@ -117,6 +123,11 @@ class ExLlamaV2Module:
 
             elif self.key + ".weight" in self.model.config.tensor_file_map:
                 self.footprint = self.load_multi(["weight"], measure = True)
+
+            # QuiP
+            
+            elif self.key + ".Qidxs" in self.model.config.tensor_file_map:
+                self.footprint = self.load_multi(["Qidxs", "SU", "SV", "Wscale", "codebook_id", "down_scale", "up_scale", "gate_scale", "k_scale", "q_scale", "o_scale", "v_scale"], measure = True)
 
             # Error
 
