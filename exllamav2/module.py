@@ -68,7 +68,6 @@ class ExLlamaV2Module:
                     if measure:
                         size += _tsize(st, key + "." + k)
                     else:
-                        # tensors[k] = st.get_tensor(key + "." + k)
                         tensors[k] = st.get_tensor(key + "." + k).to(self.device())
 
         return size if measure else tensors
@@ -133,7 +132,7 @@ class ExLlamaV2Module:
             # QuiP
             
             elif self.key + ".Qidxs" in self.model.config.tensor_file_map:
-                self.footprint = self.load_multi(["Qidxs", "SU", "SV", "Wscale", "codebook_id", "down_scale", "up_scale", "gate_scale", "k_scale", "q_scale", "o_scale", "v_scale"], measure = True)
+                self.footprint = self.load_multi(["Qidxs", "SU", "SV"], measure = True)
 
             # Error
 

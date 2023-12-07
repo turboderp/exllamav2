@@ -103,14 +103,14 @@ class QuipLinear(ExLlamaV2Module):
 
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, force_recons = False, force_cuda = False):
-        # lora_a = None
-        # lora_b = None
-        # if loras is not None:
-        #     for lora in loras:
-        #         lora_a = self.lora_a_tensors[lora] if lora in self.lora_a_tensors else None
-        #         lora_b = self.lora_b_tensors[lora] if lora in self.lora_b_tensors else None
+        lora_a = None
+        lora_b = None
+        if loras is not None:
+            for lora in loras:
+                lora_a = self.lora_a_tensors[lora] if lora in self.lora_a_tensors else None
+                lora_b = self.lora_b_tensors[lora] if lora in self.lora_b_tensors else None
 
-        # if self.outlier_channel_split: hidden_states = hidden_states[..., self.ocs_dupe_inds]
+        if self.outlier_channel_split: hidden_states = hidden_states[..., self.ocs_dupe_inds]
         return self.cookbook.forward(
             input=hidden_states,
             Qidxs=self.Qidxs, 
@@ -121,7 +121,8 @@ class QuipLinear(ExLlamaV2Module):
             had_right=self.had_right, 
             K_left=self.K_left, 
             K_right=self.K_right,
-            A=None, B=None,
+            A=lora_a, 
+            B=lora_b,
             rescale_WH=self.rescale_WH, 
             scaleWH=self.scaleWH, 
             packed=self.packed).half()

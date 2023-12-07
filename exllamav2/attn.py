@@ -647,7 +647,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_proj = self.o_proj.forward(attn_output, loras = loras)
+        attn_proj = self.o_scale * self.o_proj.forward(attn_output, loras = loras) if self.model.config.is_quip else self.o_proj.forward(attn_output)
 
         # Add residual connection
 

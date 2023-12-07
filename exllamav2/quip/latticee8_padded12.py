@@ -96,9 +96,9 @@ class QuantizedE8P12Linear:
         x = x * SU
         x = matmul_hadUt_cuda(x, had_left, K_left)
 
-        # if rank > 0:
-        #     Bx = x @ B.t().to(torch.float32)
-        #     ABx = Bx @ A.t().to(torch.float32)
+        if A is not None and B is not None:
+            Bx = x @ B.t().to(torch.float32)
+            ABx = Bx @ A.t().to(torch.float32)
 
         # TODO: find the optimal threshold
         if x.size(0) < 6:
@@ -111,8 +111,8 @@ class QuantizedE8P12Linear:
 
         x *= Wscale
 
-        # if rank > 0:
-        #     x = x + ABx.to(torch.float32)
+        if A is not None and B is not None:
+            x = x + ABx.to(torch.float32)
 
         x = matmul_hadU_cuda(x, had_right, K_right)
         x = x * SV

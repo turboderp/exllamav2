@@ -127,8 +127,8 @@ class ExLlamaV2BaseGenerator:
 
         text = self.tokenizer.decode(self.sequence_ids, decode_special_tokens = decode_special_tokens)
 
-        if isinstance(prompt, str): return text[0], self.sequence_ids
-        return text, self.sequence_ids
+        if isinstance(prompt, str): return text[0]
+        return text
 
 
     def _gen_begin_base(self, input_ids, mask = None, loras = None, position_offsets = None):
