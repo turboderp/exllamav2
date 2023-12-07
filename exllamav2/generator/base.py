@@ -43,7 +43,6 @@ class ExLlamaV2BaseGenerator:
 
 
     # TODO: Argument to allow different random samples over batch dimension
-    
     def generate_simple(self, prompt: str or list,
                         gen_settings: ExLlamaV2Sampler.Settings,
                         num_tokens: int,

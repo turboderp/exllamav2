@@ -692,5 +692,5 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     def is_quant(self):
-        return self.q_handle is not None
+        return self.q_handle is not None or self.qkv_proj is not None
 

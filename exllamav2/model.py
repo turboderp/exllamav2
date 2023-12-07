@@ -394,6 +394,7 @@ class ExLlamaV2:
                         continue
 
                     break
+
             if callback is not None: callback(len(self.modules), len(self.modules))
             if callback_gen is not None: yield from callback_gen(len(self.modules), len(self.modules))
 

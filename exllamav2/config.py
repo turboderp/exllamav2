@@ -95,7 +95,7 @@ class ExLlamaV2Config:
             self.num_hidden_layers = read_config["num_hidden_layers"]
             self.rms_norm_eps = read_config["rms_norm_eps"]
             self.vocab_size = read_config["vocab_size"]
-            
+
             self.rotary_embedding_base = read_config["rope_theta"] if "rope_theta" in read_config else 10000.0
 
             if "num_key_value_heads" in read_config:
