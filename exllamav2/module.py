@@ -44,15 +44,16 @@ class ExLlamaV2Module:
         return _torch_device(self.device_idx)
 
 
-    def load_multi(self, keys, measure = False):
+    def load_multi(self, keys, measure = False, key_postfix = None):
 
         tensors = {}
         submap = {}
         submap_i = {}
         size = 0
-
+        
+        key = self.key if key_postfix is None else self.key + "." + key_postfix
         for k in keys:
-            ck = self.key + "." + k
+            ck = key + "." + k
             if ck in self.model.config.tensor_file_map:
                 submap[k] = self.model.config.tensor_file_map[ck]
 
@@ -65,9 +66,9 @@ class ExLlamaV2Module:
             with safe_open(v, framework="pt", device="cpu") as st:
                 for k in ks:
                     if measure:
-                        size += _tsize(st, self.key + "." + k)
+                        size += _tsize(st, key + "." + k)
                     else:
-                        tensors[k] = st.get_tensor(self.key + "." + k).to(self.device())
+                        tensors[k] = st.get_tensor(key + "." + k).to(self.device())
 
         return size if measure else tensors
 
@@ -95,10 +96,17 @@ class ExLlamaV2Module:
             return nn.Parameter(tensor)
 
         # QuiP
-            
-        if self.key + ".Qidxs" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["Qidxs", "SU", "SV", "Wscale", "codebook_id", "down_scale", "up_scale", "gate_scale", "k_scale", "q_scale", "o_scale", "v_scale"])
-            return qtensors
+        
+        if self.model.config.is_quip:
+            if self.key + ".Qidxs" in self.model.config.tensor_file_map:
+                # print('loading quip tensors for', self.key)
+                return self.load_multi(["Qidxs", "SU", "SV", "Wscale", "codebook_id"])
+            elif self.__class__.__name__ == "ExLlamaV2MLP" and self.key + '.mlp.down_scale' in self.model.config.tensor_file_map:
+                # print('loading mlp parameter for', self.key)
+                return self.load_multi(["down_scale", "up_scale", "gate_scale"], key_postfix="mlp")
+            elif self.__class__.__name__ == "ExLlamaV2Attention" and self.key + '.self_attn.k_scale' in self.model.config.tensor_file_map:
+                # print('loading attn parameter for', self.key)
+                return self.load_multi(["k_scale", "q_scale", "o_scale", "v_scale"], key_postfix="self_attn")
             
         # No weights found for key
 

@@ -43,7 +43,7 @@ class ExLlamaV2BaseGenerator:
 
 
     # TODO: Argument to allow different random samples over batch dimension
-
+    
     def generate_simple(self, prompt: str or list,
                         gen_settings: ExLlamaV2Sampler.Settings,
                         num_tokens: int,
@@ -127,8 +127,8 @@ class ExLlamaV2BaseGenerator:
 
         text = self.tokenizer.decode(self.sequence_ids, decode_special_tokens = decode_special_tokens)
 
-        if isinstance(prompt, str): return text[0]
-        return text
+        if isinstance(prompt, str): return text[0], self.sequence_ids
+        return text, self.sequence_ids
 
 
     def _gen_begin_base(self, input_ids, mask = None, loras = None, position_offsets = None):

@@ -1,5 +1,5 @@
 import torch
-from quip.matmul_had import matmul_hadU_cuda, matmul_hadUt_cuda
+from exllamav2.quip.matmul_had import matmul_hadU_cuda, matmul_hadUt_cuda
 from exllamav2.ext import exllamav2_ext as ext_c
 
 def get_grid():

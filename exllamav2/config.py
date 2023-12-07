@@ -44,6 +44,8 @@ class ExLlamaV2Config:
     head_dim: int = 128                         # Constant for all Llama models, except 3b
 
     qkv_embed: bool = False
+    is_quip: bool = False
+    quip_params: dict = None
 
 
     def __init__(self):
@@ -93,7 +95,7 @@ class ExLlamaV2Config:
             self.num_hidden_layers = read_config["num_hidden_layers"]
             self.rms_norm_eps = read_config["rms_norm_eps"]
             self.vocab_size = read_config["vocab_size"]
-
+            
             self.rotary_embedding_base = read_config["rope_theta"] if "rope_theta" in read_config else 10000.0
 
             if "num_key_value_heads" in read_config:
@@ -105,6 +107,9 @@ class ExLlamaV2Config:
 
             if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
             elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
+
+            self.is_quip = True if 'quip_params' in read_config else False
+            if self.is_quip: self.quip_params = read_config['quip_params']
 
         # Model dimensions
 
@@ -140,6 +145,19 @@ class ExLlamaV2Config:
             ["mlp.down_proj"],
             ["mlp.gate_proj"],
             ["mlp.up_proj"]
+        ] if not self.is_quip else [
+            ["input_layernorm", "ln1"],
+            ["post_attention_layernorm", "ln2"],
+            ["self_attn.qkv_proj"],
+            ["self_attn.o_proj"],
+            ["self_attn.k_scale"],
+            ["self_attn.o_scale"],
+            ["self_attn.q_scale"],
+            ["mlp.down_proj"],
+            ["mlp.upgate_proj"],
+            ["mlp.down_scale"],
+            ["mlp.gate_scale"],
+            ["mlp.up_scale"]
         ]
 
         expect_keys = []

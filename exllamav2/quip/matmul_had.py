@@ -6,6 +6,7 @@ def clean():
     gc.collect()
     torch.cuda.empty_cache()
 
+
 def get_hadK(n, transpose=False):
     hadK, K = None, None
     if n % 172 == 0: # llama-2-7b up
@@ -85,11 +86,10 @@ def matmul_hadU_cuda(X, hadK, K, transpose=False):
 
     if transpose:
         hadK = hadK.T.contiguous()
-        
-    input = X.float().view(-1, K, n // K)
+    input = X.float().cuda().view(-1, K, n // K)
     input = fast_hadamard_transform.hadamard_transform(input.contiguous())
-    input = hadK.to(X.dtype) @ input
-    return input.reshape(
+    input = hadK.to(input.device).to(input.dtype) @ input
+    return input.to(X.device).to(X.dtype).reshape(
         X.shape) / torch.tensor(n).sqrt()
 
 

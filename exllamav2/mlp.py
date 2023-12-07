@@ -14,6 +14,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     gate_proj: ExLlamaV2Linear or None = None
     up_proj: ExLlamaV2Linear or None = None
     down_proj: ExLlamaV2Linear
+    up_scale: torch.tensor or None
+    down_scale: torch.tensor or None
+    gate_scale: torch.tensor or None
 
     name: str = "MLP"
     submodules: list
@@ -33,14 +36,14 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + ".post_attention_layernorm")
         self.submodules = [self.post_attention_layernorm]
 
-        if 'quip_params' in model.config:
+        if model.config.is_quip:
             self.upgate_proj = QuipLinear(model,
                                           key + ".mlp.upgate_proj",
                                           hidden_size,
                                           intermediate_size * 2)
             self.down_proj = QuipLinear(model,
                                         key + ".mlp.down_proj",
-                                        model.config.quip_params['ocs_down_size'] if model.config.quip_params['outlier_channel_split'] else self.intermediate_size,
+                                        model.config.quip_params['ocs_down_size'] if model.config.quip_params['outlier_channel_split'] else intermediate_size,
                                         hidden_size)
             self.submodules += [self.upgate_proj, self.down_proj]
         else:
@@ -51,13 +54,19 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
 
     def load(self):
+        if self.model.config.is_quip:
+            w = self.load_weight()
+            self.up_scale = w['up_scale'].to(self.device_idx)
+            self.down_scale = w['down_scale'].to(self.device_idx)
+            self.gate_scale = w['gate_scale'].to(self.device_idx)
 
         self.post_attention_layernorm.load()
-        self.upgate_proj.load() if self.upgate_proj is not None else None
-        self.gate_proj.load() if self.gate_proj is not None else None
-        self.up_proj.load() if self.gate_proj is not None else None
+        if hasattr(self, 'upgate_proj') and self.upgate_proj is not None: self.upgate_proj.load()
+        if hasattr(self, 'gate_proj') and self.gate_proj is not None: self.gate_proj.load()
+        if hasattr(self, 'up_proj') and self.up_proj is not None: self.up_proj.load()
+        if hasattr(self, 'down_proj') and self.down_proj is not None: self.down_proj.load()
 
-        if self.gate_proj is not None and self.gate_proj.is_quant():
+        if hasattr(self, 'gate_proj') and self.gate_proj is not None and self.gate_proj.is_quant():
             assert self.up_proj.is_quant() and self.down_proj.is_quant(), "Partially quantized MLP layer"
             device_tensors = self.model.get_device_tensors(self.device_idx)
             device_tensors.begin_scratch_alloc()
@@ -79,18 +88,18 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.q_handle = None
 
         self.post_attention_layernorm.unload()
-        self.upgate_proj.unload() if self.upgate_proj is not None else None
-        self.gate_proj.unload() if self.gate_proj is not None else None
-        self.up_proj.unload() if self.up_proj is not None else None
+        self.upgate_proj.unload() if hasattr(self, 'upgate_proj') and self.up_proj is not None else None
+        self.gate_proj.unload() if hasattr(self, 'gate_proj') and self.gate_proj is not None else None
+        self.up_proj.unload() if hasattr(self, 'up_proj') and self.up_proj is not None else None
         self.down_proj.unload()
 
 
     def weight_footprint(self):
 
         return self.post_attention_layernorm.weight_footprint() + \
-               self.gate_proj.weight_footprint() if self.gate_proj is not None else 0 + \
-               self.up_proj.weight_footprint() if self.up_proj is not None else 0 + \
-               self.upgate_proj.weight_footprint() if self.upgate_proj is not None else 0 + \
+               self.gate_proj.weight_footprint() if hasattr(self, 'gate_proj') and self.gate_proj is not None else 0 + \
+               self.up_proj.weight_footprint() if hasattr(self, 'up_proj') and self.up_proj is not None else 0 + \
+               self.upgate_proj.weight_footprint() if hasattr(self, 'upgate_proj') and self.upgate_proj is not None else 0 + \
                self.down_proj.weight_footprint()
 
 
@@ -128,9 +137,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def temp_dq_size(self):
 
-        return max(self.gate_proj.temp_dq_size() if self.gate_proj is not None else 0,
-                   self.up_proj.temp_dq_size() if self.up_proj is not None else 0,
-                   self.upgate_proj.temp_dq_size() if self.upgate_proj is not None else 0,
+        return max(self.gate_proj.temp_dq_size() if hasattr(self, 'gate_proj') and self.gate_proj is not None else 0,
+                   self.up_proj.temp_dq_size() if hasattr(self, 'up_proj')  and self.up_proj is not None else 0,
+                   self.upgate_proj.temp_dq_size() if hasattr(self, 'upgate_proj')  and self.upgate_proj is not None else 0,
                    self.down_proj.temp_dq_size())
 
 
@@ -138,8 +147,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         super().set_device_idx(idx)
 
         self.post_attention_layernorm.set_device_idx(idx)
-        self.gate_proj.set_device_idx(idx) if self.gate_proj is not None else None
-        self.up_proj.set_device_idx(idx) if self.gate_proj is not None else None
+        if hasattr(self, 'gate_proj') and self.gate_proj is not None: self.gate_proj.set_device_idx(idx)
+        if hasattr(self, 'up_proj')  and self.up_proj is not None: self.up_proj.set_device_idx(idx)
+        if hasattr(self, 'upgate_proj')  and self.upgate_proj is not None: self.upgate_proj.set_device_idx(idx)
         self.down_proj.set_device_idx(idx)
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
@@ -167,12 +177,15 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         residual = hidden_states
         post_norm = self.post_attention_layernorm.forward(hidden_states)
 
-        if self.upgate_proj is not None:
-            # QuiP forward path
-            upgate = self.upgate_proj(post_norm.to(torch.float32), loras = loras)
-            gate = self.gate_scale * upgate[..., self.intermediate_size:(self.intermediate_size * 2)]
-            up = self.up_scale * upgate[...,0:self.intermediate_size]
-            down = self.down_scale * self.down_proj(F.silu(gate) * up, loras = loras).half()
+        if self.model.config.is_quip:
+            intermediate_size = self.model.config.intermediate_size
+            upgate_proj = self.upgate_proj.forward(post_norm.to(torch.float32), loras = loras)
+            up_proj = self.up_scale * upgate_proj[...,
+                                                  0:intermediate_size]
+            gate_proj = self.gate_scale * upgate_proj[
+                ..., intermediate_size:(intermediate_size * 2)]
+            down = self.down_scale * self.down_proj.forward(
+                F.silu(gate_proj) * up_proj, loras = loras)
         else:
             gate = self.gate_proj.forward(post_norm, loras = loras)
             y = F.silu(gate)

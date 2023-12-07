@@ -15,7 +15,7 @@ this results in a codebook of 256 points distributed as follows
 """
 
 import torch
-from quip.matmul_had import matmul_hadU_cuda, matmul_hadUt_cuda
+from exllamav2.quip.matmul_had import matmul_hadU_cuda, matmul_hadUt_cuda
 from exllamav2.ext import exllamav2_ext as ext_c
 
 _D4_CODESZ = 4
