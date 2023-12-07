@@ -68,6 +68,7 @@ class ExLlamaV2Module:
                     if measure:
                         size += _tsize(st, key + "." + k)
                     else:
+                        # tensors[k] = st.get_tensor(key + "." + k)
                         tensors[k] = st.get_tensor(key + "." + k).to(self.device())
 
         return size if measure else tensors
@@ -99,13 +100,10 @@ class ExLlamaV2Module:
         
         if self.model.config.is_quip:
             if self.key + ".Qidxs" in self.model.config.tensor_file_map:
-                # print('loading quip tensors for', self.key)
                 return self.load_multi(["Qidxs", "SU", "SV", "Wscale", "codebook_id"])
             elif self.__class__.__name__ == "ExLlamaV2MLP" and self.key + '.mlp.down_scale' in self.model.config.tensor_file_map:
-                # print('loading mlp parameter for', self.key)
                 return self.load_multi(["down_scale", "up_scale", "gate_scale"], key_postfix="mlp")
             elif self.__class__.__name__ == "ExLlamaV2Attention" and self.key + '.self_attn.k_scale' in self.model.config.tensor_file_map:
-                # print('loading attn parameter for', self.key)
                 return self.load_multi(["k_scale", "q_scale", "o_scale", "v_scale"], key_postfix="self_attn")
             
         # No weights found for key

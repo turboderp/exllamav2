@@ -19,7 +19,7 @@ class QuipLinear(ExLlamaV2Module):
     K_left: int
     had_right: torch.FloatTensor
     K_right: int
-    Qidxs: torch.Tensor or None
+    # Qidxs: torch.Tensor or None
     SU: torch.Tensor or None
     SV: torch.Tensor or None
     Wscale: torch.Tensor or None

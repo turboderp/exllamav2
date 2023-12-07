@@ -66,7 +66,6 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         self.input_layernorm = ExLlamaV2RMSNorm(model, key + ".input_layernorm")
         self.submodules = [self.input_layernorm]
-
         if model.config.is_quip:
             self.qkv_proj = QuipLinear(model,
                                        key + ".self_attn.qkv_proj",
@@ -90,10 +89,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def load(self):
         if self.model.config.is_quip:
             w = self.load_weight()
-            self.k_scale = w['k_scale'].to(self.device_idx)
-            self.o_scale = w['o_scale'].to(self.device_idx)
-            self.q_scale = w['q_scale'].to(self.device_idx)
-            self.v_scale = w['v_scale'].to(self.device_idx)
+            self.k_scale = w['k_scale']
+            self.o_scale = w['o_scale']
+            self.q_scale = w['q_scale']
+            self.v_scale = w['v_scale']
 
         qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
 

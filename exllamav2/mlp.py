@@ -56,9 +56,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     def load(self):
         if self.model.config.is_quip:
             w = self.load_weight()
-            self.up_scale = w['up_scale'].to(self.device_idx)
-            self.down_scale = w['down_scale'].to(self.device_idx)
-            self.gate_scale = w['gate_scale'].to(self.device_idx)
+            self.up_scale = w['up_scale']
+            self.down_scale = w['down_scale']
+            self.gate_scale = w['gate_scale']
 
         self.post_attention_layernorm.load()
         if hasattr(self, 'upgate_proj') and self.upgate_proj is not None: self.upgate_proj.load()

@@ -6,6 +6,7 @@ from exllamav2 import(
     ExLlamaV2,
     ExLlamaV2Config,
     ExLlamaV2Cache,
+    ExLlamaV2Cache_8bit,
     ExLlamaV2Tokenizer,
 )
 
