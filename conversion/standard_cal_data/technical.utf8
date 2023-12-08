@@ -1,0 +1,988 @@
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+A Turing machine is a mathematical model of computation describing an abstract machine[1] that manipulates symbols on a strip of tape according to a table of rules.[2] Despite the model's simplicity, it is capable of implementing any computer algorithm.[3]
+
+The machine operates on an infinite[4] memory tape divided into discrete cells,[5] each of which can hold a single symbol drawn from a finite set of symbols called the alphabet of the machine. It has a "head" that, at any point in the machine's operation, is positioned over one of these cells, and a "state" selected from a finite set of states. At each step of its operation, the head reads the symbol in its cell. Then, based on the symbol and the machine's own present state, the machine writes a symbol into the same cell, and moves the head one step to the left or the right,[6] or halts the computation. The choice of which replacement symbol to write, which direction to move the head, and whether to halt is based on a finite table that specifies what to do for each combination of the current state and the symbol that is read. Like a real computer program, it is possible for a Turing machine to go into an infinite loop which will never halt.
+
+The Turing machine was invented in 1936 by Alan Turing,[7][8] who called it an "a-machine" (automatic machine).[9] It was Turing's doctoral advisor, Alonzo Church, who later coined the term "Turing machine" in a review.[10] With this model, Turing was able to answer two questions in the negative:
+
+    Does a machine exist that can determine whether any arbitrary machine on its tape is "circular" (e.g., freezes, or fails to continue its computational task)?
+    Does a machine exist that can determine whether any arbitrary machine on its tape ever prints a given symbol?[11][12]
+
+Thus by providing a mathematical description of a very simple device capable of arbitrary computations, he was able to prove properties of computation in general—and in particular, the uncomputability of the Entscheidungsproblem ('decision problem').[13]
+
+Turing machines proved the existence of fundamental limitations on the power of mechanical computation.[14] While they can express arbitrary computations, their minimalist design makes them too slow for computation in practice: real-world computers are based on different designs that, unlike Turing machines, use random-access memory.
+
+Turing completeness is the ability for a computational model or a system of instructions to simulate a Turing machine. A programming language that is Turing complete is theoretically capable of expressing all tasks accomplishable by computers; nearly all programming languages are Turing complete if the limitations of finite memory are ignored.
+Overview
+
+A Turing machine is an idealised model of a central processing unit (CPU) that controls all data manipulation done by a computer, with the canonical machine using sequential memory to store data. Typically, the sequential memory is represented as a tape of infinite length on which the machine can perform read and write operations.
+
+In the context of formal language theory, a Turing machine (automaton) is capable of enumerating some arbitrary subset of valid strings of an alphabet. A set of strings which can be enumerated in this manner is called a recursively enumerable language. The Turing machine can equivalently be defined as a model that recognises valid input strings, rather than enumerating output strings.
+
+Given a Turing machine M and an arbitrary string s, it is generally not possible to decide whether M will eventually produce s. This is due to the fact that the halting problem is unsolvable, which has major implications for the theoretical limits of computing.
+
+The Turing machine is capable of processing an unrestricted grammar, which further implies that it is capable of robustly evaluating first-order logic in an infinite number of ways. This is famously demonstrated through lambda calculus.
+
+A Turing machine that is able to simulate any other Turing machine is called a universal Turing machine (UTM, or simply a universal machine). Another mathematical formalism, lambda calculus, with a similar "universal" nature was introduced by Alonzo Church. Church's work intertwined with Turing's to form the basis for the Church–Turing thesis. This thesis states that Turing machines, lambda calculus, and other similar formalisms of computation do indeed capture the informal notion of effective methods in logic and mathematics and thus provide a model through which one can reason about an algorithm or "mechanical procedure" in a mathematically precise way without being tied to any particular formalism. Studying the abstract properties of Turing machines has yielded many insights into computer science, computability theory, and complexity theory.
+Physical description
+
+In his 1948 essay, "Intelligent Machinery", Turing wrote that his machine consisted of:
+
+    ...an unlimited memory capacity obtained in the form of an infinite tape marked out into squares, on each of which a symbol could be printed. At any moment there is one symbol in the machine; it is called the scanned symbol. The machine can alter the scanned symbol, and its behavior is in part determined by that symbol, but the symbols on the tape elsewhere do not affect the behavior of the machine. However, the tape can be moved back and forth through the machine, this being one of the elementary operations of the machine. Any symbol on the tape may therefore eventually have an innings.[15]
+    — Turing 1948, p. 3[16]
+
+Description
+For visualizations of Turing machines, see Turing machine gallery.
+
+The Turing machine mathematically models a machine that mechanically operates on a tape. On this tape are symbols, which the machine can read and write, one at a time, using a tape head. Operation is fully determined by a finite set of elementary instructions such as "in state 42, if the symbol seen is 0, write a 1; if the symbol seen is 1, change into state 17; in state 17, if the symbol seen is 0, write a 1 and change to state 6;" etc. In the original article ("On Computable Numbers, with an Application to the Entscheidungsproblem", see also references below), Turing imagines not a mechanism, but a person whom he calls the "computer", who executes these deterministic mechanical rules slavishly (or as Turing puts it, "in a desultory manner").
+The head is always over a particular square of the tape; only a finite stretch of squares is shown. The instruction to be performed (q4) is shown over the scanned square. (Drawing after Kleene (1952) p. 375.)
+Here, the internal state (q1) is shown inside the head, and the illustration describes the tape as being infinite and pre-filled with "0", the symbol serving as blank. The system's full state (its "complete configuration") consists of the internal state, any non-blank symbols on the tape (in this illustration "11B"), and the position of the head relative to those symbols including blanks, i.e. "011B". (Drawing after Minsky (1967) p. 121.)
+
+More explicitly, a Turing machine consists of:
+
+    A tape divided into cells, one next to the other. Each cell contains a symbol from some finite alphabet. The alphabet contains a special blank symbol (here written as '0') and one or more other symbols. The tape is assumed to be arbitrarily extendable to the left and to the right, so that the Turing machine is always supplied with as much tape as it needs for its computation. Cells that have not been written before are assumed to be filled with the blank symbol. In some models the tape has a left end marked with a special symbol; the tape extends or is indefinitely extensible to the right.
+    A head that can read and write symbols on the tape and move the tape left and right one (and only one) cell at a time. In some models the head moves and the tape is stationary.
+    A state register that stores the state of the Turing machine, one of finitely many. Among these is the special start state with which the state register is initialised. These states, writes Turing, replace the "state of mind" a person performing computations would ordinarily be in.
+    A finite table[17] of instructions[18] that, given the state(qi) the machine is currently in and the symbol(aj) it is reading on the tape (symbol currently under the head), tells the machine to do the following in sequence (for the 5-tuple models):
+
+    Either erase or write a symbol (replacing aj with aj1).
+    Move the head (which is described by dk and can have values: 'L' for one step left or 'R' for one step right or 'N' for staying in the same place).
+    Assume the same or a new state as prescribed (go to state qi1).
+
+In the 4-tuple models, erasing or writing a symbol (aj1) and moving the head left or right (dk) are specified as separate instructions. The table tells the machine to (ia) erase or write a symbol or (ib) move the head left or right, and then (ii) assume the same or a new state as prescribed, but not both actions (ia) and (ib) in the same instruction. In some models, if there is no entry in the table for the current combination of symbol and state, then the machine will halt; other models require all entries to be filled.
+
+Every part of the machine (i.e. its state, symbol-collections, and used tape at any given time) and its actions (such as printing, erasing and tape motion) is finite, discrete and distinguishable; it is the unlimited amount of tape and runtime that gives it an unbounded amount of storage space.
+Formal definition
+
+Following Hopcroft & Ullman (1979, p. 148), a (one-tape) Turing machine can be formally defined as a 7-tuple M = ⟨ Q , Γ , b , Σ , δ , q 0 , F ⟩ M=\langle Q,\Gamma ,b,\Sigma ,\delta ,q_{0},F\rangle where
+
+    Γ \Gamma is a finite, non-empty set of tape alphabet symbols;
+    b ∈ Γ b\in \Gamma is the blank symbol (the only symbol allowed to occur on the tape infinitely often at any step during the computation);
+    Σ ⊆ Γ ∖ { b } \Sigma \subseteq \Gamma \setminus \{b\} is the set of input symbols, that is, the set of symbols allowed to appear in the initial tape contents;
+    Q Q is a finite, non-empty set of states;
+    q 0 ∈ Q q_{0}\in Q is the initial state;
+    F ⊆ Q F\subseteq Q is the set of final states or accepting states. The initial tape contents is said to be accepted by M M if it eventually halts in a state from F F.
+    δ : ( Q ∖ F ) × Γ ↛ Q × Γ × { L , R } {\displaystyle \delta :(Q\setminus F)\times \Gamma \not \to Q\times \Gamma \times \{L,R\}} is a partial function called the transition function, where L is left shift, R is right shift. If δ \delta is not defined on the current state and the current tape symbol, then the machine halts;[19] intuitively, the transition function specifies the next state transited from the current state, which symbol to overwrite the current symbol pointed by the head, and the next head movement.
+
+3-state Busy Beaver. Black icons represent location and state of head; square colors represent 1s (orange) and 0s (white); time progresses vertically from the top until the HALT state at the bottom.
+
+A relatively uncommon variant allows "no shift", say N, as a third element of the set of directions { L , R } \{L,R\}.
+
+The 7-tuple for the 3-state busy beaver looks like this (see more about this busy beaver at Turing machine examples):
+
+    Q = { A , B , C , HALT } Q=\{{\mbox{A}},{\mbox{B}},{\mbox{C}},{\mbox{HALT}}\} (states);
+    Γ = { 0 , 1 } \Gamma =\{0,1\} (tape alphabet symbols);
+    b = 0 b=0 (blank symbol);
+    Σ = { 1 } \Sigma =\{1\} (input symbols);
+    q 0 = A q_{0}={\mbox{A}} (initial state);
+    F = { HALT } F=\{{\mbox{HALT}}\} (final states);
+    δ = \delta = see state-table below (transition function).
+
+Initially all tape cells are marked with 0 {\displaystyle 0}.
+State table for 3-state, 2-symbol busy beaver Tape symbol 	Current state A 	Current state B 	Current state C
+Write symbol 	Move tape 	Next state 	Write symbol 	Move tape 	Next state 	Write symbol 	Move tape 	Next state
+0 	1 	R 	B 	1 	L 	A 	1 	L 	B
+1 	1 	L 	C 	1 	R 	B 	1 	R 	HALT
+Additional details required to visualise or implement Turing machines
+
+In the words of van Emde Boas (1990), p. 6: "The set-theoretical object [his formal seven-tuple description similar to the above] provides only partial information on how the machine will behave and what its computations will look like."
+
+For instance,
+
+    There will need to be many decisions on what the symbols actually look like, and a failproof way of reading and writing symbols indefinitely.
+    The shift left and shift right operations may shift the tape head across the tape, but when actually building a Turing machine it is more practical to make the tape slide back and forth under the head instead.
+    The tape can be finite, and automatically extended with blanks as needed (which is closest to the mathematical definition), but it is more common to think of it as stretching infinitely at one or both ends and being pre-filled with blanks except on the explicitly given finite fragment the tape head is on. (This is, of course, not implementable in practice.) The tape cannot be fixed in length, since that would not correspond to the given definition and would seriously limit the range of computations the machine can perform to those of a linear bounded automaton if the tape was proportional to the input size, or finite-state machine if it was strictly fixed-length.
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions.
+
+"License" shall mean the terms and conditions for use, reproduction, and distribution as defined by Sections 1 through 9 of this document.
+
+"Licensor" shall mean the copyright owner or entity authorized by the copyright owner that is granting the License.
+
+"Legal Entity" shall mean the union of the acting entity and all other entities that control, are controlled by, or are under common control with that entity. For the purposes of this definition, "control" means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
+
+"You" (or "Your") shall mean an individual or Legal Entity exercising permissions granted by this License.
+
+"Source" form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
+
+"Object" form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
+
+"Work" shall mean the work of authorship, whether in Source or Object form, made available under the License, as indicated by a copyright notice that is included in or attached to the work (an example is provided in the Appendix below).
+
+"Derivative Works" shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work and for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship. For the purposes of this License, Derivative Works shall not include works that remain separable from, or merely link (or bind by name) to the interfaces of, the Work and Derivative Works thereof.
+
+"Contribution" shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted to Licensor for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner. For the purposes of this definition, "submitted" means any form of electronic, verbal, or written communication sent to the Licensor or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, the Licensor for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by the copyright owner as "Not a Contribution."
+
+"Contributor" shall mean Licensor and any individual or Legal Entity on behalf of whom a Contribution has been received by Licensor and subsequently incorporated within the Work.
+
+2. Grant of Copyright License. Subject to the terms and conditions of this License, each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare Derivative Works of, publicly display, publicly perform, sublicense, and distribute the Work and such Derivative Works in Source or Object form.
+
+3. Grant of Patent License. Subject to the terms and conditions of this License, each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work, where such license applies only to those patent claims licensable by such Contributor that are necessarily infringed by their Contribution(s) alone or by combination of their Contribution(s) with the Work to which such Contribution(s) was submitted. If You institute patent litigation against any entity (including a cross-claim or counterclaim in a lawsuit) alleging that the Work or a Contribution incorporated within the Work constitutes direct or contributory patent infringement, then any patent licenses granted to You under this License for that Work shall terminate as of the date such litigation is filed.
+
+4. Redistribution. You may reproduce and distribute copies of the Work or Derivative Works thereof in any medium, with or without modifications, and in Source or Object form, provided that You meet the following conditions:
+
+    You must give any other recipients of the Work or Derivative Works a copy of this License; and
+    You must cause any modified files to carry prominent notices stating that You changed the files; and
+    You must retain, in the Source form of any Derivative Works that You distribute, all copyright, patent, trademark, and attribution notices from the Source form of the Work, excluding those notices that do not pertain to any part of the Derivative Works; and
+    If the Work includes a "NOTICE" text file as part of its distribution, then any Derivative Works that You distribute must include a readable copy of the attribution notices contained within such NOTICE file, excluding those notices that do not pertain to any part of the Derivative Works, in at least one of the following places: within a NOTICE text file distributed as part of the Derivative Works; within the Source form or documentation, if provided along with the Derivative Works; or, within a display generated by the Derivative Works, if and wherever such third-party notices normally appear. The contents of the NOTICE file are for informational purposes only and do not modify the License. You may add Your own attribution notices within Derivative Works that You distribute, alongside or as an addendum to the NOTICE text from the Work, provided that such additional attribution notices cannot be construed as modifying the License.
+
+You may add Your own copyright statement to Your modifications and may provide additional or different license terms and conditions for use, reproduction, or distribution of Your modifications, or for any such Derivative Works as a whole, provided Your use, reproduction, and distribution of the Work otherwise complies with the conditions stated in this License.
+
+5. Submission of Contributions. Unless You explicitly state otherwise, any Contribution intentionally submitted for inclusion in the Work by You to the Licensor shall be under the terms and conditions of this License, without any additional terms or conditions. Notwithstanding the above, nothing herein shall supersede or modify the terms of any separate license agreement you may have executed with Licensor regarding such Contributions.
+
+6. Trademarks. This License does not grant permission to use the trade names, trademarks, service marks, or product names of the Licensor, except as required for reasonable and customary use in describing the origin of the Work and reproducing the content of the NOTICE file.
+
+7. Disclaimer of Warranty. Unless required by applicable law or agreed to in writing, Licensor provides the Work (and each Contributor provides its Contributions) on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied, including, without limitation, any warranties or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE. You are solely responsible for determining the appropriateness of using or redistributing the Work and assume any risks associated with Your exercise of permissions under this License.
+
+8. Limitation of Liability. In no event and under no legal theory, whether in tort (including negligence), contract, or otherwise, unless required by applicable law (such as deliberate and grossly negligent acts) or agreed to in writing, shall any Contributor be liable to You for damages, including any direct, indirect, special, incidental, or consequential damages of any character arising as a result of this License or out of the use or inability to use the Work (including but not limited to damages for loss of goodwill, work stoppage, computer failure or malfunction, or any and all other commercial damages or losses), even if such Contributor has been advised of the possibility of such damages.
+
+9. Accepting Warranty or Additional Liability. While redistributing the Work or Derivative Works thereof, You may choose to offer, and charge a fee for, acceptance of support, warranty, indemnity, or other liability obligations and/or rights consistent with this License. However, in accepting such obligations, You may act only on Your own behalf and on Your sole responsibility, not on behalf of any other Contributor, and only if You agree to indemnify, defend, and hold each Contributor harmless for any liability incurred by, or claims asserted against, such Contributor by reason of your accepting any such warranty or additional liability.
+
+END OF TERMS AND CONDITIONS
+
+
+How to apply the Apache License to your work
+
+Include a copy of the Apache License, typically in a file called LICENSE, in your work, and consider also including a NOTICE file that references the License.
+
+To apply the Apache License to specific files in your work, attach the following boilerplate declaration, replacing the fields enclosed by brackets "[]" with your own identifying information. (Don't include the brackets!) Enclose the text in the appropriate comment syntax for the file format. We also recommend that you include a file or class name and description of purpose on the same "printed page" as the copyright notice for easier identification within third-party archives.
+
+Copyright [yyyy] [name of copyright owner]
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+
+Human TP53 gene
+
+In humans, a common polymorphism involves the substitution of an arginine for a proline at codon position 72 of exon 4. Many studies have investigated a genetic link between this variation and cancer susceptibility; however, the results have been controversial. For instance, a meta-analysis from 2009 failed to show a link for cervical cancer.[15] A 2011 study found that the TP53 proline mutation did have a profound effect on pancreatic cancer risk among males.[16] A study of Arab women found that proline homozygosity at TP53 codon 72 is associated with a decreased risk for breast cancer.[17] One study suggested that TP53 codon 72 polymorphisms, MDM2 SNP309, and A2164G may collectively be associated with non-oropharyngeal cancer susceptibility and that MDM2 SNP309 in combination with TP53 codon 72 may accelerate the development of non-oropharyngeal cancer in women.[18] A 2011 study found that TP53 codon 72 polymorphism was associated with an increased risk of lung cancer.[19]
+
+Meta-analyses from 2011 found no significant associations between TP53 codon 72 polymorphisms and both colorectal cancer risk[20] and endometrial cancer risk.[21] A 2011 study of a Brazilian birth cohort found an association between the non-mutant arginine TP53 and individuals without a family history of cancer.[22] Another 2011 study found that the p53 homozygous (Pro/Pro) genotype was associated with a significantly increased risk for renal cell carcinoma.[23]
+Function
+DNA damage and repair
+
+p53 plays a role in regulation or progression through the cell cycle, apoptosis, and genomic stability by means of several mechanisms:
+
+    It can activate DNA repair proteins when DNA has sustained damage. Thus, it may be an important factor in aging.[24]
+    It can arrest growth by holding the cell cycle at the G1/S regulation point on DNA damage recognition—if it holds the cell here for long enough, the DNA repair proteins will have time to fix the damage and the cell will be allowed to continue the cell cycle.
+    It can initiate apoptosis (i.e., programmed cell death) if DNA damage proves to be irreparable.
+    It is essential for the senescence response to short telomeres.
+
+p53 pathway: In a normal cell, p53 is inactivated by its negative regulator, mdm2. Upon DNA damage or other stresses, various pathways will lead to the dissociation of the p53 and mdm2 complex. Once activated, p53 will induce a cell cycle arrest to allow either repair and survival of the cell or apoptosis to discard the damaged cell. How p53 makes this choice is currently unknown.
+
+WAF1/CIP1 encoding for p21 and hundreds of other down-stream genes. p21 (WAF1) binds to the G1-S/CDK (CDK4/CDK6, CDK2, and CDK1) complexes (molecules important for the G1/S transition in the cell cycle) inhibiting their activity.
+
+When p21(WAF1) is complexed with CDK2, the cell cannot continue to the next stage of cell division. A mutant p53 will no longer bind DNA in an effective way, and, as a consequence, the p21 protein will not be available to act as the "stop signal" for cell division.[25] Studies of human embryonic stem cells (hESCs) commonly describe the nonfunctional p53-p21 axis of the G1/S checkpoint pathway with subsequent relevance for cell cycle regulation and the DNA damage response (DDR). Importantly, p21 mRNA is clearly present and upregulated after the DDR in hESCs, but p21 protein is not detectable. In this cell type, p53 activates numerous microRNAs (like miR-302a, miR-302b, miR-302c, and miR-302d) that directly inhibit the p21 expression in hESCs.
+
+The p21 protein binds directly to cyclin-CDK complexes that drive forward the cell cycle and inhibits their kinase activity, thereby causing cell cycle arrest to allow repair to take place. p21 can also mediate growth arrest associated with differentiation and a more permanent growth arrest associated with cellular senescence. The p21 gene contains several p53 response elements that mediate direct binding of the p53 protein, resulting in transcriptional activation of the gene encoding the p21 protein.
+
+The p53 and RB1 pathways are linked via p14ARF, raising the possibility that the pathways may regulate each other.[26]
+
+p53 expression can be stimulated by UV light, which also causes DNA damage. In this case, p53 can initiate events leading to tanning.[27][28]
+Stem cells
+
+Levels of p53 play an important role in the maintenance of stem cells throughout development and the rest of human life.
+
+In human embryonic stem cells (hESCs)s, p53 is maintained at low inactive levels.[29] This is because activation of p53 leads to rapid differentiation of hESCs.[30] Studies have shown that knocking out p53 delays differentiation and that adding p53 causes spontaneous differentiation, showing how p53 promotes differentiation of hESCs and plays a key role in cell cycle as a differentiation regulator. When p53 becomes stabilized and activated in hESCs, it increases p21 to establish a longer G1. This typically leads to abolition of S-phase entry, which stops the cell cycle in G1, leading to differentiation. Work in mouse embryonic stem cells has recently shown however that the expression of P53 does not necessarily lead to differentiation.[31] p53 also activates miR-34a and miR-145, which then repress the hESCs pluripotency factors, further instigating differentiation.[29]
+
+In adult stem cells, p53 regulation is important for maintenance of stemness in adult stem cell niches. Mechanical signals such as hypoxia affect levels of p53 in these niche cells through the hypoxia inducible factors, HIF-1α and HIF-2α. While HIF-1α stabilizes p53, HIF-2α suppresses it.[32] Suppression of p53 plays important roles in cancer stem cell phenotype, induced pluripotent stem cells and other stem cell roles and behaviors, such as blastema formation. Cells with decreased levels of p53 have been shown to reprogram into stem cells with a much greater efficiency than normal cells.[33][34] Papers suggest that the lack of cell cycle arrest and apoptosis gives more cells the chance to be reprogrammed. Decreased levels of p53 were also shown to be a crucial aspect of blastema formation in the legs of salamanders.[35] p53 regulation is very important in acting as a barrier between stem cells and a differentiated stem cell state, as well as a barrier between stem cells being functional and being cancerous.[36]
+
+Specifically, the term Galilean invariance today usually refers to this principle as applied to Newtonian mechanics, that is, Newton's laws of motion hold in all frames related to one another by a Galilean transformation. In other words, all frames related to one another by such a transformation are inertial (meaning, Newton's equation of motion is valid in these frames). In this context it is sometimes called Newtonian relativity.
+
+Among the axioms from Newton's theory are:
+
+    There exists an absolute space, in which Newton's laws are true. An inertial frame is a reference frame in relative uniform motion to absolute space.
+    All inertial frames share a universal time.
+
+Galilean relativity can be shown as follows. Consider two inertial frames S and S' . A physical event in S will have position coordinates r = (x, y, z) and time t in S, and r' = (x' , y' , z' ) and time t' in S' . By the second axiom above, one can synchronize the clock in the two frames and assume t = t' . Suppose S' is in relative uniform motion to S with velocity v. Consider a point object whose position is given by functions r' (t) in S' and r(t) in S. We see that
+
+    r ′ ( t ) = r ( t ) − v t . r'(t) = r(t) - v t.\,
+
+The velocity of the particle is given by the time derivative of the position:
+
+    u ′ ( t ) = d d t r ′ ( t ) = d d t r ( t ) − v = u ( t ) − v . u'(t) = \frac{d}{d t} r'(t) = \frac{d}{d t} r(t) - v = u(t) - v.
+
+Another differentiation gives the acceleration in the two frames:
+
+    a ′ ( t ) = d d t u ′ ( t ) = d d t u ( t ) − 0 = a ( t ) . a'(t) = \frac{d}{d t} u'(t) = \frac{d}{d t} u(t) - 0 = a(t).
+
+It is this simple but crucial result that implies Galilean relativity. Assuming that mass is invariant in all inertial frames, the above equation shows Newton's laws of mechanics, if valid in one frame, must hold for all frames.[1] But it is assumed to hold in absolute space, therefore Galilean relativity holds.
+
+Newton's theory versus special relativity
+
+A comparison can be made between Newtonian relativity and special relativity.
+
+Some of the assumptions and properties of Newton's theory are:
+
+    The existence of infinitely many inertial frames. Each frame is of infinite size (the entire universe may be covered by many linearly equivalent frames). Any two frames may be in relative uniform motion. (The relativistic nature of mechanics derived above shows that the absolute space assumption is not necessary.)
+    The inertial frames may move in all possible relative forms of uniform motion.
+    There is a universal, or absolute, notion of elapsed time.
+    Two inertial frames are related by a Galilean transformation.
+    In all inertial frames, Newton's laws, and gravity, hold.
+
+In comparison, the corresponding statements from special relativity are as follows:
+
+    The existence, as well, of infinitely many non-inertial frames, each of which referenced to (and physically determined by) a unique set of spacetime coordinates. Each frame may be of infinite size, but its definition is always determined locally by contextual physical conditions. Any two frames may be in relative non-uniform motion (as long as it is assumed that this condition of relative motion implies a relativistic dynamical effect – and later, mechanical effect in general relativity – between both frames).
+    Rather than freely allowing all conditions of relative uniform motion between frames of reference, the relative velocity between two inertial frames becomes bounded above by the speed of light.
+    Instead of universal elapsed time, each inertial frame possesses its own notion of elapsed time.
+    The Galilean transformations are replaced by Lorentz transformations.
+    In all inertial frames, all laws of physics are the same.
+
+Both theories assume the existence of inertial frames. In practice, the size of the frames in which they remain valid differ greatly, depending on gravitational tidal forces.
+
+In the appropriate context, a local Newtonian inertial frame, where Newton's theory remains a good model, extends to roughly 107 light years.
+
+In special relativity, one considers Einstein's cabins, cabins that fall freely in a gravitational field. According to Einstein's thought experiment, a man in such a cabin experiences (to a good approximation) no gravity and therefore the cabin is an approximate inertial frame. However, one has to assume that the size of the cabin is sufficiently small so that the gravitational field is approximately parallel in its interior. This can greatly reduce the sizes of such approximate frames, in comparison to Newtonian frames. For example, an artificial satellite orbiting the Earth can be viewed as a cabin. However, reasonably sensitive instruments could detect "microgravity" in such a situation because the "lines of force" of the Earth's gravitational field converge.
+
+In general, the convergence of gravitational fields in the universe dictates the scale at which one might consider such (local) inertial frames. For example, a spaceship falling into a black hole or neutron star would (at a certain distance) be subjected to tidal forces strong enough to crush it in width and tear it apart in length.[2] In comparison, however, such forces might only be uncomfortable for the astronauts inside (compressing their joints, making it difficult to extend their limbs in any direction perpendicular to the gravity field of the star). Reducing the scale further, the forces at that distance might have almost no effects at all on a mouse. This illustrates the idea that all freely falling frames are locally inertial (acceleration and gravity-free) if the scale is chosen correctly.[2]
+
+Poetry (a term derived from the Greek word poiesis, "making"), also called verse,[note 1] is a form of literature that uses aesthetic and often rhythmic[1][2][3] qualities of language − such as phonaesthetics, sound symbolism, and metre − to evoke meanings in addition to, or in place of, a prosaic ostensible meaning. A poem is a literary composition, written by a poet, using this principle.
+
+Poetry has a long and varied history, evolving differentially across the globe. It dates back at least to prehistoric times with hunting poetry in Africa and to panegyric and elegiac court poetry of the empires of the Nile, Niger, and Volta River valleys.[4] Some of the earliest written poetry in Africa occurs among the Pyramid Texts written during the 25th century BCE. The earliest surviving Western Asian epic poem, the Epic of Gilgamesh, was written in the Sumerian language.
+
+Early poems in the Eurasian continent evolved from folk songs such as the Chinese Shijing as well as from religious hymns (the Sanskrit Rigveda, the Zoroastrian Gathas, the Hurrian songs, and the Hebrew Psalms); or from a need to retell oral epics, as with the Egyptian Story of Sinuhe, Indian epic poetry, and the Homeric epics, the Iliad and the Odyssey.
+
+Ancient Greek attempts to define poetry, such as Aristotle's Poetics, focused on the uses of speech in rhetoric, drama, song, and comedy. Later attempts concentrated on features such as repetition, verse form, and rhyme, and emphasized the aesthetics which distinguish poetry from more objectively-informative prosaic writing.
+
+Poetry uses forms and conventions to suggest differential interpretations of words, or to evoke emotive responses. Devices such as assonance, alliteration, onomatopoeia, and rhythm may convey musical or incantatory effects. The use of ambiguity, symbolism, irony, and other stylistic elements of poetic diction often leaves a poem open to multiple interpretations. Similarly, figures of speech such as metaphor, simile, and metonymy[5] establish a resonance between otherwise disparate images—a layering of meanings, forming connections previously not perceived. Kindred forms of resonance may exist, between individual verses, in their patterns of rhyme or rhythm.
+
+Some poetry types are unique to particular cultures and genres and respond to characteristics of the language in which the poet writes. Readers accustomed to identifying poetry with Dante, Goethe, Mickiewicz, or Rumi may think of it as written in lines based on rhyme and regular meter. There are, however, traditions, such as Biblical poetry, that use other means to create rhythm and euphony. Much modern poetry reflects a critique of poetic tradition,[6] testing the principle of euphony itself or altogether forgoing rhyme or set rhythm.[7][8]
+
+Poets – as, from the Greek, "makers" of language – have contributed to the evolution of the linguistic, expressive, and utilitarian qualities of their languages. In an increasingly globalized world, poets often adapt forms, styles, and techniques from diverse cultures and languages.
+
+A Western cultural tradition (extending at least from Homer to Rilke) associates the production of poetry with inspiration – often by a Muse (either classical or contemporary), or through other (often canonised) poets' work which sets some kind of example or challenge.
+
+In first-person poems, the lyrics are spoken by an "I", a character who may be termed the speaker, distinct from the poet (the author). Thus if, for example, a poem asserts, "I killed my enemy in Reno", it is the speaker, not the poet, who is the killer (unless this "confession" is a form of metaphor which needs to be considered in closer context – via close reading).
+
+Early works
+
+Some scholars believe that the art of poetry may predate literacy, and developed from folk epics and other oral genres.[9][10] Others, however, suggest that poetry did not necessarily predate writing.[11]
+
+The oldest surviving epic poem, the Epic of Gilgamesh, dates from the 3rd millennium BCE in Sumer (in Mesopotamia, present-day Iraq), and was written in cuneiform script on clay tablets and, later, on papyrus.[12] The Istanbul tablet#2461, dating to c. 2000 BCE, describes an annual rite in which the king symbolically married and mated with the goddess Inanna to ensure fertility and prosperity; some have labelled it the world's oldest love poem.[13][14] An example of Egyptian epic poetry is The Story of Sinuhe (c. 1800 BCE).[15]
+
+Other ancient epics includes the Greek Iliad and the Odyssey; the Persian Avestan books (the Yasna); the Roman national epic, Virgil's Aeneid (written between 29 and 19 BCE); and the Indian epics, the Ramayana and the Mahabharata. Epic poetry appears to have been composed in poetic form as an aid to memorization and oral transmission in ancient societies.[11][16]
+
+Other forms of poetry, including such ancient collections of religious hymns as the Indian Sanskrit-language Rigveda, the Avestan Gathas, the Hurrian songs, and the Hebrew Psalms, possibly developed directly from folk songs. The earliest entries in the oldest extant collection of Chinese poetry, the Classic of Poetry (Shijing), were initially lyrics.[17] The Shijing, with its collection of poems and folk songs, was heavily valued by the philosopher Confucius and is considered to be one of the official Confucian classics. His remarks on the subject have become an invaluable source in ancient music theory.[18]
+
+The efforts of ancient thinkers to determine what makes poetry distinctive as a form, and what distinguishes good poetry from bad, resulted in "poetics"—the study of the aesthetics of poetry.[19] Some ancient societies, such as China's through the Shijing, developed canons of poetic works that had ritual as well as aesthetic importance.[20] More recently, thinkers have struggled to find a definition that could encompass formal differences as great as those between Chaucer's Canterbury Tales and Matsuo Bashō's Oku no Hosomichi, as well as differences in content spanning Tanakh religious poetry, love poetry, and rap.[21]
+
+Until recently, the earliest examples of stressed poetry had been thought to be works composed by Romanos the Melodist (fl. 6th century CE). However, Tim Whitmarsh writes that an inscribed Greek poem predated Romanos' stressed poetry. [22][23][24]
+
+"Figure 32.—Julius obtaining banana by using pole to climb up on and spring from. Figure 33.—Using pole to swing out on so that banana could be grasped. Figure 34.—Using stick to draw carrot within reach." From The mental life of monkeys and apes; a study of ideational behavior, by Robert Mearns Yerkes, 1916
+
+The monkey and banana problem is a famous toy problem in artificial intelligence, particularly in logic programming and planning.
+Formulation of the problem
+
+A monkey is in a room. Suspended from the ceiling is a bunch of bananas, beyond the monkey's reach. However, in the room there are also a chair and a stick. The ceiling is just the right height so that a monkey standing on a chair could knock the bananas down with the stick. The monkey knows how to move around, carry other things around, reach for the bananas, and wave a stick in the air. What is the best sequence of actions for the monkey?
+Purpose of the problem
+
+The problem seeks to answer the question of whether monkeys are intelligent. Both humans and monkeys have the ability to use mental maps to remember things like where to go to find shelter, or how to avoid danger. They can also remember where to go to gather food and water, as well as how to communicate with each other. Monkeys have the ability not only to remember how to hunt and gather but to learn new things, as is the case with the monkey and the bananas: despite the fact that the monkey may never have been in an identical situation, with the same artifacts at hand, a monkey is capable of concluding that it needs to make a ladder, position it below the bananas, and climb up to reach for them.
+
+The degree to which such abilities should be ascribed to instinct or learning is a matter of debate.
+
+In 1984, a pigeon was observed as having the capacity to solve a problem.[1][2]
+Software solutions
+
+The problem is used as a toy problem for computer science. It can be solved with an expert system such as CLIPS. The example set of rules that CLIPS provides is somewhat fragile in that naive changes to the rulebase that might seem to a human of average intelligence to make common sense can cause the engine to fail to get the monkey to reach the banana.[3]
+
+Other examples exist using Rules Based System (RBS) a project implemented in Python.[4][5]
+
+VBScript ("Microsoft Visual Basic Scripting Edition") is a deprecated Active Scripting language developed by Microsoft that is modeled on Visual Basic. It allows Microsoft Windows system administrators to generate powerful tools for managing computers without error handling and with subroutines and other advanced programming constructs. It can give the user complete control over many aspects of their computing environment.
+
+VBScript uses the Component Object Model to access elements of the environment within which it is running; for example, the FileSystemObject (FSO) is used to create, read, update and delete files. VBScript has been installed by default in every desktop release of Microsoft Windows since Windows 98;[1] in Windows Server since Windows NT 4.0 Option Pack;[2] and optionally with Windows CE (depending on the device it is installed on).
+
+A VBScript script must be executed within a host environment, of which there are several provided with Microsoft Windows, including: Windows Script Host (WSH), Internet Explorer (IE), and Internet Information Services (IIS).[3] Additionally, the VBScript hosting environment is embeddable in other programs, through technologies such as the Microsoft Script Control (msscript.ocx).
+History
+
+VBScript began as part of the Microsoft Windows Script Technologies, launched in 1996. This technology (which also included JScript) was initially targeted at web developers. During a period of just over two years, VBScript advanced from version 1.0 to 2.0, and over that time it gained support from Windows system administrators seeking an automation tool more powerful than the batch language first developed in the early 1980s.[4] On August 1, 1996, Internet Explorer was released with features that included VBScript.[5]
+
+In version 5.0, the functionality of VBScript was increased with new features including regular expressions; classes; the With statement;[6] the Eval, Execute, and ExecuteGlobal functions to evaluate and execute script commands built during the execution of another script; a function-pointer system via GetRef,[7] and Distributed COM (DCOM) support.
+
+In version 5.5, SubMatches[8] were added to the regular expression class in VBScript, to finally allow script authors to capture the text within the expression's groups. That capability had already been available in JScript.
+
+With the advent of the .NET Framework, the scripting team took the decision to implement future support for VBScript within ASP.NET for web development,[9] and therefore no new versions of the VBScript engine would be developed. It would henceforth be supported by Microsoft's Sustaining Engineering Team, who are responsible for bug fixes and security enhancements. For Windows system administrators, Microsoft suggests migrating to Windows PowerShell, as VBScript is deprecated and will eventually be removed from Windows.
+
+On October 9, 2023, Microsoft announced plans to deprecate and eventually remove VBScript from future Windows versions.[10]
+Environments
+
+When employed for client-side web development in Microsoft Internet Explorer, VBScript is similar in function to JavaScript. It is used to write executable functions that are embedded in or included from HTML pages and interact with the Document Object Model (DOM) of the page, to perform tasks not possible in HTML alone. However, other web browsers such as Firefox and Opera and recently Chrome do not have built-in support for VBScript. This means that where client-side scripting and cross-browser compatibility are required, developers usually choose JavaScript over most other programming languages, such as VBScript.
+
+VBScript is also used for server-side processing of web pages, most notably with Microsoft Active Server Pages (ASP). The ASP engine and type library, asp.dll, invokes vbscript.dll to run VBScript scripts. VBScript that is embedded in an ASP page is contained within <% and %> context switches. The following example of an ASP page with VBScript displays the current time in 24-hour format, but it is also used as the default script for error messages with the Windows operating systems.
+
+FAISS, including its GPU version (faiss-gpu), primarily works with NumPy arrays. This means that even when using FAISS with GPU support, the input data typically needs to be in the form of a NumPy array. However, this doesn't mean that you can't use PyTorch tensors with FAISS; it just means that you'll need to convert PyTorch tensors to NumPy arrays before using them with FAISS functions.
+
+The reason for this requirement is that FAISS internally uses NumPy arrays for its data structures and computations, and although PyTorch tensors and NumPy arrays are often interoperable, they are not the same thing.
+
+Here's what you typically need to do when working with PyTorch tensors and FAISS:
+
+    Convert PyTorch Tensors to NumPy Arrays:
+        If your data is in a PyTorch tensor, you can convert it to a NumPy array using the .numpy() method if the tensor is on the CPU.
+        If the tensor is on the GPU, you should first move it to the CPU with .cpu() and then convert it to a NumPy array.
+
+    Use FAISS for Operations:
+        Perform your necessary operations in FAISS using the NumPy arrays.
+
+    Convert Back to PyTorch Tensors if Needed:
+        If you need to bring the results back into PyTorch, you can convert the NumPy arrays back to PyTorch tensors.
+
+This conversion process is typically fast and efficient, but it's important to be aware of it, especially when working with large datasets or in situations where memory usage and computational efficiency are critical concerns.
+
+In summary, while faiss-gpu does not directly operate on PyTorch tensors, the conversion between PyTorch tensors and NumPy arrays is straightforward and usually doesn't pose a significant bottleneck in terms of performance.
+
+Resetting the chassis intrusion status on a Mellanox switch using the I2C (Inter-Integrated Circuit) interface involves a series of specific steps. Please note that this process is technical and should ideally be performed by someone with experience in managing network equipment and familiarity with the I2C protocol. Here's a general outline of how you might approach this task:
+
+    Access the I2C Interface: To interact with the I2C interface, you'll need to use a system that can communicate over I2C, such as a microcontroller or a computer with an I2C adapter. The exact method of accessing the I2C interface will depend on the equipment you are using.
+
+    Identify the Correct I2C Address: Each device on the I2C bus has a unique address. You need to find out the address of the chassis intrusion sensor or the relevant control register on the Mellanox switch. This information should be available in the switch's hardware documentation.
+
+    Read the Current Intrusion Status: Before resetting the intrusion status, it's often a good practice to read the current status. This can be done by sending a read command to the appropriate address and register.
+
+    Send a Reset Command: To reset the chassis intrusion status, you will need to write to a specific register of the intrusion detection system. This typically involves sending a particular byte or set of bytes to a specific address. The exact command will depend on the Mellanox switch model and its firmware.
+
+    Verify the Reset: After sending the reset command, you should read back the intrusion status to ensure that it has been successfully reset.
+
+    Log the Action: For security and auditing purposes, it's advisable to log this action in your system's records.
+
+It is crucial to consult the specific documentation for your Mellanox switch model for detailed instructions and the correct register addresses. Improperly interacting with the I2C interface can cause unintended behavior or damage to the switch.
+
+If you are not familiar with this level of hardware interaction, it is recommended to seek assistance from a qualified network engineer or contact Mellanox's technical support for guidance.
+
+Philosophy of mind is a branch of philosophy that studies the ontology and nature of the mind and its relationship with the body. The mind–body problem is a paradigmatic issue in philosophy of mind, although a number of other issues are addressed, such as the hard problem of consciousness and the nature of particular mental states.[1][2][3] Aspects of the mind that are studied include mental events, mental functions, mental properties, consciousness and its neural correlates, the ontology of the mind, the nature of cognition and of thought, and the relationship of the mind to the body.
+
+Dualism and monism are the two central schools of thought on the mind–body problem, although nuanced views have arisen that do not fit one or the other category neatly.
+
+    Dualism finds its entry into Western philosophy thanks to René Descartes in the 17th century.[4] Substance dualists like Descartes argue that the mind is an independently existing substance, whereas property dualists maintain that the mind is a group of independent properties that emerge from and cannot be reduced to the brain, but that it is not a distinct substance.[5]
+    Monism is the position that mind and body are ontologically indiscernible entities, not dependent substances. This view was espoused by the 17th-century rationalist Baruch Spinoza.[6] Physicalists argue that only entities postulated by physical theory exist, and that mental processes will eventually be explained in terms of these entities as physical theory continues to evolve. Physicalists maintain various positions on the prospects of reducing mental properties to physical properties (many of whom adopt compatible forms of property dualism),[7][8][9][10][11][12] and the ontological status of such mental properties remains unclear.[11][13][14] Idealists maintain that the mind is all that exists and that the external world is either mental itself, or an illusion created by the mind. Neutral monists such as Ernst Mach and William James argue that events in the world can be thought of as either mental (psychological) or physical depending on the network of relationships into which they enter, and dual-aspect monists such as Spinoza adhere to the position that there is some other, neutral substance, and that both matter and mind are properties of this unknown substance. The most common monisms in the 20th and 21st centuries have all been variations of physicalism; these positions include behaviorism, the type identity theory, anomalous monism and functionalism.[15]
+
+Most modern philosophers of mind adopt either a reductive physicalist or non-reductive physicalist position, maintaining in their different ways that the mind is not something separate from the body.[15] These approaches have been particularly influential in the sciences, especially in the fields of sociobiology, computer science (specifically, artificial intelligence), evolutionary psychology and the various neurosciences.[16][17][18][19] Reductive physicalists assert that all mental states and properties will eventually be explained by scientific accounts of physiological processes and states.[20][21][22] Non-reductive physicalists argue that although the mind is not a separate substance, mental properties supervene on physical properties, or that the predicates and vocabulary used in mental descriptions and explanations are indispensable, and cannot be reduced to the language and lower-level explanations of physical science.[23][24] Continued neuroscientific progress has helped to clarify some of these issues; however, they are far from being resolved. Modern philosophers of mind continue to ask how the subjective qualities and the intentionality of mental states and properties can be explained in naturalistic terms.[25][26]
+
+However, a number of issues have been recognized with non-reductive physicalism. First, it is irreconcilable with self-identity over time. Secondly, intentional states of consciousness do not make sense on non-reductive physicalism. Thirdly, free will is impossible to reconcile with either reductive or non-reductive physicalism. Fourthly, it fails to properly explain the phenomenon of mental causation.[27]
+Mind–body problem
+Main article: Mind–body problem
+René Descartes' illustration of mind/body dualism
+
+The mind–body problem concerns the explanation of the relationship that exists between minds, or mental processes, and bodily states or processes.[1] The main aim of philosophers working in this area is to determine the nature of the mind and mental states/processes, and how—or even if—minds are affected by and can affect the body.
+
+Perceptual experiences depend on stimuli that arrive at our various sensory organs from the external world, and these stimuli cause changes in our mental states, ultimately causing us to feel a sensation, which may be pleasant or unpleasant. Someone's desire for a slice of pizza, for example, will tend to cause that person to move his or her body in a specific manner and in a specific direction to obtain what he or she wants. The question, then, is how it can be possible for conscious experiences to arise out of a lump of gray matter endowed with nothing but electrochemical properties.[15]
+
+A related problem is how someone's propositional attitudes (e.g. beliefs and desires) cause that individual's neurons to fire and muscles to contract. These comprise some of the puzzles that have confronted epistemologists and philosophers of mind from the time of René Descartes.[4]
+Dualist solutions to the mind–body problem
+See also: Mind in eastern philosophy
+
+Dualism is a set of views about the relationship between mind and matter (or body). It begins with the claim that mental phenomena are, in some respects, non-physical.[5] One of the earliest known formulations of mind–body dualism was expressed in the eastern Samkhya and Yoga schools of Hindu philosophy (c. 650 BCE), which divided the world into purusha (mind/spirit) and prakriti (material substance).[28] Specifically, the Yoga Sutra of Patanjali presents an analytical approach to the nature of the mind.
+
+In Western Philosophy, the earliest discussions of dualist ideas are in the writings of Plato who suggested that humans' intelligence (a faculty of the mind or soul) could not be identified with, or explained in terms of, their physical body.[29][30] However, the best-known version of dualism is due to René Descartes (1641), and holds that the mind is a non-extended, non-physical substance, a "res cogitans".[4] Descartes was the first to clearly identify the mind with consciousness and self-awareness, and to distinguish this from the brain, which was the seat of intelligence. He was therefore the first to formulate the mind–body problem in the form in which it still exists today.[4]
+Arguments for dualism
+
+The most frequently used argument in favor of dualism appeals to the common-sense intuition that conscious experience is distinct from inanimate matter. If asked what the mind is, the average person would usually respond by identifying it with their self, their personality, their soul, or another related entity. They would almost certainly deny that the mind simply is the brain, or vice versa, finding the idea that there is just one ontological entity at play to be too mechanistic or unintelligible.[5] Modern philosophers of mind think that these intuitions are misleading, and that critical faculties, along with empirical evidence from the sciences, should be used to examine these assumptions and determine whether there is any real basis to them.[5]
+
+The mental and the physical seem to have quite different, and perhaps irreconcilable, properties.[31] Mental events have a subjective quality, whereas physical events do not. So, for example, one can reasonably ask what a burnt finger feels like, or what a blue sky looks like, or what nice music sounds like to a person. But it is meaningless, or at least odd, to ask what a surge in the uptake of glutamate in the dorsolateral portion of the prefrontal cortex feels like.
+
+Philosophers of mind call the subjective aspects of mental events "qualia" or "raw feels".[31] There are qualia involved in these mental events that seem particularly difficult to reduce to anything physical. David Chalmers explains this argument by stating that we could conceivably know all the objective information about something, such as the brain states and wavelengths of light involved with seeing the color red, but still not know something fundamental about the situation – what it is like to see the color red.[32]
+
+If consciousness (the mind) can exist independently of physical reality (the brain), one must explain how physical memories are created concerning consciousness. Dualism must therefore explain how consciousness affects physical reality. One possible explanation is that of a miracle, proposed by Arnold Geulincx and Nicolas Malebranche, where all mind–body interactions require the direct intervention of God.
+
+Another argument that has been proposed by C. S. Lewis[33] is the Argument from Reason: if, as monism implies, all of our thoughts are the effects of physical causes, then we have no reason for assuming that they are also the consequent of a reasonable ground. Knowledge, however, is apprehended by reasoning from ground to consequent. Therefore, if monism is correct, there would be no way of knowing this—or anything else—we could not even suppose it, except by a fluke.
+
+The zombie argument is based on a thought experiment proposed by Todd Moody, and developed by David Chalmers in his book The Conscious Mind. The basic idea is that one can imagine one's body, and therefore conceive the existence of one's body, without any conscious states being associated with this body. Chalmers' argument is that it seems possible that such a being could exist because all that is needed is that all and only the things that the physical sciences describe about a zombie must be true of it. Since none of the concepts involved in these sciences make reference to consciousness or other mental phenomena, and any physical entity can be by definition described scientifically via physics, the move from conceivability to possibility is not such a large one.[34] Others such as Dennett have argued that the notion of a philosophical zombie is an incoherent,[35] or unlikely,[36] concept. It has been argued under physicalism that one must either believe that anyone including oneself might be a zombie, or that no one can be a zombie—following from the assertion that one's own conviction about being (or not being) a zombie is a product of the physical world and is therefore no different from anyone else's. This argument has been expressed by Dennett who argues that "Zombies think they are conscious, think they have qualia, think they suffer pains—they are just 'wrong' (according to this lamentable tradition) in ways that neither they nor we could ever discover!"[35] See also the problem of other minds.
+Interactionist dualism
+Portrait of René Descartes by Frans Hals (1648)
+
+Interactionist dualism, or simply interactionism, is the particular form of dualism first espoused by Descartes in the Meditations.[4] In the 20th century, its major defenders have been Karl Popper and John Carew Eccles.[37] It is the view that mental states, such as beliefs and desires, causally interact with physical states.[5]
+
+Descartes's argument for this position can be summarized as follows: Seth has a clear and distinct idea of his mind as a thinking thing that has no spatial extension (i.e., it cannot be measured in terms of length, weight, height, and so on). He also has a clear and distinct idea of his body as something that is spatially extended, subject to quantification and not able to think. It follows that mind and body are not identical because they have radically different properties.[4]
+
+Seth's mental states (desires, beliefs, etc.) have causal effects on his body and vice versa: A child touches a hot stove (physical event) which causes pain (mental event) and makes her yell (physical event), this in turn provokes a sense of fear and protectiveness in the caregiver (mental event), and so on.
+
+Descartes' argument depends on the premise that what Seth believes to be "clear and distinct" ideas in his mind are necessarily true. Many contemporary philosophers doubt this.[38][39][40] For example, Joseph Agassi suggests that several scientific discoveries made since the early 20th century have undermined the idea of privileged access to one's own ideas. Freud claimed that a psychologically-trained observer can understand a person's unconscious motivations better than the person himself does. Duhem has shown that a philosopher of science can know a person's methods of discovery better than that person herself does, while Malinowski has shown that an anthropologist can know a person's customs and habits better than the person whose customs and habits they are. He also asserts that modern psychological experiments that cause people to see things that are not there provide grounds for rejecting Descartes' argument, because scientists can describe a person's perceptions better than the person herself can.[41][42]
+Other forms of dualism
+Four varieties of dualism. The arrows indicate the direction of the causal interactions. Occasionalism is not shown.
+Psychophysical parallelism
+
+Psychophysical parallelism, or simply parallelism, is the view that mind and body, while having distinct ontological statuses, do not causally influence one another. Instead, they run along parallel paths (mind events causally interact with mind events and brain events causally interact with brain events) and only seem to influence each other.[43] This view was most prominently defended by Gottfried Leibniz. Although Leibniz was an ontological monist who believed that only one type of substance, the monad, exists in the universe, and that everything is reducible to it, he nonetheless maintained that there was an important distinction between "the mental" and "the physical" in terms of causation. He held that God had arranged things in advance so that minds and bodies would be in harmony with each other. This is known as the doctrine of pre-established harmony.[44]
+Occasionalism
+
+Occasionalism is the view espoused by Nicholas Malebranche as well as Islamic philosophers such as Abu Hamid Muhammad ibn Muhammad al-Ghazali that asserts all supposedly causal relations between physical events, or between physical and mental events, are not really causal at all. While body and mind are different substances, causes (whether mental or physical) are related to their effects by an act of God's intervention on each specific occasion.[45]
+Property dualism
+
+Property dualism is the view that the world is constituted of one kind of substance – the physical kind – and there exist two distinct kinds of properties: physical properties and mental properties. It is the view that non-physical, mental properties (such as beliefs, desires and emotions) inhere in some physical bodies (at least, brains). Sub-varieties of property dualism include:
+
+    Emergent materialism asserts that when matter is organized in the appropriate way (i.e. in the way that living human bodies are organized), mental properties emerge in a way not fully accountable for by physical laws.[5] These emergent properties have an independent ontological status and cannot be reduced to, or explained in terms of, the physical substrate from which they emerge. They are dependent on the physical properties from which they emerge, but opinions vary as to the coherence of top–down causation, i.e. the causal effectiveness of such properties. A form of emergent materialism has been espoused by David Chalmers and the concept has undergone something of a renaissance in recent years,[46] but it was already suggested in the 19th century by William James.
+    Epiphenomenalism is a doctrine first formulated by Thomas Henry Huxley.[47] It consists of the view that mental phenomena are causally ineffectual, where one or more mental states do not have any influence on physical states or mental phenomena are the effects, but not the causes, of physical phenomena. Physical events can cause other physical and mental events, but mental events cannot cause anything since they are just causally inert by-products (i.e. epiphenomena) of the physical world.[43] This view has been defended by Frank Jackson.[48]
+    Non-reductive physicalism is the view that mental properties form a separate ontological class to physical properties: mental states (such as qualia) are not reducible to physical states. The ontological stance towards qualia in the case of non-reductive physicalism does not imply that qualia are causally inert; this is what distinguishes it from epiphenomenalism.
+    Panpsychism is the view that all matter has a mental aspect, or, alternatively, all objects have a unified center of experience or point of view. Superficially, it seems to be a form of property dualism, since it regards everything as having both mental and physical properties. However, some panpsychists say that mechanical behaviour is derived from the primitive mentality of atoms and molecules—as are sophisticated mentality and organic behaviour, the difference being attributed to the presence or absence of complex structure in a compound object. So long as the reduction of non-mental properties to mental ones is in place, panpsychism is not a (strong) form of property dualism; otherwise it is.
+
+Dual aspect theory
+
+Dual aspect theory or dual-aspect monism is the view that the mental and the physical are two aspects of, or perspectives on, the same substance. (Thus it is a mixed position, which is monistic in some respects). In modern philosophical writings, the theory's relationship to neutral monism has become somewhat ill-defined, but one proffered distinction says that whereas neutral monism allows the context of a given group of neutral elements and the relationships into which they enter to determine whether the group can be thought of as mental, physical, both, or neither, dual-aspect theory suggests that the mental and the physical are manifestations (or aspects) of some underlying substance, entity or process that is itself neither mental nor physical as normally understood. Various formulations of dual-aspect monism also require the mental and the physical to be complementary, mutually irreducible and perhaps inseparable (though distinct).[49][50][51]
+Experiential dualism
+
+This is a philosophy of mind that regards the degrees of freedom between mental and physical well-being as not synonymous thus implying an experiential dualism between body and mind. An example of these disparate degrees of freedom is given by Allan Wallace who notes that it is "experientially apparent that one may be physically uncomfortable—for instance, while engaging in a strenuous physical workout—while mentally cheerful; conversely, one may be mentally distraught while experiencing physical comfort".[52] Experiential dualism notes that our subjective experience of merely seeing something in the physical world seems qualitatively different from mental processes like grief that comes from losing a loved one. This philosophy is a proponent of causal dualism, which is defined as the dual ability for mental states and physical states to affect one another. Mental states can cause changes in physical states and vice versa.
+
+However, unlike cartesian dualism or some other systems, experiential dualism does not posit two fundamental substances in reality: mind and matter. Rather, experiential dualism is to be understood as a conceptual framework that gives credence to the qualitative difference between the experience of mental and physical states. Experiential dualism is accepted as the conceptual framework of Madhyamaka Buddhism.
+
+Madhayamaka Buddhism goes further, finding fault with the monist view of physicalist philosophies of mind as well in that these generally posit matter and energy as the fundamental substance of reality. Nonetheless, this does not imply that the cartesian dualist view is correct, rather Madhyamaka regards as error any affirming view of a fundamental substance to reality.
+
+    In denying the independent self-existence of all the phenomena that make up the world of our experience, the Madhyamaka view departs from both the substance dualism of Descartes and the substance monism—namely, physicalism—that is characteristic of modern science. The physicalism propounded by many contemporary scientists seems to assert that the real world is composed of physical things-in-themselves, while all mental phenomena are regarded as mere appearances, devoid of any reality in and of themselves. Much is made of this difference between appearances and reality.[52]
+
+Indeed, physicalism, or the idea that matter is the only fundamental substance of reality, is explicitly rejected by Buddhism.
+
+    In the Madhyamaka view, mental events are no more or less real than physical events. In terms of our common-sense experience, differences of kind do exist between physical and mental phenomena. While the former commonly have mass, location, velocity, shape, size, and numerous other physical attributes, these are not generally characteristic of mental phenomena. For example, we do not commonly conceive of the feeling of affection for another person as having mass or location. These physical attributes are no more appropriate to other mental events such as sadness, a recalled image from one's childhood, the visual perception of a rose, or consciousness of any sort. Mental phenomena are, therefore, not regarded as being physical, for the simple reason that they lack many of the attributes that are uniquely characteristic of physical phenomena. Thus, Buddhism has never adopted the physicalist principle that regards only physical things as real.[52]
+
+Monist solutions to the mind–body problem
+
+In contrast to dualism, monism does not accept any fundamental divisions. The fundamentally disparate nature of reality has been central to forms of eastern philosophies for over two millennia. In Indian and Chinese philosophy, monism is integral to how experience is understood. Today, the most common forms of monism in Western philosophy are physicalist.[15] Physicalistic monism asserts that the only existing substance is physical, in some sense of that term to be clarified by our best science.[53] However, a variety of formulations (see below) are possible. Another form of monism, idealism, states that the only existing substance is mental. Although pure idealism, such as that of George Berkeley, is uncommon in contemporary Western philosophy, a more sophisticated variant called panpsychism, according to which mental experience and properties may be at the foundation of physical experience and properties, has been espoused by some philosophers such as Alfred North Whitehead[54] and David Ray Griffin.[46]
+
+Phenomenalism is the theory that representations (or sense data) of external objects are all that exist. Such a view was briefly adopted by Bertrand Russell and many of the logical positivists during the early 20th century.[55] A third possibility is to accept the existence of a basic substance that is neither physical nor mental. The mental and physical would then both be properties of this neutral substance. Such a position was adopted by Baruch Spinoza[6] and was popularized by Ernst Mach[56] in the 19th century. This neutral monism, as it is called, resembles property dualism.
+Physicalistic monisms
+Behaviorism
+Main article: Behaviorism
+
+Behaviorism dominated philosophy of mind for much of the 20th century, especially the first half.[15] In psychology, behaviorism developed as a reaction to the inadequacies of introspectionism.[53] Introspective reports on one's own interior mental life are not subject to careful examination for accuracy and cannot be used to form predictive generalizations. Without generalizability and the possibility of third-person examination, the behaviorists argued, psychology cannot be scientific.[53] The way out, therefore, was to eliminate the idea of an interior mental life (and hence an ontologically independent mind) altogether and focus instead on the description of observable behavior.[57]
+
+Parallel to these developments in psychology, a philosophical behaviorism (sometimes called logical behaviorism) was developed.[53] This is characterized by a strong verificationism, which generally considers unverifiable statements about interior mental life pointless. For the behaviorist, mental states are not interior states on which one can make introspective reports. They are just descriptions of behavior or dispositions to behave in certain ways, made by third parties to explain and predict another's behavior.[58]
+
+Philosophical behaviorism has fallen out of favor since the latter half of the 20th century, coinciding with the rise of cognitivism.[1]
+Identity theory
+Main article: Type physicalism
+
+Type physicalism (or type-identity theory) was developed by Jack Smart[22] and Ullin Place[59] as a direct reaction to the failure of behaviorism. These philosophers reasoned that, if mental states are something material, but not behavioral, then mental states are probably identical to internal states of the brain. In very simplified terms: a mental state M is nothing other than brain state B. The mental state "desire for a cup of coffee" would thus be nothing more than the "firing of certain neurons in certain brain regions".[22]
+The classic Identity theory and Anomalous Monism in contrast. For the Identity theory, every token instantiation of a single mental type corresponds (as indicated by the arrows) to a physical token of a single physical type. For anomalous monism, the token–token correspondences can fall outside of the type–type correspondences. The result is token identity.
+
+On the other hand, even granted the above, it does not follow that identity theories of all types must be abandoned. According to token identity theories, the fact that a certain brain state is connected with only one mental state of a person does not have to mean that there is an absolute correlation between types of mental state and types of brain state. The type–token distinction can be illustrated by a simple example: the word "green" contains four types of letters (g, r, e, n) with two tokens (occurrences) of the letter e along with one each of the others. The idea of token identity is that only particular occurrences of mental events are identical with particular occurrences or tokenings of physical events.[60] Anomalous monism (see below) and most other non-reductive physicalisms are token-identity theories.[61] Despite these problems, there is a renewed interest in the type identity theory today, primarily due to the influence of Jaegwon Kim.[22]
+Functionalism
+Main article: Functionalism (philosophy of mind)
+
+Functionalism was formulated by Hilary Putnam and Jerry Fodor as a reaction to the inadequacies of the identity theory.[24] Putnam and Fodor saw mental states in terms of an empirical computational theory of the mind.[62] At about the same time or slightly after, D.M. Armstrong and David Kellogg Lewis formulated a version of functionalism that analyzed the mental concepts of folk psychology in terms of functional roles.[63] Finally, Wittgenstein's idea of meaning as use led to a version of functionalism as a theory of meaning, further developed by Wilfrid Sellars and Gilbert Harman. Another one, psychofunctionalism, is an approach adopted by the naturalistic philosophy of mind associated with Jerry Fodor and Zenon Pylyshyn.
+
+Mental states are characterized by their causal relations with other mental states and with sensory inputs and behavioral outputs. Functionalism abstracts away from the details of the physical implementation of a mental state by characterizing it in terms of non-mental functional properties. For example, a kidney is characterized scientifically by its functional role in filtering blood and maintaining certain chemical balances.[62]
+Non-reductive physicalism
+Main article: Physicalism
+
+Non-reductionist philosophers hold firmly to two essential convictions with regard to mind–body relations: 1) Physicalism is true and mental states must be physical states, but 2) All reductionist proposals are unsatisfactory: mental states cannot be reduced to behavior, brain states or functional states.[53] Hence, the question arises whether there can still be a non-reductive physicalism. Donald Davidson's anomalous monism[23] is an attempt to formulate such a physicalism. He "thinks that when one runs across what are traditionally seen as absurdities of Reason, such as akrasia or self-deception, the personal psychology framework is not to be given up in favor of the subpersonal one, but rather must be enlarged or extended so that the rationality set out by the principle of charity can be found elsewhere."[64]
+
+Davidson uses the thesis of supervenience: mental states supervene on physical states, but are not reducible to them. "Supervenience" therefore describes a functional dependence: there can be no change in the mental without some change in the physical–causal reducibility between the mental and physical without ontological reducibility.[65]
+
+Non-reductive physicalism, however, is irreconcilable with self-identity over time [source?]. The brain goes on from one moment of time to another; the brain thus has identity through time. But its states of awareness do not go on from one moment to the next. There is no enduring self – no “I” (capital-I) that goes on from one moment to the next. An analogy of the self or the “I” would be the flame of a candle. The candle and the wick go on from one moment to the next, but the flame does not go on. There is a different flame at each moment of the candle’s burning. The flame displays a type of continuity in that the candle does not go out while it is burning, but there is not really any identity of the flame from one moment to another over time. The scenario is similar on non-reductive physicalism with states of awareness. Every state of the brain at different times has a different state of awareness related to it, but there is no enduring self or “I” from one moment to the next. Similarly, it is an illusion that one is the same individual who walked into class this morning. In fact, one is not the same individual because there is no personal identity over time. If one does exist and one is the same individual who entered into class this morning, then a non-reductive physicalist view of the self should be dismissed.[27]
+
+Because non-reductive physicalist theories attempt to both retain the ontological distinction between mind and body and try to solve the "surfeit of explanations puzzle" in some way; critics often see this as a paradox and point out the similarities to epiphenomenalism, in that it is the brain that is seen as the root "cause" not the mind, and the mind seems to be rendered inert.
+
+Epiphenomenalism regards one or more mental states as the byproduct of physical brain states, having no influence on physical states. The interaction is one-way (solving the "surfeit of explanations puzzle") but leaving us with non-reducible mental states (as a byproduct of brain states) – causally reducible, but ontologically irreducible to physical states. Pain would be seen by epiphenomenalists as being caused by the brain state but as not having effects on other brain states, though it might have effects on other mental states (i.e. cause distress).
+Weak emergentism
+Main article: Emergentism
+
+Weak emergentism is a form of "non-reductive physicalism" that involves a layered view of nature, with the layers arranged in terms of increasing complexity and each corresponding to its own special science. Some philosophers[who?] hold that emergent properties causally interact with more fundamental levels, while others maintain that higher-order properties simply supervene over lower levels without direct causal interaction. The latter group therefore holds a less strict, or "weaker", definition of emergentism, which can be rigorously stated as follows: a property P of composite object O is emergent if it is metaphysically impossible for another object to lack property P if that object is composed of parts with intrinsic properties identical to those in O and has those parts in an identical configuration.[citation needed]
+
+Sometimes emergentists use the example of water having a new property when Hydrogen H and Oxygen O combine to form H2O (water). In this example there "emerges" a new property of a transparent liquid that would not have been predicted by understanding hydrogen and oxygen as gases. This is analogous to physical properties of the brain giving rise to a mental state. Emergentists try to solve the notorious mind–body gap this way. One problem for emergentism is the idea of causal closure in the world that does not allow for a mind-to-body causation.[66]
+Eliminative materialism
+Main article: Eliminative materialism
+
+If one is a materialist and believes that all aspects of our common-sense psychology will find reduction to a mature cognitive neuroscience, and that non-reductive materialism is mistaken, then one can adopt a final, more radical position: eliminative materialism.
+
+There are several varieties of eliminative materialism, but all maintain that our common-sense "folk psychology" badly misrepresents the nature of some aspect of cognition. Eliminativists such as Patricia and Paul Churchland argue that while folk psychology treats cognition as fundamentally sentence-like, the non-linguistic vector/matrix model of neural network theory or connectionism will prove to be a much more accurate account of how the brain works.[20]
+
+The Churchlands often invoke the fate of other, erroneous popular theories and ontologies that have arisen in the course of history.[20][21] For example, Ptolemaic astronomy served to explain and roughly predict the motions of the planets for centuries, but eventually this model of the solar system was eliminated in favor of the Copernican model. The Churchlands believe the same eliminative fate awaits the "sentence-cruncher" model of the mind in which thought and behavior are the result of manipulating sentence-like states called "propositional attitudes". Sociologist Jacy Reese Anthis argues for eliminative materialism on all faculties of mind, including consciousness, stating, "The deepest mysteries of the mind are within our reach."[67]
+Mysterianism
+Main article: New mysterianism
+
+Some philosophers take an epistemic approach and argue that the mind–body problem is currently unsolvable, and perhaps will always remain unsolvable to human beings. This is usually termed New mysterianism. Colin McGinn holds that human beings are cognitively closed in regards to their own minds. According to McGinn human minds lack the concept-forming procedures to fully grasp how mental properties such as consciousness arise from their causal basis.[68] An example would be how an elephant is cognitively closed in regards to particle physics.
+
+A more moderate conception has been expounded by Thomas Nagel, which holds that the mind–body problem is currently unsolvable at the present stage of scientific development and that it might take a future scientific paradigm shift or revolution to bridge the explanatory gap. Nagel posits that in the future a sort of "objective phenomenology" might be able to bridge the gap between subjective conscious experience and its physical basis.[69]
+Linguistic criticism of the mind–body problem
+
+Each attempt to answer the mind–body problem encounters substantial problems. Some philosophers argue that this is because there is an underlying conceptual confusion.[70] These philosophers, such as Ludwig Wittgenstein and his followers in the tradition of linguistic criticism, therefore reject the problem as illusory.[71] They argue that it is an error to ask how mental and biological states fit together. Rather it should simply be accepted that human experience can be described in different ways—for instance, in a mental and in a biological vocabulary. Illusory problems arise if one tries to describe the one in terms of the other's vocabulary or if the mental vocabulary is used in the wrong contexts.[71] This is the case, for instance, if one searches for mental states of the brain. The brain is simply the wrong context for the use of mental vocabulary—the search for mental states of the brain is therefore a category error or a sort of fallacy of reasoning.[71]
+
+Today, such a position is often adopted by interpreters of Wittgenstein such as Peter Hacker.[70] However, Hilary Putnam, the originator of functionalism, has also adopted the position that the mind–body problem is an illusory problem which should be dissolved according to the manner of Wittgenstein.[72]
+Naturalism and its problems
+
+The thesis of physicalism is that the mind is part of the material (or physical) world. Such a position faces the problem that the mind has certain properties that no other material thing seems to possess. Physicalism must therefore explain how it is possible that these properties can nonetheless emerge from a material thing. The project of providing such an explanation is often referred to as the "naturalization of the mental".[53] Some of the crucial problems that this project attempts to resolve include the existence of qualia and the nature of intentionality.[53]
+Qualia
+Main article: Qualia
+
+Many mental states seem to be experienced subjectively in different ways by different individuals.[32] And it is characteristic of a mental state that it has some experiential quality, e.g. of pain, that it hurts. However, the sensation of pain between two individuals may not be identical, since no one has a perfect way to measure how much something hurts or of describing exactly how it feels to hurt. Philosophers and scientists therefore ask where these experiences come from. The existence of cerebral events, in and of themselves, cannot explain why they are accompanied by these corresponding qualitative experiences. The puzzle of why many cerebral processes occur with an accompanying experiential aspect in consciousness seems impossible to explain.[31]
+
+Yet it also seems to many that science will eventually have to explain such experiences.[53] This follows from an assumption about the possibility of reductive explanations. According to this view, if an attempt can be successfully made to explain a phenomenon reductively (e.g., water), then it can be explained why the phenomenon has all of its properties (e.g., fluidity, transparency).[53] In the case of mental states, this means that there needs to be an explanation of why they have the property of being experienced in a certain way.
+
+The 20th-century German philosopher Martin Heidegger criticized the ontological assumptions underpinning such a reductive model, and claimed that it was impossible to make sense of experience in these terms. This is because, according to Heidegger, the nature of our subjective experience and its qualities is impossible to understand in terms of Cartesian "substances" that bear "properties". Another way to put this is that the very concept of qualitative experience is incoherent in terms of—or is semantically incommensurable with the concept of—substances that bear properties.[73]
+
+This problem of explaining introspective first-person aspects of mental states and consciousness in general in terms of third-person quantitative neuroscience is called the explanatory gap.[74] There are several different views of the nature of this gap among contemporary philosophers of mind. David Chalmers and the early Frank Jackson interpret the gap as ontological in nature; that is, they maintain that qualia can never be explained by science because physicalism is false. There are two separate categories involved and one cannot be reduced to the other.[75] An alternative view is taken by philosophers such as Thomas Nagel and Colin McGinn. According to them, the gap is epistemological in nature. For Nagel, science is not yet able to explain subjective experience because it has not yet arrived at the level or kind of knowledge that is required. We are not even able to formulate the problem coherently.[32] For McGinn, on other hand, the problem is one of permanent and inherent biological limitations. We are not able to resolve the explanatory gap because the realm of subjective experiences is cognitively closed to us in the same manner that quantum physics is cognitively closed to elephants.[76] Other philosophers liquidate the gap as purely a semantic problem. This semantic problem, of course, led to the famous "Qualia Question", which is: Does Red cause Redness?
+Intentionality
+Main article: Intentionality
+John Searle—one of the most influential philosophers of mind, proponent of biological naturalism (Berkeley 2002)
+
+Intentionality is the capacity of mental states to be directed towards (about) or be in relation with something in the external world.[26] This property of mental states entails that they have contents and semantic referents and can therefore be assigned truth values. When one tries to reduce these states to natural processes there arises a problem: natural processes are not true or false, they simply happen.[77] It would not make any sense to say that a natural process is true or false. But mental ideas or judgments are true or false, so how then can mental states (ideas or judgments) be natural processes? The possibility of assigning semantic value to ideas must mean that such ideas are about facts. Thus, for example, the idea that Herodotus was a historian refers to Herodotus and to the fact that he was a historian. If the fact is true, then the idea is true; otherwise, it is false. But where does this relation come from? In the brain, there are only electrochemical processes and these seem not to have anything to do with Herodotus.[25]
+Philosophy of perception
+Main article: Philosophy of perception
+
+Philosophy of perception is concerned with the nature of perceptual experience and the status of perceptual objects, in particular how perceptual experience relates to appearances and beliefs about the world. The main contemporary views within philosophy of perception include naive realism, enactivism and representational views.[2][3][78]
+A phrenological mapping of the brain – phrenology was among the first attempts to correlate mental functions with specific parts of the brain although it is now widely discredited.
+Philosophy of mind and science
+
+Humans are corporeal beings and, as such, they are subject to examination and description by the natural sciences. Since mental processes are intimately related to bodily processes (e.g., embodied cognition theory of mind), the descriptions that the natural sciences furnish of human beings play an important role in the philosophy of mind.[1] There are many scientific disciplines that study processes related to the mental. The list of such sciences includes: biology, computer science, cognitive science, cybernetics, linguistics, medicine, pharmacology, and psychology.[79]
+Neurobiology
+Main article: Neuroscience
+
+The theoretical background of biology, as is the case with modern natural sciences in general, is fundamentally materialistic. The objects of study are, in the first place, physical processes, which are considered to be the foundations of mental activity and behavior.[80] The increasing success of biology in the explanation of mental phenomena can be seen by the absence of any empirical refutation of its fundamental presupposition: "there can be no change in the mental states of a person without a change in brain states."[79]
+
+Within the field of neurobiology, there are many subdisciplines that are concerned with the relations between mental and physical states and processes:[80] Sensory neurophysiology investigates the relation between the processes of perception and stimulation.[81] Cognitive neuroscience studies the correlations between mental processes and neural processes.[81] Neuropsychology describes the dependence of mental faculties on specific anatomical regions of the brain.[81] Lastly, evolutionary biology studies the origins and development of the human nervous system and, in as much as this is the basis of the mind, also describes the ontogenetic and phylogenetic development of mental phenomena beginning from their most primitive stages.[79] Evolutionary biology furthermore places tight constraints on any philosophical theory of the mind, as the gene-based mechanism of natural selection does not allow any giant leaps in the development of neural complexity or neural software but only incremental steps over long time periods.[82]
+Since the 1980s, sophisticated neuroimaging procedures, such as fMRI (above), have furnished increasing knowledge about the workings of the human brain, shedding light on ancient philosophical problems.
+
+The methodological breakthroughs of the neurosciences, in particular the introduction of high-tech neuroimaging procedures, has propelled scientists toward the elaboration of increasingly ambitious research programs: one of the main goals is to describe and comprehend the neural processes which correspond to mental functions (see: neural correlate).[80] Several groups are inspired by these advances.
+Computer science
+Main article: Computer science
+
+Computer science concerns itself with the automatic processing of information (or at least with physical systems of symbols to which information is assigned) by means of such things as computers.[83] From the beginning, computer programmers have been able to develop programs that permit computers to carry out tasks for which organic beings need a mind. A simple example is multiplication. It is not clear whether computers could be said to have a mind. Could they, someday, come to have what we call a mind? This question has been propelled into the forefront of much philosophical debate because of investigations in the field of artificial intelligence (AI).
+
+Within AI, it is common to distinguish between a modest research program and a more ambitious one: this distinction was coined by John Searle in terms of a weak AI and strong AI. The exclusive objective of "weak AI", according to Searle, is the successful simulation of mental states, with no attempt to make computers become conscious or aware, etc. The objective of strong AI, on the contrary, is a computer with consciousness similar to that of human beings.[84] The program of strong AI goes back to one of the pioneers of computation Alan Turing. As an answer to the question "Can computers think?", he formulated the famous Turing test.[85] Turing believed that a computer could be said to "think" when, if placed in a room by itself next to another room that contained a human being and with the same questions being asked of both the computer and the human being by a third party human being, the computer's responses turned out to be indistinguishable from those of the human. Essentially, Turing's view of machine intelligence followed the behaviourist model of the mind—intelligence is as intelligence does. The Turing test has received many criticisms, among which the most famous is probably the Chinese room thought experiment formulated by Searle.[84]
+
+The question about the possible sensitivity (qualia) of computers or robots still remains open. Some computer scientists believe that the specialty of AI can still make new contributions to the resolution of the "mind–body problem". They suggest that based on the reciprocal influences between software and hardware that takes place in all computers, it is possible that someday theories can be discovered that help us to understand the reciprocal influences between the human mind and the brain (wetware).[86]
+Psychology
+Main article: Psychology
+
+Psychology is the science that investigates mental states directly. It uses generally empirical methods to investigate concrete mental states like joy, fear or obsessions. Psychology investigates the laws that bind these mental states to each other or with inputs and outputs to the human organism.[87]
+
+An example of this is the psychology of perception. Scientists working in this field have discovered general principles of the perception of forms. A law of the psychology of forms says that objects that move in the same direction are perceived as related to each other.[79] This law describes a relation between visual input and mental perceptual states. However, it does not suggest anything about the nature of perceptual states. The laws discovered by psychology are compatible with all the answers to the mind–body problem already described.
+Cognitive science
+
+Cognitive science is the interdisciplinary scientific study of the mind and its processes. It examines what cognition is, what it does, and how it works. It includes research on intelligence and behavior, especially focusing on how information is represented, processed, and transformed (in faculties such as perception, language, memory, reasoning, and emotion) within nervous systems (human or other animals) and machines (e.g. computers). Cognitive science consists of multiple research disciplines, including psychology, artificial intelligence, philosophy, neuroscience, linguistics, anthropology, sociology, and education.[88] It spans many levels of analysis, from low-level learning and decision mechanisms to high-level logic and planning; from neural circuitry to modular brain organization. Over the years, cognitive science has evolved from a representational and information processing approach to explaining the mind to embrace an embodied perspective of it. Accordingly, bodily processes play a significant role in the acquisition, development, and shaping of cognitive capabilities.[89] For instance, Rowlands (2012) argues that cognition is enactive, embodied, embedded, affective and (potentially) extended. The position is taken that the "classical sandwich" of cognition sandwiched between perception and action is artificial; cognition has to be seen as a product of a strongly coupled interaction that cannot be divided this way.[90][91]
+Near-death research
+Main article: Near-death studies
+
+In the field of near-death research, the following phenomenon, among others, occurs: For example, during some brain operations the brain is artificially and measurably deactivated. Nevertheless, some patients report during this phase that they have perceived what is happening in their surroundings, i.e. that they have had consciousness. Patients also report experiences during a cardiac arrest. There is the following problem: As soon as the brain is no longer supplied with blood and thus with oxygen after a cardiac arrest, the brain ceases its normal operation after about 15 seconds, i.e. the brain falls into a state of unconsciousness.[92]
+Philosophy of mind in the continental tradition
+
+Most of the discussion in this article has focused on one style or tradition of philosophy in modern Western culture, usually called analytic philosophy (sometimes described as Anglo-American philosophy).[93] Many other schools of thought exist, however, which are sometimes subsumed under the broad (and vague) label of continental philosophy.[93] In any case, though topics and methods here are numerous, in relation to the philosophy of mind the various schools that fall under this label (phenomenology, existentialism, etc.) can globally be seen to differ from the analytic school in that they focus less on language and logical analysis alone but also take in other forms of understanding human existence and experience. With reference specifically to the discussion of the mind, this tends to translate into attempts to grasp the concepts of thought and perceptual experience in some sense that does not merely involve the analysis of linguistic forms.[93]
+
+Immanuel Kant's Critique of Pure Reason, first published in 1781 and presented again with major revisions in 1787, represents a significant intervention into what will later become known as the philosophy of mind. Kant's first critique is generally recognized as among the most significant works of modern philosophy in the West. Kant is a figure whose influence is marked in both continental and analytic/Anglo-American philosophy. Kant's work develops an in-depth study of transcendental consciousness, or the life of the mind as conceived through the universal categories of understanding.
+
+In Georg Wilhelm Friedrich Hegel's Philosophy of Mind (frequently translated as Philosophy of Spirit or Geist),[94] the third part of his Encyclopedia of the Philosophical Sciences, Hegel discusses three distinct types of mind: the "subjective mind/spirit", the mind of an individual; the "objective mind/spirit", the mind of society and of the State; and the "Absolute mind/spirit", the position of religion, art, and philosophy. See also Hegel's The Phenomenology of Spirit. Nonetheless, Hegel's work differs radically from the style of Anglo-American philosophy of mind.
+
+In 1896, Henri Bergson made in Matter and Memory "Essay on the relation of body and spirit" a forceful case for the ontological difference of body and mind by reducing the problem to the more definite one of memory, thus allowing for a solution built on the empirical test case of aphasia.
+
+In modern times, the two main schools that have developed in response or opposition to this Hegelian tradition are phenomenology and existentialism. Phenomenology, founded by Edmund Husserl, focuses on the contents of the human mind (see noema) and how processes shape our experiences.[95] Existentialism, a school of thought founded upon the work of Søren Kierkegaard, focuses on Human predicament and how people deal with the situation of being alive. Existential-phenomenology represents a major branch of continental philosophy (they are not contradictory), rooted in the work of Husserl but expressed in its fullest forms in the work of Martin Heidegger, Jean-Paul Sartre, Simone de Beauvoir and Maurice Merleau-Ponty. See Heidegger's Being and Time, Merleau-Ponty's Phenomenology of Perception, Sartre's Being and Nothingness, and Simone de Beauvoir's The Second Sex.
+Topics related to philosophy of mind
+
+There are countless subjects that are affected by the ideas developed in the philosophy of mind. Clear examples of this are the nature of death and its definitive character, the nature of emotion, of perception and of memory. Questions about what a person is and what his or her identity have to do with the philosophy of mind. There are two subjects that, in connection with the philosophy of the mind, have aroused special attention: free will and the self.[1]
+Free will
+Main article: Free will
+
+In the context of philosophy of mind, the problem of free will takes on renewed intensity. This is the case for materialistic determinists.[1] According to this position, natural laws completely determine the course of the material world. Mental states, and therefore the will as well, would be material states, which means human behavior and decisions would be completely determined by natural laws. Some take this reasoning a step further: people cannot determine by themselves what they want and what they do. Consequently, they are not free.[96]
+
+This argumentation is rejected, on the one hand, by the compatibilists. Those who adopt this position suggest that the question "Are we free?" can only be answered once we have determined what the term "free" means. The opposite of "free" is not "caused" but "compelled" or "coerced". It is not appropriate to identify freedom with indetermination. A free act is one where the agent could have done otherwise if it had chosen otherwise. In this sense a person can be free even though determinism is true.[96] The most important compatibilist in the history of the philosophy was David Hume.[97] More recently, this position is defended, for example, by Daniel Dennett.[98]
+
+On the other hand, there are also many incompatibilists who reject the argument because they believe that the will is free in a stronger sense called libertarianism.[96] These philosophers affirm the course of the world is either a) not completely determined by natural law where natural law is intercepted by physically independent agency,[99] b) determined by indeterministic natural law only, or c) determined by indeterministic natural law in line with the subjective effort of physically non-reducible agency.[100] Under Libertarianism, the will does not have to be deterministic and, therefore, it is potentially free. Critics of the second proposition (b) accuse the incompatibilists of using an incoherent concept of freedom. They argue as follows: if our will is not determined by anything, then we desire what we desire by pure chance. And if what we desire is purely accidental, we are not free. So if our will is not determined by anything, we are not free.[96]
+Self
+Main article: Philosophy of self
+
+The philosophy of mind also has important consequences for the concept of "self". If by "self" or "I" one refers to an essential, immutable nucleus of the person, some modern philosophers of mind, such as Daniel Dennett believe that no such thing exists. According to Dennett and other contemporaries, the self is considered an illusion.[101] The idea of a self as an immutable essential nucleus derives from the idea of an immaterial soul. Such an idea is unacceptable to modern philosophers with physicalist orientations and their general skepticism of the concept of "self" as postulated by David Hume, who could never catch himself not doing, thinking or feeling anything.[102] However, in the light of empirical results from developmental psychology, developmental biology and neuroscience, the idea of an essential inconstant, material nucleus—an integrated representational system distributed over changing patterns of synaptic connections—seems reasonable.[103]
+
+
+
+How is a sovereign state defined?
+
+A sovereign state is an entity with a permanent population, a defined territory, an effective government, and the capacity to conduct international relations. These criteria are often loosely applied. For example, boundary disputes and ongoing civil wars do not necessarily prevent an entity from becoming a state if it is formally independent from other states.
+Does a state need to get recognition from other states?
+
+No, a state technically does not need to get recognition from other states. Under the prevailing declaratory theory of recognition, a state exists if it meets the necessary criteria that define states. Recognition is simply an acknowledgment of an existing situation. (The minority constitutive theory of recognition holds that recognition is necessary to the existence of a state.)
+When can a state use military force against another state?
+
+A state can use military force against another state only in self-defense against an armed attack. This right arises from Article 51 of the United Nations Charter, which incorporates inherent rights from customary international law. Any acts of self-defense must be necessary and proportionate to the acts of aggression. Acts of anticipatory self-defense may be permitted when an armed attack is imminent and inevitable, although the UN Charter does not address this situation.
+What does international humanitarian law do?
+
+International humanitarian law restricts the ways in which wars can be conducted. It protects the safety of non-combatants, as well as former combatants like prisoners of war. It also bans the use of certain weapons or tactics that inflict unnecessary harm or suffering, cause severe or lasting harm to the environment, or cannot be used in a way that allows those using them to distinguish between combatant and non-combatant targets.
+What are some of the human rights guaranteed by international law?
+
+Human rights guaranteed by international law include civil, political, economic, social, and cultural rights. Examples include freedom of expression, freedom of religion, freedom of association, the right to an adequate standard of living, the right to work in favorable conditions, the right to education, and protections against arbitrary arrest and detention. These rights are codified in the Universal Declaration of Human Rights and other United Nations instruments, known collectively as the International Bill of Human Rights.
+What is the concept of sustainable development?
+
+Sustainable development is defined as meeting the present needs of a generation without preventing future generations from meeting their needs. It has been a guiding principle of international environmental law since the Earth Summit in Rio de Janeiro in 1992, and it even has influenced economic treaties. However, sustainable development has not yet been achieved, despite some legal and political progress.
+What are the main organs of the United Nations?
+
+The main organs of the United Nations are the General Assembly, the Security Council, the Secretariat, the International Court of Justice, the Economic and Social Council, and the Trusteeship Council. The General Assembly is a representative policy-making organ in which member states vote on resolutions and other actions. The Security Council protects international peace and security, approves changes to the UN Charter, and recommends new UN member states. Led by the UN Secretary-General, the Secretariat carries out the mandates of the General Assembly and other UN organs. The International Court of Justice resolves disputes between states and issues advisory opinions to non-state organizations. The Economic and Social Council develops policy recommendations based on meetings and consultations. The Trusteeship Council has been inactive since the 1990s, when the last UN Trust Territory gained independence.
+Which cases are heard by the International Court of Justice?
+
+The International Court of Justice has contentious jurisdiction and advisory jurisdiction. Its contentious jurisdiction involves resolving disputes between states under international law. Each state involved in a dispute must consent to ICJ jurisdiction. While contentious jurisdiction leads to binding decisions, advisory jurisdiction involves issuing non-binding opinions to public international organizations. These opinions generally carry great weight and can resolve ambiguities in international law.
+How are treaties different from executive agreements under US law?
+
+A treaty requires the advice and consent of two-thirds of the Senate, and it must be ratified by the President. An executive agreement can be negotiated by the President without the advice and consent of two-thirds of the Senate. In a congressional-executive agreement, the President gets the approval of a simple majority of both houses of Congress. In a sole executive agreement, the President acts without involving Congress. However, treaties and executive agreements are equally binding under international law.
+When does a treaty supersede federal laws?
+
+A treaty supersedes prior inconsistent federal laws if Congress implements it through new federal laws or if it is self-executing. A treaty is self-executing if there is an intent to make it enforceable under US law without additional implementing legislation. Some provisions in a treaty may be self-executing even if other provisions are not. Specific provisions are more likely to be considered self-executing. A provision may be self-executing in the US even if it is not self-executing in other signatory nations.
+
+
+Recognition of States
+
+The process in which a state acknowledges another entity as a state is known as recognition. This can involve an overt statement or an action that implies an intent to recognize the entity as a state. Each state can make its own decision about whether recognition is appropriate, which can carry significant political weight. For example, recognition is usually required to establish sovereign and diplomatic immunities.
+
+International law contains two theories of recognition. The constitutive theory of recognition holds that a state does not exist until it receives recognition. By contrast, the declaratory theory of recognition holds that a state exists without recognition, which is merely an acknowledgment of an existing situation. The declaratory theory has become the prevailing view. That said, an entity likely has a stronger claim to statehood when it has received recognition from many other states. This is especially true if questions surround its ability to meet the criteria under the Montevideo Convention.
+
+Non-Recognition and Qualified Recognition
+
+Statehood does not rely on recognition, but sometimes a state may have a duty to refrain from recognizing another state or an alteration to a state. This situation usually arises when the state or altered state arose from illegitimate military actions, violations of human rights, or other clear infringements of international norms. The United Nations Security Council often sets an example for states on this issue. For example, it nullified the annexation of Kuwait by Iraq during the period preceding the Gulf War of 1991.
+
+In other cases, a state may not recognize an entity that meets the baseline criteria for statehood until it meets specific additional requirements. For example, states formed during the dissolution of the Soviet Union did not receive recognition from the European Community (the precursor to the European Union) until they committed to nuclear non-proliferation, minority rights, and respect for borders.
+
+The Solar System[c] is the gravitationally bound system of the Sun and the objects that orbit it. The largest of these objects are the eight planets, which in order from the Sun are four terrestrial planets (Mercury, Venus, Earth and Mars); two gas giants (Jupiter and Saturn); and two ice giants (Uranus and Neptune). The Solar System formed 4.6 billion years ago from the gravitational collapse of a giant interstellar molecular cloud.
+
+All four terrestrial planets belong to the inner Solar System (≤ 1.7 AU) and have a solid surface. Inversely, all four giant planets belong to the outer Solar System (≤ 30.5 AU) and do not have a definite surface, as they are mainly composed of gases and liquids. 99.86% of the Solar System's mass is in the Sun and nearly 90% of the remaining mass are in Jupiter and Saturn. There is a strong consensus among astronomers that the Solar System also has nine dwarf planets, which consist of one asteroid-belt object – Ceres; five Kuiper-belt objects – Pluto, Orcus, Haumea, Quaoar, and Makemake; and three scattered-disc objects – Gonggong, Eris, and Sedna.
+
+There are a vast number of smaller objects orbiting the Sun, called small Solar System bodies. This category includes asteroids, comets, centaurs, meteoroids and interplanetary dust clouds. Many of these objects are in the asteroid belt between the orbits of Mars and Jupiter (1.5–4.5 astronomical units, AU), and the Kuiper belt just outside Neptune's orbit (30–50 AU).[d] Six of the major planets, the six largest possible dwarf planets, and many of the smaller bodies are orbited by natural satellites, commonly called "moons" after Earth's Moon. Two natural satellites, Jupiter's moon Ganymede and Saturn's moon Titan, are larger than Mercury, the smallest terrestrial planet, though they are less massive.
+
+The Sun's stream of charged particles creates the heliosphere, which terminates where the pressure of the solar wind is equal to the surrounding interstellar medium, forming a boundary called the heliopause. The outermost region of the Solar System is the Oort cloud (from 2,000 to 50,000–200,000 AU), the source for long-period comets. The Solar System, which ends at the Sun's sphere of gravitational influence (50,000–200,000 AU), is embedded in the Local Cloud of the interstellar medium and orbits the Galactic Center. The closest star to the Solar System, Proxima Centauri, is 4.25 light years away.
+Formation and evolution
+Main article: Formation and evolution of the Solar System
+
+The Solar System formed 4.568 billion years ago from the gravitational collapse of a region within a large molecular cloud.[e] This initial cloud was likely several light-years across and probably birthed several stars.[5] As is typical of molecular clouds, this one consisted mostly of hydrogen, with some helium, and small amounts of heavier elements fused by previous generations of stars.[6]
+
+As the pre-solar nebula[6] collapsed, conservation of angular momentum caused it to rotate faster. The center, where most of the mass collected, became increasingly hotter than the surrounding disc.[5] As the contracting nebula rotated faster, it began to flatten into a protoplanetary disc with a diameter of roughly 200 AU (30 billion km; 19 billion mi)[5] and a hot, dense protostar at the center.[7][8] The planets formed by accretion from this disc,[9] in which dust and gas gravitationally attracted each other, coalescing to form ever larger bodies. Hundreds of protoplanets may have existed in the early Solar System, but they either merged or were destroyed or ejected, leaving the planets, dwarf planets, and leftover minor bodies.[10][11]
+Diagram of the early Solar System's protoplanetary disk, out of which Earth and other Solar System bodies formed
+
+Due to their higher boiling points, only metals and silicates could exist in solid form in the warm inner Solar System close to the Sun (within the frost line). They would eventually form the rocky planets of Mercury, Venus, Earth, and Mars. Because metallic elements only comprised a very small fraction of the solar nebula, the terrestrial planets could not grow very large.[10]
+
+The giant planets (Jupiter, Saturn, Uranus, and Neptune) formed further out, beyond the frost line, the point between the orbits of Mars and Jupiter where material is cool enough for volatile icy compounds to remain solid. The ices that formed these planets were more plentiful than the metals and silicates that formed the terrestrial inner planets, allowing them to grow massive enough to capture large atmospheres of hydrogen and helium, the lightest and most abundant elements.[10]
+
+Leftover debris that never became planets congregated in regions such as the asteroid belt, Kuiper belt, and Oort cloud.[10] The Nice model is an explanation for the creation of these regions and how the outer planets could have formed in different positions and migrated to their current orbits through various gravitational interactions.[12][further explanation needed]
+
+Within 50 million years, the pressure and density of hydrogen in the center of the protostar became great enough for it to begin thermonuclear fusion.[13] As helium accumulates at its core the Sun is growing brighter;[14] early in its main-sequence life its brightness was 70% that of what it is today.[15] The temperature, reaction rate, pressure, and density increased until hydrostatic equilibrium was achieved: the thermal pressure counterbalancing the force of gravity. At this point, the Sun became a main-sequence star.[16]
+
+The main-sequence phase, from beginning to end, will last about 10 billion years for the Sun compared to around two billion years for all other subsequent phases of the Sun's pre-remnant life combined.[17] Solar wind from the Sun created the heliosphere and swept away the remaining gas and dust from the protoplanetary disc into interstellar space.[14]
+
+The Solar System will remain roughly as it is known today until the hydrogen in the core of the Sun has been entirely converted to helium, which will occur roughly 5 billion years from now. This will mark the end of the Sun's main-sequence life. At that time, the core of the Sun will contract with hydrogen fusion occurring along a shell surrounding the inert helium, and the energy output will be greater than at present. The outer layers of the Sun will expand to roughly 260 times its current diameter, and the Sun will become a red giant. Because of its increased surface area, the surface of the Sun will be cooler (2,600 K (2,330 °C; 4,220 °F) at its coolest) than it is on the main sequence.[17]
+Overview of the evolution of the Sun, a G-type main-sequence star. Around 11 billion years after being formed by the Solar System's protoplanetary disk, the Sun will expand to become a red giant; Mercury, Venus and possibly the Earth will be swallowed.
+
+The expanding Sun is expected to vaporize Mercury as well as Venus, and render Earth uninhabitable (possibly destroying it as well). Eventually, the core will be hot enough for helium fusion; the Sun will burn helium for a fraction of the time it burned hydrogen in the core. The Sun is not massive enough to commence the fusion of heavier elements, and nuclear reactions in the core will dwindle. Its outer layers will be ejected into space, leaving behind a dense white dwarf, half the original mass of the Sun but only the size of Earth.[18] The ejected outer layers will form what is known as a planetary nebula, returning some of the material that formed the Sun—but now enriched with heavier elements like carbon—to the interstellar medium.[19]
+Structure and composition
+Further information: List of Solar System objects and Planet § Planetary attributes
+
+The word solar means "pertaining to the Sun", which is derived from the Latin word sol, meaning Sun.[20] The Sun is the dominant gravitational member of the Solar System, and its planetary system is maintained in a relatively stable, slowly evolving state by following isolated, gravitationally bound orbits around the Sun.[21]
+Orbits
+Animations of the Solar System's inner planets and outer planets orbiting; the latter animation is 100 times faster than the former. Jupiter is three times as far from the Sun as Mars.
+
+The planets and other large objects in orbit around the Sun lie near the plane of Earth's orbit, known as the ecliptic. Smaller icy objects such as comets frequently orbit at significantly greater angles to this plane.[22][23] Most of the planets in the Solar System have secondary systems of their own, being orbited by natural satellites called moons. Many of the largest natural satellites are in synchronous rotation, with one face permanently turned toward their parent. The four giant planets have planetary rings, thin bands of tiny particles that orbit them in unison.[24]
+
+As a result of the formation of the Solar System, planets and most other objects orbit the Sun in the same direction that the Sun is rotating. That is, counter-clockwise, as viewed from above Earth's north pole.[25] There are exceptions, such as Halley's Comet.[26] Most of the larger moons orbit their planets in prograde direction, matching the planetary rotation; Neptune's moon Triton is the largest to orbit in the opposite, retrograde manner.[27] Most larger objects rotate around their own axes in the prograde direction relative to their orbit, though the rotation of Venus is retrograde.[28]
+
+To a good first approximation, Kepler's laws of planetary motion describe the orbits of objects around the Sun.[29]: 433–437  These laws stipulate that each object travels along an ellipse with the Sun at one focus, which causes the body's distance from the Sun to vary over the course of its year. A body's closest approach to the Sun is called its perihelion, whereas its most distant point from the Sun is called its aphelion.[30]: 9-6  With the exception of Mercury, the orbits of the planets are nearly circular, but many comets, asteroids, and Kuiper belt objects follow highly elliptical orbits. Kepler's laws only account for the influence of the Sun's gravity upon an orbiting body, not the gravitational pulls of different bodies upon each other. On a human time scale, these additional perturbations can be accounted for using numerical models,[30]: 9-6  but the planetary system can change chaotically over billions of years.[31]
+
+The angular momentum of the Solar System is a measure of the total amount of orbital and rotational momentum possessed by all its moving components.[32] Although the Sun dominates the system by mass, it accounts for only about 2% of the angular momentum.[33][34] The planets, dominated by Jupiter, account for most of the rest of the angular momentum due to the combination of their mass, orbit, and distance from the Sun, with a possibly significant contribution from comets.[33]
+Composition
+
+The overall structure of the charted regions of the Solar System consists of the Sun, four smaller inner planets surrounded by a belt of mostly rocky asteroids, and four giant planets surrounded by the Kuiper belt of mostly icy objects. Astronomers sometimes informally divide this structure into separate regions. The inner Solar System includes the four terrestrial planets and the asteroid belt. The outer Solar System is beyond the asteroids, including the four giant planets.[35] Since the discovery of the Kuiper belt, the outermost parts of the Solar System are considered a distinct region consisting of the objects beyond Neptune.[36]
+
+The principal component of the Solar System is the Sun, a low-mass star that contains 99.86% of the system's known mass and dominates it gravitationally.[37] The Sun's four largest orbiting bodies, the giant planets, account for 99% of the remaining mass, with Jupiter and Saturn together comprising more than 90%. The remaining objects of the Solar System (including the four terrestrial planets, the dwarf planets, moons, asteroids, and comets) together comprise less than 0.002% of the Solar System's total mass.[f]
+
+The Sun is composed of roughly 98% hydrogen and helium,[41] as are Jupiter and Saturn.[42][43] A composition gradient exists in the Solar System, created by heat and light pressure from the early Sun; those objects closer to the Sun, which are more affected by heat and light pressure, are composed of elements with high melting points. Objects farther from the Sun are composed largely of materials with lower melting points.[44] The boundary in the Solar System beyond which those volatile substances could coalesce is known as the frost line, and it lies at roughly five times the Earth's distance from the Sun.[3]
+
+The objects of the inner Solar System are composed mostly of rocky materials,[45] such as silicates, iron or nickel.[46] Jupiter and Saturn are composed mainly of gases with extremely low melting points and high vapor pressure, such as hydrogen, helium, and neon.[46] Ices, like water, methane, ammonia, hydrogen sulfide, and carbon dioxide,[45] have a melting points of up to a few hundred kelvins.[46] They can be found as ices, liquids, or gases in various places in the Solar System.[46] Icy substances comprise the majority of the satellites of the giant planets, as well as most of Uranus and Neptune (the so-called "ice giants") and the numerous small objects that lie beyond Neptune's orbit.[45][47] Together, gases and ices are referred to as volatiles.[48]
+Distances and scales
+The Sun's, planets', dwarf planets' and moons' size to scale, labelled. Distance of objects is not to scale. The asteroid belt lies between the orbits of Mars and Jupiter, the Kuiper belt lies beyond Neptune's orbit.
+To-scale diagram of distance between planets, with the white bar showing orbital variations. The size of the planets is not to scale.
+
+The astronomical unit [AU] (150,000,000 km; 93,000,000 mi) would be the distance from the Earth to the Sun if the planet's orbit were perfectly circular.[49] For comparison, the radius of the Sun is 0.0047 AU (700,000 km; 400,000 mi).[50] Thus, the Sun occupies 0.00001% (10−5 %) of the volume of a sphere with a radius the size of Earth's orbit, whereas Earth's volume is roughly one millionth (10−6) that of the Sun. Jupiter, the largest planet, is 5.2 astronomical units (780,000,000 km; 480,000,000 mi) from the Sun and has a radius of 71,000 km (0.00047 AU; 44,000 mi), whereas the most distant planet, Neptune, is 30 AU (4.5×109 km; 2.8×109 mi) from the Sun.[43][51]
+
+With a few exceptions, the farther a planet or belt is from the Sun, the larger the distance between its orbit and the orbit of the next nearest object to the Sun. For example, Venus is approximately 0.33 AU farther out from the Sun than Mercury, whereas Saturn is 4.3 AU out from Jupiter, and Neptune lies 10.5 AU out from Uranus. Attempts have been made to determine a relationship between these orbital distances, like the Titius–Bode law[52] and Johannes Kepler's model based on the Platonic solids,[53] but ongoing discoveries have invalidated these hypotheses.[54]
+
+Some Solar System models attempt to convey the relative scales involved in the Solar System in human terms. Some are small in scale (and may be mechanical—called orreries)—whereas others extend across cities or regional areas.[55] The largest such scale model, the Sweden Solar System, uses the 110-metre (361 ft) Avicii Arena in Stockholm as its substitute Sun, and, following the scale, Jupiter is a 7.5-metre (25-foot) sphere at Stockholm Arlanda Airport, 40 km (25 mi) away, whereas the farthest current object, Sedna, is a 10 cm (4 in) sphere in Luleå, 912 km (567 mi) away.[56][57]
+
+If the Sun–Neptune distance is scaled to 100 metres (330 ft), then the Sun would be about 3 cm (1.2 in) in diameter (roughly two-thirds the diameter of a golf ball), the giant planets would be all smaller than about 3 mm (0.12 in), and Earth's diameter along with that of the other terrestrial planets would be smaller than a flea (0.3 mm or 0.012 in) at this scale.[58]
+Interplanetary environment
+The zodiacal light, caused by interplanetary dust
+
+The outermost layer of the Solar atmosphere is the heliosphere, which permeates much of the Solar planetary system. Along with light, the Sun radiates a continuous stream of charged particles (a plasma) called the solar wind. This stream of particles spreads outwards at speeds from 900,000 kilometres per hour (560,000 mph) to 2,880,000 kilometres per hour (1,790,000 mph),[59] filling the vacuum between the bodies of the Solar System. The result is a thin, dusty atmosphere, called the interplanetary medium, which extends to at least 100 AU (15 billion km; 9.3 billion mi). Beyond the heliosphere, large objects remain gravitationally bound to the sun, but the flow of matter in the interstellar medium homogenizes the distribution of micro-scale objects (see § Farthest regions).[60]
+
+The interplanetary medium is home to at least two disc-like regions of cosmic dust. The first, the zodiacal dust cloud, lies in the inner Solar System and causes the zodiacal light. It may have been formed by collisions within the asteroid belt brought on by gravitational interactions with the planets; a more recent proposed origin is the planet Mars.[61] The second dust cloud extends from about 10 AU (1.5 billion km; 930 million mi) to about 40 AU (6.0 billion km; 3.7 billion mi), and was probably created by collisions within the Kuiper belt.[62][63]
+
+Activity on the Sun's surface, such as solar flares and coronal mass ejections, disturbs the heliosphere, creating space weather and causing geomagnetic storms.[64] Coronal mass ejections and similar events blow a magnetic field and huge quantities of material from the surface of the Sun. The interaction of this magnetic field and material with Earth's magnetic field funnels charged particles into Earth's upper atmosphere, where its interactions create aurorae seen near the magnetic poles.[65] The largest stable structure within the heliosphere is the heliospheric current sheet, a spiral form created by the actions of the Sun's rotating magnetic field on the interplanetary medium.[66][67]
+Life habitability
+Main article: Planetary habitability in the Solar System
+
+Besides solar energy, the primary characteristic of the Solar System enabling the presence of life is the heliosphere and planetary magnetic fields (for those planets that have them). These magnetic fields partially shield the Solar System from high-energy interstellar particles called cosmic rays. The density of cosmic rays in the interstellar medium and the strength of the Sun's magnetic field change on very long timescales, so the level of cosmic-ray penetration in the Solar System varies, though by how much is unknown.[68]
+
+Earth's magnetic field also stops its atmosphere from being stripped away by the solar wind.[69] Venus and Mars do not have magnetic fields, and as a result the solar wind causes their atmospheres to gradually bleed away into space.[70]
+
+The zone of habitability of the Solar System is conventionally located in the inner Solar System, where planetary surface or atmospheric temperatures admit the possibility of liquid water.[71] Habitability might also be possible in subsurface oceans of various outer Solar System moons.[72]
+Sun
+Main article: Sun
+The Sun in true white color
+
+The Sun is the Solar System's star and by far its most massive component. Its large mass (332,900 Earth masses),[73] which comprises 99.86% of all the mass in the Solar System,[74] produces temperatures and densities in its core high enough to sustain nuclear fusion of hydrogen into helium.[75] This releases an enormous amount of energy, mostly radiated into space as electromagnetic radiation peaking in visible light.[76][77]
+
+Because the Sun fuses hydrogen into helium at its core, it is a main-sequence star. More specifically, it is a G2-type main-sequence star, where the type designation refers to its effective temperature. Hotter main-sequence stars are more luminous but shorter lived. The Sun's temperature is intermediate between that of the hottest stars and that of the coolest stars. Stars brighter and hotter than the Sun are rare, whereas substantially dimmer and cooler stars, known as red dwarfs, make up about 75% of the stars in the Milky Way.[78][79]
+
+The Sun is a population I star; it has a higher abundance of elements heavier than hydrogen and helium ("metals" in astronomical parlance) than the older population II stars.[80] Elements heavier than hydrogen and helium were formed in the cores of ancient and exploding stars, so the first generation of stars had to die before the universe could be enriched with these atoms. The oldest stars contain few metals, whereas stars born later have more. This higher metallicity is thought to have been crucial to the Sun's development of a planetary system because the planets form from the accretion of "metals".[81]
+Inner Solar System
+Overview of the Inner Solar System up to the Jovian System
+
+The inner Solar System is the region comprising the terrestrial planets and the asteroid belt.[82] Composed mainly of silicates and metals,[83] the objects of the inner Solar System are relatively close to the Sun; the radius of this entire region is less than the distance between the orbits of Jupiter and Saturn. This region is also within the frost line, which is a little less than 5 AU (750 million km; 460 million mi) from the Sun.[22]
+Inner planets
+Main article: Terrestrial planet
+The four terrestrial planets Mercury, Venus, Earth and Mars
+
+The four terrestrial or inner planets have dense, rocky compositions, few or no moons, and no ring systems. They are in hydrostatic equilibrium, forming a rounded shape, and have undergone planetary differentiation, causing chemical elements to accumulate at different radii. They are composed largely of refractory minerals such as silicates—which form their crusts and mantles—and metals such as iron and nickel which form their cores. Three of the four inner planets (Venus, Earth and Mars) have atmospheres substantial enough to generate weather; all have impact craters and tectonic surface features, such as rift valleys and volcanoes. The term inner planet should not be confused with inferior planet, which designates those planets that are closer to the Sun than Earth (i.e. Mercury and Venus).[84]
+Mercury
+Main article: Mercury (planet)
+
+Mercury (0.307–0.588 AU (45.9–88.0 million km; 28.5–54.7 million mi) from the Sun[85]) is the closest planet to the Sun. The smallest planet in the Solar System (0.055 MEarth), Mercury has no natural satellites. The dominant geological features are impact craters or basins with ejecta blankets, the remains of early volcanic activity including magma flows, and lobed ridges or rupes that were probably produced by a period of contraction early in the planet's history.[86] Mercury's very tenuous atmosphere consists of solar-wind particles trapped by Mercury's magnetic field, as well as atoms blasted off its surface by the solar wind.[87][88] Its relatively large iron core and thin mantle have not yet been adequately explained. Hypotheses include that its outer layers were stripped off by a giant impact, or that it was prevented from fully accreting by the young Sun's energy.[89][90] There have been searches for "Vulcanoids", asteroids in stable orbits between Mercury and the Sun, but none have been discovered.[91][92]
+Venus
+Main article: Venus
+
+Venus (0.718–0.728 AU (107.4–108.9 million km; 66.7–67.7 million mi) from the Sun[85]) is close in size to Earth (0.815 MEarth) and, like Earth, has a thick silicate mantle around an iron core, a substantial atmosphere, and evidence of internal geological activity. It is much drier than Earth, and its atmosphere is ninety times as dense. Venus has no natural satellites. It is the hottest planet, with surface temperatures over 400 °C (752 °F), mainly due to the amount of greenhouse gases in the atmosphere.[93] The planet has no magnetic field that would prevent the depletion of its substantial atmosphere, which suggests that its atmosphere is being replenished by volcanic eruptions.[94] A relatively young planetary surface displays extensive evidence of volcanic activity, but is devoid of plate tectonics. It may undergo resurfacing episodes on a time scale of 700 million years.[95]
+Earth
+Main article: Earth
+
+Earth (0.983–1.017 AU (147.1–152.1 million km; 91.4–94.5 million mi) from the Sun) is the largest and densest of the inner planets, the only one known to have current geological activity, and the only place in the universe where life is known to exist.[96] Its liquid hydrosphere is unique among the terrestrial planets, and it is the only planet where plate tectonics has been observed.[97] Earth's atmosphere is radically different from those of the other planets, having been altered by the presence of life to contain 21% free oxygen.[98][99] The planetary magnetosphere shields the surface from solar and cosmic radiation, limiting atmospheric stripping and maintaining habitability.[100] It has one natural satellite, the Moon, the only large satellite of a terrestrial planet in the Solar System.
+Mars
+Main article: Mars
+
+Mars (1.382–1.666 AU (206.7–249.2 million km; 128.5–154.9 million mi) from the Sun) is smaller than Earth and Venus (0.107 MEarth). It has an atmosphere of mostly carbon dioxide with a surface pressure of 6.1 millibars (0.088 psi; 0.18 inHg); roughly 0.6% of that of Earth but sufficient to support weather phenomena.[101] Its surface, peppered with volcanoes, such as Olympus Mons, and rift valleys, such as Valles Marineris, shows geological activity that may have persisted until as recently as 2 million years ago.[102] Its red color comes from iron oxide (rust) in its soil,[103] while the polar regions show white ice caps consisting largely of water.[104] Mars has two tiny natural satellites (Deimos and Phobos) thought to be either captured asteroids,[105] or ejected debris from a massive impact early in Mars's history.[106]
+Asteroid belt
+Main articles: Asteroid belt and Asteroid
+Linear map of the inner Solar System, showing many asteroid populations
+
+Asteroids except for the largest, Ceres, are classified as small Solar System bodies[g] and are composed mainly of carbonaceous, refractory rocky and metallic minerals, with some ice.[112][113] They range from a few metres to hundreds of kilometres in size. Asteroids smaller than one meter are usually called meteoroids and micrometeoroids (grain-sized), with the exact division between the two categories being debated over the years.[114] As of 2017, the IAU designates asteroids having a diameter between about 30 micrometres and 1 metre as micrometeoroids, and terms smaller particles "dust".[115]
+
+The asteroid belt occupies the orbit between Mars and Jupiter, between 2.3 and 3.3 AU (340 and 490 million km; 210 and 310 million mi) from the Sun. It is thought to be remnants from the Solar System's formation that failed to coalesce because of the gravitational interference of Jupiter.[116] The asteroid belt contains tens of thousands, possibly millions, of objects over one kilometre in diameter.[117] Despite this, the total mass of the asteroid belt is unlikely to be more than a thousandth of that of Earth.[40] The asteroid belt is very sparsely populated; spacecraft routinely pass through without incident.[118]
+Ceres
+Main article: Ceres (dwarf planet)
+
+Ceres (2.77 AU (414 million km; 257 million mi) from the Sun) is the largest asteroid, a protoplanet, and a dwarf planet.[g] It has a diameter of slightly under 1,000 km (620 mi) and a mass large enough for its own gravity to pull it into a spherical shape. Ceres was considered a planet when it was discovered in 1801, but as further observations revealed additional asteroids, it became common to consider it as one of the minor rather than major planets.[119] It was then reclassified again as a dwarf planet in 2006 when the IAU definition of planet was established.[120]: 218
+Pallas and Vesta
+Main articles: 2 Pallas and 4 Vesta
+
+Pallas (2.77 AU from the Sun) and Vesta (2.36 AU from the Sun) are the largest asteroids in the asteroid belt, after Ceres. They are the other two protoplanets that survive more or less intact. At about 520 km (320 mi) in diameter, they were large enough to have developed planetary geology in the past, but both have suffered large impacts and been battered out of being round.[121][122][123] Fragments from impacts upon these two bodies survive elsewhere in the asteroid belt, as the Pallas family and Vesta family. Both were considered planets upon their discoveries in 1802 and 1807 respectively, and like Ceres, eventually considered minor planets with the discovery of more asteroids. Some authors today have begun to consider Pallas and Vesta as planets again, along with Ceres, under geophysical definitions of the term.[108]
+Asteroid groups
+
+Asteroids in the asteroid belt are divided into asteroid groups and families based on their orbital characteristics. Kirkwood gaps are sharp dips in the distribution of asteroid orbits that correspond to orbital resonances with Jupiter.[124] Asteroid moons are asteroids that orbit larger asteroids. They are not as clearly distinguished as planetary moons, sometimes being almost as large as their partners (e.g. that of 90 Antiope). The asteroid belt includes main-belt comets, which may have been the source of Earth's water.[125]
+
+Jupiter trojans are located in either of Jupiter's L4 or L5 points (gravitationally stable regions leading and trailing a planet in its orbit); the term trojan is also used for small bodies in any other planetary or satellite Lagrange point. Hilda asteroids are in a 2:3 resonance with Jupiter; that is, they go around the Sun three times for every two Jupiter orbits.[126] The inner Solar System contains near-Earth asteroids, many of which cross the orbits of the inner planets.[127] Some of them are potentially hazardous objects.[128]
+Outer Solar System
+Plot of objects around the Kuiper belt and other asteroid populations, the J, S, U and N denotes Jupiter, Saturn, Uranus and Neptune
+
+The outer region of the Solar System is home to the giant planets and their large moons. The centaurs and many short-period comets also orbit in this region. Due to their greater distance from the Sun, the solid objects in the outer Solar System contain a higher proportion of volatiles, such as water, ammonia, and methane than those of the inner Solar System because the lower temperatures allow these compounds to remain solid, without significant rates of sublimation.[10]
+Outer planets
+Main article: Giant planet
+The outer planets Jupiter, Saturn, Uranus and Neptune, compared to the inner planets Earth, Venus, Mars, and Mercury at the bottom right
+
+The four outer planets, also called giant planets or Jovian planets, collectively make up 99% of the mass known to orbit the Sun.[f] Jupiter and Saturn are together more than 400 times the mass of Earth and consist overwhelmingly of the gases hydrogen and helium, hence their designation as gas giants.[129] Uranus and Neptune are far less massive—less than 20 Earth masses (MEarth) each—and are composed primarily of ice. For these reasons, some astronomers suggest they belong in their own category, ice giants.[130] All four giant planets have rings, although only Saturn's ring system is easily observed from Earth. The term superior planet designates planets outside Earth's orbit and thus includes both the outer planets and Mars.[84]
+
+The ring–moon systems of Jupiter, Saturn, and Uranus are like miniature versions of the Solar System; that of Neptune is significantly different, having been disrupted by the capture of its largest moon Triton.[131]
+Jupiter
+Main article: Jupiter
+
+Jupiter (4.951–5.457 AU (740.7–816.4 million km; 460.2–507.3 million mi) from the Sun[85]), at 318 MEarth, is 2.5 times the mass of all the other planets put together. It is composed largely of hydrogen and helium. Jupiter's strong internal heat creates semi-permanent features in its atmosphere, such as cloud bands and the Great Red Spot. The planet possesses a 4.2–14 Gauss strength magnetosphere that spans 22–29 million km, making it, in certain respects, the largest object in the Solar System.[132] Jupiter has 95 known satellites. The four largest, Ganymede, Callisto, Io, and Europa, are called the Galilean moons: they show similarities to the terrestrial planets, such as volcanism and internal heating.[133] Ganymede, the largest satellite in the Solar System, is larger than Mercury; Callisto is almost as large.[134]
+Saturn
+Main article: Saturn
+
+Saturn (9.075–10.07 AU (1.3576–1.5065 billion km; 843.6–936.1 million mi) from the Sun[85]), distinguished by its extensive ring system, has several similarities to Jupiter, such as its atmospheric composition and magnetosphere. Although Saturn has 60% of Jupiter's volume, it is less than a third as massive, at 95 MEarth. Saturn is the only planet of the Solar System that is less dense than water. The rings of Saturn are made up of small ice and rock particles.[135] Saturn has 145 confirmed satellites composed largely of ice. Two of these, Titan and Enceladus, show signs of geological activity;[136] they, as well as five other Saturnian moons (Iapetus, Rhea, Dione, Tethys, and Mimas), are large enough to be round. Titan, the second-largest moon in the Solar System, is bigger than Mercury and the only satellite in the Solar System to have a substantial atmosphere.[137][138]
+Uranus
+Main article: Uranus
+
+Uranus (18.27–20.06 AU (2.733–3.001 billion km; 1.698–1.865 billion mi) from the Sun[85]), at 14 MEarth, has the lowest mass of the outer planets. Uniquely among the planets, it orbits the Sun on its side; its axial tilt is over ninety degrees to the ecliptic. This gives the planet extreme seasonal variation as each pole points toward and then away from the Sun.[139] It has a much colder core than the other giant planets and radiates very little heat into space.[140] As a consequence, it has the coldest planetary atmosphere in the Solar System.[141] Uranus has 27 known satellites, the largest ones being Titania, Oberon, Umbriel, Ariel, and Miranda.[142] Like the other giant planets, it possesses a ring system and magnetosphere.[143]
+Neptune
+Main article: Neptune
+
+Neptune (29.89–30.47 AU (4.471–4.558 billion km; 2.778–2.832 billion mi) from the Sun[85]), though slightly smaller than Uranus, is more massive (17 MEarth) and hence more dense. It radiates more internal heat than Uranus, but not as much as Jupiter or Saturn.[144] Neptune has 14 known satellites. The largest, Triton, is geologically active, with geysers of liquid nitrogen.[145] Triton is the only large satellite with a retrograde orbit, which indicates that it did not form with Neptune, but was probably captured from the Kuiper belt.[146] Neptune is accompanied in its orbit by several minor planets, termed Neptune trojans, that either lead or trail the planet by about one-sixth of the way around the Sun, positions known as Lagrange points.[147]
+Centaurs
+Main article: Centaur (small Solar System body)
+
+The centaurs are icy comet-like bodies whose orbits have semi-major axes greater than Jupiter's (5.5 AU (820 million km; 510 million mi)) and less than Neptune's (30 AU (4.5 billion km; 2.8 billion mi)). These are former Kuiper belt and scattered disc objects that were gravitationally perturbed closer to the Sun by the outer planets, and are expected to become comets or get ejected out of the Solar System.[39] While most centaurs are inactive and asteroid-like, some exhibit clear cometary activity, such as the first centaur discovered, 2060 Chiron, which has been classified as a comet (95P) because it develops a coma just as comets do when they approach the Sun.[148] The largest known centaur, 10199 Chariklo, has a diameter of about 250 km (160 mi) and is one of the only few minor planets known to possess a ring system.[149][150]
+Comets
+Main article: Comet
+Comet Hale–Bopp seen in 1997
+
+Comets are small Solar System bodies,[g] typically only a few kilometres across, composed largely of volatile ices. They have highly eccentric orbits, generally a perihelion within the orbits of the inner planets and an aphelion far beyond Pluto. When a comet enters the inner Solar System, its proximity to the Sun causes its icy surface to sublimate and ionise, creating a coma: a long tail of gas and dust often visible to the naked eye.[151]
+
+Short-period comets have orbits lasting less than two hundred years. Long-period comets have orbits lasting thousands of years. Short-period comets are thought to originate in the Kuiper belt, whereas long-period comets, such as Hale–Bopp, are thought to originate in the Oort cloud. Many comet groups, such as the Kreutz sungrazers, formed from the breakup of a single parent.[152] Some comets with hyperbolic orbits may originate outside the Solar System, but determining their precise orbits is difficult.[153] Old comets whose volatiles have mostly been driven out by solar warming are often categorised as asteroids.[154]
+Trans-Neptunian region
+Distribution and size of trans-Neptunian objects. The horizontal axis stand for the semi-major axis of the body, the vertical axis stands for the inclination of the orbit, and the size of the circle stands for the relative size of the object.
+Size comparison of some large TNOs with Earth: Pluto and its moons, Eris, Makemake, Haumea, Sedna, Gonggong, Quaoar, Orcus, Salacia, and 2002 MS4.
+
+Beyond the orbit of Neptune lies the area of the "trans-Neptunian region", with the doughnut-shaped Kuiper belt, home of Pluto and several other dwarf planets, and an overlapping disc of scattered objects, which is tilted toward the plane of the Solar System and reaches much further out than the Kuiper belt. The entire region is still largely unexplored. It appears to consist overwhelmingly of many thousands of small worlds—the largest having a diameter only a fifth that of Earth and a mass far smaller than that of the Moon—composed mainly of rock and ice. This region is sometimes described as the "third zone of the Solar System", enclosing the inner and the outer Solar System.[155]
+Kuiper belt
+Main article: Kuiper belt
+
+The Kuiper belt is a great ring of debris similar to the asteroid belt, but consisting mainly of objects composed primarily of ice.[156] It extends between 30 and 50 AU (4.5 and 7.5 billion km; 2.8 and 4.6 billion mi) from the Sun. It is composed mainly of small Solar System bodies, although the largest few are probably large enough to be dwarf planets.[157] There are estimated to be over 100,000 Kuiper belt objects with a diameter greater than 50 km (30 mi), but the total mass of the Kuiper belt is thought to be only a tenth or even a hundredth the mass of Earth.[39] Many Kuiper belt objects have satellites,[158] and most have orbits that are substantially inclined (~10°) to the plane of the ecliptic.[159]
+
+The Kuiper belt can be roughly divided into the "classical" belt and the resonant trans-Neptunian objects.[156] The latter have orbits whose periods are in a simple ratio to that of Neptune: for example, going around the Sun twice for every three times that Neptune does, or once for every two. The classical belt consists of objects having no resonance with Neptune, and extends from roughly 39.4 to 47.7 AU (5.89 to 7.14 billion km; 3.66 to 4.43 billion mi).[160] Members of the classical Kuiper belt are sometimes called "cubewanos", after the first of their kind to be discovered, originally designated 1992 QB1; they are still in near primordial, low-eccentricity orbits.[161]
+Pluto and Charon
+Main articles: Pluto and Charon (moon)
+
+The dwarf planet Pluto (with an average orbit of 39 AU (5.8 billion km; 3.6 billion mi) from the Sun) is the largest known object in the Kuiper belt. When discovered in 1930, it was considered to be the ninth planet; this changed in 2006 with the adoption of a formal definition of planet. Pluto has a relatively eccentric orbit inclined 17 degrees to the ecliptic plane and ranging from 29.7 AU (4.44 billion km; 2.76 billion mi) from the Sun at perihelion (within the orbit of Neptune) to 49.5 AU (7.41 billion km; 4.60 billion mi) at aphelion. Pluto has a 2:3 resonance with Neptune, meaning that Pluto orbits twice round the Sun for every three Neptunian orbits. Kuiper belt objects whose orbits share this resonance are called plutinos.[162]
+
+Charon, the largest of Pluto's moons, is sometimes described as part of a binary system with Pluto, as the two bodies orbit a barycenter of gravity above their surfaces (i.e. they appear to "orbit each other"). Beyond Charon, four much smaller moons, Styx, Nix, Kerberos, and Hydra, orbit Pluto.[163]
+Others
+
+Besides Pluto, astronomers generally agree that at least four other Kuiper belt objects are dwarf planets,[157] though there is some doubt for Orcus,[164] and additional bodies have also been proposed:[165]
+
+    Makemake (45.79 AU average from the Sun), although smaller than Pluto, is the largest known object in the classical Kuiper belt (that is, a Kuiper belt object not in a confirmed resonance with Neptune). Makemake is the brightest object in the Kuiper belt after Pluto. Discovered in 2005, it was officially named in 2009.[166] Its orbit is far more inclined than Pluto's, at 29°.[167] It has one known moon.[168]
+    Haumea (43.13 AU average from the Sun) is in an orbit similar to Makemake, except that it is in a temporary 7:12 orbital resonance with Neptune.[169] Like Makemake, it was discovered in 2005.[170] Uniquely among the dwarf planets, Haumea possess a ring system, two known moons named Hiʻiaka and Namaka, and rotates so quickly (once every 3.9 hours) that it is stretched into an ellipsoid. It is part of a collisional family of Kuiper belt objects that share similar orbits, which suggests a giant collision took place on Haumea and ejected its fragments into space billions of years ago.[171]
+    Quaoar (43.69 AU average from the Sun) is the second-largest known object in the classical Kuiper belt, after Makemake. Its orbit is significantly less eccentric and inclined than those of Makemake or Haumea.[169] It possesses a ring system and one known moon, Weywot.[172]
+    Orcus (39.40 AU average from the Sun) is in the same 2:3 orbital resonance with Neptune as Pluto, and is the largest such object after Pluto itself.[169] Its eccentricity and inclination are similar to Pluto's, but its perihelion lies about 120° from that of Pluto. Thus, the phase of Orcus's orbit is opposite to Pluto's: Orcus is at aphelion (most recently in 2019) around when Pluto is at perihelion (most recently in 1989) and vice versa.[173] For this reason, it has been called the anti-Pluto.[174][175] It has one known moon, Vanth.[176]
+
+Scattered disc
+Main article: Scattered disc
+The orbital eccentricities and inclinations of the scattered disc population compared to the classical and resonant Kuiper belt objects
+
+The scattered disc, which overlaps the Kuiper belt but extends out to near 500 AU, is thought to be the source of short-period comets. Scattered-disc objects are believed to have been perturbed into erratic orbits by the gravitational influence of Neptune's early outward migration. Most scattered disc objects (SDOs) have perihelia within the Kuiper belt but aphelia far beyond it (some more than 150 AU from the Sun). SDOs' orbits can also be inclined up to 46.8° from the ecliptic plane.[177] Some astronomers consider the scattered disc to be merely another region of the Kuiper belt and describe scattered-disc objects as "scattered Kuiper belt objects".[178] Some astronomers also classify centaurs as inward-scattered Kuiper belt objects along with the outward-scattered residents of the scattered disc.[179]
+Eris and Gonggong
+
+Eris (67.78 AU average from the Sun) is the largest known scattered disc object, and caused a debate about what constitutes a planet, because it is 25% more massive than Pluto[180] and about the same diameter. It is the most massive of the known dwarf planets. It has one known moon, Dysnomia. Like Pluto, its orbit is highly eccentric, with a perihelion of 38.2 AU (roughly Pluto's distance from the Sun) and an aphelion of 97.6 AU, and steeply inclined to the ecliptic plane at an angle of 44°.[181]
+
+Gonggong (67.38 AU average from the Sun) is another dwarf planet in a comparable orbit to Eris, except that it is in a 3:10 resonance with Neptune.[182] It has one known moon, Xiangliu.[183]
+Farthest regions
+
+The point at which the Solar System ends and interstellar space begins is not precisely defined because its outer boundaries are shaped by two forces: the solar wind and the Sun's gravity. The limit of the solar wind's influence is roughly four times Pluto's distance from the Sun; this heliopause, the outer boundary of the heliosphere, is considered the beginning of the interstellar medium.[60] The Sun's Hill sphere, the effective range of its gravitational dominance, is thought to extend up to a thousand times farther and encompasses the hypothetical Oort cloud.[184]
+Edge of the heliosphere
+Main article: Heliosheath
+Artistic depiction of the Solar System's heliosphere
+
+The Sun's stellar-wind bubble, the heliosphere, a region of space dominated by the Sun, has its boundary at the termination shock, which is roughly 80–100 AU from the Sun upwind of the interstellar medium and roughly 200 AU from the Sun downwind.[185] Here the solar wind collides with the interstellar medium[186] and dramatically slows, condenses and becomes more turbulent,[185] forming a great oval structure known as the heliosheath. This structure has been theorized to look and behave very much like a comet's tail, extending outward for a further 40 AU on the upwind side but tailing many times that distance downwind.[187] Evidence from the Cassini and Interstellar Boundary Explorer spacecraft has suggested that it is forced into a bubble shape by the constraining action of the interstellar magnetic field,[188][189] but the actual shape remains unknown.[190]
+
+The outer boundary of the heliosphere, the heliopause, is the point at which the solar wind finally terminates and is the beginning of interstellar space.[60] Voyager 1 and Voyager 2 passed the termination shock and entered the heliosheath at 94 and 84 AU from the Sun, respectively.[191][192] Voyager 1 was reported to have crossed the heliopause in August 2012, and Voyager 2 in December 2018.[193][194]
+
+The shape and form of the outer edge of the heliosphere is likely affected by the fluid dynamics of interactions with the interstellar medium as well as solar magnetic fields prevailing to the south, e.g. it is bluntly shaped with the northern hemisphere extending 9 AU farther than the southern hemisphere.[185] Beyond the heliopause, at around 230 AU, lies the bow shock: a plasma "wake" left by the Sun as it travels through the Milky Way.[195]
+Detached objects
+The detached object Sedna and its orbit within the Solar System
+Main articles: Detached object and Sednoid
+
+Sedna (with an average orbit of 520 AU from the Sun) is a large, reddish object with a gigantic, highly elliptical orbit that takes it from about 76 AU at perihelion to 940 AU at aphelion and takes 11,400 years to complete. Mike Brown, who discovered the object in 2003, asserts that it cannot be part of the scattered disc or the Kuiper belt because its perihelion is too distant to have been affected by Neptune's migration. He and other astronomers consider it to be the first in an entirely new population, sometimes termed "distant detached objects" (DDOs), which also may include the object 2000 CR105, which has a perihelion of 45 AU, an aphelion of 415 AU, and an orbital period of 3,420 years.[196] Brown terms this population the "inner Oort cloud" because it may have formed through a similar process, although it is far closer to the Sun.[197] Sedna is very likely a dwarf planet, though its shape has yet to be determined. The second unequivocally detached object, with a perihelion farther than Sedna's at roughly 81 AU, is 2012 VP113, discovered in 2012. Its aphelion is only about half that of Sedna's, at 458 AU.[198][199]
+Oort cloud
+Main article: Oort cloud
+
+The Oort cloud is a hypothetical spherical cloud of up to a trillion icy objects that is thought to be the source for all long-period comets and to surround the Solar System at roughly 50,000 AU (around 1 light-year (ly)) from the Sun, and possibly to as far as 100,000 AU (1.87 ly). It is thought to be composed of comets that were ejected from the inner Solar System by gravitational interactions with the outer planets. Oort cloud objects move very slowly, and can be perturbed by infrequent events, such as collisions, the gravitational effects of a passing star, or the galactic tide, the tidal force exerted by the Milky Way.[200][201]
+Boundaries
+See also: Planets beyond Neptune, Planet Nine, and List of Solar System objects by greatest aphelion
+
+Much of the Solar System is still unknown. The Sun's gravitational field is estimated to dominate the gravitational forces of surrounding stars out to about two light-years (125,000 AU). Lower estimates for the radius of the Oort cloud, by contrast, do not place it farther than 50,000 AU.[202] Most of the mass is orbiting in the region between 3,000 and 100,000 AU.[203] Despite discoveries such as Sedna, the region between the Kuiper belt and the Oort cloud, an area tens of thousands of AU in radius, is still virtually unmapped. Learning about this region of space is difficult, because it depends upon inferences from those few objects whose orbits happen to be perturbed such that they fall closer to the Sun, and even then, detecting these objects has often been possible only when they happened to become bright enough to register as comets.[204] Objects may yet be discovered in the Solar System's uncharted regions.[205] The furthest known objects, such as Comet West, have aphelia around 70,000 AU from the Sun.[206]
+Comparison with other star systems
+1e, 1f and 1g is in the habitable zone
+Habitable zones of TRAPPIST-1 and the Solar System; here, the TRAPPIST-1 system is enlarged 25 times. The displayed planetary surfaces on TRAPPIST-1 are speculative.
+
+Compared to many extrasolar systems, the Solar System stands out in lacking planets interior to the orbit of Mercury.[207][208] The known Solar System also lacks super-Earths, planets between one and ten times as massive as the Earth,[207] although the hypothetical Planet Nine, if it does exist, could be a super-Earth orbiting in the outer Solar System.[209] Uncommonly, it has only small rocky planets and large gas giants; elsewhere planets of intermediate size are typical—both rocky and gas—so there is no "gap" as seen between the size of Earth and of Neptune (with a radius 3.8 times as large). As many of these super-Earths are closer to their respective stars than Mercury is to the Sun, a hypothesis has arisen that all planetary systems start with many close-in planets, and that typically a sequence of their collisions causes consolidation of mass into few larger planets, but in case of the Solar System the collisions caused their destruction and ejection.[207][210]
+
+The orbits of Solar System planets are nearly circular. Compared to other systems, they have smaller orbital eccentricity.[207] Although there are attempts to explain it partly with a bias in the radial-velocity detection method and partly with long interactions of a quite high number of planets, the exact causes remain undetermined.[207][211]
+Location
+Celestial neighborhood
+Diagram of the Local Interstellar Cloud, the G-Cloud and surrounding stars. As of 2022, the precise location of the Solar System in the clouds is an open question in astronomy.[212]
+
+The Solar System is surrounded by the Local Interstellar Cloud, although it is not clear if it is embedded in the Local Interstellar Cloud or if it lies just outside the cloud's edge.[213][214] Multiple other interstellar clouds also exist in the region within 300 light-years of the Sun, known as the Local Bubble.[214] The latter feature is an hourglass-shaped cavity or superbubble in the interstellar medium roughly 300 light-years across. The bubble is suffused with high-temperature plasma, suggesting that it may be the product of several recent supernovae.[215]
+
+The Local Bubble is a small superbubble compared to the neighboring wider Radcliffe Wave and Split linear structures (formerly Gould Belt), each of which are some thousands of light-years in length.[216] All these structures are part of the Orion Arm, which contains most of the stars in the Milky Way that are visible to the unaided eye. The density of all matter in the local neighborhood is 0.097±0.013 M☉·pc−3.[217]
+
+Within ten light-years of the Sun there are relatively few stars, the closest being the triple star system Alpha Centauri, which is about 4.4 light-years away and may be in the Local Bubble's G-Cloud.[218] Alpha Centauri A and B are a closely tied pair of Sun-like stars, whereas the closest star to Earth, the small red dwarf Proxima Centauri, orbits the pair at a distance of 0.2 light-year. In 2016, a potentially habitable exoplanet was found to be orbiting Proxima Centauri, called Proxima Centauri b, the closest confirmed exoplanet to the Sun.[219]
+
+The next closest known fusors to the Sun are the red dwarfs Barnard's Star (at 5.9 ly), Wolf 359 (7.8 ly), and Lalande 21185 (8.3 ly).[220] The nearest brown dwarfs belong to the binary Luhman 16 system (6.6 ly), and the closest known rogue or free-floating planetary-mass object at less than 10 Jupiter masses is the sub-brown dwarf WISE 0855−0714 (7.4 ly).[221]
+
+Just beyond at 8.6 ly lies Sirius, the brightest star in Earth's night sky, with roughly twice the Sun's mass, orbited by the closest white dwarf to Earth, Sirius B. Other stars within ten light-years are the binary red-dwarf system Gliese 65 (8.7 ly) and the solitary red dwarf Ross 154 (9.7 ly).[222][223] The closest solitary Sun-like star to the Solar System is Tau Ceti at 11.9 light-years. It has roughly 80% of the Sun's mass but only about half of its luminosity.[224]
+
+The nearest and unaided-visible group of stars beyond the immediate celestial neighborhood is the Ursa Major moving group at roughly 80 light-years, which is within the Local Bubble, like the nearest as well as unaided-visible star cluster the Hyades, which lie at its edge. The closest star-forming regions are the Corona Australis Molecular Cloud, the Rho Ophiuchi cloud complex and the Taurus molecular cloud; the latter lies just beyond the Local Bubble and is part of the Radcliffe wave.[225]
+Galactic position and orbit
+See also: Location of Earth, Galactic year, and Orbit of the Sun
+Diagram of the Milky Way, with galactic features and the relative position of the Solar System labelled.
+
+The Solar System is located in the Milky Way, a barred spiral galaxy with a diameter of about 100,000 light-years containing more than 100 billion stars.[226] The Sun is part of one of the Milky Way's outer spiral arms, known as the Orion–Cygnus Arm or Local Spur.[227]
+
+The Sun orbits close to circular the Galactic Center (where the supermassive black hole Sagittarius A* resides) at a distance of 26,660 light-years,[228] orbiting at roughly the same speed as that of the spiral arms.[229][230] Therefore, the Sun passes through arms only rarely.
+
+Its speed around the center of the Milky Way is about 220 km/s, so that it completes one revolution every 240 million years.[226] This revolution is known as the Solar System's galactic year.[231] The solar apex, the direction of the Sun's path through interstellar space, is near the constellation Hercules in the direction of the current location of the bright star Vega.[232] The plane of the ecliptic lies at an angle of about 60° to the galactic plane.[h]
+Habitability of galactic position and orbit
+
+The Solar System's location in the Milky Way is a factor in the evolutionary history of life on Earth. Spiral arms are home to a far larger concentration of supernovae, gravitational instabilities, and radiation that could disrupt the Solar System, but since Earth stays in the Local Spur and therefore does not pass frequently through spiral arms, this has given Earth long periods of stability for life to evolve.[229] However, the changing position of the Solar System relative to other parts of the Milky Way could explain periodic extinction events on Earth, according to the Shiva hypothesis or related theories, but this remains controversial.[234][235]
+
+The Solar System lies well outside the star-crowded environs of the Galactic Center. Near the center, gravitational tugs from nearby stars could perturb bodies in the Oort cloud and send many comets into the inner Solar System, producing collisions with potentially catastrophic implications for life on Earth. The intense radiation of the Galactic Center could also interfere with the development of complex life.[229] Stellar flybys that pass within 0.8 light-years of the Sun occur roughly once every 100,000 years. The closest well-measured approach was Scholz's Star, which approached to 52+23
+−14 kAU of the Sun some 70+15
+−10 kya, likely passing through the outer Oort cloud.[236]
+Humanity's perspective
+Main article: Discovery and exploration of the Solar System
+The motion of 'lights' moving across the sky is the basis of the classical definition of planets: wandering stars.
+
+Humanity's knowledge of the Solar System has grown incrementally over the centuries. Up to the Late Middle Ages–Renaissance, astronomers from Europe to India believed Earth to be stationary at the center of the universe[237] and categorically different from the divine or ethereal objects that moved through the sky. Although the Greek philosopher Aristarchus of Samos had speculated on a heliocentric reordering of the cosmos, Nicolaus Copernicus was the first person known to have developed a mathematically predictive heliocentric system.[238][239] Heliocentrism did not triumph immediately over geocentrism, but the work of Copernicus had its champions, notably Johannes Kepler. Using a heliocentric model that improved upon Copernicus by allowing orbits to be elliptical, and the precise observational data of Tycho Brahe, Kepler produced the Rudolphine Tables, which enabled accurate computations of the positions of the then-known planets. Pierre Gassendi used them to predict a transit of Mercury in 1631, and Jeremiah Horrocks did the same for a transit of Venus in 1639. This provided a strong vindication of heliocentrism and Kepler's elliptical orbits.[240][241]
+
+In the 17th century, Galileo publicized the use of the telescope in astronomy; he and Simon Marius independently discovered that Jupiter had four satellites in orbit around it.[242] Christiaan Huygens followed on from these observations by discovering Saturn's moon Titan and the shape of the rings of Saturn.[243] In 1677, Edmond Halley observed a transit of Mercury across the Sun, leading him to realize that observations of the solar parallax of a planet (more ideally using the transit of Venus) could be used to trigonometrically determine the distances between Earth, Venus, and the Sun.[244] Halley's friend Isaac Newton, in his magisterial Principia Mathematica of 1687, demonstrated that celestial bodies are not quintessentially different from Earthly ones: the same laws of motion and of gravity apply on Earth and in the skies.[29]: 142
+
+The term "Solar System" entered the English language by 1704, when John Locke used it to refer to the Sun, planets, and comets.[245] In 1705, Halley realized that repeated sightings of a comet were of the same object, returning regularly once every 75–76 years. This was the first evidence that anything other than the planets repeatedly orbited the Sun,[246] though Seneca had theorized this about comets in the 1st century.[247] Careful observations of the 1769 transit of Venus allowed astronomers to calculate the average Earth–Sun distance as 93,726,900 miles (150,838,800 km), only 0.8% greater than the modern value.[248] Uranus, having occasionally been observed since antiquity, was recognized to be a planet orbiting beyond Saturn by 1783.[249] In 1838, Friedrich Bessel successfully measured a stellar parallax, an apparent shift in the position of a star created by Earth's motion around the Sun, providing the first direct, experimental proof of heliocentrism.[250] Neptune was identified as a planet some years later, in 1846, thanks to its gravitational pull causing a slight but detectable variation in the orbit of Uranus.[251]
+
+In the 20th century, humans began their space exploration around the Solar System, starting with placing telescopes in space.[252] Since then, humans have landed on the Moon during the Apollo program; the Apollo 13 mission marked the furthest any human has been away from Earth at 400,171 kilometers (248,655 mi).[253] All eight planets and two dwarf planets have been visited by space probes. This began with Mariner 2's fly-by of Venus in 1962, while Mariner 9 mission to Mars was the first to orbit another planet in 1971. The outer planets were first visited by Pioneer 10's encounter with Jupiter, and Pioneer 11's encounter with Saturn. The remaining gas giants were first visited by the Voyager spacecraft, one of which (Voyager 1) is the furthest object made by humankind and the first in interstellar space.[254] In addition, probes have also returned samples from comets[255] and asteroids,[256] as well as flown through the Sun's corona[257] and made fly-bys of Kuiper belt objects.[258] Six of the planets (all but Uranus and Neptune) have or had a dedicated orbiter.[259]
+See also
+
+Quantum mechanics is a fundamental theory in physics that describes the behavior of nature at the scale of atoms and subatomic particles.[2]: 1.1  It is the foundation of all quantum physics including quantum chemistry, quantum field theory, quantum technology, and quantum information science.
+
+Classical physics, the collection of theories that existed before the advent of quantum mechanics, describes many aspects of nature at an ordinary (macroscopic) scale, but is not sufficient for describing them at small (atomic and subatomic) scales. Most theories in classical physics can be derived from quantum mechanics as an approximation valid at large (macroscopic) scale.[3]
+
+Quantum mechanics differs from classical physics in that energy, momentum, angular momentum, and other quantities of a bound system are restricted to discrete values (quantization); measurements of systems show characteristics of both particles and waves (wave–particle duality); and there are limits to how accurately the value of a physical quantity can be predicted prior to its measurement, given a complete set of initial conditions (the uncertainty principle).
+
+Quantum mechanics arose gradually from theories to explain observations that could not be reconciled with classical physics, such as Max Planck's solution in 1900 to the black-body radiation problem, and the correspondence between energy and frequency in Albert Einstein's 1905 paper, which explained the photoelectric effect. These early attempts to understand microscopic phenomena, now known as the "old quantum theory", led to the full development of quantum mechanics in the mid-1920s by Niels Bohr, Erwin Schrödinger, Werner Heisenberg, Max Born, Paul Dirac and others. The modern theory is formulated in various specially developed mathematical formalisms. In one of them, a mathematical entity called the wave function provides information, in the form of probability amplitudes, about what measurements of a particle's energy, momentum, and other physical properties may yield.
+Overview and fundamental concepts
+
+Quantum mechanics allows the calculation of properties and behaviour of physical systems. It is typically applied to microscopic systems: molecules, atoms and sub-atomic particles. It has been demonstrated to hold for complex molecules with thousands of atoms,[4] but its application to human beings raises philosophical problems, such as Wigner's friend, and its application to the universe as a whole remains speculative.[5] Predictions of quantum mechanics have been verified experimentally to an extremely high degree of accuracy. For example, the refinement of quantum mechanics for the interaction of light and matter, known as quantum electrodynamics (QED), has been shown to agree with experiment to within 1 part in 108 for some atomic properties.
+
+A fundamental feature of the theory is that it usually cannot predict with certainty what will happen, but only give probabilities. Mathematically, a probability is found by taking the square of the absolute value of a complex number, known as a probability amplitude. This is known as the Born rule, named after physicist Max Born. For example, a quantum particle like an electron can be described by a wave function, which associates to each point in space a probability amplitude. Applying the Born rule to these amplitudes gives a probability density function for the position that the electron will be found to have when an experiment is performed to measure it. This is the best the theory can do; it cannot say for certain where the electron will be found. The Schrödinger equation relates the collection of probability amplitudes that pertain to one moment of time to the collection of probability amplitudes that pertain to another.
+
+One consequence of the mathematical rules of quantum mechanics is a tradeoff in predictability between different measurable quantities. The most famous form of this uncertainty principle says that no matter how a quantum particle is prepared or how carefully experiments upon it are arranged, it is impossible to have a precise prediction for a measurement of its position and also at the same time for a measurement of its momentum.
+
+Another consequence of the mathematical rules of quantum mechanics is the phenomenon of quantum interference, which is often illustrated with the double-slit experiment. In the basic version of this experiment, a coherent light source, such as a laser beam, illuminates a plate pierced by two parallel slits, and the light passing through the slits is observed on a screen behind the plate.[6]: 102–111 [2]: 1.1–1.8  The wave nature of light causes the light waves passing through the two slits to interfere, producing bright and dark bands on the screen – a result that would not be expected if light consisted of classical particles.[6] However, the light is always found to be absorbed at the screen at discrete points, as individual particles rather than waves; the interference pattern appears via the varying density of these particle hits on the screen. Furthermore, versions of the experiment that include detectors at the slits find that each detected photon passes through one slit (as would a classical particle), and not through both slits (as would a wave).[6]: 109 [7][8] However, such experiments demonstrate that particles do not form the interference pattern if one detects which slit they pass through. This behavior is known as wave–particle duality. In addition to light, electrons, atoms, and molecules are all found to exhibit the same dual behavior when fired towards a double slit.[2]
+
+Another non-classical phenomenon predicted by quantum mechanics is quantum tunnelling: a particle that goes up against a potential barrier can cross it, even if its kinetic energy is smaller than the maximum of the potential.[9] In classical mechanics this particle would be trapped. Quantum tunnelling has several important consequences, enabling radioactive decay, nuclear fusion in stars, and applications such as scanning tunnelling microscopy and the tunnel diode.[10]
+
+When quantum systems interact, the result can be the creation of quantum entanglement: their properties become so intertwined that a description of the whole solely in terms of the individual parts is no longer possible. Erwin Schrödinger called entanglement "...the characteristic trait of quantum mechanics, the one that enforces its entire departure from classical lines of thought".[11] Quantum entanglement enables quantum computing and is part of quantum communication protocols, such as quantum key distribution and superdense coding.[12] Contrary to popular misconception, entanglement does not allow sending signals faster than light, as demonstrated by the no-communication theorem.[12]
+
+Another possibility opened by entanglement is testing for "hidden variables", hypothetical properties more fundamental than the quantities addressed in quantum theory itself, knowledge of which would allow more exact predictions than quantum theory can provide. A collection of results, most significantly Bell's theorem, have demonstrated that broad classes of such hidden-variable theories are in fact incompatible with quantum physics. According to Bell's theorem, if nature actually operates in accord with any theory of local hidden variables, then the results of a Bell test will be constrained in a particular, quantifiable way. Many Bell tests have been performed, using entangled particles, and they have shown results incompatible with the constraints imposed by local hidden variables.[13][14]
+
+It is not possible to present these concepts in more than a superficial way without introducing the actual mathematics involved; understanding quantum mechanics requires not only manipulating complex numbers, but also linear algebra, differential equations, group theory, and other more advanced subjects.[note 1] Accordingly, this article will present a mathematical formulation of quantum mechanics and survey its application to some useful and oft-studied examples.
+Mathematical formulation
+Main article: Mathematical formulation of quantum mechanics
+
+In the mathematically rigorous formulation of quantum mechanics, the state of a quantum mechanical system is a vector ψ \psi belonging to a (separable) complex Hilbert space H {\mathcal {H}}. This vector is postulated to be normalized under the Hilbert space inner product, that is, it obeys ⟨ ψ , ψ ⟩ = 1 {\displaystyle \langle \psi ,\psi \rangle =1}, and it is well-defined up to a complex number of modulus 1 (the global phase), that is, ψ \psi and e i α ψ {\displaystyle e^{i\alpha }\psi } represent the same physical system. In other words, the possible states are points in the projective space of a Hilbert space, usually called the complex projective space. The exact nature of this Hilbert space is dependent on the system – for example, for describing position and momentum the Hilbert space is the space of complex square-integrable functions L 2 ( C ) {\displaystyle L^{2}(\mathbb {C} )}, while the Hilbert space for the spin of a single proton is simply the space of two-dimensional complex vectors C 2 {\mathbb C}^{2} with the usual inner product.
+
+Physical quantities of interest – position, momentum, energy, spin – are represented by observables, which are Hermitian (more precisely, self-adjoint) linear operators acting on the Hilbert space. A quantum state can be an eigenvector of an observable, in which case it is called an eigenstate, and the associated eigenvalue corresponds to the value of the observable in that eigenstate. More generally, a quantum state will be a linear combination of the eigenstates, known as a quantum superposition. When an observable is measured, the result will be one of its eigenvalues with probability given by the Born rule: in the simplest case the eigenvalue λ \lambda is non-degenerate and the probability is given by | ⟨ λ → , ψ ⟩ | 2 {\displaystyle |\langle {\vec {\lambda }},\psi \rangle |^{2}}, where λ → {\displaystyle {\vec {\lambda }}} is its associated eigenvector. More generally, the eigenvalue is degenerate and the probability is given by ⟨ ψ , P λ ψ ⟩ {\displaystyle \langle \psi ,P_{\lambda }\psi \rangle }, where P λ P_{\lambda } is the projector onto its associated eigenspace. In the continuous case, these formulas give instead the probability density.
+
+After the measurement, if result λ \lambda was obtained, the quantum state is postulated to collapse to λ → {\displaystyle {\vec {\lambda }}}, in the non-degenerate case, or to P λ ψ / ⟨ ψ , P λ ψ ⟩ {\textstyle P_{\lambda }\psi {\big /}\!{\sqrt {\langle \psi ,P_{\lambda }\psi \rangle }}}, in the general case. The probabilistic nature of quantum mechanics thus stems from the act of measurement. This is one of the most difficult aspects of quantum systems to understand. It was the central topic in the famous Bohr–Einstein debates, in which the two scientists attempted to clarify these fundamental principles by way of thought experiments. In the decades after the formulation of quantum mechanics, the question of what constitutes a "measurement" has been extensively studied. Newer interpretations of quantum mechanics have been formulated that do away with the concept of "wave function collapse" (see, for example, the many-worlds interpretation). The basic idea is that when a quantum system interacts with a measuring apparatus, their respective wave functions become entangled so that the original quantum system ceases to exist as an independent entity. For details, see the article on measurement in quantum mechanics.[17]
+
+The time evolution of a quantum state is described by the Schrödinger equation:
+
+    i ℏ d d t ψ ( t ) = H ψ ( t ) . {\displaystyle i\hbar {\frac {d}{dt}}\psi (t)=H\psi (t).}
+
+Here H H denotes the Hamiltonian, the observable corresponding to the total energy of the system, and ℏ \hbar is the reduced Planck constant. The constant i ℏ i\hbar is introduced so that the Hamiltonian is reduced to the classical Hamiltonian in cases where the quantum system can be approximated by a classical system; the ability to make such an approximation in certain limits is called the correspondence principle.
+
+The solution of this differential equation is given by
+
+    ψ ( t ) = e − i H t / ℏ ψ ( 0 ) . {\displaystyle \psi (t)=e^{-iHt/\hbar }\psi (0).}
+
+The operator U ( t ) = e − i H t / ℏ {\displaystyle U(t)=e^{-iHt/\hbar }} is known as the time-evolution operator, and has the crucial property that it is unitary. This time evolution is deterministic in the sense that – given an initial quantum state ψ ( 0 ) \psi (0)  – it makes a definite prediction of what the quantum state ψ ( t ) \psi(t) will be at any later time.[18]
+Fig. 1: Probability densities corresponding to the wave functions of an electron in a hydrogen atom possessing definite energy levels (increasing from the top of the image to the bottom: n = 1, 2, 3, ...) and angular momenta (increasing across from left to right: s, p, d, ...). Denser areas correspond to higher probability density in a position measurement. Such wave functions are directly comparable to Chladni's figures of acoustic modes of vibration in classical physics and are modes of oscillation as well, possessing a sharp energy and thus, a definite frequency. The angular momentum and energy are quantized and take only discrete values like those shown. (As is the case for resonant frequencies in acoustics.)
+
+Some wave functions produce probability distributions that are independent of time, such as eigenstates of the Hamiltonian. Many systems that are treated dynamically in classical mechanics are described by such "static" wave functions. For example, a single electron in an unexcited atom is pictured classically as a particle moving in a circular trajectory around the atomic nucleus, whereas in quantum mechanics, it is described by a static wave function surrounding the nucleus. For example, the electron wave function for an unexcited hydrogen atom is a spherically symmetric function known as an s orbital (Fig. 1).
+
+Analytic solutions of the Schrödinger equation are known for very few relatively simple model Hamiltonians including the quantum harmonic oscillator, the particle in a box, the dihydrogen cation, and the hydrogen atom. Even the helium atom – which contains just two electrons – has defied all attempts at a fully analytic treatment.
+
+However, there are techniques for finding approximate solutions. One method, called perturbation theory, uses the analytic result for a simple quantum mechanical model to create a result for a related but more complicated model by (for example) the addition of a weak potential energy. Another method is called "semi-classical equation of motion", which applies to systems for which quantum mechanics produces only small deviations from classical behavior. These deviations can then be computed based on the classical motion. This approach is particularly important in the field of quantum chaos.
