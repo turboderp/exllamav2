@@ -56,6 +56,11 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.linear.weight = w
 
 
+    def matrix_shape(self):
+
+        return self.in_features, self.out_features
+
+
     def unload(self):
 
         if self.linear is not None:

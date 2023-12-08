@@ -4,7 +4,7 @@ import sys
 import json
 from conversion.tokenize import tokenize
 from conversion.quantize import embeddings, measure_quant, quant
-from conversion.optimize import optimize
+from conversion.optimize import optimize, optimize_new
 from conversion.compile import compile_model
 from conversion.qparams import qparams_headoptions
 
@@ -29,6 +29,8 @@ parser.add_argument("-m", "--measurement", type = str, help = "Reuse previous me
 parser.add_argument("-ss", "--shard_size", type = float, help = "Max shard size in MB (default: 8192)", default = 8192)
 parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
 parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
+parser.add_argument("-kld", "--kld_estimate", action = "store_true", help = "Do not use measurement, instead optimize according to built-in KL divergence estimates")
+parser.add_argument("-gq", "--gigaquant", action = "store_true", help = "Gigaquant mode (don't use this)")
 
 args = parser.parse_args()
 
@@ -42,9 +44,9 @@ if not args.out_dir:
     print(" ## Please specify output/working directory (-o, --out_dir)")
     sys.exit()
 
-if not args.cal_dataset:
-    print(" ## Please specify dataset Parquet file (-c, --cal_dataset)")
-    sys.exit()
+# if not args.cal_dataset:
+#     print(" ## Please specify dataset Parquet file (-c, --cal_dataset)")
+#     sys.exit()
 
 if args.length > 2048 or args.measurement_length > 2048:
     print(" !! Warning: calibration rows > 2048 tokens may result in excessive VRAM use")
@@ -58,6 +60,14 @@ if args.bits < 2 or args.bits > 8:
 
 if args.output_measurement is not None and args.compile_full is not None:
     print(" ## Conflicting options: --output_measurement and --compile_full")
+    sys.exit()
+
+if args.output_measurement is not None and args.kld_estimate:
+    print(" ## Conflicting options: --output_measurement and --kld_estimate")
+    sys.exit()
+
+if args.measurement is not None and args.kld_estimate:
+    print(" ## Conflicting options: --measurement and --kld_estimate")
     sys.exit()
 
 # Arguments
@@ -81,6 +91,8 @@ if output_measurement is not None:
         output_measurement = os.path.join(output_measurement, "measurement.json")
 rope_scale = args.rope_scale
 rope_alpha = args.rope_alpha
+kld_estimate = args.kld_estimate
+gigaquant = args.gigaquant
 
 compile_full = args.compile_full
 
@@ -129,9 +141,9 @@ if no_resume or not os.path.exists(job_file):
         print(f" ## Error: No input directory specified")
         sys.exit()
 
-    if cal_dataset is None:
-        print(f" ## Error: No calibration dataset specified")
-        sys.exit()
+    # if cal_dataset is None:
+    #     print(f" ## Error: No calibration dataset specified")
+    #     sys.exit()
 
     job = { "in_dir": in_dir,
             "out_dir": out_dir,
@@ -148,7 +160,9 @@ if no_resume or not os.path.exists(job_file):
             "output_measurement": output_measurement,
             "compile_full": compile_full,
             "rope_scale": rope_scale,
-            "rope_alpha": rope_alpha
+            "rope_alpha": rope_alpha,
+            "kld_estimate": kld_estimate,
+            "gigaquant": gigaquant
             }
 
     if reuse_measurement is not None:
@@ -187,8 +201,10 @@ else:
 
 print(f" -- Input: {job['in_dir']}")
 print(f" -- Output: {out_dir}")
-print(f" -- Calibration dataset: {job['cal_dataset']}, {job['dataset_rows']} / {job['measurement_rows']} ({job['gpu_rows']}) rows, {job['length']} tokens per sample")
-
+if job['cal_dataset'] is not None:
+    print(f" -- Calibration dataset: {job['cal_dataset']}, {job['dataset_rows']} / {job['measurement_rows']} ({job['gpu_rows']}) rows, {job['length']} tokens per sample")
+else:
+    print(f" -- Using default calibration dataset")
 if job["output_measurement"] is None:
     print(f" -- Target bits per weight: {job['bits']} (decoder), {job['head_bits']} (head)")
     print(f" -- Max shard size: {job['shard_size']} MB")
@@ -201,6 +217,9 @@ if job["rope_scale"] is not None:
 
 if job["rope_alpha"] is not None:
     print(f" -- RoPE alpha: {job['rope_alpha']:.2f}")
+
+if job["gigaquant"]:
+    print(f" !! Running in gigaquant mode")
 
 # Make sure subfolders exist
 
@@ -250,6 +269,12 @@ while True:
             job["progress"] = "optimize"
             save_job()
 
+        elif job.get("kld_estimate", False):
+
+            print(f" -- Using built-in KL divergence estimates")
+            job["progress"] = "optimize_new"
+            save_job()
+
         else:
 
             print(f" -- Tokenizing samples (measurement)...")
@@ -281,6 +306,13 @@ while True:
         job["progress"] = "tokens_cal"
         save_job()
 
+    if progress == "optimize_new":
+
+        print(f" -- Optimizing...")
+        optimize_new(job, save_job, model)
+        job["progress"] = "tokens_cal"
+        save_job()
+
     if progress == "tokens_cal":
 
         print(f" -- Tokenizing samples...")
@@ -298,7 +330,7 @@ while True:
 
         print(f" -- Quantizing...")
         quant(job, save_job, model)
-        job["progress"] = "compile"
+        job["progress"] = "compile" if not job["gigaquant"] else "finished"
         save_job()
 
     if progress == "compile":

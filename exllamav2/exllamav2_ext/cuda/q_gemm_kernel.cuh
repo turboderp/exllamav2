@@ -454,7 +454,7 @@ __global__ void gemm_half_q_half_kernel
         }
 
         #pragma unroll
-        for (int j = 0; j < 2; j++)
+        for (int j = 0; j < 1; j++)
         {
             int4 load_int4[1];
             load_int4[0] = *((int4*) b_ptr); b_ptr += size_n;
@@ -475,7 +475,7 @@ __global__ void gemm_half_q_half_kernel
 
             a_ptr += 16;
         }
-        k += 32;
+        k += 16;
     }
 
     // Accumulate column sums in c

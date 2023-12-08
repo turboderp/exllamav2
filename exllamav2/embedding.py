@@ -10,6 +10,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
     embedding_v: nn.Embedding or None
 
     name: str = "Embedding"
+    native_vocab_size: int = None
 
     def __init__(self, model, key):
         super().__init__(model, key)
@@ -23,8 +24,9 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         w = self.load_weight()
         assert isinstance(w, nn.Parameter)
+        self.native_vocab_size = w.shape[0]
 
-        pad_id = self.model.config.pad_token_id
+        # pad_id = self.model.config.pad_token_id
 
         # Padding token should embed a zero vector, but sometimes it doesn't (?)
 

@@ -42,6 +42,7 @@ def embeddings(job, save_fn, model, measure = False):
         input_ids = f.get_tensor("input_ids")
 
     module.load()
+    input_ids[input_ids >= module.native_vocab_size] = 0
     hidden_state = module.forward(input_ids)
     module.unload()
 
@@ -80,6 +81,9 @@ def embeddings(job, save_fn, model, measure = False):
 
 def rfn_error(q_linear: nn.Linear, inputs, outputs):
 
+    test_sum = 0.0
+    test_count = 0.0
+
     dsum = 0.0
     dcount = 0.0
     for ix, ox in zip(inputs, outputs):
@@ -90,13 +94,17 @@ def rfn_error(q_linear: nn.Linear, inputs, outputs):
         qx_cuda = q_linear.forward(ix_cuda)
         rfn = torch.linalg.norm(qx_cuda[0].float() - ox_cuda[0].float(), 'fro') / torch.linalg.norm(ox_cuda[0].float(), 'fro')
 
+        test = torch.linalg.norm(qx_cuda[0].float() - ox_cuda[0].float(), 'fro')
+        test_sum += test * ix_cuda.shape[0]
+        test_count += ix_cuda.shape[0]
+
         dsum += rfn * ix_cuda.shape[0]
         dcount += ix_cuda.shape[0]
 
         ix_cuda = None
         ox_cuda = None
 
-    return dsum / dcount
+    return dsum / dcount, test_sum / test_count
 
 
 # Measure quantization impact per layer
@@ -141,9 +149,11 @@ def test_quants(source: ExLlamaV2Linear,
             quantized = lq.apply_temp()
             bpw = qp.bpw(quantized.weight.T.shape)
             desc = qp.desc
-            err = rfn_error(quantized, inputs, outputs).item()
+            err, test = rfn_error(quantized, inputs, outputs)
+            err = err.item()
+            test = test.item()
 
-            print(f" -- {desc:50} {bpw:2.2f} bpw    rfn_error: {err:2.5f}")
+            print(f" -- {desc:50} {bpw:2.2f} bpw    rfn_error: {err:2.8f}    test_error: {test:2.8f}")
 
             option = { "desc": desc,
                        "bpw": bpw,
@@ -432,10 +442,37 @@ def do_quant(source: ExLlamaV2Linear,
              skip_prep: bool = False,
              drop = False):
 
+    if not job["gigaquant"]:
+        do_quant_(source, lq, qparams, job, skip_prep, drop)
+        return
+
+    for i in range(len(qparams_options)):
+
+        first = i == 0
+        last = i == len(qparams_options) - 1
+        qparams = qparams_options[i].get_dict()
+
+        backup = source.linear.weight.data.cpu()
+        do_quant_(source, lq, qparams, job, skip_prep if first else True, drop if last else False, giga = True)
+        source.linear.weight = nn.Parameter(backup.cuda())
+
+
+def do_quant_(source: ExLlamaV2Linear,
+              lq: AdaptiveGPTQ,
+              qparams: dict,
+              job: dict,
+              skip_prep: bool = False,
+              drop = False,
+              giga = False):
+
     with torch.inference_mode():
 
         qp = QParams.from_dict(qparams)
-        print(f" -- Linear: {source.key} -> {qp.get_desc()}, {qp.bpw(source.linear.weight.T.shape):.2f} bpw")
+        s = f" -- Linear: {source.key} -> {qp.get_desc()}, {qp.bpw(source.linear.weight.T.shape):.2f} bpw"
+        if giga:
+            print(f"{s:100} ... ", end = "")
+        else:
+            print(s)
 
         # Prepare quantizer
 
@@ -444,7 +481,8 @@ def do_quant(source: ExLlamaV2Linear,
 
         # Perform final quant
 
-        lq.quantize(keep_qweight = True, apply = True, drop = drop)
+        lq.quantize(keep_qweight = True, apply = not giga, drop = drop)
+        if giga: lq.apply_quant()
 
         # Sanity test to ensure quantized matrix resembles original
 
@@ -455,14 +493,14 @@ def do_quant(source: ExLlamaV2Linear,
         #     print(" ## Quantization error (1)")
         #     os._exit(0)
 
-        # Apply quant
-
-        # lq.apply_quant()
-
         # Pack and save quantized layer
 
         packed_dict = lq.pack(source.key, qp)
-        tensorfile = os.path.join(job["out_dir"], "out_tensor/" + source.key + ".safetensors")
+        if not giga:
+            tensorfile = os.path.join(job["out_dir"], "out_tensor/" + source.key + ".safetensors")
+        else:
+            qpdesc = qp.get_desc(True)
+            tensorfile = os.path.join(job["out_dir"], "out_tensor/" + qpdesc + "____" + source.key + ".safetensors")
         save_file(packed_dict, tensorfile)
 
         # Drop buffers from quantizer to free VRAM
@@ -517,9 +555,17 @@ def do_quant(source: ExLlamaV2Linear,
             print(" ## Quantization error (2)")
             os._exit(0)
 
+        # Free reconstructed linear layer
+
+        recons_linear.unload()
+
         # Apply reconstructed matrix to source layer
 
-        source.linear.weight.data = recons_w.T
+        if not giga:
+            source.linear.weight.data = recons_w.T
+        else:
+            mse = F.mse_loss(source.linear.weight.data, recons_w.T)
+            print(f"mse_raw: {mse:.8f}")
 
 
 def quant(job, save_fn, model):
@@ -805,10 +851,12 @@ def quant(job, save_fn, model):
 
     # Export measurement
 
-    exp_measurement = { "measurement": job["measurement"],
-                        "last_module_idx": job["last_module_idx"],
-                        "base_perplexity": job["base_perplexity"] }
+    if not job.get("kld_estimate", False):
 
-    with open(os.path.join(job["out_dir"], "measurement.json"), "w", encoding = "utf8") as f:
-        f.write(json.dumps(exp_measurement, indent = 4))
+        exp_measurement = { "measurement": job["measurement"],
+                            "last_module_idx": job["last_module_idx"],
+                            "base_perplexity": job["base_perplexity"] }
+
+        with open(os.path.join(job["out_dir"], "measurement.json"), "w", encoding = "utf8") as f:
+            f.write(json.dumps(exp_measurement, indent = 4))
 
