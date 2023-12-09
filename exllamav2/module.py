@@ -132,3 +132,8 @@ class ExLlamaV2Module:
 
     def is_quant(self):
         return False
+
+
+    def reload(self):
+        self.unload()
+        self.load()

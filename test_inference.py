@@ -39,6 +39,7 @@ parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt (
 parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no. tokens")
 parser.add_argument("-ps", "--prompt_speed", action = "store_true", help = "Test prompt processing (batch) speed over context length")
 parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
+parser.add_argument("-mix", "--mix_layers", type = str, help = "Load replacement layers from secondary model. Example: --mix_layers 1,6-7:/mnt/models/other_model")
 
 # Initialize model and tokenizer
 
@@ -52,10 +53,41 @@ model, tokenizer = model_init.init(args, allow_auto_split = True)
 
 if not model.loaded:
 
+    if args.mix_layers:
+        print(" !! Warning, auto split does not account for VRAM requirement of replacement layers")
+
     print(" -- Loading model...")
     cache = ExLlamaV2Cache(model, lazy = True)
     model.load_autosplit(cache)
     cache = None
+
+# Replacement
+
+if args.mix_layers:
+    intervals_, extra_dir = args.mix_layers.split(":")
+
+    print(f" -- Loading replacement layers from: {extra_dir}")
+
+    extra_config = ExLlamaV2Config()
+    extra_config.model_dir = extra_dir
+    extra_config.prepare()
+    intervals = intervals_.split(",")
+    for interval in intervals:
+        ab = interval.split("-")
+        a, b = int(ab[0]), int(ab[-1])
+        for idx in range(a, b + 1):
+            print(f" --   Layer {idx}...")
+            layerkey = "model.layers." + str(idx) + "."
+            remove = [k for k in model.config.tensor_file_map.keys() if k.startswith(layerkey)]
+            replace = [k for k in extra_config.tensor_file_map.keys() if k.startswith(layerkey)]
+            # reload = [k for k in model.modules_dict.keys() if k.startswith(layerkey)]
+            for k in remove: del model.config.tensor_file_map[k]
+            for k in replace: model.config.tensor_file_map[k] = extra_config.tensor_file_map[k]
+            # for k in reload:
+            #     model.modules_dict[k].unload()
+            #     model.modules_dict[k].load()
+            model.modules[idx * 2 + 1].reload()
+            model.modules[idx * 2 + 2].reload()
 
 # Test generation
 
