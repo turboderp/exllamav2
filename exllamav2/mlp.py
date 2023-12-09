@@ -155,10 +155,25 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         post_norm = self.post_attention_layernorm.forward(hidden_states)
 
         gate = self.gate_proj.forward(post_norm, loras = loras)
+        # gate_min = torch.min(gate)
+        # gate_max = torch.max(gate)
+
         y = F.silu(gate)
+        # y_min = torch.min(y)
+        # y_max = torch.max(y)
+
         up = self.up_proj.forward(post_norm, loras = loras)
+        # up_min = torch.min(up)
+        # up_max = torch.max(up)
+
         y *= up
+        # y2_min = torch.min(y)
+        # y2_max = torch.max(y)
+        y.clamp_(min = -65504.0, max = 65504.0)
+
         down = self.down_proj.forward(y, loras = loras)
+        # down_min = torch.min(down)
+        # down_max = torch.max(down)
 
         hidden_states = down + residual
 
