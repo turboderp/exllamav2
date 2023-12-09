@@ -142,6 +142,11 @@ async def infer(request, ws, server, response):
         if not isinstance(ss, list): ss = [ss]
         sc += ss
 
+    if "bann_bann" in request:
+        bb = request["bann_bann"]
+        if not isinstance(bb, list): bb = [bb]
+
+
     # Full response
 
     full_response = request['stream_full'] if 'stream_full' in request else False
@@ -167,6 +172,7 @@ async def infer(request, ws, server, response):
     gs.typical = float(request["typical"]) if "typical" in request else 0
     gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
     gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
+    gs.disallow_tokens(server.tokenizer, bb)
 
     # Generate
 
