@@ -151,7 +151,7 @@ def test_quants(source: ExLlamaV2Linear,
             desc = qp.desc
             err = rfn_error(quantized, inputs, outputs)
             err = err.item()
-            test = test.item()
+            # test = test.item()
 
             print(f" -- {desc:50} {bpw:2.2f} bpw    rfn_error: {err:2.8f}")
 
