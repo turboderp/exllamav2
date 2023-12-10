@@ -20,6 +20,8 @@ import torch.nn.functional as F
 from conversion.tokenize import get_tokens
 from conversion.quantize import list_live_tensors
 
+# from exllamav2.mlp import set_catch
+
 import sys
 import json
 
@@ -188,6 +190,8 @@ if args.eval_dataset:
             global logits, target_ids, log_probs, token_log_probs
             global mean_log_prob, perplexity
 
+            # set_catch("model.layers.3")
+
             logprob_sum = 0
             logprob_count = 0
 
@@ -206,6 +210,10 @@ if args.eval_dataset:
                     log_probs = F.log_softmax(logits, dim = -1)
                     logprob_sum += log_probs[0, 0, eval_tokens[i, j+1]]
                     logprob_count += 1
+
+                    # mean_log_prob = logprob_sum / logprob_count
+                    # perplexity = math.exp(-mean_log_prob)
+                    # print(f" -- Token {j}: {perplexity:.4f}")
 
             print()
 

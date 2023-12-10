@@ -6,6 +6,12 @@ from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2 import ext
 
+# catch_key = None
+# def set_catch(key):
+#     global catch_key
+#     catch_key = key
+
+
 class ExLlamaV2MLP(ExLlamaV2Module):
 
     layer_idx: int
@@ -130,6 +136,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.down_proj.set_device_idx(idx)
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+        # global catch_key
+        #
+        # if self.key == catch_key:
+        #     return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
