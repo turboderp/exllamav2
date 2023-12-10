@@ -59,12 +59,24 @@ __forceinline__ __device__ float dot22_32_f(half2(&dq)[16], const half* a_ptr, c
 
 __forceinline__ __device__ half dot22_8_h(half2(&dq)[4], const half* a_ptr, const half g_result, const half qs_h)
 {
-    half2 result = {};
-    const half2* a2_ptr = (const half2*)a_ptr;
+    // Use FP32 accumulator to avoid potential overflow since unscaled weights are in the range -128..127
+
+    float result = {};
     #pragma unroll
-    for (int i = 0; i < 4; i++) result = __hfma2(dq[i], *a2_ptr++, result);
-    half result_h = __hadd(__low2half(result), __high2half(result));
-    return __hfma(result_h, qs_h, g_result);
+    for (int i = 0; i < 4; i++)
+    {
+        half2 w01 = dq[i];
+        float w0 = __low2float(w01);
+        float w1 = __high2float(w01);
+        float x0 = __half2float(*a_ptr++);
+        float x1 = __half2float(*a_ptr++);
+        result = fma(w0, x0, result);
+        result = fma(w1, x1, result);
+    }
+    float qs = __half2float(qs_h);
+    result *= qs;
+    half result_h = __float2half_rn(result);
+    return __hadd(result_h, g_result);
 }
 
 __forceinline__ __device__ half dot22_16_h(half2(&dq)[8], const half* a_ptr, const half g_result, const half qs_h)
