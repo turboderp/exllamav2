@@ -200,7 +200,7 @@ else:
     if "shard_size" not in job: job["shard_size"] = shard_size
     if "output_measurement" not in job: job["output_measurement"] = output_measurement
     if "compile_full" not in job: job["compile_full"] = compile_full
-    if "snapshot_interval" not in job: job["snapshot_interval"] = snapshot_interval
+    # if "snapshot_interval" not in job: job["snapshot_interval"] = snapshot_interval
 
     job["out_dir"] = out_dir
 
