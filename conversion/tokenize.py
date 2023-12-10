@@ -178,6 +178,12 @@ def get_standard_calibration(measure, tokenizer):
     for i in range(rows_technical):
         rows.append(tokenized_rows[i:i+1])
 
+    # for idx, r in enumerate(rows):
+    #     print("------------------------------------------------------------------------------")
+    #     print(idx)
+    #     print("--------")
+    #     print(tokenizer.decode(r))
+
     return torch.cat(rows, dim = 0)
 
 

@@ -31,6 +31,8 @@ parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "
 parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
 parser.add_argument("-kld", "--kld_estimate", action = "store_true", help = "Do not use measurement, instead optimize according to built-in KL divergence estimates")
 parser.add_argument("-gq", "--gigaquant", action = "store_true", help = "Gigaquant mode (don't use this)")
+parser.add_argument("-d", "--diagnostics", action = "store_true", help = "Output more diagnostic data while quantizing (slower)")
+parser.add_argument("-si", "--snapshot_interval", type = int, default = 10, help = "Snapshot every this many layers while quantizing")
 
 args = parser.parse_args()
 
@@ -93,6 +95,8 @@ rope_scale = args.rope_scale
 rope_alpha = args.rope_alpha
 kld_estimate = args.kld_estimate
 gigaquant = args.gigaquant
+diagnostics = args.diagnostics
+snapshot_interval = args.snapshot_interval
 
 compile_full = args.compile_full
 
@@ -162,7 +166,9 @@ if no_resume or not os.path.exists(job_file):
             "rope_scale": rope_scale,
             "rope_alpha": rope_alpha,
             "kld_estimate": kld_estimate,
-            "gigaquant": gigaquant
+            "gigaquant": gigaquant,
+            "diagnostics": diagnostics,
+            "snapshot_interval": snapshot_interval
             }
 
     if reuse_measurement is not None:
@@ -194,6 +200,7 @@ else:
     if "shard_size" not in job: job["shard_size"] = shard_size
     if "output_measurement" not in job: job["output_measurement"] = output_measurement
     if "compile_full" not in job: job["compile_full"] = compile_full
+    if "snapshot_interval" not in job: job["snapshot_interval"] = snapshot_interval
 
     job["out_dir"] = out_dir
 
