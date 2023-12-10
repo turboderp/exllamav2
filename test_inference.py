@@ -111,10 +111,10 @@ if args.prompt:
         print()
 
         settings = ExLlamaV2Sampler.Settings()
-        settings.temperature = 0.85
-        settings.top_k = 50
-        settings.top_p = 0.8
-        settings.token_repetition_penalty = 1.15
+        settings.temperature = 0.75
+        settings.top_k = 100
+        settings.top_p = 0.75
+        settings.token_repetition_penalty = 1.05
         settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
         time_begin = time.time()
