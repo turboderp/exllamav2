@@ -145,7 +145,8 @@ async def infer(request, ws, server, response):
     if "bann_bann" in request:
         bb = request["bann_bann"]
         if not isinstance(bb, list): bb = [bb]
-
+    else:
+        bb = None
 
     # Full response
 
