@@ -368,7 +368,7 @@ class ExLlamaV2:
                     except Exception as e:
 
                         test = 0
-                        if "CUDA out of memory" in str(e):
+                        if ("CUDA out of memory" in str(e)) or ("HIP out of memory" in str(e)):
                             fail = True  # Exception object will hold references to tensors so we can't free them here
                         else:
                             raise
@@ -513,7 +513,8 @@ class ExLlamaV2:
                 preprocess_only = False,
                 last_id_only = False,
                 loras = None,
-                return_last_state = False):
+                return_last_state = False,
+                position_offsets = None):
 
         q_len = input_ids.shape[-1]
         remaining_q_len = q_len
@@ -537,7 +538,8 @@ class ExLlamaV2:
                                                preprocess_only = preprocess_only,
                                                last_id_only = last_id_only,
                                                loras = loras,
-                                               return_last_state = return_last_state)
+                                               return_last_state = return_last_state,
+                                               position_offsets = position_offsets)
 
             if last_state is None:
                 return result
@@ -585,7 +587,8 @@ class ExLlamaV2:
                                   preprocess_only = _preprocess_only,
                                   last_id_only = _last_id_only,
                                   loras = loras,
-                                  return_last_state = return_last_state and remaining_q_len <= chunk_size)
+                                  return_last_state = return_last_state and remaining_q_len <= chunk_size,
+                                  position_offsets = position_offsets)
 
             if not _preprocess_only:
                 result = r if result is None else torch.cat((result, r), dim = 1)
@@ -609,7 +612,8 @@ class ExLlamaV2:
                  preprocess_only = False,
                  last_id_only = False,
                  loras = None,
-                 return_last_state = False):
+                 return_last_state = False,
+                 position_offsets = None):
 
         batch_size, seq_len = input_ids.shape
         past_len = 0
@@ -639,6 +643,7 @@ class ExLlamaV2:
                 prev_device = device
                 attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, input_mask, device)
                 if isinstance(past_len, tuple): past_len = (safe_move_tensor(past_len[0], device), past_len[1])
+                if position_offsets is not None: position_offsets = safe_move_tensor(position_offsets, device)
 
             # Onward
 
@@ -652,7 +657,7 @@ class ExLlamaV2:
                     last_state = x.narrow(-2, -1, 1)
 
             x = safe_move_tensor(x, device)
-            x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len, loras = loras)
+            x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len, loras = loras, position_offsets = position_offsets)
 
             if preprocess_only and idx == self.last_kv_layer_idx:
                 x = None

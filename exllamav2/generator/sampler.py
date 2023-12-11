@@ -7,16 +7,18 @@ class ExLlamaV2Sampler:
 
     class Settings:
 
-        token_repetition_penalty = 1.15
+        token_repetition_penalty = 1.05
         token_repetition_range = -1
         token_repetition_decay = 0
 
-        temperature = 0.9
-        top_k = 40
-        top_p = 0.9
+        temperature = 0.8
+        top_k = 50
+        top_p = 0.8
         min_p = 0
         tfs = 0
         typical = 0
+
+        temperature_last = False
 
         mirostat = False
         mirostat_tau = 1.5
@@ -149,6 +151,12 @@ class ExLlamaV2Sampler:
             if settings.mirostat_mu is None:
                 settings.mirostat_mu = [0.0] * batch_size
 
+        # Mask off logits if tokenizer's vocabulary is smaller than head layer
+
+        vs = tokenizer.get_vocab_size()
+        if vs < logits.shape[-1]:
+            logits[:, vs:] = float("-inf")
+
         # Sampling
 
         batch_size = logits.shape[0]
@@ -157,7 +165,7 @@ class ExLlamaV2Sampler:
         output_probs = torch.empty((batch_size, 1), device = "cpu", dtype = torch.float)
 
         m = ext_c.sample_basic(logits,
-                               settings.temperature,
+                               1.0 if settings.temperature_last else settings.temperature,
                                settings.top_k,
                                settings.top_p,
                                settings.min_p,
@@ -170,7 +178,8 @@ class ExLlamaV2Sampler:
                                settings.mirostat,
                                settings.mirostat_mu if settings.mirostat else [],
                                settings.mirostat_tau,
-                               settings.mirostat_eta)
+                               settings.mirostat_eta,
+                               settings.temperature if settings.temperature_last else 1.0)
 
         if settings.mirostat: settings.mirostat_mu = m
 

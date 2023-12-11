@@ -43,14 +43,18 @@ def check_args(args):
         sys.exit()
 
     required_files = ["config.json",
-                      "tokenizer.model",
+                      ["tokenizer.model", "tokenizer.json"],
                       "*.safetensors"]
 
     for filename in required_files:
-
-        path = os.path.join(args.model_dir, filename)
-        matches = glob.glob(path)
-        if len(matches) == 0:
+        if isinstance(filename, str):
+            filename = [filename]
+        all_matches = []
+        for file in filename:
+            path = os.path.join(args.model_dir, file)
+            matches = glob.glob(path)
+            all_matches += matches
+        if len(all_matches) == 0:
             print(f" ## Error: Cannot find {filename} in {args.model_dir}")
             sys.exit()
 

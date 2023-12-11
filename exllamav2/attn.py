@@ -238,13 +238,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
+    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
         global has_flash_attn
 
         qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates, loras = loras)
+            return self.forward_torch(hidden_states, cache, attn_mask, past_len, intermediates, loras = loras, position_offsets = position_offsets)
 
         if qkv_embed:
             batch_size = hidden_states[0].shape[0]
@@ -299,12 +299,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 pass_loras = [id(x) for x in loras]
                 pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
+            if isinstance(past_len, tuple):
+                pass_past_len_1 = -1
+                pass_past_len_2 = past_len[0]
+            elif position_offsets is not None:
+                pass_past_len_1 = past_len
+                pass_past_len_2 = position_offsets
+            else:
+                pass_past_len_1 = past_len
+                pass_past_len_2 = ext.none_tensor
+
             ext_c.q_attn_forward_1(self.q_handle,
                                    hidden_states,
                                    batch_size,
                                    q_len,
-                                   -1 if isinstance(past_len, tuple) else past_len,
-                                   past_len[0] if isinstance(past_len, tuple) else ext.none_tensor,
+                                   pass_past_len_1,
+                                   pass_past_len_2,
                                    q_states,
                                    k_states,
                                    v_states,
@@ -322,8 +332,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             v_states = hidden_states[3]
             hidden_states = hidden_states[0]
 
-            ext_c.rope_(q_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim)
-            ext_c.rope_(k_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim)
+            offset_tensor = position_offsets if position_offsets is not None else ext.none_tensor
+            ext_c.rope_(q_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, offset_tensor)
+            ext_c.rope_(k_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, offset_tensor)
 
         # Shape for attention
 
@@ -484,7 +495,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
+    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
 
         num_attention_heads = self.model.config.num_attention_heads
         num_key_value_heads = self.model.config.num_key_value_heads
@@ -539,8 +550,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         constants = self.model.get_device_tensors(self.device_idx, scratch = False)
 
-        ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim)
-        ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim)
+        offset_tensor = position_offsets if position_offsets is not None else ext.none_tensor
+        ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, offset_tensor)
+        ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, offset_tensor)
 
         # Add keys and values to cache
 
@@ -640,3 +652,4 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def is_quant(self):
         return self.q_handle is not None
+

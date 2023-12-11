@@ -16,7 +16,7 @@ void rope_cuda
     const int head_dim,
     const int num_heads,
     const int past_len,
-    const uint32_t* past_lens
+    const int32_t* past_lens
 );
 
 #endif

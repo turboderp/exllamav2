@@ -1,10 +1,6 @@
 # ExLlamaV2
 
-This is a very initial release of ExLlamaV2, an inference library for running local LLMs on modern consumer GPUs.
-
-It still needs a lot of testing and tuning, and a few key features are not yet implemented. Don't be surprised if 
-things are a bit broken to start with, as almost all of this code is completely new and only tested on a few setups
-so far.
+ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs.
 
 
 ## Overview of differences compared to V1
@@ -52,15 +48,22 @@ A simple console chatbot is included. Run it with:
 python examples/chat.py -m <path_to_model> -mode llama
 ```
 
-For a chat with colored code, run:
-```
-python examples/chatcode.py -m <path_to_model> -mode llama
-```
-
 
 The `-mode` argument chooses the prompt format to use. `llama` is for the Llama(2)-chat finetunes, while `codellama`
 probably works better for CodeLlama-instruct. `raw` will produce a simple chatlog-style chat that works with base 
 models and various other finetunes. You can also provide a custom system prompt with `-sp`. 
+
+
+## Integration and APIs
+
+- [TabbyAPI](https://github.com/theroyallab/tabbyAPI/) is a FastAPI-based server that provides an OpenAI-style web API
+compatible with [SillyTavern](https://sillytavernai.com/) and other frontends.  
+
+- [ExUI](https://github.com/turboderp/exui) is a simple, standalone single-user web UI that serves an ExLlamaV2 instance
+directly with chat and notebook modes.
+
+- [text-generation-webui](https://github.com/oobabooga/text-generation-webui) supports ExLlamaV2 through the **exllamav2**
+and **exllamav2_HF** loaders.
 
 
 ## Installation
@@ -142,37 +145,6 @@ script and its options are explained in [detail here](doc/convert.md)
 
 ### HuggingFace repos
 
-I've uploaded a few EXL2-quantized models to HuggingFace to play around with, [here](https://huggingface.co/turboderp).
+- I've uploaded a few EXL2-quantized models to Hugging Face to play around with, [here](https://huggingface.co/turboderp).
 
-Note that these were produced over a period of time with different calibration data, so they're not useful as a way to
-measure quantization loss. Thorough perplexity and accuracy tests are coming, once I've had time to convert models for
-that purpose.
-
-## More to come
-
-There are still things that need to be ported over from V1, and other planned features. Among them:
-
-- Example web UI
-- Web server
-- More samplers
-
-## Recent updates
-
-**2023-09-27**: Prebuilt wheels are now available, credit to [@jllllll](https://github.com/jllllll). They're on the
-[releases page here](https://github.com/turboderp/exllamav2/releases). A solution to installing prebuilt wheels straight
-from PyPI is still pending. Updated installation instructions above.
-
-**2023-10-03**: Added support for extended vocabularies and alternative BOS/EOS/UNK tokens and the ability to 
-encode/decode sequences with special tokens. Added Orca template to the chatbot example.
-
-**2023-10-07**: (Multi) LoRA support as well as some experimental optimizations.
-
-**2023-10-13**: Merged speculative sampling into streaming generator. Now supports streaming and stop conditions.
-Chat example updated to take draft model.
-
-**2023-10-15**: Got the 8-bit cache mode to a fairly working state. Added the `-c8` option to the chatbot. Big VRAM
-savings for CodeLlama-13B, at least.
-
-**2023-10-22**: Added auto GPU split option. `-gs auto` will load the model while allocating the cache and running a
-forward pass to precisely measure VRAM usage, then automatically use all available VRAM starting from the first CUDA
-device.
+- [LoneStriker](https://huggingface.co/LoneStriker) provides a large number of EXL2 models on Hugging Face. 

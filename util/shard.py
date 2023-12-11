@@ -76,7 +76,7 @@ index_filename = f"{input_file}.index.json"
 
 print(f" -- Writing: {index_filename}")
 
-with open(index_filename, 'w') as f:
+with open(index_filename, 'w', encoding = "utf8") as f:
     json.dump(index, f, indent = 2)
 
 # Done

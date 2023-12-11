@@ -201,6 +201,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             id_to_ord = self.tokenizer.get_id_to_ord_list()
             b = [id_to_ord[x] for x in self.held_utf8_tokens[0].tolist()]
             c = bytes(b).decode('utf-8')
+        except ValueError:
+            id_to_piece = self.tokenizer.get_id_to_piece_list()
+            c = "".join(id_to_piece[x] for x in self.held_utf8_tokens[0].tolist())
         except UnicodeDecodeError:
             c = "�"
 

@@ -107,6 +107,14 @@ float mirostat_post_cpu
     float mirostat_eta
 );
 
+int post_softmax_temperature
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float temperature
+);
+
 int multinomial_cpu
 (
     const int num_candidates,

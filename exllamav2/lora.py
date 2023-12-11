@@ -22,16 +22,16 @@ class ExLlamaV2Lora:
     target_modules: dict
 
     @staticmethod
-    def from_directory(model, directory):
+    def from_directory(model, directory, lora_scaling = 1.0):
         config_path = os.path.join(directory, "adapter_config.json")
         lora_path_bin = os.path.join(directory, "adapter_model.bin")
         lora_path_st = os.path.join(directory, "adapter_model.safetensors")
-        if os.path.exists(lora_path_bin): return ExLlamaV2Lora(model, config_path, lora_path_bin)
-        if os.path.exists(lora_path_st): return ExLlamaV2Lora(model, config_path, lora_path_st)
+        if os.path.exists(lora_path_bin): return ExLlamaV2Lora(model, config_path, lora_path_bin, lora_scaling)
+        if os.path.exists(lora_path_st): return ExLlamaV2Lora(model, config_path, lora_path_st, lora_scaling)
         raise ValueError(f"No LoRA found in {directory}")
 
 
-    def __init__(self, model, lora_config_path, lora_path):
+    def __init__(self, model, lora_config_path, lora_path, lora_scaling = 1.0):
 
         with torch.inference_mode():
 
@@ -42,6 +42,7 @@ class ExLlamaV2Lora:
             self.tensors = {}
             self.target_modules = {}
             self.bias_ignored = False
+            self.lora_scaling = lora_scaling
 
             # Check for QKV embed
 
@@ -49,12 +50,12 @@ class ExLlamaV2Lora:
 
             # Grab relevant items from LoRA config
 
-            with open(lora_config_path) as f:
+            with open(lora_config_path, encoding = "utf8") as f:
                 read_config = json.load(f)
 
             self.lora_r = read_config["r"]
             self.lora_alpha = float(read_config["lora_alpha"])
-            self.lora_scaling = self.lora_alpha / self.lora_r
+            self.lora_scaling *= self.lora_alpha / self.lora_r
 
             if "fan_in_fan_out" in read_config and read_config["fan_in_fan_out"]:
                 raise ValueError(" ## Error: fan_in_fan_out mode not supported.")

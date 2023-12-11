@@ -19,6 +19,7 @@
 #include "cuda/rms_norm.cuh"
 #include "cuda/rope.cuh"
 #include "cuda/cache.cuh"
+#include "cuda/h_gemm.cuh"
 
 #include "cpp/quantize_func.h"
 #include "cpp/sampling.h"
@@ -175,6 +176,7 @@ uintptr_t make_q_matrix
     torch::Tensor q_scale,
     torch::Tensor q_scale_max,
     torch::Tensor q_groups,
+    torch::Tensor q_group_map,
     torch::Tensor gptq_qzeros,
     torch::Tensor gptq_scales,
     torch::Tensor gptq_g_idx,
@@ -187,6 +189,7 @@ uintptr_t make_q_matrix
     TORCH_CHECK_DTYPE_OPT(q_scale, kInt);
     TORCH_CHECK_DTYPE_OPT(q_scale_max, kHalf);
     TORCH_CHECK_DTYPE_OPT(q_groups, kShort);
+    TORCH_CHECK_DTYPE_OPT(q_group_map, kShort);
     TORCH_CHECK_DTYPE_OPT(gptq_qzeros, kInt);
     TORCH_CHECK_DTYPE_OPT(gptq_scales, kHalf);
     TORCH_CHECK_DTYPE_OPT(gptq_g_idx, kInt);
@@ -227,6 +230,7 @@ uintptr_t make_q_matrix
         q_scale.device().is_meta() ? NULL : (uint32_t*) q_scale.data_ptr(),
         q_scale_max.device().is_meta() ? NULL : (half*) q_scale_max.data_ptr(),
         q_groups.device().is_meta() ? NULL : (uint16_t*) q_groups.data_ptr(),
+        q_group_map.device().is_meta() ? NULL : (uint16_t*) q_group_map.data_ptr(),
         gptq_qzeros.device().is_meta() ? NULL : (uint32_t*) gptq_qzeros.data_ptr(),
         gptq_scales.device().is_meta() ? NULL : (half*) gptq_scales.data_ptr(),
         gptq_g_idx.device().is_meta() ? NULL : (uint32_t*) gptq_g_idx.data_ptr(),
@@ -386,6 +390,7 @@ void q_attn_forward_1
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
     TORCH_CHECK_DTYPE(x, kHalf);
+    TORCH_CHECK_DTYPE_OPT(past_lens, kInt);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
@@ -397,7 +402,7 @@ void q_attn_forward_1
         batch_size,
         q_len,
         past_len,
-        past_lens.device().is_meta() ? NULL : (uint32_t*) past_lens.data_ptr(),
+        past_lens.device().is_meta() ? NULL : (int32_t*) past_lens.data_ptr(),
         (half*) q_temp.data_ptr(),
         (half*) k_temp.data_ptr(),
         (half*) v_temp.data_ptr(),
@@ -634,7 +639,8 @@ void rope_
     torch::Tensor cos,
     int past_len,
     int num_heads,
-    int head_dim
+    int head_dim,
+    torch::Tensor offsets
 )
 {
     TORCH_CHECK_DTYPE(x, kHalf);
@@ -642,6 +648,7 @@ void rope_
     TORCH_CHECK_DTYPE(cos, kHalf);
     TORCH_CHECK(head_dim == cos.size(-1), "cos table does not match head_dim");
     TORCH_CHECK(head_dim == sin.size(-1), "sin table does not match head_dim");
+    TORCH_CHECK_DTYPE_OPT(offsets, kInt);
 
     int batch_size = x.size(0);
     int rows_per_batch = x.numel() / head_dim / batch_size;
@@ -658,7 +665,7 @@ void rope_
         head_dim,
         num_heads,
         past_len,
-        NULL
+        offsets.device().is_meta() ? NULL : (int32_t*) offsets.data_ptr()
     );
 }
 
@@ -758,7 +765,8 @@ std::vector<float> sample_basic
     bool mirostat,
     std::vector<float>& mirostat_mu,
     float mirostat_tau,
-    float mirostat_eta
+    float mirostat_eta,
+    float post_temperature
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -781,6 +789,12 @@ std::vector<float> sample_basic
     float* logits_ptr = (float*) logits.data_ptr();
 
     bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
+
+    if (temperature < 0.01)
+    {
+        temperature = 1.0f;
+        top_k = 1;
+    }
 
     for (int i = 0; i < bsz; i++)
     {
@@ -840,6 +854,11 @@ std::vector<float> sample_basic
             normalize_cpu(num_candidates, temp_probs);
         }
 
+        if (post_temperature != 1.0f)
+        {
+            num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature);
+        }
+
         num_candidates = multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
         output_tokens[i] = temp_indices[0];
         output_probs[i] = temp_probs[0];
@@ -847,6 +866,20 @@ std::vector<float> sample_basic
         if (mirostat)
         {
             mirostat_mu[i] = mirostat_post_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
+        }
+
+        // Derive some more totally random numbers for subsequent samples in the same batch
+
+        if (bsz > 10000)
+        {
+            float r = random;
+            for (int j = 0; j < 10; ++j)
+            {
+                r += 1.337 + random;
+                r *= r;
+                r = fmod(r, 1.0f);
+            }
+            random = r;
         }
     }
 
@@ -952,6 +985,56 @@ void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_si
 //    array_fp8_to_fp16_ref_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
 //}
 
+void gemm_half_half_half
+(
+    torch::Tensor a,
+    torch::Tensor b,
+    torch::Tensor c,
+    const float alpha,
+    const float beta,
+    bool force_cublas
+)
+{
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(a));
+
+    TORCH_CHECK_DTYPE(a, kHalf);
+    TORCH_CHECK_DTYPE(c, kHalf);
+    TORCH_CHECK_SHAPES(a, 0, c, 0, 1);
+    TORCH_CHECK_SHAPES(a, 1, b, 0, 1);
+    TORCH_CHECK_SHAPES(b, 1, c, 1, 1);
+
+    if (force_cublas)
+    {
+        h_gemm_cublas
+        (
+            at::cuda::getCurrentCUDABlasHandle(),
+            c.size(0), // m
+            c.size(1), // n
+            a.size(1), // k
+            (const half*) a.data_ptr(),
+            (const half*) b.data_ptr(),
+            (half*) c.data_ptr(),
+            alpha,
+            beta
+        );
+    }
+    else
+    {
+        h_gemm_cuda
+        (
+            at::cuda::getCurrentCUDABlasHandle(),
+            c.size(0), // m
+            c.size(1), // n
+            a.size(1), // k
+            (const half*) a.data_ptr(),
+            (const half*) b.data_ptr(),
+            (half*) c.data_ptr(),
+            alpha,
+            beta
+        );
+    }
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -982,6 +1065,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");
     m.def("fp8_to_fp16", &fp8_to_fp16, "fp8_to_fp16");
+    m.def("gemm_half_half_half", &gemm_half_half_half, "gemm_half_half_half");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 }

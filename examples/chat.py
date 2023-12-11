@@ -39,7 +39,7 @@ parser.add_argument("-temp", "--temperature", type = float, default = 0.95, help
 parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sampler top-K, default = 50 (0 to disable)")
 parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
 parser.add_argument("-typical", "--typical", type = float, default = 0.0, help = "Sampler typical threshold, default = 0.0 (0 to disable)")
-parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1, help = "Sampler repetition penalty, default = 1.1 (1 to disable)")
+parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.05, help = "Sampler repetition penalty, default = 1.05 (1 to disable)")
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
@@ -47,6 +47,7 @@ parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help 
 parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit cache")
 
 parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
+parser.add_argument("-amnesia", "--amnesia", action = "store_true", help = "Forget context after every response")
 
 # Arrrgs
 
@@ -105,6 +106,7 @@ if args.draft_model_dir:
 
     draft_config.max_seq_len = model.config.max_seq_len
     draft_config.no_flash_attn = args.no_flash_attn
+    draft_config.scale_pos_emb = args.rope_scale
 
     print(" -- Loading draft model...")
 
@@ -213,6 +215,7 @@ delim_overflow = ""
 # Other options
 
 print_timings = args.print_timings
+amnesia = args.amnesia
 
 # Main loop
 
@@ -348,3 +351,9 @@ while True:
 
         print()
         print(col_sysprompt + f"(Response: {response_tokens} tokens, {speed:.2f} tokens/second{sd_stats})" + col_default)
+
+    # Optionally forget context after each response
+
+    if amnesia:
+        user_prompts = []
+        responses_ids = []

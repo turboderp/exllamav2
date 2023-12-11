@@ -69,7 +69,8 @@ class ExLlamaV2BaseGenerator:
         # Tokenize input and produce padding mask if needed
 
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
-        ids = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens)
+        ids, position_offsets = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens, return_offsets = True)
+        if batch_size == 1: position_offsets = None
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
         if overflow > 0: ids = ids[:, overflow:]
@@ -86,7 +87,7 @@ class ExLlamaV2BaseGenerator:
 
         # Process prompt and begin gen
 
-        self._gen_begin_base(ids, mask, loras)
+        self._gen_begin_base(ids, mask, loras, position_offsets = position_offsets)
 
         # Begin filters
 
@@ -104,7 +105,7 @@ class ExLlamaV2BaseGenerator:
 
         for i in range(num_tokens):
 
-            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask, loras = loras).float().cpu()
+            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask, loras = loras, position_offsets = position_offsets).float().cpu()
             token, _, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
 
             eos = False
@@ -130,10 +131,10 @@ class ExLlamaV2BaseGenerator:
         return text
 
 
-    def _gen_begin_base(self, input_ids, mask = None, loras = None):
+    def _gen_begin_base(self, input_ids, mask = None, loras = None, position_offsets = None):
 
         self.cache.current_seq_len = 0
-        self.model.forward(input_ids[:, :-1], self.cache, input_mask = mask, preprocess_only = True, loras = loras)
+        self.model.forward(input_ids[:, :-1], self.cache, input_mask = mask, preprocess_only = True, loras = loras, position_offsets = position_offsets)
 
         self.sequence_ids = input_ids.clone()
         self.sequence_ids = input_ids

@@ -104,6 +104,7 @@ async def infer(request, ws, server, response):
                 stream_full: bool,                  # return full response-so-far with each streamed chunk
                 top_p: float,                       # (optional) top-P threshold (0 to disable)
                 top_k: int,                         # (optional) top-K count (0 to disable)
+                min_p: float,                       # (optional) min-P threshold (0 to disable)
                 typical: float,                     # (optional) typical threshold (0 to disable)
                 temperature: float,                 # (optional) sampling temperature (1.0 = no temp adjust)
                 rep_pen: float,                     # (optional) repetition penalty (1.0 = no penalty)
@@ -143,8 +144,7 @@ async def infer(request, ws, server, response):
 
     # Full response
 
-    full_response = request.get("full_response", False)
-
+    full_response = request['stream_full'] if 'stream_full' in request else False
     # Tokenize and trim prompt
 
     full_ctx = request["text"]
@@ -163,9 +163,10 @@ async def infer(request, ws, server, response):
     gs = ExLlamaV2Sampler.Settings()
     gs.top_k = int(request["top_k"]) if "top_k" in request else 100
     gs.top_p = float(request["top_p"]) if "top_p" in request else 0.8
+    gs.min_p = float(request["min_p"]) if "min_p" in request else 0
     gs.typical = float(request["typical"]) if "typical" in request else 0
-    gs.temperature = float(request["temperature"]) if "temperature" in request else 0.95
-    gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.15
+    gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
+    gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
 
     # Generate
 
@@ -174,7 +175,7 @@ async def infer(request, ws, server, response):
 
     completion = ""
     gen_tokens = 0
-
+    response["util_text"] = util_ctx
     while True:
         chunk, eos, _ = server.generator.stream()
         completion += chunk
@@ -185,10 +186,10 @@ async def infer(request, ws, server, response):
             response["chunk"] = chunk
             if full_response: response["response"] = completion
             await ws.send(json.dumps(response))
-
+        response["chunk"] = ''
         if eos or gen_tokens >= num_tokens: break
-
-    if stream: del response["chunk"]
+    
+    #if stream: del response["chunk"]
     response["response_type"] = "full"
-    response["util_text"] = util_ctx
+    
     response["response"] = completion

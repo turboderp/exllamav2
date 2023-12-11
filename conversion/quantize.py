@@ -49,6 +49,33 @@ def embeddings(job, save_fn, model, measure = False):
     save_file(embeddings_dict, os.path.join(job["out_dir"], "input_states.safetensors"))
 
 
+# # Measure quantization error as 1 - cosine similarity between outputs and ideal outputs
+#
+# def cos_error(q_linear: nn.Linear, inputs, outputs):
+#
+#     dsum = 0.0
+#     dcount = 0.0
+#     for ix, ox in zip(inputs, outputs):
+#
+#         ix_cuda = ix.to("cuda:0")
+#         ox_cuda = ox.to("cuda:0").float().flatten()
+#         qx_cuda = q_linear.forward(ix_cuda).float().flatten()
+#
+#         o_dot_q = torch.dot(ox_cuda, qx_cuda)
+#         norm_o = torch.norm(ox_cuda)
+#         norm_q = torch.norm(qx_cuda)
+#         cosine_sim = o_dot_q / (norm_o * norm_q)
+#         score = 1 - cosine_sim
+#
+#         dsum += score * ix_cuda.shape[0]
+#         dcount += ix_cuda.shape[0]
+#
+#         ix_cuda = None
+#         ox_cuda = None
+#
+#     return dsum / dcount
+
+
 # Measure quantization error as relative Frobenius norm wrt/ inputs and full-precision outputs
 
 def rfn_error(q_linear: nn.Linear, inputs, outputs):
@@ -116,7 +143,7 @@ def test_quants(source: ExLlamaV2Linear,
             desc = qp.desc
             err = rfn_error(quantized, inputs, outputs).item()
 
-            print(f" -- {desc:30} {bpw:2.2f} bpw    rfn_error: {err:2.5f}")
+            print(f" -- {desc:50} {bpw:2.2f} bpw    rfn_error: {err:2.5f}")
 
             option = { "desc": desc,
                        "bpw": bpw,
@@ -168,6 +195,7 @@ def measure_quant(job, save_fn, model):
         else:
             with safe_open(in_name, framework = "pt", device = "cpu" if page_rows else "cuda:0") as f:
                 input_states = f.get_tensor("hidden_state")
+            f = None
 
         with torch.inference_mode():
 
@@ -331,6 +359,7 @@ def measure_quant(job, save_fn, model):
 
                 with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
                     cal_ids = f.get_tensor("input_ids")
+                f = None
 
                 with torch.inference_mode():
 
@@ -390,7 +419,7 @@ def measure_quant(job, save_fn, model):
         print(f" -- Writing {job['output_measurement']}")
 
     for filename in measurement_files:
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding = "utf8") as f:
             f.write(json.dumps(exp_measurement, indent = 4))
 
 
@@ -400,7 +429,8 @@ def do_quant(source: ExLlamaV2Linear,
              lq: AdaptiveGPTQ,
              qparams: dict,
              job: dict,
-             skip_prep: bool = False):
+             skip_prep: bool = False,
+             drop = False):
 
     with torch.inference_mode():
 
@@ -414,7 +444,7 @@ def do_quant(source: ExLlamaV2Linear,
 
         # Perform final quant
 
-        lq.quantize(keep_qweight = True)
+        lq.quantize(keep_qweight = True, apply = True, drop = drop)
 
         # Sanity test to ensure quantized matrix resembles original
 
@@ -427,13 +457,17 @@ def do_quant(source: ExLlamaV2Linear,
 
         # Apply quant
 
-        lq.apply_quant()
+        # lq.apply_quant()
 
         # Pack and save quantized layer
 
         packed_dict = lq.pack(source.key, qp)
         tensorfile = os.path.join(job["out_dir"], "out_tensor/" + source.key + ".safetensors")
         save_file(packed_dict, tensorfile)
+
+        # Drop buffers from quantizer to free VRAM
+
+        if drop: lq.drop_buffers()
 
         # Reconstruct from packed layer
 
@@ -453,8 +487,31 @@ def do_quant(source: ExLlamaV2Linear,
         ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
         recons_w2 = recons_linear.forward(ident, force_cuda = True)
 
-        diff1 = torch.max(torch.abs(quant_w - recons_w))
-        diff2 = torch.max(torch.abs(quant_w - recons_w2))
+        # for i in range(quant_w.shape[0]):
+        #     d = quant_w[i, :] - recons_w2[i, :]
+        #     dd = torch.max(torch.abs(d))
+        #     if (dd > 0.01):
+        #         print("------", i)
+        #         print(d)
+        # print("-------------------------")
+        # for i in range(recons_dict["q_perm"].shape[0]):
+        #     print(i, recons_dict["q_perm"][i].item())
+        # print("-------------------------")
+        # for i in range(recons_dict["q_invperm"].shape[0]):
+        #     print(i, recons_dict["q_invperm"][i].item())
+
+        # diff1 = torch.max(torch.abs(quant_w - recons_w))
+        # diff2 = torch.max(torch.abs(quant_w - recons_w2))
+
+        recons_w2.sub_(quant_w)
+        recons_w2.abs_()
+        diff2 = torch.max(recons_w2)
+
+        quant_w.sub_(recons_w)
+        quant_w.abs_()
+        diff1 = torch.max(quant_w)
+        quant_w = None
+
         if diff1 > 0.01 or diff2 > 0.01:
 
             print(" ## Quantization error (2)")
@@ -505,6 +562,7 @@ def quant(job, save_fn, model):
         else:
             with safe_open(in_name, framework = "pt", device = "cpu" if page_rows else "cuda:0") as f:
                 input_states = f.get_tensor("hidden_state")
+            f = None
 
         output_states_list = []
         quantizers = {}
@@ -532,6 +590,8 @@ def quant(job, save_fn, model):
                 for k, v in outputs.items():
                     v[v == -float('inf')] = -65504.0
                     v[v == float('inf')] = 65504.0
+                k = None
+                v = None
 
                 # Add batches to quantizers
 
@@ -574,7 +634,8 @@ def quant(job, save_fn, model):
                         quantizers["lm_head"].add_batch(batch1)
                         batch1 = []
 
-                output_states_list.append(outputs["hidden_states"].to("cpu"))
+                if module.key != "lm_head":
+                    output_states_list.append(outputs["hidden_states"].to("cpu"))
 
                 outputs = None
                 attn_mask = None
@@ -592,10 +653,10 @@ def quant(job, save_fn, model):
             do_quant(module.k_proj, quantizers["k_proj"], qparams[module.k_proj.key], job, skip_prep = True)
             del quantizers["k_proj"]
             torch.cuda.empty_cache()
-            do_quant(module.v_proj, quantizers["v_proj"], qparams[module.v_proj.key], job, skip_prep = True)
+            do_quant(module.v_proj, quantizers["v_proj"], qparams[module.v_proj.key], job, skip_prep = True, drop = True)
             del quantizers["v_proj"]
             torch.cuda.empty_cache()
-            do_quant(module.o_proj, quantizers["o_proj"], qparams[module.o_proj.key], job)
+            do_quant(module.o_proj, quantizers["o_proj"], qparams[module.o_proj.key], job, drop = True)
             del quantizers["o_proj"]
             torch.cuda.empty_cache()
 
@@ -607,10 +668,10 @@ def quant(job, save_fn, model):
             quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
             del quantizers["gate_proj"]
             torch.cuda.empty_cache()
-            do_quant(module.up_proj,   quantizers["up_proj"  ], qparams[module.up_proj.key  ], job, skip_prep = True)
+            do_quant(module.up_proj,   quantizers["up_proj"  ], qparams[module.up_proj.key  ], job, skip_prep = True, drop = True)
             del quantizers["up_proj"]
             torch.cuda.empty_cache()
-            do_quant(module.down_proj, quantizers["down_proj"], qparams[module.down_proj.key], job)
+            do_quant(module.down_proj, quantizers["down_proj"], qparams[module.down_proj.key], job, drop = True)
             del quantizers["down_proj"]
             torch.cuda.empty_cache()
 
@@ -622,7 +683,7 @@ def quant(job, save_fn, model):
             qp = qparams_headoptions[bits]
             if qp is not None:
 
-                do_quant(module, quantizers["lm_head"], qp.get_dict(), job)
+                do_quant(module, quantizers["lm_head"], qp.get_dict(), job, drop = True)
                 del quantizers["lm_head"]
                 torch.cuda.empty_cache()
 
@@ -630,6 +691,7 @@ def quant(job, save_fn, model):
 
             with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
                 cal_ids = f.get_tensor("input_ids")
+            f = None
 
             logprob_sum = 0.0
             logprob_count = 0
@@ -641,6 +703,7 @@ def quant(job, save_fn, model):
         with torch.inference_mode():
 
             rfn_sum = 0.0
+            # error_states_list = output_states_list.copy()
 
             for b in range(input_states.shape[0]):
 
@@ -674,40 +737,30 @@ def quant(job, save_fn, model):
 
                 # Measure error
 
-                target = output_states_list[b]
-                if target.device == torch.device("cpu"): target = target.to("cuda:0")
-                a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
-                b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
-                rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
+                if module.key != "lm_head":
+                    target = output_states_list[b]
+                    if target.device == torch.device("cpu"): target = target.to("cuda:0")
+                    a_ = outputs.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                    b_ = target.narrow(-1, 0, min(target.shape[-1], outputs.shape[-1]))
+                    rfn = torch.linalg.norm(a_[0].float() - b_[0].float(), 'fro') / torch.linalg.norm(b_[0].float(), 'fro')
+                    rfn_sum += rfn
+                    target = None
 
-                # diff = torch.max(torch.abs(a_[0] - b_[0]))
-                # max_diff = max(diff, max_diff)
-                #
-                # print(f"b norm: {torch.linalg.norm(b_[0].float(), 'fro')}")
-                # print(f"a min, max: {torch.min(a_[0])}, {torch.max(a_[0])}")
-                # print(f"b min, max: {torch.min(b_[0])}, {torch.max(b_[0])}")
-                # print(f"abs(a-b) min, max: {torch.min()}, {torch.max(torch.abs(a_[0] - b_[0]))}")
-
-                rfn_sum += rfn
-                target = None
-
-                if page_rows:
-                    outputs = outputs.to("cpu")
-
-                output_states_list[b] = outputs
+                    if page_rows: outputs = outputs.to("cpu")
+                    output_states_list[b] = outputs
 
                 outputs = None
                 x = None
                 attn_mask = None
 
-            rfn_avg = rfn_sum / input_states.shape[0]
-            print(f" -- Layer rfn_error: {rfn_avg:.6f}")
-
-            if math.isnan(rfn_avg) or rfn_avg > 1.0:
-                print(" ## Quantization error (3)")
-                os._exit(0)
-
             if module.key != "lm_head":
+
+                rfn_avg = rfn_sum / input_states.shape[0]
+                print(f" -- Layer rfn_error: {rfn_avg:.6f}")
+
+                if math.isnan(rfn_avg) or rfn_avg > 1.0:
+                    print(" ## Quantization error (3)")
+                    os._exit(0)
 
                 output_states = torch.cat(output_states_list, dim = 0)
                 save_file({ "hidden_state": output_states }, out_name)
@@ -756,6 +809,6 @@ def quant(job, save_fn, model):
                         "last_module_idx": job["last_module_idx"],
                         "base_perplexity": job["base_perplexity"] }
 
-    with open(os.path.join(job["out_dir"], "measurement.json"), "w") as f:
+    with open(os.path.join(job["out_dir"], "measurement.json"), "w", encoding = "utf8") as f:
         f.write(json.dumps(exp_measurement, indent = 4))
 
