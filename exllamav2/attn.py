@@ -9,6 +9,7 @@ from exllamav2.embedding import ExLlamaV2Embedding
 import math
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c
+from exllamav2.quip_linear import QuipLinear
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 
@@ -34,6 +35,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     k_proj: ExLlamaV2Linear or None
     v_proj: ExLlamaV2Linear or None
     o_proj: ExLlamaV2Linear
+    qkv_proj: ExLlamaV2Linear or None
+    k_scale: torch.tensor or None
+    o_scale: torch.tensor or None
+    q_scale: torch.tensor or None
+    v_scale: torch.tensor or None
 
     name: str = "Attention"
     submodules: list
@@ -59,29 +65,45 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         hidden_size = self.model.config.hidden_size
 
         self.input_layernorm = ExLlamaV2RMSNorm(model, key + ".input_layernorm")
-        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, False)
-        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, False)
-        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, False)
-        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", self.model.config.num_attention_heads * self.model.config.head_dim, hidden_size, False)
+        self.submodules = [self.input_layernorm]
+        if model.config.is_quip:
+            self.qkv_proj = QuipLinear(model,
+                                       key + ".self_attn.qkv_proj",
+                                       hidden_size,
+                                       (self.model.config.num_attention_heads * self.model.config.head_dim) +
+                                       (self.model.config.num_key_value_heads * self.model.config.head_dim) +
+                                       (self.model.config.num_key_value_heads * self.model.config.head_dim))
 
-        self.submodules = [self.input_layernorm,
-                           self.q_proj,
-                           self.k_proj,
-                           self.v_proj,
-                           self.o_proj]
+            self.o_proj = QuipLinear(model, key + ".self_attn.o_proj",
+                                     self.model.config.num_attention_heads * self.model.config.head_dim,
+                                     hidden_size)
+            self.submodules += [self.qkv_proj, self.o_proj]
+        else:
+            self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, False)
+            self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, False)
+            self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, False)
+            self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", self.model.config.num_attention_heads * self.model.config.head_dim, hidden_size, False)
+            self.submodules += [self.q_proj, self.k_proj, self.v_proj, self.o_proj]
 
 
     def load(self):
+        if self.model.config.is_quip:
+            w = self.load_weight()
+            self.k_scale = w['k_scale']
+            self.o_scale = w['o_scale']
+            self.q_scale = w['q_scale']
+            self.v_scale = w['v_scale']
 
         qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0
 
-        self.input_layernorm.load()
-        self.q_proj.load()
-        self.k_proj.load()
-        self.v_proj.load()
+        if hasattr(self, 'input_layernorm') and self.input_layernorm is not None: self.input_layernorm.load()
+        if hasattr(self, 'q_proj') and self.q_proj is not None: self.q_proj.load()
+        if hasattr(self, 'k_proj') and self.k_proj is not None: self.k_proj.load()
+        if hasattr(self, 'v_proj') and self.v_proj is not None: self.v_proj.load()
+        if hasattr(self, 'qkv_proj') and self.qkv_proj is not None: self.qkv_proj.load()
         self.o_proj.load()
 
-        if self.q_proj.is_quant():
+        if hasattr(self, 'q_proj') and self.q_proj is not None and self.q_proj.is_quant():
 
             assert self.k_proj.is_quant() and self.v_proj.is_quant() and self.o_proj.is_quant(), "Partially quantized attention layer"
 
@@ -116,15 +138,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             embedding = self.model.modules[0]
             assert isinstance(embedding, ExLlamaV2Embedding)
-            q = self.q_proj.get_weight_tensor_dq()
-            k = self.k_proj.get_weight_tensor_dq()
-            v = self.v_proj.get_weight_tensor_dq()
+            q = self.q_proj.get_weight_tensor_dq() if hasattr(self, 'q_proj') and self.q_proj is not None else None
+            k = self.k_proj.get_weight_tensor_dq() if hasattr(self, 'k_proj') and self.k_proj is not None else None
+            v = self.v_proj.get_weight_tensor_dq() if hasattr(self, 'v_proj') and self.v_proj is not None else None
             norm = self.input_layernorm
             embedding.make_qkv(norm, q, k, v)
 
-            self.q_proj.unload(); self.q_proj = None
-            self.k_proj.unload(); self.k_proj = None
-            self.v_proj.unload(); self.v_proj = None
+            if hasattr(self, 'q_proj') and self.q_proj is not None: self.q_proj.unload(); self.q_proj = None
+            if hasattr(self, 'k_proj') and self.v_proj is not None: self.k_proj.unload(); self.k_proj = None
+            if hasattr(self, 'v_proj') and self.v_proj is not None: self.v_proj.unload(); self.v_proj = None
             self.input_layernorm.unload(); self.input_layernorm = None
 
 
@@ -133,10 +155,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             ext_c.free_q_attn(self.q_handle)
             self.q_handle = None
 
-        if self.input_layernorm is not None: self.input_layernorm.unload()
-        if self.q_proj is not None: self.q_proj.unload()
-        if self.k_proj is not None: self.k_proj.unload()
-        if self.v_proj is not None: self.v_proj.unload()
+        if hasattr(self, 'qkv_proj') and self.qkv_proj is not None: self.qkv_proj.unload()
+        if hasattr(self, 'input_layernorm') and self.input_layernorm is not None: self.input_layernorm.unload()
+        if hasattr(self, 'q_proj') and self.q_proj is not None: self.q_proj.unload()
+        if hasattr(self, 'k_proj') and self.k_proj is not None: self.k_proj.unload()
+        if hasattr(self, 'v_proj') and self.v_proj is not None: self.v_proj.unload()
         self.o_proj.unload()
 
 
@@ -149,9 +172,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
 
             return self.input_layernorm.weight_footprint() + \
-                   self.q_proj.weight_footprint() + \
-                   self.k_proj.weight_footprint() + \
-                   self.v_proj.weight_footprint() + \
+                   self.q_proj.weight_footprint() if hasattr(self, 'q_proj') and self.q_proj is not None else 0 + \
+                   self.k_proj.weight_footprint() if hasattr(self, 'k_proj') and self.k_proj is not None else 0 + \
+                   self.v_proj.weight_footprint() if hasattr(self, 'v_proj') and self.v_proj is not None else 0 + \
+                   self.qkv_proj.weight_footprint() if hasattr(self, 'qkv_proj') and self.qkv_proj is not None else 0 + \
                    self.o_proj.weight_footprint()
 
 
@@ -193,10 +217,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     def temp_dq_size(self):
-
-        return max(self.q_proj.temp_dq_size(),
-                   self.k_proj.temp_dq_size(),
-                   self.v_proj.temp_dq_size(),
+        return max(self.q_proj.temp_dq_size() if hasattr(self, 'q_proj') and self.q_proj is not None else 0,
+                   self.k_proj.temp_dq_size() if hasattr(self, 'k_proj') and self.k_proj is not None else 0,
+                   self.v_proj.temp_dq_size() if hasattr(self, 'v_proj') and self.v_proj is not None else 0,
+                   self.qkv_proj.temp_dq_size() if hasattr(self, 'qkv_proj') and self.qkv_proj is not None else 0,
                    self.o_proj.temp_dq_size())
 
 
@@ -222,9 +246,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         super().set_device_idx(idx)
 
         self.input_layernorm.set_device_idx(idx)
-        self.q_proj.set_device_idx(idx)
-        self.k_proj.set_device_idx(idx)
-        self.v_proj.set_device_idx(idx)
+        if hasattr(self, 'q_proj') and self.q_proj is not None: self.q_proj.set_device_idx(idx)
+        if hasattr(self, 'k_proj') and self.k_proj is not None: self.k_proj.set_device_idx(idx)
+        if hasattr(self, 'v_proj') and self.v_proj is not None: self.v_proj.set_device_idx(idx)
+        if hasattr(self, 'qkv_proj') and self.qkv_proj is not None: self.qkv_proj.set_device_idx(idx)
         self.o_proj.set_device_idx(idx)
 
 
@@ -517,21 +542,37 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             residual = hidden_states
             post_norm = self.input_layernorm.forward(hidden_states)
 
-            query_states_im = self.q_proj.forward(post_norm, loras = loras)
-            key_states_im = self.k_proj.forward(post_norm, loras = loras)
-            value_states_im = self.v_proj.forward(post_norm, loras = loras)
-
-            if intermediates:
-
-                query_states = query_states_im.clone()
-                key_states = key_states_im.clone()
-                value_states = value_states_im.clone()
-
+            if self.model.config.is_quip:
+                qkv_states = self.qkv_proj.forward(post_norm.to(torch.float32), loras = loras)
+                query_states = self.q_scale * qkv_states[..., 0:(num_attention_heads * head_dim)]
+                key_states = self.k_scale * qkv_states[..., (
+                    num_attention_heads * head_dim):(
+                        (num_attention_heads * head_dim) +
+                        (num_key_value_heads * head_dim))]
+                value_states = self.v_scale * qkv_states[..., (
+                    (num_attention_heads * head_dim) +
+                    (num_key_value_heads * head_dim)):(
+                        (num_attention_heads * head_dim) +
+                        (num_key_value_heads * head_dim) +
+                        (num_key_value_heads * head_dim))]
             else:
+                query_states_im = self.q_proj.forward(post_norm, loras = loras)
+                key_states_im = self.k_proj.forward(post_norm, loras = loras)
+                value_states_im = self.v_proj.forward(post_norm, loras = loras)
 
-                query_states = query_states_im
-                key_states = key_states_im
-                value_states = value_states_im
+                if intermediates:
+
+                    query_states = query_states_im.clone()
+                    key_states = key_states_im.clone()
+                    value_states = value_states_im.clone()
+
+                else:
+
+                    query_states = query_states_im
+                    key_states = key_states_im
+                    value_states = value_states_im
+
+
 
         # Alternative, for embedded QKV
 
@@ -606,7 +647,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_proj = self.o_proj.forward(attn_output, loras = loras)
+        attn_proj = self.o_scale * self.o_proj.forward(attn_output, loras = loras) if self.model.config.is_quip else self.o_proj.forward(attn_output)
 
         # Add residual connection
 
@@ -651,5 +692,5 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     def is_quant(self):
-        return self.q_handle is not None
+        return self.q_handle is not None or self.qkv_proj is not None
 

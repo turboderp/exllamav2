@@ -16,7 +16,7 @@ extra_cflags = ["/Ox"] if windows else ["-O3"]
 if ext_debug:
     extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
 
-extra_cuda_cflags = ["-lineinfo", "-O3"]
+extra_cuda_cflags = ["-lineinfo", '-O3']
 
 if torch_version.hip:
     extra_cuda_cflags += ["-DHIPBLAS_USE_HIP_HALF"]
@@ -44,7 +44,9 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/rope.cu",
                 "exllamav2/exllamav2_ext/cuda/cache.cu",
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
-                "exllamav2/exllamav2_ext/cpp/sampling.cpp"
+                "exllamav2/exllamav2_ext/cpp/sampling.cpp",
+                "exllamav2/exllamav2_ext/cuda/quip/quiptools.cu",
+                "exllamav2/exllamav2_ext/cuda/quip/quiptools_e8p_gemv.cu"
             ],
             extra_compile_args=extra_compile_args,
             libraries=["cublas"] if windows else [],
@@ -66,6 +68,7 @@ setup(
     packages = [
         "exllamav2",
         "exllamav2.generator",
+        "exllamav2.quip",
         # "exllamav2.generator.filters",
         # "exllamav2.server",
         # "exllamav2.exllamav2_ext",

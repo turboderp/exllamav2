@@ -114,6 +114,8 @@ except ModuleNotFoundError:
         "cuda/rms_norm.cu",
         "cuda/rope.cu",
         "cuda/cache.cu",
+        "cuda/quip/quiptools.cu",
+        "cuda/quip/quiptools_e8p_gemv.cu",
         "cpp/quantize_func.cpp",
         "cpp/sampling.cpp"
     ]
