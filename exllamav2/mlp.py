@@ -46,6 +46,13 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                            self.down_proj]
 
 
+    def numel(self):
+
+        return self.gate_proj.numel() + \
+               self.up_proj.numel() + \
+               self.down_proj.numel()
+
+
     def load(self):
 
         self.post_attention_layernorm.load()

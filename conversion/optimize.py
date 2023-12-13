@@ -1,109 +1,8 @@
-from conversion.qparams import QParams, qparams_options
-from conversion.qparams_stats import qparams_stats
+from conversion.qparams import QParams
 import math
 import itertools
 
-def optimize(job, save_fn):
-
-    eps = 0.0001
-
-    numel = 0
-    max_rfn = 0.0
-    for layer in job["measurement"]:
-        numel += layer["numel"]
-        for option in layer["options"]:
-            max_rfn = max(max_rfn, option["err"])
-
-    # max_rfn -= eps
-    min_rfn = 0
-    best_rfn = 10000.0
-    target_bpw = job["bits"]
-
-    # Binary search for combination of settings that minimizes max rfn_error while
-    # TODO: Detect if bpw is too low to be attainable
-    # TODO: Fix potential broken models when bpw is too high
-
-    invalid = False
-    min_diff = 0.00001
-    while max_rfn - min_rfn > min_diff or invalid:
-
-        target_rfn = (min_rfn + max_rfn) / 2
-
-        invalid = False
-        current_total_bits = 0
-        for layer in job["measurement"]:
-
-            best_option = None
-            best_bpw = 10000.0
-
-            for option in layer["options"]:
-                if option["bpw"] < best_bpw and option["err"] <= target_rfn:
-                    best_bpw = option["bpw"]
-                    best_option = option
-
-            layer["best_option_max"] = best_option
-            if best_option is None:
-                invalid = True
-                break
-
-            current_total_bits += int(layer["best_option_max"]["total_bits"])
-
-        current_bpw = current_total_bits / numel
-
-        if not invalid:
-            print(f" -- rfn max: {target_rfn:2.5f}  bpw: {current_bpw:2.5f}")
-        else:
-            print(f" -- rfn max: {target_rfn:2.5f}  (not possible)")
-
-        if current_bpw <= target_bpw and not invalid:
-            best_rfn = min(best_rfn, target_rfn)
-            max_rfn = target_rfn
-        else:
-            min_rfn = target_rfn
-            max_rfn += eps
-
-    # We've found the smallest error that can be met by _all_ layers while staying below the set no. bits.
-    # Now select a minimum target to allow some layers to use more accurate settings if we didn't meet the
-    # target bitrate
-
-    max_rfn = max(target_rfn, best_rfn)
-    min_rfn = 0
-
-    min_diff = 0.00001
-    while max_rfn - min_rfn > min_diff:
-
-        target_rfn = (min_rfn + max_rfn) / 2
-        invalid = False
-
-        current_total_bits = 0
-        for layer in job["measurement"]:
-
-            best_option = None
-            best_rfn = 10000.0
-
-            for option in layer["options"]:
-                if best_rfn > option["err"] >= target_rfn and option["err"] < layer["best_option_max"]["err"]:
-                    best_rfn = option["err"]
-                    best_option = option
-
-            if best_option is None:
-                layer["best_option"] = layer["best_option_max"]
-            else:
-                layer["best_option"] = best_option
-
-            current_total_bits += int(layer["best_option"]["total_bits"])
-
-        current_bpw = current_total_bits / numel
-
-        print(f" -- rfn min: {target_rfn:2.5f}  bpw: {current_bpw:2.5f}")
-
-        if current_bpw <= target_bpw:
-            max_rfn = target_rfn
-        else:
-            min_rfn = target_rfn
-
-
-def optimize_new(job, save_fn, model):
+def optimize(job, save_fn, model):
 
     key = "model.layers.0"
     key_q = key + ".self_attn.q_proj"
@@ -127,75 +26,37 @@ def optimize_new(job, save_fn, model):
     numel_g = shape_g[0] * shape_g[1]
     numel_u = shape_u[0] * shape_u[1]
     numel_d = shape_d[0] * shape_d[1]
+    numel_attn = numel_q + numel_k + numel_v + numel_o
+    numel_mlp = numel_g + numel_u + numel_d
+
+    # Combined size of hidden layers
 
     num_layers = model.config.num_hidden_layers
-    numel = num_layers * (numel_q + numel_k + numel_v + numel_o + numel_g + numel_u + numel_d)
+    num_modules = num_layers * 2
+    numel = sum(m.numel() for m in model.modules[1 : num_modules + 1])
+
     target_bpw = job["bits"]
     weight_budget = numel * target_bpw
 
-    layer_p1 = num_layers // 2
-    layer_p2 = num_layers * 3 // 4
-    layer_p3 = num_layers - 1
-    assert 2 < layer_p1 < layer_p2 < layer_p3
+    # Compile options
 
-    # Now it's a knapsack problem all of a sudden
+    measurement = job["measurement"]
+
+    def fn(x):
+        return math.log(x)
 
     weights = []
     values = []
     params = []
-    for i in range(num_layers * 2):
-        weights.append([])
-        values.append([])
-        params.append([])
-
-    for qcosts in qparams_stats:
-        mode_q, mode_k, mode_v, mode_o, mode_g, mode_u, mode_d = qcosts[:7]
-
-        if mode_q:
-            bits = 0
-            bits += mode_q.total_bits(shape_q)
-            bits += mode_k.total_bits(shape_k)
-            bits += mode_v.total_bits(shape_v)
-            bits += mode_o.total_bits(shape_o)
-            index = 0
-
-        else:
-            bits = 0
-            bits += mode_g.total_bits(shape_g)
-            bits += mode_u.total_bits(shape_u)
-            bits += mode_d.total_bits(shape_d)
-            index = 1
-
-        layer_kldiv = qcosts[7:]
-        for layer in range(num_layers):
-            if layer == 0:
-                kldiv = layer_kldiv[0]
-            elif layer == 1:
-                kldiv = layer_kldiv[1]
-            elif layer == 2:
-                kldiv = layer_kldiv[2]
-            elif layer < layer_p1:
-                a = (layer_p1 - layer) / (layer_p1 - 2)
-                b = (layer - 2) / (layer_p1 - 2)
-                kldiv = a * layer_kldiv[2] + b * layer_kldiv[3]
-            elif layer == layer_p1:
-                kldiv = layer_kldiv[3]
-            elif layer < layer_p2:
-                a = (layer_p2 - layer) / (layer_p2 - layer_p1)
-                b = (layer - layer_p1) / (layer_p2 - layer_p1)
-                kldiv = a * layer_kldiv[3] + b * layer_kldiv[4]
-            elif layer == layer_p2:
-                kldiv = layer_kldiv[4]
-            elif layer < layer_p3:
-                a = (layer_p3 - layer) / (layer_p3 - layer_p2)
-                b = (layer - layer_p2) / (layer_p3 - layer_p2)
-                kldiv = a * layer_kldiv[4] + b * layer_kldiv[5]
-            else:
-                kldiv = layer_kldiv[5]
-
-            weights[2 * layer + index].append(bits)
-            values[2 * layer + index].append(kldiv)
-            params[2 * layer + index].append(qcosts)
+    for i in range(num_layers):
+        m1 = measurement["model.layers." + str(i) + ".self_attn"]
+        m2 = measurement["model.layers." + str(i) + ".mlp"]
+        for m in [m1, m2]:
+            v = [fn(e["accuracy"]) for e in m]
+            w = [e["total_bits"] for e in m]
+            weights.append(w)
+            values.append(v)
+            params.append(m)
 
     print(" -- Pruning...")
 
@@ -209,7 +70,7 @@ def optimize_new(job, save_fn, model):
         p_ = list(p_)
         j = 1
         while j < len(v_):
-            if v_[j] >= v_[j - 1]:
+            if v_[j] <= v_[j - 1]:
                 w_.pop(j)
                 v_.pop(j)
                 p_.pop(j)
@@ -226,6 +87,26 @@ def optimize_new(job, save_fn, model):
     f_solution = [0] * num_layers * 2
     weight = sum(weights[i][0] for i in range(num_layers * 2))
     value = sum(values[i][0] for i in range(num_layers * 2))
+
+    while True:
+        min_idx = -1
+        min_value = float("inf")
+        for i in range(num_layers * 2):
+            s = f_solution[i]
+            if values[i][s] < min_value:
+                if s < len(weights[i]) - 1:
+                    added_w = weights[i][s + 1] - weights[i][s]
+                    if added_w + weight <= weight_budget:
+                        min_idx = i
+                        min_value = values[i][s]
+        if min_idx == -1: break
+        s = f_solution[min_idx]
+        weight += weights[min_idx][s + 1] - weights[min_idx][s]
+        value += values[min_idx][s + 1] - values[min_idx][s]
+        f_solution[min_idx] += 1
+
+    bpw = weight / numel
+    print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
 
     def improve(solution, s_weight, hold = None):
 
@@ -244,7 +125,7 @@ def optimize_new(job, save_fn, model):
             if s_weight + add_w > weight_budget: continue
 
             add_v = values[idx][si + 1] - values[idx][si]
-            ratio = -add_v / add_w
+            ratio = add_v / add_w / add_w
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_idx = idx
@@ -263,7 +144,7 @@ def optimize_new(job, save_fn, model):
         value += b_add_v
 
     bpw = weight / numel
-    print(f" -- Estimated divergence: {value:.8f}  bpw: {bpw:.4f}")
+    print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
 
     best_value = value
     prev_best_value = value
@@ -288,7 +169,7 @@ def optimize_new(job, save_fn, model):
                 t_weight += b_add_w
                 t_value += b_add_v
 
-            if t_value < best_value:
+            if t_value > best_value:
                 f_solution = t_solution
                 best_value = t_value
                 break
@@ -299,50 +180,25 @@ def optimize_new(job, save_fn, model):
             continue
 
         bpw = t_weight / numel
-        print(f" -- Estimated divergence: {best_value:.8f}  bpw: {bpw:.4f}")
+        print(f" -- Score: {math.exp(best_value):.8f}  bpw: {bpw:.4f}")
         prev_best_value = best_value
 
-    # Compile as measurement
+    # Save strategy
 
     print(" -- Quantization strategy:")
 
-    job["measurement"] = []
+    job["strategy"] = {}
     for layer_ in range(num_layers):
 
-        key = "model.layers." + str(layer_)
-        key_q = key + ".self_attn.q_proj"
-        key_k = key + ".self_attn.k_proj"
-        key_v = key + ".self_attn.v_proj"
-        key_o = key + ".self_attn.o_proj"
-        key_g = key + ".mlp.gate_proj"
-        key_u = key + ".mlp.up_proj"
-        key_d = key + ".mlp.down_proj"
+        k1 = "model.layers." + str(layer_) + ".self_attn"
+        k2 = "model.layers." + str(layer_) + ".mlp"
+        p1 = params[layer_ * 2][f_solution[layer_ * 2]]
+        p2 = params[layer_ * 2 + 1][f_solution[layer_ * 2 + 1]]
 
-        qp1 = params[layer_ * 2][f_solution[layer_ * 2]]
-        qp2 = params[layer_ * 2 + 1][f_solution[layer_ * 2 + 1]]
-        mode_q, mode_k, mode_v, mode_o, _, _, _ = qp1[:7]
-        _, _, _, _, mode_g, mode_u, mode_d = qp2[:7]
+        for (k, p, n) in zip((k1, k2), (p1, p2), (numel_attn, numel_mlp)):
+            job["strategy"][k] = p
+            bpw = p["total_bits"] / n
+            err = 1 - p["accuracy"]
+            print(f" --   {k:50} {bpw:1.4f} bpw - exp. error: {err:1.8f}")
 
-        def store_res(key_, numel_, mode_, shape_):
-            bpw_ = mode_.bpw(shape_)
-            desc_ = mode_.get_desc()
-            print(f" --   {key_:40}  bpw: {bpw_:.4f}  mode: {desc_}")
-            job["measurement"].append({
-                "key": key_,
-                "numel": numel_,
-                "best_option": {
-                    "desc": desc_,
-                    "bpw": bpw_,
-                    "total_bits": mode_.total_bits(shape_),
-                    "err": 0,
-                    "qparams": mode_.get_dict()
-                }
-            })
-
-        store_res(key_q, numel_q, mode_q, shape_q)
-        store_res(key_k, numel_k, mode_k, shape_k)
-        store_res(key_v, numel_v, mode_v, shape_v)
-        store_res(key_o, numel_o, mode_o, shape_o)
-        store_res(key_g, numel_g, mode_g, shape_g)
-        store_res(key_u, numel_u, mode_u, shape_u)
-        store_res(key_d, numel_d, mode_d, shape_d)
+    xx = 0

@@ -39,6 +39,11 @@ class ExLlamaV2Module:
         self.footprint = -1
 
 
+    def numel(self):
+
+        return 0
+
+
     def device(self):
 
         return _torch_device(self.device_idx)

@@ -61,6 +61,11 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.in_features, self.out_features
 
 
+    def numel(self):
+
+        return self.in_features * self.out_features
+
+
     def unload(self):
 
         if self.linear is not None:
