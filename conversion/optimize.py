@@ -4,6 +4,9 @@ import itertools
 
 def optimize(job, save_fn, model):
 
+    error_norm = 2.4
+    max_step_size = 2
+
     key = "model.layers.0"
     key_q = key + ".self_attn.q_proj"
     key_k = key + ".self_attn.k_proj"
@@ -43,7 +46,7 @@ def optimize(job, save_fn, model):
     measurement = job["measurement"]
 
     def fn(x):
-        return math.log(x)
+        return 1 - ((1 - x) ** error_norm)
 
     weights = []
     values = []
@@ -86,7 +89,8 @@ def optimize(job, save_fn, model):
 
     f_solution = [0] * num_layers * 2
     weight = sum(weights[i][0] for i in range(num_layers * 2))
-    value = sum(values[i][0] for i in range(num_layers * 2))
+    value = 1
+    for i in range(num_layers * 2): value *= values[i][0]
 
     while True:
         min_idx = -1
@@ -102,11 +106,11 @@ def optimize(job, save_fn, model):
         if min_idx == -1: break
         s = f_solution[min_idx]
         weight += weights[min_idx][s + 1] - weights[min_idx][s]
-        value += values[min_idx][s + 1] - values[min_idx][s]
+        value *= values[min_idx][s + 1] / values[min_idx][s]
         f_solution[min_idx] += 1
 
     bpw = weight / numel
-    print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
+    print(f" -- Score: {value:.8f}  bpw: {bpw:.4f}")
 
     def improve(solution, s_weight, hold = None):
 
@@ -124,8 +128,8 @@ def optimize(job, save_fn, model):
             add_w = weights[idx][si + 1] - weights[idx][si]
             if s_weight + add_w > weight_budget: continue
 
-            add_v = values[idx][si + 1] - values[idx][si]
-            ratio = add_v / add_w / add_w
+            add_v = values[idx][si + 1] / values[idx][si]
+            ratio = add_v / add_w
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_idx = idx
@@ -134,17 +138,19 @@ def optimize(job, save_fn, model):
 
         return best_idx, best_add_w, best_add_v
 
-    while True:
-        b_idx, b_add_w, b_add_v = improve(f_solution, weight)
-        if b_idx == -1:
-            break
 
-        f_solution[b_idx] += 1
-        weight += b_add_w
-        value += b_add_v
-
-    bpw = weight / numel
-    print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
+    # #
+    # # while True:
+    # #     b_idx, b_add_w, b_add_v = improve(f_solution, weight)
+    # #     if b_idx == -1:
+    # #         break
+    # #
+    # #     f_solution[b_idx] += 1
+    # #     weight += b_add_w
+    # #     value += b_add_v
+    # #
+    # # bpw = weight / numel
+    # # print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
 
     best_value = value
     prev_best_value = value
@@ -158,8 +164,9 @@ def optimize(job, save_fn, model):
             t_solution[i] = max(t_solution[i] - step_size, 0)
             t_solution[j] = max(t_solution[j] - step_size, 0)
 
-            t_weight = sum(weights[i][t_solution[i]] for i in range(num_layers * 2))
-            t_value = sum(values[i][t_solution[i]] for i in range(num_layers * 2))
+            t_weight = sum(weights[k][t_solution[k]] for k in range(num_layers * 2))
+            t_value = 1
+            for k in range(num_layers * 2): t_value *= values[k][t_solution[k]]
 
             while True:
                 b_idx, b_add_w, b_add_v = improve(t_solution, t_weight, [i, j])
@@ -167,7 +174,7 @@ def optimize(job, save_fn, model):
                     break
                 t_solution[b_idx] += 1
                 t_weight += b_add_w
-                t_value += b_add_v
+                t_value *= b_add_v
 
             if t_value > best_value:
                 f_solution = t_solution
@@ -176,11 +183,11 @@ def optimize(job, save_fn, model):
 
         if best_value == prev_best_value:
             step_size += 1
-            if step_size > 2: break
+            if step_size > max_step_size: break
             continue
 
         bpw = t_weight / numel
-        print(f" -- Score: {math.exp(best_value):.8f}  bpw: {bpw:.4f}")
+        print(f" -- Score: {best_value:.8f}  bpw: {bpw:.4f}")
         prev_best_value = best_value
 
     # Save strategy
