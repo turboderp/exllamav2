@@ -145,7 +145,7 @@ else:
 print(f" -- Input: {job['in_dir']}")
 print(f" -- Output: {job['out_dir']}")
 if job.get("cal_dataset"):
-    print(f" -- Calibration dataset: {job['cal_dataset']}, {job['dataset_rows']} / {job['measurement_rows']} ({job['gpu_rows']}) rows, {job['length']} tokens per sample")
+    print(f" -- Calibration dataset: {job['cal_dataset']}, {job['dataset_rows']} / {job['measurement_rows']} rows, {job['length']} tokens per sample")
 else:
     print(f" -- Using default calibration dataset")
 if job["output_measurement"] is None:
