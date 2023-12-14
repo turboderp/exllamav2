@@ -129,6 +129,41 @@ def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask):
     quant_linear(job, module, quantizers["lm_head"], qp.get_dict())
 
 
+# def testc(module, states, target_states, norm, layers):
+#
+#     rows = len(states)
+#     cols = states[0].shape[1]
+#     dim = module.model.config.hidden_size
+#
+#     a_batch = torch.empty((rows * cols, dim), dtype = torch.float, device = "cuda:0")
+#     b_batch = torch.empty((rows * cols, dim), dtype = torch.float, device = "cuda:0")
+#
+#     r = 0
+#     for state, target_state in zip(states, target_states):
+#         a = norm.forward(state.to("cuda:0"))
+#         b = norm.forward(target_state.to("cuda:0"))
+#         a_batch[r:r+cols] = a.view(-1, dim)
+#         b_batch[r:r+cols] = b.view(-1, dim)
+#         r += cols
+#
+#     # diff = F.mse_loss(b_batch, a_batch)
+#     m_a = torch.mean(a_batch.abs(), dim = 0)
+#     m_b = torch.mean(b_batch.abs(), dim = 0)
+#     m_ab = m_b / m_a
+#     # a_batch *= m_ab
+#     # diff = F.mse_loss(b_batch, a_batch)
+#     norm.weight.data *= m_ab
+#
+#     # s = torch.linalg.lstsq(a_batch, b_batch)
+#     # s = s.solution
+#     #
+#     # for linear in layers:
+#     #     m = torch.matmul(s, linear.linear.weight.data.T.float())
+#     #     linear.linear.weight.data = nn.Parameter(m.T.half())
+#
+#     xx = 0
+
+
 @torch.inference_mode()
 def quant(job, save_fn, model):
 
@@ -143,9 +178,13 @@ def quant(job, save_fn, model):
         job["q_last_module_idx"] = 0
 
     hidden_states = []
+    # hidden_i_states = []
     with safe_open(states_filename, framework = "pt", device = "cpu") as f:
         for k in sorted(f.keys()):
-            hidden_states.append(f.get_tensor(k))
+            if k.startswith("row"):
+                hidden_states.append(f.get_tensor(k))
+            # elif k.startswith("i_row"):
+            #     hidden_i_states.append(f.get_tensor(k))
 
     index = job["q_last_module_idx"]
     while True:
@@ -166,6 +205,7 @@ def quant(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2Attention):
             mode = "self_attn"
+            # if index > 1: testc(module, hidden_states, hidden_i_states, module.input_layernorm, [module.q_proj, module.k_proj, module.v_proj])
             quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
             quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
             quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
@@ -173,6 +213,7 @@ def quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
+            # testc(module, hidden_states, hidden_i_states, module.post_attention_layernorm, [module.gate_proj, module.up_proj])
             quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
@@ -279,7 +320,6 @@ def quant(job, save_fn, model):
 
             print(f" -- Module quantized, calibration perplexity (quant): {perplexity:.4f}")
 
-
         # Unload module
 
         module.unload()
@@ -287,7 +327,11 @@ def quant(job, save_fn, model):
 
         # Advance
 
-        hidden_states = q_states
+        if mode != "linear":
+            # hidden_i_states = hidden_states
+            # hidden_states = target_states
+            # hidden_states = [(x + y) / 2 for x, y in zip(target_states, q_states)]
+            hidden_states = q_states
 
         # Checkpoint
 
@@ -295,6 +339,7 @@ def quant(job, save_fn, model):
 
             if mode != "linear":
                 save_dict = {f"row.{idx:05}": h for idx, h in enumerate(hidden_states)}
+                # save_dict |= {f"i_row.{idx:05}": h for idx, h in enumerate(hidden_i_states)}
                 save_file(save_dict, temp_filename)
                 save_dict = None
 
