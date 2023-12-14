@@ -59,7 +59,7 @@ def check_args(args):
             sys.exit()
 
 
-def init(args, quiet = False, allow_auto_split = False):
+def init(args, quiet = False, allow_auto_split = False, skip_load = False):
 
     # Create config
 
@@ -88,7 +88,7 @@ def init(args, quiet = False, allow_auto_split = False):
     if args.gpu_split and args.gpu_split != "auto":
         split = [float(alloc) for alloc in args.gpu_split.split(",")]
 
-    if args.gpu_split != "auto":
+    if args.gpu_split != "auto" and not skip_load:
         if not quiet: print(" -- Loading model...")
         model.load(split)
     else:

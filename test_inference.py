@@ -43,18 +43,42 @@ parser.add_argument("-ps", "--prompt_speed", action = "store_true", help = "Test
 parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
 parser.add_argument("-mix", "--mix_layers", type = str, help = "Load replacement layers from secondary model. Example: --mix_layers 1,6-7:/mnt/models/other_model")
 parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip warmup before testing model")
+parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Load model layer by layer (perplexity evaluation only)")
 
 # Initialize model and tokenizer
 
 model_init.add_args(parser)
 args = parser.parse_args()
+
+# Check conflicting settings
+
+if args.stream_layers:
+    if args.eval_token or args.eval_token_8bit:
+        print(" ## Can't test token ppl while streaming layers")
+        sys.exit()
+    if args.prompt:
+        print(" ## Can't generate while streaming layers")
+        sys.exit()
+    if args.speed or args.prompt_speed:
+        print(" ## Can't test speed while streaming layers")
+        sys.exit()
+    if args.gpu_split:
+        print(" ## Can only use one GPU when streaming layers")
+        sys.exit()
+    if args.eval_dataset:
+        if args.length and args.eval_length != args.length:
+            print(" !! Overriding model context length to match eval row length")
+        args.length = args.eval_length
+
+# Init
+
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args, allow_auto_split = True)
+model, tokenizer = model_init.init(args, allow_auto_split = True, skip_load = args.stream_layers)
 
 # Auto split
 
-if not model.loaded:
+if not model.loaded and not args.stream_layers:
 
     if args.mix_layers:
         print(" !! Warning, auto split does not account for VRAM requirement of replacement layers")
@@ -63,6 +87,12 @@ if not model.loaded:
     cache = ExLlamaV2Cache(model, lazy = True)
     model.load_autosplit(cache)
     cache = None
+
+if args.stream_layers:
+
+    stream_batch_size = 2
+    model.config.max_batch_size = stream_batch_size
+    model.load(lazy = True)
 
 # Replacement
 
@@ -89,8 +119,9 @@ if args.mix_layers:
             # for k in reload:
             #     model.modules_dict[k].unload()
             #     model.modules_dict[k].load()
-            model.modules[idx * 2 + 1].reload()
-            model.modules[idx * 2 + 2].reload()
+            if not args.stream_layers:
+                model.modules[idx * 2 + 1].reload()
+                model.modules[idx * 2 + 2].reload()
 
 # Test generation
 
@@ -135,7 +166,6 @@ if args.prompt:
 
     cache = None
 
-
 # Test perplexity
 
 if args.eval_dataset:
@@ -152,39 +182,95 @@ if args.eval_dataset:
 
         eval_tokens = get_tokens(eval_rows, eval_length, eval_dataset, tokenizer)
 
-        print(f" -- Inference", end = "")
-        sys.stdout.flush()
-
         logprob_sum = 0.0
         logprob_count = 0
 
-        cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
+        def ppl(input_ids_, logits_):
 
-        for i in range(eval_tokens.shape[0]):
+            logprob_sum_ = 0.0
+            logprob_count_ = 0
 
-            if i % 10 == 0: print(".", end = "")
+            chunksize = logits_.shape[1] * 16000 // logits_.shape[2]
+            b_ = 0
+            while b_ < logits_.shape[1]:
+                a_ = b_
+                b_ = min(b_ + chunksize, logits_.shape[1])
+
+                logits_f = logits_[:, a_:b_, :].float() + 1e-10
+                target_ids = input_ids_[:, a_ + 1:b_ + 1].to(logits_.device)
+
+                log_probs = F.log_softmax(logits_f, dim=-1)
+                token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+                logprob_sum_ += token_log_probs.sum().item()
+                logprob_count_ += target_ids.numel()
+
+            return logprob_sum_, logprob_count_
+
+        if args.stream_layers:
+
+            print(f" -- Inference (streamed)", end="")
             sys.stdout.flush()
 
-            input_ids = eval_tokens[i:i+1, :]
+            batch_size, seq_len = eval_tokens.shape
+            attn_mask = model.build_attn_mask(batch_size, seq_len, 0, None, "cuda:0")
 
-            input_ids = input_ids[:, :]
-            if cache is not None: cache.current_seq_len = 0
-            logits = model.forward(input_ids, cache)
-            logits = logits[:, :-1, :]
+            for idx, module in enumerate(model.modules):
+                module.set_device_idx(-1 if idx == 0 else 0)
 
-            chunksize = logits.shape[1] * 16000 // logits.shape[2]
-            b = 0
-            while b < logits.shape[1]:
-                a = b
-                b = min(b + chunksize, logits.shape[1])
+            model.modules[0].load()
+            hidden_state = model.modules[0].forward(eval_tokens)
+            model.modules[0].unload()
 
-                logits_f = logits[:, a:b, :].float() + 1e-10
-                target_ids = input_ids[:, a+1:b+1].to(logits.device)
+            for idx, module in enumerate(model.modules):
+                if idx == 0: continue
 
-                log_probs = F.log_softmax(logits_f, dim = -1)
-                token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
-                logprob_sum += token_log_probs.sum().item()
-                logprob_count += target_ids.numel()
+                print(".", end = "")
+                module.load()
+
+                b = 0
+                while b < eval_tokens.shape[0]:
+                    a = b
+                    b = min(b + stream_batch_size, eval_tokens.shape[0])
+                    x = hidden_state[a:b, :, :].to("cuda:0")
+                    x = module.forward(x, cache = None, attn_mask = attn_mask, past_len = 0, loras = None, position_offsets = None)
+
+                    if idx < len(model.modules) - 1:
+                        hidden_state[a:b, :, :] = x.to("cpu")
+
+                    else:
+                        input_ids = eval_tokens[a:b, :]
+                        logits = x[:, :-1, :]
+
+                        logprob_sum__, logprob_count__ = ppl(input_ids, logits)
+                        logprob_sum += logprob_sum__
+                        logprob_count += logprob_count__
+
+                module.unload()
+
+            print()
+
+        else:
+
+            print(f" -- Inference", end="")
+            sys.stdout.flush()
+
+            cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
+
+            for i in range(eval_tokens.shape[0]):
+
+                if i % 10 == 0: print(".", end = "")
+                sys.stdout.flush()
+
+                input_ids = eval_tokens[i:i+1, :]
+
+                input_ids = input_ids[:, :]
+                if cache is not None: cache.current_seq_len = 0
+                logits = model.forward(input_ids, cache)
+                logits = logits[:, :-1, :]
+
+                logprob_sum__, logprob_count__ = ppl(input_ids, logits)
+                logprob_sum += logprob_sum__
+                logprob_count += logprob_count__
 
         print()
 

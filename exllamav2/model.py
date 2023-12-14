@@ -668,9 +668,6 @@ class ExLlamaV2:
                 x = None
                 break
 
-            # print(module.key, module.name, x[0, 0])
-            # print("max", torch.max(x).item(), "min",torch.min(x).item())
-
         # Advance cache
 
         if cache is not None:
