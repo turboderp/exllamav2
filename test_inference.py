@@ -42,6 +42,7 @@ parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no.
 parser.add_argument("-ps", "--prompt_speed", action = "store_true", help = "Test prompt processing (batch) speed over context length")
 parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
 parser.add_argument("-mix", "--mix_layers", type = str, help = "Load replacement layers from secondary model. Example: --mix_layers 1,6-7:/mnt/models/other_model")
+parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip warmup before testing model")
 
 # Initialize model and tokenizer
 
@@ -105,7 +106,7 @@ if args.prompt:
         print(f" -- Warmup...")
 
         generator = ExLlamaV2BaseGenerator(model, cache, tokenizer)
-        generator.warmup()
+        if not args.no_warmup: generator.warmup()
 
         print(f" -- Generating...")
         print()
@@ -253,7 +254,8 @@ if args.prompt_speed:
 
         print(f" -- Warmup...")
 
-        model.forward(ids[:, -1:])
+        if not args.no_warmup:
+            model.forward(ids[:, -1:])
 
         print(f" -- Measuring prompt speed...")
 
