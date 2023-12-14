@@ -236,7 +236,46 @@ class PromptFormat_deepseek(PromptFormat):
 
     def print_extra_newline(self):
         return True
-    
+
+
+class PromptFormat_solar(PromptFormat):
+    description = "Solar-instruct"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are an AI assistant."""
+
+    def first_prompt(self):
+        return \
+            """### System\n""" + \
+            """<|system_prompt|>\n\n""" + \
+            """### User:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """### Assistant:\n"""
+
+    def subs_prompt(self):
+        return \
+            """### User:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """### Assistant:\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """\n\n### User""",
+             """\n### User""",
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
 
 prompt_formats = \
 {
@@ -246,7 +285,8 @@ prompt_formats = \
     "chatml": PromptFormat_chatml,
     "tinyllama": PromptFormat_tinyllama,
     "zephyr": PromptFormat_zephyr,
-    "deepseek": PromptFormat_deepseek
+    "deepseek": PromptFormat_deepseek,
+    "solar": PromptFormat_solar,
 }
 
 
