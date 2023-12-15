@@ -347,7 +347,7 @@ void QMoEMLP::forward_
     blockDim.y = 1;
     gridDim.x = 1;
     gridDim.y = DIVIDE(rows, WARPS);
-    softmax8_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, 2);
+    softmax8_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
 
     // For small no. rows, execute all kernels but pass the routing weights. Rows with a weight of zero will skip dot
     // product accum and kernels launched with only zero-weights will exit prematurely.
