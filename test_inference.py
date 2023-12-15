@@ -19,6 +19,7 @@ import torch
 import torch.nn.functional as F
 from conversion.tokenize import get_tokens
 from conversion.quantize import list_live_tensors
+import gc
 
 # from exllamav2.mlp import set_catch
 
@@ -75,6 +76,7 @@ if args.stream_layers:
 model_init.check_args(args)
 model_init.print_options(args)
 model, tokenizer = model_init.init(args, allow_auto_split = True, skip_load = args.stream_layers)
+cache = None
 
 # Auto split
 
@@ -86,7 +88,6 @@ if not model.loaded and not args.stream_layers:
     print(" -- Loading model...")
     cache = ExLlamaV2Cache(model, lazy = True)
     model.load_autosplit(cache)
-    cache = None
 
 if args.stream_layers:
 
@@ -129,7 +130,8 @@ if args.prompt:
 
     with torch.inference_mode():
 
-        cache = ExLlamaV2Cache(model)
+        if cache is None:
+            cache = ExLlamaV2Cache(model)
 
         ids = tokenizer.encode(args.prompt)
         tokens_prompt = ids.shape[-1]
@@ -164,7 +166,6 @@ if args.prompt:
     total_gen = time_end - time_begin
     print(f" -- Response generated in {total_gen:.2f} seconds, {args.tokens} tokens, {args.tokens / total_gen:.2f} tokens/second (includes prompt eval.)")
 
-    cache = None
 
 # Test perplexity
 
@@ -255,7 +256,8 @@ if args.eval_dataset:
             print(f" -- Inference", end = "")
             sys.stdout.flush()
 
-            cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
+            if cache is None:
+                cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
 
             for i in range(eval_tokens.shape[0]):
 
@@ -315,7 +317,6 @@ if args.eval_dataset:
             perplexity = math.exp(-mean_log_prob)
             print(f" -- Evaluation perplexity: {perplexity:.4f}")
 
-
         if args.eval_token:
             print(f" -- Inference (token)", end = "")
             sys.stdout.flush()
@@ -335,7 +336,8 @@ if args.prompt_speed:
 
     with torch.inference_mode():
 
-        cache = ExLlamaV2Cache(model)
+        if cache is None:
+            cache = ExLlamaV2Cache(model)
 
         ids = torch.randint(0, model.config.vocab_size - 1, (1, model.config.max_seq_len))
 
@@ -364,8 +366,6 @@ if args.prompt_speed:
             current_len = min(current_len + 128, model.config.max_seq_len)
             if current_len == current_len_: break
 
-    cache = None
-
 
 # Test token speed
 
@@ -373,7 +373,9 @@ if args.speed:
 
     with torch.inference_mode():
 
-        cache = ExLlamaV2Cache(model)
+        if cache is None:
+            cache = ExLlamaV2Cache(model)
+        cache.current_seq_len = 0
 
         print(f" -- Measuring token speed...")
         ids = tokenizer.encode("X")
@@ -401,3 +403,4 @@ if args.speed:
             current_idx = next_stop
             next_stop = min(next_stop + 128, model.config.max_seq_len)
             if next_stop == current_idx: break
+
