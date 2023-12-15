@@ -25,10 +25,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     lora_a_tensors: dict
     lora_b_tensors: dict
 
-    def __init__(self, model, key, in_features, out_features, has_bias):
+    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True):
         super().__init__(model, key)
 
-        self.padding = -out_features % 32
+        if pad32: self.padding = -out_features % 32
 
         self.in_features = in_features
         self.out_features = out_features + self.padding

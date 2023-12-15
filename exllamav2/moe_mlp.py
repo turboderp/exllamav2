@@ -38,7 +38,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         self.w1 = [ExLlamaV2Linear(model, key + f".block_sparse_moe.experts.{e}.w1", hidden_size, intermediate_size, False) for e in range(self.num_experts)]
         self.w2 = [ExLlamaV2Linear(model, key + f".block_sparse_moe.experts.{e}.w2", intermediate_size, hidden_size, False) for e in range(self.num_experts)]
         self.w3 = [ExLlamaV2Linear(model, key + f".block_sparse_moe.experts.{e}.w3", hidden_size, intermediate_size, False) for e in range(self.num_experts)]
-        self.gate = ExLlamaV2Linear(model, key + ".block_sparse_moe.gate", hidden_size, self.num_experts, False)
+        self.gate = ExLlamaV2Linear(model, key + ".block_sparse_moe.gate", hidden_size, self.num_experts, False, pad32 = False)
 
         self.submodules = [self.post_attention_layernorm,
                            self.gate] + \
@@ -60,19 +60,24 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             self.w2[e].load()
             self.w3[e].load()
 
-        # if self.w1[0].is_quant():
-        #     device_tensors = self.model.get_device_tensors(self.device_idx)
-        #     device_tensors.begin_scratch_alloc()
-        #     self.q_handle = ext_c.make_q_mlp(self.post_attention_layernorm.weight,
-        #                                      self.post_attention_layernorm.variance_epsilon,
-        #                                      self.gate_proj.q_handle,
-        #                                      self.up_proj.q_handle,
-        #                                      self.down_proj.q_handle,
-        #                                      device_tensors.get_scratch_slice(self.temp_state_size()),
-        #                                      device_tensors.get_scratch_slice(self.temp_a_size()),
-        #                                      device_tensors.get_scratch_slice(self.temp_b_size()),
-        #                                      device_tensors.get_scratch_slice(self.temp_dq_size()),
-        #                                      self.model.config.max_input_len * self.model.config.max_batch_size)
+        if self.w1[0].is_quant():
+            device_tensors = self.model.get_device_tensors(self.device_idx)
+            device_tensors.begin_scratch_alloc()
+            self.q_handle = ext_c.make_q_moe_mlp(self.post_attention_layernorm.weight,
+                                                 self.post_attention_layernorm.variance_epsilon,
+                                                 self.gate.linear.weight,
+                                                 self.num_experts,
+                                                 self.num_experts_per_token,
+                                                 [w.q_handle for w in self.w1],
+                                                 [w.q_handle for w in self.w2],
+                                                 [w.q_handle for w in self.w3],
+                                                 device_tensors.get_scratch_slice(self.temp_state_size()),
+                                                 device_tensors.get_scratch_slice(self.temp_gathered_state_size()),
+                                                 device_tensors.get_scratch_slice(self.temp_a_size()),
+                                                 device_tensors.get_scratch_slice(self.temp_b_size()),
+                                                 device_tensors.get_scratch_slice(self.temp_logit_size()),
+                                                 device_tensors.get_scratch_slice(self.temp_dq_size()),
+                                                 self.model.config.max_input_len * self.model.config.max_batch_size)
 
 
     def unload(self):
@@ -100,8 +105,10 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
     def scratch_space_fixed(self):
 
         return self.temp_state_size() + \
+               self.temp_gathered_state_size() + \
                self.temp_a_size() + \
                self.temp_b_size() + \
+               self.temp_logit_size() + \
                self.temp_dq_size()
 
 
@@ -109,12 +116,19 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
         assert self.model.config.intermediate_size >= self.model.config.hidden_size
         return self.temp_state_size() + \
+               self.temp_gathered_state_size() + \
                self.temp_a_size() + \
                self.temp_b_size() + \
+               self.temp_logit_size() + \
                self.temp_dq_size()
 
 
     def temp_state_size(self):
+
+        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.hidden_size * 2 + 128
+
+
+    def temp_gathered_state_size(self):
 
         return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.hidden_size * 2 + 128
 
@@ -136,6 +150,11 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                    self.w3[0].temp_dq_size())
 
 
+    def temp_logit_size(self):
+
+        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_experts * 2 + 128
+
+
     def set_device_idx(self, idx):
         super().set_device_idx(idx)
 
@@ -148,38 +167,37 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
-        # global catch_key
-        #
-        # if self.key == catch_key:
-        #     return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
-        # if self.q_handle is None or intermediates:
-        return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
-        #
+        assert loras is None or len(loras) == 0, "LoRA support not yet implemented for MoE MLP layers"
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+
+        # if True:
+        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts != 8:
+            return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
+
         # if loras is None or self.temp_lora_size == 0:
         #     pass_loras = []
         #     pass_lora_temp = ext.none_tensor
         # else:
         #     pass_loras = [id(x) for x in loras]
         #     pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
-        #
-        # ext_c.q_mlp_forward_(self.q_handle,
-        #                      hidden_states.view(-1, hidden_states.shape[-1]),
-        #                      pass_loras,
-        #                      pass_lora_temp)
-        #
-        # return hidden_states
+
+        # ref = self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
+        ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]))
+
+        return hidden_states
 
 
     def forward_torch(self, hidden_states, cache = None, attn_mask = None, intermediates = False, loras = None, position_offsets = None):
 
+        residual = hidden_states
+
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
-        residual = hidden_states
         hidden_states = self.post_attention_layernorm.forward(hidden_states)
 
-        router_logits = self.gate.forward(hidden_states, loras = loras)[:, :self.num_experts]
+        router_logits = self.gate.forward(hidden_states, loras = loras)  #[:, :self.num_experts]
 
         routing_weights = F.softmax(router_logits, dim = -1, dtype = torch.float)
         routing_weights, selected_experts = torch.topk(routing_weights, self.num_experts_per_token, dim = -1)
@@ -203,8 +221,11 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
             current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim)
 
-            current_hidden_states = F.silu(self.w1[expert_idx].forward(current_state, loras = loras)) * \
-                                    self.w3[expert_idx].forward(current_state, loras = loras)
+            gate = self.w1[expert_idx].forward(current_state, loras = loras)
+            up = self.w3[expert_idx].forward(current_state, loras = loras)
+
+            current_hidden_states = F.silu(gate) * up
+
             current_hidden_states = self.w2[expert_idx].forward(current_hidden_states, loras = loras)
             current_hidden_states *= routing_weights[top_x_list, idx_list, None]
 
