@@ -208,11 +208,11 @@ if args.eval_dataset:
 
         if args.stream_layers:
 
-            print(f" -- Inference (streamed)", end="")
+            print(f" -- Inference (streamed)", end = "")
             sys.stdout.flush()
 
             batch_size, seq_len = eval_tokens.shape
-            attn_mask = model.build_attn_mask(batch_size, seq_len, 0, None, "cuda:0")
+            attn_mask = model.build_attn_mask(stream_batch_size, seq_len, 0, None, "cuda:0")
 
             for idx, module in enumerate(model.modules):
                 module.set_device_idx(-1 if idx == 0 else 0)
@@ -225,6 +225,7 @@ if args.eval_dataset:
                 if idx == 0: continue
 
                 print(".", end = "")
+                sys.stdout.flush()
                 module.load()
 
                 b = 0
@@ -251,7 +252,7 @@ if args.eval_dataset:
 
         else:
 
-            print(f" -- Inference", end="")
+            print(f" -- Inference", end = "")
             sys.stdout.flush()
 
             cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
@@ -293,7 +294,7 @@ if args.eval_dataset:
                 cache.current_seq_len = 0
 
                 for j in range(eval_tokens.shape[1] - 1):
-                    if j % 256 == 0: print(".", end="")
+                    if j % 256 == 0: print(".", end = "")
                     sys.stdout.flush()
 
                     input_ids = eval_tokens[i:i + 1, j:j + 1]
@@ -316,13 +317,13 @@ if args.eval_dataset:
 
 
         if args.eval_token:
-            print(f" -- Inference (token)", end="")
+            print(f" -- Inference (token)", end = "")
             sys.stdout.flush()
             cache = ExLlamaV2Cache(model, max_seq_len = eval_length)
             test_ppl_token()
 
         if args.eval_token_8bit:
-            print(f" -- Inference (token, 8-bit cache)", end="")
+            print(f" -- Inference (token, 8-bit cache)", end = "")
             sys.stdout.flush()
             cache = ExLlamaV2Cache_8bit(model, max_seq_len = eval_length)
             test_ppl_token()
