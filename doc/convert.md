@@ -39,8 +39,11 @@ particularly useful when quantizing the same model to multiple bitrates, since t
 to complete.
   
 
-- **-c / --cal_dataset *file***: (_required_) The calibration dataset in Parquet format. The quantizer concatenates all
-the data in this file into one long string and uses the first _r_ \* _l_ tokens for calibration.   
+- **-c / --cal_dataset *file***: (_optional_) The calibration dataset in Parquet format. The quantizer concatenates all
+the data in this file into one long string and uses the first _r_ \* _l_ tokens for calibration. If this is not
+specified, the default, built-in calibration dataset is used which contains a broad mix of different types of data. It's
+designed to prevent the quantized model from overfitting to any particular mode, language or style, and generally
+results in more robust, reliable outputs, especially at lower bitrates.
   
 
 - **-l / --length *int***: Length, in tokens, of each calibration row. Default is 2048.
@@ -54,12 +57,6 @@ is 2048.
   
 
 - **-mr / --measurement_rows *int***: Number of rows in the calibration batch for the measuring pass. Default is 16.
-  
-
-- **-gr / --gpu_rows *int***: Threshold for when to swap the calibration state to and from system RAM, saving a lot of
-VRAM at the cost of some speed. If this number is less than **-r**, system RAM will be used in the quantization pass.
-Likewise for the measurement pass if the number is less than **-mr**. Depending on your available VRAM you may be able
-to run without swapping for smaller models and have to set **-gr** to zero for larger ones. Default is 0.
   
 
 - **-b / --bits *float***: Target average number of bits per weight.
@@ -77,17 +74,21 @@ Note that writing a very large `.safetensors` file can require a lot of system R
 - **-ra / --rope_alpha *float***: RoPE (NTK) alpha to apply to base model for calibration.
 
 
-- **-rs / --rope_scale *float***: RoPE scaling factor to apply to base model for calibration.
+- **-rs / --rope_scale *float***: RoPE scaling factor to apply to base model for calibration. This settings is not 
+automatically read from the model's config, so it's strongly recommended that you check what setting the model was
+trained/finetuned with. E.g.: deepseek-coder uses a scaling factor of 4, so will be incorrectly calibrated if you
+convert it without `-rs 4`.
 
 
 ### Notes
 
-The converter works in two passes; first it measures how quantization impacts each matrix in the model, and then it
+The converter works in two passes; first it measures how quantization impacts each module of the model, and then it
 actually quantizes the model, choosing quantization parameters for each layer that minimize the overall error while 
 also achieving the desired overall (average) bitrate.
 
-The first pass is slow, since it effectively quantizes the model about 20 times over, so make sure to save the
-`measurement.json` file so you can skip the measurement pass on subsequent quants of the same model.
+The first pass is slow, since it effectively quantizes the entire model about 12 times over (albeit with a less
+comprehensive sample of the calibration dataset), so make sure to save the `measurement.json` file so you can skip the
+measurement pass on subsequent quants of the same model.
 
 ### Examples
 
@@ -137,5 +138,9 @@ python convert.py \
 
 ### Hardware requirements
 
-Roughly speaking, you'll need about 24 GB of VRAM to convert a 70B model, while 7B seems to require about 8 GB. Stay
-tuned for more details.
+Roughly speaking, you'll need about 64 GB or RAM and 24 GB of VRAM to convert a 70B model, while 7B seems to require
+about 16 GB of RAM and about 8 GB of VRAM.
+
+The deciding factor for the memory requirement is the *width* of the model rather than the depth, so 120B models that
+have the same hidden size as 70B models have the same hardware requirements. Mixtral 8x7B has much wider feed-forward
+layers so requires about 20 GB of VRAM.  
