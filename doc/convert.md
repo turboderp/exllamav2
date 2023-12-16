@@ -98,7 +98,6 @@ Convert a model and create a directory containing the quantized version with all
 python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
-    -c /mnt/datasets/parquet/wikitext-test.parquet \
     -cf /mnt/models/llama2-7b-exl2/3.0bpw/ \
     -b 3.0 
 ```
@@ -110,7 +109,6 @@ python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
     -nr \
-    -c /mnt/datasets/parquet/wikitext-test.parquet \
     -om /mnt/models/llama2-7b-exl2/measurement.json
 ```
 
@@ -121,7 +119,6 @@ python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
     -nr \
-    -c /mnt/datasets/parquet/wikitext-test.parquet \
     -m /mnt/models/llama2-7b-exl2/measurement.json \
     -cf /mnt/models/llama2-7b-exl2/4.0bpw/ \
     -b 4.0
@@ -130,11 +127,25 @@ python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
     -nr \
-    -c /mnt/datasets/parquet/wikitext-test.parquet \
     -m /mnt/models/llama2-7b-exl2/measurement.json \
     -cf /mnt/models/llama2-7b-exl2/4.5bpw/ \
     -b 4.5
 ```
+
+### Notes
+
+- If the conversion script seems to stop on the "Solving..." step, give it a moment. It's attempting to find the 
+combination of quantization parameters within the bits budget that minimizes the product of measured errors per
+individual layer, and the implementation is not very efficient.
+- During measurement and conversion of MoE models you may see a message like: 
+`!! Warning: w2.7 has less than 10% calibration for 77/115 rows`. This happens when a particular expert isn't triggered
+enough during the reference forward passes to get a good amount of calibration data. It won't cause the
+conversion to fail, and it may not be a big deal at all, but GPTQ-style quantization of MoE models is very new so I'm
+not yet sure if it actually matters.
+- After conversion, the "calibration perplexity (quant)" is a perplexity calculation on a small sample of the 
+calibration data as processed by the quantized model under construction. If it looks too high (30 or more), 
+quantization likely didn't go well, and if it's unreasonably high (in the thousands, for instance) quantization failed
+catastrophically. 
 
 ### Hardware requirements
 
