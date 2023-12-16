@@ -166,9 +166,9 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_ma
     quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
     quantizers["down_proj"].prepare()
 
-    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"w1.{i}"], qjobs[0])
-    options_u, bits_u = test_quant(module.up_proj, quantizers[f"w3.{i}"], qjobs[1])
-    options_d, bits_d = test_quant(module.down_proj, quantizers[f"w2.{i}"], qjobs[2])
+    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"gate_proj"], qjobs[0])
+    options_u, bits_u = test_quant(module.up_proj, quantizers[f"up_proj"], qjobs[1])
+    options_d, bits_d = test_quant(module.down_proj, quantizers[f"down_proj"], qjobs[2])
 
     total_numel = module.gate_proj.numel()
     total_numel += module.up_proj.numel()
