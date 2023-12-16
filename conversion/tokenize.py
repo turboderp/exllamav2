@@ -154,7 +154,7 @@ def get_standard_calibration(measure, tokenizer):
     for i in range(rows_multilingual_s):
         row = []
         for j in range(2048 // 128):
-            k = random.randint(0, tokenized_rows.shape[0])
+            k = random.randint(0, tokenized_rows.shape[0] - 1)
             row.append(tokenized_rows[k].unsqueeze(0))
         rows.append(torch.cat(row, dim = -1))
 
