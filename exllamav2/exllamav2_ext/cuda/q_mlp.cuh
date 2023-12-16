@@ -62,4 +62,70 @@ private:
 
 };
 
+class QMoEMLP
+{
+public:
+
+    half* layernorm;
+    float norm_epsilon;
+
+    half* gate;
+    int num_experts;
+    int num_experts_per_token;
+
+    std::vector<QMatrix*> w1;
+    std::vector<QMatrix*> w2;
+    std::vector<QMatrix*> w3;
+
+    half* temp_state;
+    half* temp_gathered_state;
+    half* temp_a;
+    half* temp_b;
+    half* temp_logits;
+    half* temp_dq;
+
+    int device;
+    int max_rows;
+    int hidden_dim;
+
+//    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> gate_proj_lora;
+//    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> up_proj_lora;
+//    std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> down_proj_lora;
+
+    QMoEMLP
+    (
+        half* _layernorm,
+        float _norm_epsilon,
+        half* _gate,
+        int _num_experts,
+        int _num_experts_per_token,
+        std::vector<QMatrix*>& w1,
+        std::vector<QMatrix*>& w2,
+        std::vector<QMatrix*>& w3,
+        half* _temp_state,
+        half* _temp_gathered_state,
+        half* _temp_a,
+        half* _temp_b,
+        half* _temp_logits,
+        half* _temp_dq,
+        int _max_rows,
+        int _hidden_dim
+    );
+
+    ~QMoEMLP();
+
+    void forward_
+    (
+        cublasHandle_t cublas_handle,
+        half* x,
+        int rows,
+        int columns
+//        const std::vector<uintptr_t>& loras,
+//        half* lora_temp
+    );
+
+private:
+
+};
+
 #endif

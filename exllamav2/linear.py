@@ -25,10 +25,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     lora_a_tensors: dict
     lora_b_tensors: dict
 
-    def __init__(self, model, key, in_features, out_features, has_bias):
+    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True):
         super().__init__(model, key)
 
-        self.padding = -out_features % 32
+        if pad32: self.padding = -out_features % 32
 
         self.in_features = in_features
         self.out_features = out_features + self.padding
@@ -54,6 +54,16 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             if self.padding > 0: w = nn.Parameter(F.pad(w.data, (0, 0, 0, self.padding)).contiguous())
             self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
             self.linear.weight = w
+
+
+    def matrix_shape(self):
+
+        return self.in_features, self.out_features
+
+
+    def numel(self):
+
+        return self.in_features * self.out_features
 
 
     def unload(self):

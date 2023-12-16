@@ -43,6 +43,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/rms_norm.cu",
                 "exllamav2/exllamav2_ext/cuda/rope.cu",
                 "exllamav2/exllamav2_ext/cuda/cache.cu",
+                "exllamav2/exllamav2_ext/cuda/util.cu",
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
                 "exllamav2/exllamav2_ext/cpp/sampling.cpp"
             ],

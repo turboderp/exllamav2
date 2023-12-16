@@ -6,6 +6,12 @@ from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2 import ext
 
+# catch_key = None
+# def set_catch(key):
+#     global catch_key
+#     catch_key = key
+
+
 class ExLlamaV2MLP(ExLlamaV2Module):
 
     layer_idx: int
@@ -38,6 +44,13 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                            self.gate_proj,
                            self.up_proj,
                            self.down_proj]
+
+
+    def numel(self):
+
+        return self.gate_proj.numel() + \
+               self.up_proj.numel() + \
+               self.down_proj.numel()
 
 
     def load(self):
@@ -129,7 +142,12 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.up_proj.set_device_idx(idx)
         self.down_proj.set_device_idx(idx)
 
+
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+        # global catch_key
+        #
+        # if self.key == catch_key:
+        #     return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
@@ -158,8 +176,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         y = F.silu(gate)
         up = self.up_proj.forward(post_norm, loras = loras)
         y *= up
-        down = self.down_proj.forward(y, loras = loras)
+        y.clamp_(min = -65504.0, max = 65504.0)
 
+        down = self.down_proj.forward(y, loras = loras)
         hidden_states = down + residual
 
         if intermediates:

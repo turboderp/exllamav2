@@ -629,6 +629,102 @@ int q_mlp_set_loras
     return max_rank;
 }
 
+// Quant MoE MLP
+
+uintptr_t make_q_moe_mlp
+(
+    torch::Tensor layernorm,
+    float norm_epsilon,
+    torch::Tensor gate,
+    int num_experts,
+    int num_experts_per_token,
+    const std::vector<uintptr_t>& w1,
+    const std::vector<uintptr_t>& w2,
+    const std::vector<uintptr_t>& w3,
+    torch::Tensor temp_state,
+    torch::Tensor temp_gathered_state,
+    torch::Tensor temp_a,
+    torch::Tensor temp_b,
+    torch::Tensor temp_logits,
+    torch::Tensor temp_dq,
+    int max_rows
+)
+{
+    std::vector<QMatrix*> qm_w1;
+    std::vector<QMatrix*> qm_w2;
+    std::vector<QMatrix*> qm_w3;
+
+    for (int i = 0; i < w1.size(); ++i)
+    {
+        qm_w1.push_back(reinterpret_cast<QMatrix*> (w1[i]));
+        qm_w2.push_back(reinterpret_cast<QMatrix*> (w2[i]));
+        qm_w3.push_back(reinterpret_cast<QMatrix*> (w3[i]));
+    }
+
+    TORCH_CHECK_DTYPE(layernorm, kHalf);
+    TORCH_CHECK_SHAPES(layernorm, 0, gate, 1, 1);  // gate is transposed
+    TORCH_CHECK(gate.size(0) == num_experts, "gate output features != num_experts");
+
+    int hidden_dim = gate.size(1);
+
+    QMoEMLP* moe_mlp = new QMoEMLP
+    (
+        (half*) layernorm.data_ptr(),
+        norm_epsilon,
+        (half*) gate.data_ptr(),
+        num_experts,
+        num_experts_per_token,
+        qm_w1,
+        qm_w2,
+        qm_w3,
+        (half*) temp_state.data_ptr(),
+        (half*) temp_gathered_state.data_ptr(),
+        (half*) temp_a.data_ptr(),
+        (half*) temp_b.data_ptr(),
+        (half*) temp_logits.data_ptr(),
+        (half*) temp_dq.data_ptr(),
+        max_rows,
+        hidden_dim
+    );
+
+    return reinterpret_cast<uintptr_t> (moe_mlp);
+}
+
+void free_q_moe_mlp
+(
+   uintptr_t handle
+)
+{
+    QMoEMLP* moe_mlp = reinterpret_cast<QMoEMLP*> (handle);
+    delete moe_mlp;
+}
+
+void q_moe_mlp_forward_
+(
+    uintptr_t q_moe_mlp,
+    torch::Tensor x
+//    const std::vector<uintptr_t>& loras,
+//    torch::Tensor loras_temp
+)
+{
+    QMoEMLP* moe_mlp = reinterpret_cast<QMoEMLP*> (q_moe_mlp);
+    TORCH_CHECK_DTYPE(x, kHalf);
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+
+    TORCH_CHECK(x.size(1) == moe_mlp->hidden_dim, "x is wrong shape");
+    TORCH_CHECK(x.size(0) <= moe_mlp->max_rows, "Too many rows in x");
+
+    moe_mlp->forward_
+    (
+        at::cuda::getCurrentCUDABlasHandle(),
+        (half*) x.data_ptr(),
+        x.size(0), // rows
+        x.size(1) // columns == hidden_size
+//        loras,
+//        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+    );
+}
 
 // RoPE rotary positional embeddings, in-place
 
@@ -1048,8 +1144,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
     m.def("free_q_mlp", &free_q_mlp, "free_q_mlp");
+    m.def("make_q_moe_mlp", &make_q_moe_mlp, "make_q_moe_mlp");
+    m.def("free_q_moe_mlp", &free_q_moe_mlp, "free_q_moe_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
+    m.def("q_moe_mlp_forward_", &q_moe_mlp_forward_, "q_moe_mlp_forward_");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
     m.def("free_q_attn", &free_q_attn, "free_q_attn");
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");

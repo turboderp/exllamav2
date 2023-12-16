@@ -10,9 +10,13 @@ ext_debug = False
 
 windows = (os.name == "nt")
 
+build_jit = False
 try:
     import exllamav2_ext
 except ModuleNotFoundError:
+    build_jit = True
+
+if build_jit:
     # Kludge to get compilation working on Windows
 
     if windows:
@@ -114,6 +118,7 @@ except ModuleNotFoundError:
         "cuda/rms_norm.cu",
         "cuda/rope.cu",
         "cuda/cache.cu",
+        "cuda/util.cu",
         "cpp/quantize_func.cpp",
         "cpp/sampling.cpp"
     ]

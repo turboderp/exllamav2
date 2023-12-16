@@ -1,8 +1,16 @@
+from exllamav2.model import \
+(
+    ExLlamaV2Embedding,
+    ExLlamaV2Attention,
+    ExLlamaV2MLP,
+    ExLlamaV2MoEMLP,
+    ExLlamaV2Linear,
+    ExLlamaV2RMSNorm
+)
+
 import os, glob, shutil
 from safetensors import safe_open
 from safetensors.torch import save_file
-from exllamav2.model import ExLlamaV2Attention, ExLlamaV2MLP, ExLlamaV2RMSNorm, ExLlamaV2Embedding, ExLlamaV2Linear
-
 
 def _tsize(t):
 
@@ -63,6 +71,15 @@ def compile_model(job, save_fn, model):
             d = get_q_module(job, module.gate_proj); out_dict |= d; current_size += _dsize(d)
             d = get_q_module(job, module.up_proj); out_dict |= d; current_size += _dsize(d)
             d = get_q_module(job, module.down_proj); out_dict |= d; current_size += _dsize(d)
+
+        if isinstance(module, ExLlamaV2MoEMLP):
+
+            d = get_f_module(job, module.post_attention_layernorm); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.gate); out_dict |= d; current_size += _dsize(d)
+            for i in range(model.config.num_experts):
+                d = get_q_module(job, module.w1[i]); out_dict |= d; current_size += _dsize(d)
+                d = get_q_module(job, module.w3[i]); out_dict |= d; current_size += _dsize(d)
+                d = get_q_module(job, module.w2[i]); out_dict |= d; current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2RMSNorm):
 

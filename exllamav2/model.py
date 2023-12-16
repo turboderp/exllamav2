@@ -21,6 +21,7 @@ from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
+from exllamav2.moe_mlp import ExLlamaV2MoEMLP
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.compat import safe_move_tensor
@@ -133,8 +134,12 @@ class ExLlamaV2:
 
             self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
-            self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
+            if self.config.architecture == "Mixtral":
+                self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_idx}", layer_idx))
+            else:
+                self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
+
 
         self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
@@ -277,7 +282,7 @@ class ExLlamaV2:
 
         assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
 
-        minimum_reserve_vram = 32 * 1024**2
+        minimum_reserve_vram = 192 * 1024**2
         last_touched_device = -1
         current_device = 0
         num_devices = torch.torch.cuda.device_count()
@@ -290,7 +295,7 @@ class ExLlamaV2:
             # Reserved space
 
             if reserve_vram is None:
-                reserve_vram = [32 * 1024**2] + [0] * (num_devices - 1)
+                reserve_vram = [192 * 1024**2] + [0] * (num_devices - 1)
 
             reserved_vram_tensors = []
             minimum_reserve_tensor = None
@@ -662,9 +667,6 @@ class ExLlamaV2:
             if preprocess_only and idx == self.last_kv_layer_idx:
                 x = None
                 break
-
-            # print(module.key, module.name, x[0, 0])
-            # print("max", torch.max(x).item(), "min",torch.min(x).item())
 
         # Advance cache
 

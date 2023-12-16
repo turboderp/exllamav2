@@ -39,6 +39,11 @@ class ExLlamaV2Module:
         self.footprint = -1
 
 
+    def numel(self):
+
+        return 0
+
+
     def device(self):
 
         return _torch_device(self.device_idx)
@@ -85,6 +90,7 @@ class ExLlamaV2Module:
 
         if self.key + ".qweight" in self.model.config.tensor_file_map:
             qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx"])
+            qtensors["scales"] = qtensors["scales"].half()
             return qtensors
 
         # Torch
@@ -132,3 +138,8 @@ class ExLlamaV2Module:
 
     def is_quant(self):
         return False
+
+
+    def reload(self):
+        self.unload()
+        self.load()

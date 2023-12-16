@@ -71,6 +71,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                            self.o_proj]
 
 
+    def numel(self):
+
+        return self.q_proj.numel() + \
+               self.k_proj.numel() + \
+               self.v_proj.numel() + \
+               self.o_proj.numel()
+
+
     def load(self):
 
         qkv_embed = self.model.config.qkv_embed and self.layer_idx == 0

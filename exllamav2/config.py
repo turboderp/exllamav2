@@ -42,6 +42,8 @@ class ExLlamaV2Config:
     vocab_size: int
     rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
     head_dim: int = 128                         # Constant for all Llama models, except 3b
+    num_experts: int = 1
+    num_experts_per_token: int = 1
 
     qkv_embed: bool = False
 
@@ -74,13 +76,72 @@ class ExLlamaV2Config:
         with open(self.model_config, encoding = "utf8") as f:
             read_config = json.load(f)
 
-            if "LlamaForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
-            elif "MistralForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
-            elif "YiForCausalLM" in read_config["architectures"]: self.architecture = "Yi"
+            layer_keys = []
+            expect_keys = []
+            layer_keys_llama_norms = [["input_layernorm"],
+                                      ["post_attention_layernorm"]]
+            layer_keys_yi_norms = [["ln1", "input_layernorm"],
+                                   ["ln2", "post_attention_layernorm"]]
+            layer_keys_llama_attn = [["self_attn.q_proj"],
+                                     ["self_attn.k_proj"],
+                                     ["self_attn.v_proj"],
+                                     ["self_attn.o_proj"]]
+            layer_keys_llama_mlp = [["mlp.down_proj"],
+                                    ["mlp.gate_proj"],
+                                    ["mlp.up_proj"]]
+            expect_keys_llama = [["lm_head"],
+                                 ["model.norm"],
+                                 ["model.embed_tokens"]]
+
+            if "LlamaForCausalLM" in read_config["architectures"]:
+                self.architecture = "Llama"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "MistralForCausalLM" in read_config["architectures"]:
+                self.architecture = "Llama"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "YiForCausalLM" in read_config["architectures"]:
+                self.architecture = "Yi"
+                layer_keys += \
+                    layer_keys_yi_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "MixtralForCausalLM" in read_config["architectures"]:
+                self.architecture = "Mixtral"
+                self.num_experts = read_config["num_local_experts"]
+                self.num_experts_per_token = read_config["num_experts_per_tok"]
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    [[f"block_sparse_moe.experts.{e}.w{w}" for e in range(8) for w in range(3)]] + \
+                    [["block_sparse_moe.gate"]]
+                expect_keys += \
+                    expect_keys_llama
+
             else:
                 print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
                 print(f" !! Loading as LlamaForCausalLM")
                 self.architecture = "Llama"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
 
             self.bos_token_id = read_config["bos_token_id"] if "bos_token_id" in read_config else 1
             self.eos_token_id = read_config["eos_token_id"] if "eos_token_id" in read_config else 2
@@ -129,25 +190,6 @@ class ExLlamaV2Config:
                     self.tensor_file_map[key] = st_file
 
         # Make sure we found all the layers we need
-
-        layer_keys = [
-            ["input_layernorm", "ln1"],
-            ["post_attention_layernorm", "ln2"],
-            ["self_attn.q_proj"],
-            ["self_attn.k_proj"],
-            ["self_attn.v_proj"],
-            ["self_attn.o_proj"],
-            ["mlp.down_proj"],
-            ["mlp.gate_proj"],
-            ["mlp.up_proj"]
-        ]
-
-        expect_keys = []
-        expect_keys += [
-            ["lm_head"],
-            ["model.norm"],
-            ["model.embed_tokens"]
-        ]
 
         for layer_idx in range(self.num_hidden_layers):
             for ks in layer_keys:
