@@ -51,7 +51,8 @@ python examples/chat.py -m <path_to_model> -mode llama
 
 The `-mode` argument chooses the prompt format to use. `llama` is for the Llama(2)-chat finetunes, while `codellama`
 probably works better for CodeLlama-instruct. `raw` will produce a simple chatlog-style chat that works with base 
-models and various other finetunes. You can also provide a custom system prompt with `-sp`. 
+models and various other finetunes. Run with `-modes` for a list of all available prompt formats. You can also provide
+a custom system prompt with `-sp`. 
 
 
 ## Integration and APIs
