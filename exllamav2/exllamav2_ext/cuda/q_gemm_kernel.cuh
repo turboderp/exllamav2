@@ -119,10 +119,12 @@ typedef void (*fp_gemm_half_q_half_kernel)
     const int,
     const int,
     const int,
-    const bool
+    const bool,
+    const half*,
+    const int
 );
 
-template <bool first_block, int m_count>
+template <int m_count, bool use_r_weights, bool mul_r_weights>
 __global__ void gemm_half_q_half_kernel
 (
     const half*      __restrict__ a,
@@ -142,7 +144,9 @@ __global__ void gemm_half_q_half_kernel
     const int rows_4,
     const int rows_3,
     const int rows_2,
-    const bool clear
+    const bool clear,
+    const half* r_weights,
+    const int r_weights_stride
 )
 {
     MatrixView_half a_(a, size_m, size_k);
@@ -161,6 +165,22 @@ __global__ void gemm_half_q_half_kernel
     int end_m = min(offset_m + m_count, size_m);
     int end_k = min(offset_k + EXL2_BLOCK_KN_SIZE, size_k);
     int n = offset_n + t * 4;
+
+    // Read weights
+
+    half_uint16 weights[MAX_Q_GEMM_WEIGHTS];
+    if constexpr (use_r_weights)
+    {
+        uint16_t any_w = 0;
+        const half* w_ptr = r_weights;
+        for (int m = 0; m < m_count; ++m)
+        {
+            weights[m].as_half = *w_ptr;
+            w_ptr += r_weights_stride;
+            any_w |= weights[m].as_uint16;
+        }
+        if (!any_w) return;  // Early exit if all weights are zero -- does not zero output (!!!)
+    }
 
     // Preload block_a
 
@@ -285,6 +305,7 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
+                if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = dot22_8_h(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h0);
                 block_c[m][1] = dot22_8_h(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h1);
                 block_c[m][2] = dot22_8_h(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h2);
@@ -324,6 +345,7 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
+                if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = dot22_16_h(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h0);
                 block_c[m][1] = dot22_16_h(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h1);
                 block_c[m][2] = dot22_16_h(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h2);
@@ -365,6 +387,7 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
+                if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = dot22_32_h(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h0);
                 block_c[m][1] = dot22_32_h(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h1);
                 block_c[m][2] = dot22_32_h(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h2);
@@ -403,6 +426,7 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
+                if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = dot22_8_h(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h0);
                 block_c[m][1] = dot22_8_h(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h1);
                 block_c[m][2] = dot22_8_h(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h2);
@@ -442,6 +466,7 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
+                if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = dot22_32_h(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h0);
                 block_c[m][1] = dot22_32_h(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h1);
                 block_c[m][2] = dot22_32_h(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h2);
@@ -479,6 +504,7 @@ __global__ void gemm_half_q_half_kernel
 
             for (int m = 0; m < m_count; m++)
             {
+                if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = dot22_16_h(dq[0], a_ptr + m * a_stride, block_c[m][0], qs_h0);
                 block_c[m][1] = dot22_16_h(dq[1], a_ptr + m * a_stride, block_c[m][1], qs_h1);
                 block_c[m][2] = dot22_16_h(dq[2], a_ptr + m * a_stride, block_c[m][2], qs_h2);
@@ -497,6 +523,14 @@ __global__ void gemm_half_q_half_kernel
         half2* out = (half2*)c_.item_ptr(offset_m + m, n);
         half2 result01 = __halves2half2(block_c[m][0], block_c[m][1]);
         half2 result23 = __halves2half2(block_c[m][2], block_c[m][3]);
+
+        if constexpr (mul_r_weights)
+        {
+            half2 w_mul2 = __half2half2(weights[m].as_half);
+            result01 = __hmul2(result01, w_mul2);
+            result23 = __hmul2(result23, w_mul2);
+        }
+
         atomicAdd(out    , result01);
         atomicAdd(out + 1, result23);
 //        *out = result01;
@@ -504,31 +538,43 @@ __global__ void gemm_half_q_half_kernel
     }
 }
 
-fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(bool first_block, const int m_count)
+template <bool use_r_weights, bool mul_r_weights>
+struct map_m_count_exl2 {
+    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count)
+    {
+        #if EXL2_BLOCK_M_SIZE_MAX >= 1
+        if (m_count == 1) return gemm_half_q_half_kernel<1, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 2
+        if (m_count == 2) return gemm_half_q_half_kernel<2, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 3
+        if (m_count == 3) return gemm_half_q_half_kernel<3, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 4
+        if (m_count == 4) return gemm_half_q_half_kernel<4, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 5
+        if (m_count == 5) return gemm_half_q_half_kernel<5, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 6
+        if (m_count == 6) return gemm_half_q_half_kernel<6, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 7
+        if (m_count == 7) return gemm_half_q_half_kernel<7, use_r_weights, mul_r_weights>;
+        #endif
+        #if EXL2_BLOCK_M_SIZE_MAX >= 8
+        if (m_count == 8) return gemm_half_q_half_kernel<8, use_r_weights, mul_r_weights>;
+        #endif
+        return NULL;
+    }
+};
+
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count, bool r_weights, bool mul_r_weights)
 {
-    #if EXL2_BLOCK_M_SIZE_MAX >= 1
-    if (m_count == 1) return gemm_half_q_half_kernel<true, 1>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 2
-    if (m_count == 2) return gemm_half_q_half_kernel<true, 2>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 3
-    if (m_count == 3) return gemm_half_q_half_kernel<true, 3>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 4
-    if (m_count == 4) return gemm_half_q_half_kernel<true, 4>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 5
-    if (m_count == 5) return gemm_half_q_half_kernel<true, 5>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 6
-    if (m_count == 6) return gemm_half_q_half_kernel<true, 6>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 7
-    if (m_count == 7) return gemm_half_q_half_kernel<true, 7>;
-    #endif
-    #if EXL2_BLOCK_M_SIZE_MAX >= 8
-    if (m_count == 8) return gemm_half_q_half_kernel<true, 8>;
-    #endif
+    if (!r_weights && !mul_r_weights) return map_m_count_exl2<false, false>::pick_gemm_half_q_half_kernel(m_count);
+    if (!r_weights &&  mul_r_weights) return map_m_count_exl2<false,  true>::pick_gemm_half_q_half_kernel(m_count);
+    if ( r_weights && !mul_r_weights) return map_m_count_exl2< true, false>::pick_gemm_half_q_half_kernel(m_count);
+    if ( r_weights &&  mul_r_weights) return map_m_count_exl2< true,  true>::pick_gemm_half_q_half_kernel(m_count);
     return NULL;
 }

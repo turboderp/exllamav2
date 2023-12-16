@@ -1,4 +1,13 @@
-from exllamav2.model import ExLlamaV2Embedding, ExLlamaV2Attention, ExLlamaV2MLP, ExLlamaV2Linear, ExLlamaV2RMSNorm
+from exllamav2.model import \
+(
+    ExLlamaV2Embedding,
+    ExLlamaV2Attention,
+    ExLlamaV2MLP,
+    ExLlamaV2MoEMLP,
+    ExLlamaV2Linear,
+    ExLlamaV2RMSNorm
+)
+
 from safetensors import safe_open
 from safetensors.torch import save_file
 from conversion.qparams import QParams, qparams_headoptions, qparams_attn, qparams_mlp, get_qparams_reduced
@@ -157,9 +166,9 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_ma
     quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
     quantizers["down_proj"].prepare()
 
-    options_g, bits_g = test_quant(module.gate_proj, quantizers["gate_proj"], qjobs[0])
-    options_u, bits_u = test_quant(module.up_proj, quantizers["up_proj"], qjobs[1])
-    options_d, bits_d = test_quant(module.down_proj, quantizers["down_proj"], qjobs[2])
+    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"w1.{i}"], qjobs[0])
+    options_u, bits_u = test_quant(module.up_proj, quantizers[f"w3.{i}"], qjobs[1])
+    options_d, bits_d = test_quant(module.down_proj, quantizers[f"w2.{i}"], qjobs[2])
 
     total_numel = module.gate_proj.numel()
     total_numel += module.up_proj.numel()
@@ -188,6 +197,72 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_ma
               "gate_proj": qjobs[0][g].get_dict(),
               "up_proj": qjobs[1][u].get_dict(),
               "down_proj": qjobs[2][d].get_dict() }
+        results.append(r)
+
+    return results
+
+
+def measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, attn_mask):
+
+    qjobs, qmaps = get_qparams_reduced(qparams_mlp)
+    num_experts = module.model.config.num_experts
+    results = []
+
+    quantizers["w1.0"].prepare()
+    for i in range(num_experts):
+        if i > 0: quantizers[f"w1.{i}"].reuse_h(quantizers["w1.0"])
+        quantizers[f"w2.{i}"].prepare()
+        quantizers[f"w3.{i}"].reuse_h(quantizers["w1.0"])
+
+    options_g, bits_g = [], []
+    options_u, bits_u = [], []
+    options_d, bits_d = [], []
+    for i in range(num_experts):
+        options_g_, bits_g_ = test_quant(module.w1[i], quantizers[f"w1.{i}"], qjobs[0])
+        del quantizers[f"w1.{i}"]
+        options_u_, bits_u_ = test_quant(module.w3[i], quantizers[f"w3.{i}"], qjobs[1])
+        del quantizers[f"w3.{i}"]
+        options_d_, bits_d_ = test_quant(module.w2[i], quantizers[f"w2.{i}"], qjobs[2])
+        del quantizers[f"w2.{i}"]
+        options_g.append(options_g_)
+        options_u.append(options_u_)
+        options_d.append(options_d_)
+        bits_g.append(bits_g_)
+        bits_u.append(bits_u_)
+        bits_d.append(bits_d_)
+
+    quantizers.clear()
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    total_numel = sum(module.w1[i].numel() for i in range(num_experts))
+    total_numel += sum(module.w3[i].numel() for i in range(num_experts))
+    total_numel += sum(module.w2[i].numel() for i in range(num_experts))
+
+    (g_, u_, d_) = (-1, -1, -1)
+    for (g, u, d) in qmaps:
+
+        for i in range(num_experts):
+            if g != g_: module.w1[i].linear.weight = nn.Parameter(options_g[i][g].weight.cuda())
+            if u != u_: module.w3[i].linear.weight = nn.Parameter(options_u[i][u].weight.cuda())
+            if d != d_: module.w2[i].linear.weight = nn.Parameter(options_d[i][d].weight.cuda())
+        (g_, u_, d_) = (g, u, d)
+
+        total_bits = sum(bits_g[i][g] for i in range(num_experts))
+        total_bits += sum(bits_u[i][u] for i in range(num_experts))
+        total_bits += sum(bits_d[i][d] for i in range(num_experts))
+        total_bpw = total_bits / total_numel
+
+        accuracy = test_error(module, hidden_states, target_states, cache, attn_mask)
+        print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
+
+        torch.cuda.empty_cache()
+
+        r = { "accuracy": accuracy,
+              "total_bits": total_bits,
+              "w1": qjobs[0][g].get_dict(),
+              "w3": qjobs[1][u].get_dict(),
+              "w2": qjobs[2][d].get_dict() }
         results.append(r)
 
     return results
@@ -241,6 +316,13 @@ def measure_quant(job, save_fn, model):
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
 
+        elif isinstance(module, ExLlamaV2MoEMLP):
+            mode = "block_sparse_moe"
+            for i in range(model.config.num_experts):
+                quantizers[f"w1.{i}"] = AdaptiveGPTQ(module.w1[i].linear)
+                quantizers[f"w3.{i}"] = AdaptiveGPTQ(module.w3[i].linear)
+                quantizers[f"w2.{i}"] = AdaptiveGPTQ(module.w2[i].linear)
+
         elif isinstance(module, ExLlamaV2Linear):
             mode = "linear"
             # Don't measure head layer
@@ -248,13 +330,15 @@ def measure_quant(job, save_fn, model):
         elif isinstance(module, ExLlamaV2RMSNorm):
             mode = "norm"
 
-
         # Reference forward pass
 
         cache = None
         attn_mask = model.build_attn_mask(1, hidden_states[0].shape[1], 0, None, "cuda:0") if mode == "self_attn" else None
 
         target_states = []
+        if mode == "block_sparse_moe":
+            uncalibrated_experts = [0 for _ in range(model.config.num_experts)]
+
         for i in range(len(hidden_states)):
 
             x = hidden_states[i].to("cuda:0")
@@ -270,7 +354,25 @@ def measure_quant(job, save_fn, model):
                 quantizers["gate_proj"].add_batch(outputs["post_norm"])  # Reuse H for up_proj
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
 
+            if mode == "block_sparse_moe":
+                for j in range(model.config.num_experts):
+                    if f"pre_down.{j}" in outputs:
+                        quantizers[f"w1.{j}"].add_batch(outputs["post_norm"])
+                        quantizers[f"w2.{j}"].add_batch(outputs[f"pre_down.{j}"])
+                        if outputs[f"pre_down.{j}"].shape[0] < outputs["post_norm"].shape[0] / 10:
+                            uncalibrated_experts[j] += 1
+                    else:
+                        uncalibrated_experts[j] += 1
+
             target_states.append(outputs["hidden_states"].to("cpu"))
+
+        # For MoE layers, warn if any layer received less than 10% of a calibration batch
+
+        if mode == "block_sparse_moe":
+            for j in range(model.config.num_experts):
+                ue = uncalibrated_experts[j]
+                if ue > 0:
+                    print(f" !! Warning: w2.{j} has less than 10% calibration for {ue}/{len(hidden_states)} rows")
 
         # Measurement
 
@@ -281,6 +383,9 @@ def measure_quant(job, save_fn, model):
 
         if mode == "mlp":
             m = measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_mask)
+
+        if mode == "block_sparse_moe":
+            m = measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, attn_mask)
 
         measurement[module.key + "." + mode] = m
 

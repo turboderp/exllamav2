@@ -232,7 +232,7 @@ __global__ void gemm_half_q_half_gptq_kernel
 }
 
 template <bool use_r_weights, bool mul_r_weights>
-struct map_m_count {
+struct map_m_count_gptq {
     static constexpr fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel(int m_count)
     {
         #if GPTQ_BLOCK_M_SIZE_MAX >= 1
@@ -265,9 +265,9 @@ struct map_m_count {
 
 fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel(const int m_count, bool r_weights, bool mul_r_weights)
 {
-    if (!r_weights && !mul_r_weights) return map_m_count<false, false>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    if (!r_weights &&  mul_r_weights) return map_m_count<false,  true>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    if ( r_weights && !mul_r_weights) return map_m_count< true, false>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    if ( r_weights &&  mul_r_weights) return map_m_count< true,  true>::pick_gemm_half_q_half_gptq_kernel(m_count);
+    if (!r_weights && !mul_r_weights) return map_m_count_gptq<false, false>::pick_gemm_half_q_half_gptq_kernel(m_count);
+    if (!r_weights &&  mul_r_weights) return map_m_count_gptq<false,  true>::pick_gemm_half_q_half_gptq_kernel(m_count);
+    if ( r_weights && !mul_r_weights) return map_m_count_gptq< true, false>::pick_gemm_half_q_half_gptq_kernel(m_count);
+    if ( r_weights &&  mul_r_weights) return map_m_count_gptq< true,  true>::pick_gemm_half_q_half_gptq_kernel(m_count);
     return NULL;
 }

@@ -17,7 +17,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
     num_experts: int
     num_experts_per_token: int
 
-    name: str = "MLP"
+    name: str = "MoE MLP"
     submodules: list
 
     q_handle: int or None = None
@@ -196,6 +196,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         hidden_states = hidden_states.view(-1, hidden_dim)
 
         hidden_states = self.post_attention_layernorm.forward(hidden_states)
+        if intermediates: result = { "post_norm": hidden_states }
 
         router_logits = self.gate.forward(hidden_states, loras = loras)  #[:, :self.num_experts]
 
@@ -204,9 +205,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         routing_weights /= routing_weights.sum(dim = -1, keepdim = True)
         routing_weights = routing_weights.to(hidden_states.dtype)
 
-        final_hidden_states = torch.zeros(
-            (batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device
-        )
+        final_hidden_states = torch.zeros((batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device)
 
         expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes = self.num_experts).permute(2, 1, 0)
 
@@ -225,6 +224,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             up = self.w3[expert_idx].forward(current_state, loras = loras)
 
             current_hidden_states = F.silu(gate) * up
+            if intermediates: result[f"pre_down.{expert_idx}"] = current_hidden_states
 
             current_hidden_states = self.w2[expert_idx].forward(current_hidden_states, loras = loras)
             current_hidden_states *= routing_weights[top_x_list, idx_list, None]
@@ -233,17 +233,12 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
         final_hidden_states += residual
-        return final_hidden_states
 
-        # if intermediates:
-        #     return {"post_norm": post_norm,
-        #             "gate": gate,
-        #             "up": up,
-        #             "pre_down": y,
-        #             "down": down,
-        #             "hidden_states": hidden_states}
-        # else:
-        #     return hidden_states
+        if intermediates:
+            result["hidden_states"] = final_hidden_states
+            return result
+        else:
+            return final_hidden_states
 
 
     def update_loras(self):

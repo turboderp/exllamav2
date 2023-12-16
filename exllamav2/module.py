@@ -90,6 +90,7 @@ class ExLlamaV2Module:
 
         if self.key + ".qweight" in self.model.config.tensor_file_map:
             qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx"])
+            qtensors["scales"] = qtensors["scales"].half()
             return qtensors
 
         # Torch

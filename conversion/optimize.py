@@ -12,9 +12,20 @@ def optimize(job, save_fn, model):
     key_k = key + ".self_attn.k_proj"
     key_v = key + ".self_attn.v_proj"
     key_o = key + ".self_attn.o_proj"
-    key_g = key + ".mlp.gate_proj"
-    key_u = key + ".mlp.up_proj"
-    key_d = key + ".mlp.down_proj"
+
+    if key + ".mlp.gate_proj" in model.modules_dict:
+        key_g = key + ".mlp.gate_proj"
+        key_u = key + ".mlp.up_proj"
+        key_d = key + ".mlp.down_proj"
+        mlp_mode = "mlp"
+    elif key + ".block_sparse_moe.experts.0.w1" in model.modules_dict:
+        key_g = key + ".block_sparse_moe.experts.0.w1"
+        key_u = key + ".block_sparse_moe.experts.0.w3"
+        key_d = key + ".block_sparse_moe.experts.0.w2"
+        mlp_mode = "block_sparse_moe"
+    else:
+        raise ValueError(" ## Can't find MLP keys in model")
+
     shape_q = model.modules_dict[key_q].matrix_shape()
     shape_k = model.modules_dict[key_k].matrix_shape()
     shape_v = model.modules_dict[key_v].matrix_shape()
@@ -26,9 +37,9 @@ def optimize(job, save_fn, model):
     numel_k = shape_k[0] * shape_k[1]
     numel_v = shape_v[0] * shape_v[1]
     numel_o = shape_o[0] * shape_o[1]
-    numel_g = shape_g[0] * shape_g[1]
-    numel_u = shape_u[0] * shape_u[1]
-    numel_d = shape_d[0] * shape_d[1]
+    numel_g = shape_g[0] * shape_g[1] * model.config.num_experts
+    numel_u = shape_u[0] * shape_u[1] * model.config.num_experts
+    numel_d = shape_d[0] * shape_d[1] * model.config.num_experts
     numel_attn = numel_q + numel_k + numel_v + numel_o
     numel_mlp = numel_g + numel_u + numel_d
 
@@ -53,7 +64,7 @@ def optimize(job, save_fn, model):
     params = []
     for i in range(num_layers):
         m1 = measurement["model.layers." + str(i) + ".self_attn"]
-        m2 = measurement["model.layers." + str(i) + ".mlp"]
+        m2 = measurement["model.layers." + str(i) + "." + mlp_mode]
         for m in [m1, m2]:
             v = [fn(e["accuracy"]) for e in m]
             w = [e["total_bits"] for e in m]
@@ -198,7 +209,7 @@ def optimize(job, save_fn, model):
     for layer_ in range(num_layers):
 
         k1 = "model.layers." + str(layer_) + ".self_attn"
-        k2 = "model.layers." + str(layer_) + ".mlp"
+        k2 = "model.layers." + str(layer_) + "." + mlp_mode
         p1 = params[layer_ * 2][f_solution[layer_ * 2]]
         p2 = params[layer_ * 2 + 1][f_solution[layer_ * 2 + 1]]
 

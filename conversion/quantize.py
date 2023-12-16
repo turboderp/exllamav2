@@ -1,4 +1,13 @@
-from exllamav2.model import ExLlamaV2Embedding, ExLlamaV2Attention, ExLlamaV2MLP, ExLlamaV2Linear, ExLlamaV2RMSNorm
+from exllamav2.model import \
+(
+    ExLlamaV2Embedding,
+    ExLlamaV2Attention,
+    ExLlamaV2MLP,
+    ExLlamaV2MoEMLP,
+    ExLlamaV2Linear,
+    ExLlamaV2RMSNorm
+)
+
 from safetensors import safe_open
 from safetensors.torch import save_file
 from conversion.qparams import QParams, qparams_headoptions, qparams_attn, qparams_mlp, get_qparams_reduced
@@ -117,8 +126,30 @@ def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn
     quantizers["down_proj"].prepare()
 
     quant_linear(job, module.gate_proj, quantizers["gate_proj"], strat["gate_proj"])
+    del quantizers[f"gate_proj"]
     quant_linear(job, module.up_proj, quantizers["up_proj"], strat["up_proj"])
+    del quantizers[f"up_proj"]
     quant_linear(job, module.down_proj, quantizers["down_proj"], strat["down_proj"])
+    del quantizers[f"down_proj"]
+
+
+def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat):
+
+    num_experts = module.model.config.num_experts
+
+    quantizers["w1.0"].prepare()
+    for i in range(num_experts):
+        if i > 0: quantizers[f"w1.{i}"].reuse_h(quantizers["w1.0"])
+        quantizers[f"w2.{i}"].prepare()
+        quantizers[f"w3.{i}"].reuse_h(quantizers["w1.0"])
+
+    for i in range(num_experts):
+        quant_linear(job, module.w1[i], quantizers[f"w1.{i}"], strat["w1"])
+        del quantizers[f"w1.{i}"]
+        quant_linear(job, module.w3[i], quantizers[f"w3.{i}"], strat["w3"])
+        del quantizers[f"w3.{i}"]
+        quant_linear(job, module.w2[i], quantizers[f"w2.{i}"], strat["w2"])
+        del quantizers[f"w2.{i}"]
 
 
 def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask):
@@ -218,6 +249,13 @@ def quant(job, save_fn, model):
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
 
+        elif isinstance(module, ExLlamaV2MoEMLP):
+            mode = "block_sparse_moe"
+            for i in range(model.config.num_experts):
+                quantizers[f"w1.{i}"] = AdaptiveGPTQ(module.w1[i].linear)
+                quantizers[f"w3.{i}"] = AdaptiveGPTQ(module.w3[i].linear)
+                quantizers[f"w2.{i}"] = AdaptiveGPTQ(module.w2[i].linear)
+
         elif isinstance(module, ExLlamaV2Linear):
             mode = "linear"
             assert module.key == "lm_head"
@@ -232,6 +270,9 @@ def quant(job, save_fn, model):
         attn_mask = model.build_attn_mask(1, hidden_states[0].shape[1], 0, None, "cuda:0") if mode == "self_attn" else None
 
         target_states = []
+        if mode == "block_sparse_moe":
+            uncalibrated_experts = [0 for _ in range(model.config.num_experts)]
+
         for i in range(len(hidden_states)):
 
             x = hidden_states[i].to("cuda:0")
@@ -247,13 +288,31 @@ def quant(job, save_fn, model):
                 quantizers["gate_proj"].add_batch(outputs["post_norm"])  # Reuse H for up_proj
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
 
+            if mode == "block_sparse_moe":
+                for j in range(model.config.num_experts):
+                    if f"pre_down.{j}" in outputs:
+                        quantizers[f"w1.{j}"].add_batch(outputs["post_norm"])
+                        quantizers[f"w2.{j}"].add_batch(outputs[f"pre_down.{j}"])
+                        if outputs[f"pre_down.{j}"].shape[0] < outputs["post_norm"].shape[0] / 10:
+                            uncalibrated_experts[j] += 1
+                    else:
+                        uncalibrated_experts[j] += 1
+
             if mode == "linear":
                 quantizers["lm_head"].add_batch(x)
 
             if mode != "linear":
                 target_states.append(outputs["hidden_states"].to("cpu"))
 
-        # Measurement
+        # For MoE layers, warn if any layer received less than 10% of a calibration batch
+
+        if mode == "block_sparse_moe":
+            for j in range(model.config.num_experts):
+                ue = uncalibrated_experts[j]
+                if ue > len(hidden_states) * 0.10:
+                    print(f" !! Warning: w2.{j} has less than 10% calibration for {ue}/{len(hidden_states)} rows")
+
+        # Conversion
 
         if mode == "self_attn":
             strat = strategy[module.key + "." + mode]
@@ -263,8 +322,16 @@ def quant(job, save_fn, model):
             strat = strategy[module.key + "." + mode]
             quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat)
 
+        if mode == "block_sparse_moe":
+            strat = strategy[module.key + "." + mode]
+            quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat)
+
         if mode == "linear":
             quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask)
+
+        quantizers.clear()
+        gc.collect()
+        torch.cuda.empty_cache()
 
         # Post-quantization forward pass
 
