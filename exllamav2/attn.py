@@ -443,11 +443,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 # Add keys and values to cache
 
-                batch_keys, batch_values = cache[i].get_kv_state(self.layer_idx, batch_size, 0, past_len)
+                batch_keys, batch_values = cache[i].get_kv_state(self.layer_idx, 1, 0, past_len[1][i].item())
                 new_keys = batch_keys.narrow(1, past_len[1][i], q_len)
                 new_values = batch_values.narrow(1, past_len[1][i], q_len)
                 new_keys.copy_(k_states.narrow(0, i, 1))
                 new_values.copy_(v_states.narrow(0, i, 1))
+
+                # Store updated cache values
+
+                cache[i].store_kv_state(self.layer_idx, 1, past_len[1][i].item(), q_len)
 
                 # Key/value tensors with past
 
