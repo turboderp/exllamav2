@@ -172,7 +172,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
         # if True:
-        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts != 8:
+        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8]:
             return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
         # if loras is None or self.temp_lora_size == 0:
