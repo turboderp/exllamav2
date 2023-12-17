@@ -364,7 +364,7 @@ def quant(job, save_fn, model):
 
                 x = hidden_states[i].to("cuda:0")
                 output = module.forward(x, cache, attn_mask)
-                if module.padding > 0: outputs = outputs[:, :, :-module.padding]
+                if module.padding > 0: output = output[:, :, :-module.padding]
 
                 logits = output[:, :-1, :]
                 logits = logits.float() + 1e-10
