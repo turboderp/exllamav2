@@ -149,7 +149,7 @@ for variant in variants:
     llabels = "ABCD"
     for i in range(4):
         answer_ = "The answer is: " + llabels[i]
-        answer_logits.append(tokenizer.tokenizer.EncodeAsIds(answer_)[-1])
+        answer_logits.append(tokenizer.tokenizer.encode(answer_)[-1])
 
     # Categories
 
