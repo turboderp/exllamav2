@@ -80,6 +80,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             for k, v in self.q_tensors.items(): del v
             self.q_tensors = None
 
+        self.temp_dq = None
+
 
     def get_weight(self):
 

@@ -147,6 +147,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if self.v_proj is not None: self.v_proj.unload()
         self.o_proj.unload()
 
+        self.temp_state = None
+        self.temp_dq = None
 
     def weight_footprint(self, qkv_embed = False):
 
