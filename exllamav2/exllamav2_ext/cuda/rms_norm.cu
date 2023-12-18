@@ -3,8 +3,8 @@
 
 #if defined(USE_ROCM)
 #define __shfl_xor_sync(mask, var, laneMask) __shfl_xor(var, laneMask)
-#define NUM_WARPS 16
-#define WARP_SIZE 64
+#define NUM_WARPS (1024 / warpSize)
+#define WARP_SIZE (warpSize)
 #else
 #define NUM_WARPS 32
 #define WARP_SIZE 32
