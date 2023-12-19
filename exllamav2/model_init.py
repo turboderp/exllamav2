@@ -16,6 +16,7 @@ def add_args(parser):
     parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
+    parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
 
 
 def print_options(args):
@@ -25,10 +26,11 @@ def print_options(args):
     print_opts = []
     if args.gpu_split: print_opts += [f"gpu_split: {args.gpu_split}"]
     if args.length: print_opts += [f"length: {args.length}"]
-    print_opts += [f"rope_scale {args.rope_scale}"]
-    print_opts += [f"rope_alpha {args.rope_alpha}"]
+    print_opts += [f"rope_scale: {args.rope_scale}"]
+    print_opts += [f"rope_alpha: {args.rope_alpha}"]
     if args.no_flash_attn: print_opts += ["no_flash_attn"]
     if args.low_mem: print_opts += ["low_mem"]
+    if args.experts_per_token: print_opts += [f"experts_per_token: {args.experts_per_token}"]
     print(f" -- Options: {print_opts}")
 
 
@@ -73,6 +75,7 @@ def init(args, quiet = False, allow_auto_split = False, skip_load = False):
     config.scale_pos_emb = args.rope_scale
     config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
+    if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
 
     # Set low-mem options
 
