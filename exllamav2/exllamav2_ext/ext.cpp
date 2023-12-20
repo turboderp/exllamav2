@@ -966,7 +966,7 @@ std::vector<float> sample_basic
 
         // Derive some more totally random numbers for subsequent samples in the same batch
 
-        if (bsz > 10000)
+        if (bsz > 1)
         {
             float r = random;
             for (int j = 0; j < 10; ++j)
