@@ -11,6 +11,9 @@ class ExLlamaV2Sampler:
         token_repetition_range = -1
         token_repetition_decay = 0
 
+        token_frequency_penalty = 0.0
+        token_presence_penalty = 0.0
+
         temperature = 0.8
         top_k = 50
         top_p = 0.8
@@ -37,6 +40,9 @@ class ExLlamaV2Sampler:
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
+
+            c.token_frequency_penalty = self.token_frequency_penalty
+            c.token_presence_penalty = self.token_presence_penalty
 
             c.temperature = self.temperature
             c.top_k = self.top_k
@@ -109,6 +115,24 @@ class ExLlamaV2Sampler:
                                     settings.token_repetition_range,
                                     settings.token_repetition_decay,
                                     logits)
+        
+        # Initialize token_counts and token_presence
+        token_counts = torch.zeros(sequence_ids.shape[0], vocab_size, dtype=torch.int, device=sequence_ids.device)
+        token_presence = torch.zeros(sequence_ids.shape[0], vocab_size, dtype=torch.bool, device=sequence_ids.device)
+
+        # Frequency penalty
+        if settings.token_frequency_penalty != 0.0:
+            ext_c.apply_freq_penalty(sequence_ids,
+                                     settings.token_frequency_penalty,
+                                     logits,
+                                     token_counts)
+
+        # Presence penalty
+        if settings.token_presence_penalty != 0.0:
+            ext_c.apply_presence_penalty(sequence_ids,
+                                         settings.token_presence_penalty,
+                                         logits,
+                                         token_presence)
 
         # Token bias
 

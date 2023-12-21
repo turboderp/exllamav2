@@ -845,6 +845,66 @@ void apply_rep_penalty
     }
 }
 
+void apply_freq_penalty
+(
+    torch::Tensor sequence,
+    float alpha_frequency,
+    torch::Tensor logits,
+    torch::Tensor token_counts
+)
+{
+    TORCH_CHECK_DTYPE(sequence, kLong);
+    TORCH_CHECK_DTYPE(logits, kFloat);
+    TORCH_CHECK_DTYPE(token_counts, kInt);
+
+    int vocab_size = logits.size(-1);
+    int bsz = sequence.size(0);
+    int seq_len = sequence.size(-1);
+
+    for (int i = 0; i < bsz; i++)
+    {
+        apply_freq_penalty_cpu
+        (
+            vocab_size,
+            seq_len,
+            (const uint64_t*) sequence.data_ptr() + i * seq_len,
+            alpha_frequency,
+            (int*) token_counts.data_ptr() + i * vocab_size,
+            (float*) logits.data_ptr() + i * vocab_size
+        );
+    }
+}
+
+void apply_presence_penalty
+(
+    torch::Tensor sequence,
+    float alpha_presence,
+    torch::Tensor logits,
+    torch::Tensor token_presence
+)
+{
+    TORCH_CHECK_DTYPE(sequence, kLong);
+    TORCH_CHECK_DTYPE(logits, kFloat);
+    TORCH_CHECK_DTYPE(token_presence, kBool);
+
+    int vocab_size = logits.size(-1);
+    int bsz = sequence.size(0);
+    int seq_len = sequence.size(-1);
+
+    for (int i = 0; i < bsz; i++)
+    {
+        apply_presence_penalty_cpu
+        (
+            vocab_size,
+            seq_len,
+            (const uint64_t*) sequence.data_ptr() + i * seq_len,
+            alpha_presence,
+            (bool*) token_presence.data_ptr() + i * vocab_size,
+            (float*) logits.data_ptr() + i * vocab_size
+        );
+    }
+}
+
 std::vector<float> sample_basic
 (
     torch::Tensor logits,           // shape [bsz, vocab_size]
@@ -1160,6 +1220,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("rms_norm_", &rms_norm_, "rms_norm_");
     m.def("rope_", &rope_, "rope_");
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
+    m.def("apply_freq_penalty", &apply_freq_penalty, "apply_freq_penalty");
+    m.def("apply_presence_penalty", &apply_presence_penalty, "apply_presence_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");

@@ -17,6 +17,26 @@ void apply_rep_penalty_cpu
     float* logits
 );
 
+void apply_freq_penalty_cpu
+(
+    const int vocab_size,
+    const int seq_len,
+    const uint64_t* sequence,
+    const float alpha_frequency,
+    int* token_counts,
+    float* logits
+);
+
+void apply_presence_penalty_cpu
+(
+    const int vocab_size,
+    const int seq_len,
+    const uint64_t* sequence,
+    const float alpha_presence,
+    bool* token_presence,
+    float* logits
+);
+
 void softmax_cpu
 (
     const int vocab_size,

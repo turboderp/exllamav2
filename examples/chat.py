@@ -40,6 +40,8 @@ parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sample
 parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
 parser.add_argument("-typical", "--typical", type = float, default = 0.0, help = "Sampler typical threshold, default = 0.0 (0 to disable)")
 parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.05, help = "Sampler repetition penalty, default = 1.05 (1 to disable)")
+parser.add_argument("-freqpen", "--frequency_penalty", type = float, default = 0.0, help = "Sampler frequency penalty, default = 0.0 (0 to disable)")
+parser.add_argument("-prespen", "--presence_penalty", type = float, default = 0.0, help = "Sampler presence penalty, default = 0.0 (0 to disable)")
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
@@ -189,6 +191,8 @@ settings.top_k = args.top_k
 settings.top_p = args.top_p
 settings.typical = args.typical
 settings.token_repetition_penalty = args.repetition_penalty
+settings.token_frequency_penalty = args.frequency_penalty
+settings.token_presence_penalty = args.presence_penalty
 
 max_response_tokens = args.max_response_tokens
 min_space_in_context = args.response_chunk

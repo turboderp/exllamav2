@@ -50,6 +50,45 @@ void apply_rep_penalty_cpu
     }
 }
 
+void apply_freq_penalty_cpu
+(
+    const int vocab_size,
+    const int seq_len,
+    const uint64_t* sequence,
+    const float alpha_frequency,
+    int* token_counts,
+    float* logits
+)
+{
+    for (int i = 0; i < seq_len; i++)
+    {
+        uint64_t t = sequence[i];
+        logits[t] -= token_counts[t] * alpha_frequency;
+        token_counts[t]++;
+    }
+}
+
+void apply_presence_penalty_cpu
+(
+    const int vocab_size,
+    const int seq_len,
+    const uint64_t* sequence,
+    const float alpha_presence,
+    bool* token_presence,
+    float* logits
+)
+{
+    for (int i = 0; i < seq_len; i++)
+    {
+        uint64_t t = sequence[i];
+        if (!token_presence[t])
+        {
+            logits[t] -= alpha_presence;
+            token_presence[t] = true;
+        }
+    }
+}
+
 void softmax_cpu
 (
     const int vocab_size,
