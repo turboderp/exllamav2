@@ -75,7 +75,7 @@ time_begin_stream = time.time()
 generated_tokens = 0
 
 while True:
-    chunk, eos, _ = generator.stream()
+    chunk, eos, _, prob = generator.stream()
     generated_tokens += 1
     print (chunk, end = "")
     sys.stdout.flush()
