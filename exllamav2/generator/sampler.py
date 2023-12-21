@@ -170,6 +170,7 @@ class ExLlamaV2Sampler:
                                1.0 if settings.temperature_last else settings.temperature,
                                settings.top_k,
                                settings.top_p,
+                               settings.top_a,
                                settings.min_p,
                                settings.tfs,
                                settings.typical,
