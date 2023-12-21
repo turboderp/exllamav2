@@ -21,10 +21,61 @@ try:
     is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
     
     if flash_attn_ver >= [2, 2, 1] and is_ampere_or_newer_gpu:
-        from flash_attn import flash_attn_func
+        from flash_attn import flash_attn_func, flash_attn_varlen_func
+        from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
         has_flash_attn = True
 except ModuleNotFoundError:
     pass
+
+def _get_unpad_data(attention_mask):
+    seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
+    indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
+    max_seqlen_in_batch = seqlens_in_batch.max().item()
+    cu_seqlens = F.pad(torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.torch.int32), (1, 0))
+    return (
+        indices,
+        cu_seqlens,
+        max_seqlen_in_batch,
+    )
+
+def _unpad_input(query_layer, key_layer, value_layer, attention_mask, query_length):
+    indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
+    batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
+    num_heads = query_layer.shape[2]
+
+    key_layer = index_first_axis(
+        key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
+    )
+    value_layer = index_first_axis(
+        value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
+    )
+    if query_length == kv_seq_len:
+        query_layer = index_first_axis(
+            query_layer.reshape(batch_size * kv_seq_len, num_heads, head_dim), indices_k
+        )
+        cu_seqlens_q = cu_seqlens_k
+        max_seqlen_in_batch_q = max_seqlen_in_batch_k
+        indices_q = indices_k
+    elif query_length == 1:
+        max_seqlen_in_batch_q = 1
+        cu_seqlens_q = torch.arange(
+            batch_size + 1, dtype=torch.int32, device=query_layer.device
+        )  # There is a memcpy here, that is very bad.
+        indices_q = cu_seqlens_q[:-1]
+        query_layer = query_layer.squeeze(1)
+    else:
+        # The -q_len: slice assumes left padding.
+        attention_mask = attention_mask[:, -query_length:]
+        query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
+
+    return (
+        query_layer,
+        key_layer,
+        value_layer,
+        indices_q,
+        (cu_seqlens_q, cu_seqlens_k),
+        (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+    )
 
 class ExLlamaV2Attention(ExLlamaV2Module):
 
@@ -402,14 +453,47 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 v_states = None
 
                 attn_output = attn_output.transpose(1, 2)
-                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
             # Flash Attention 2
 
+            elif attn_mask is not None:
+
+                q_states, k_states, v_states, indices_q, cu_seq_lens, max_seq_lens = _unpad_input(
+                    q_states, k_states, v_states, attn_mask, q_len
+                )
+
+                cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+                max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+                attn_output_unpad = flash_attn_varlen_func(
+                    q_states,
+                    k_states,
+                    v_states,
+                    cu_seqlens_q=cu_seqlens_q,
+                    cu_seqlens_k=cu_seqlens_k,
+                    max_seqlen_q=max_seqlen_in_batch_q,
+                    max_seqlen_k=max_seqlen_in_batch_k,
+                    causal=True
+                )
+                q_states = None
+                k_states = None
+                v_states = None
+
+                attn_output = pad_input(attn_output_unpad, indices_q, batch_size, q_len)
+
             else:
 
-                attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
-                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+                attn_output = flash_attn_func(
+                    q_states,
+                    k_states,
+                    v_states,
+                    causal = True
+                )
+                q_states = None
+                k_states = None
+                v_states = None
+
+            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
             # xformers memory_efficient_attention
 
@@ -462,26 +546,67 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 # Torch matmul attention
 
-                # TODO: enable flash-attn
+                if self.model.config.no_flash_attn or not has_flash_attn:
 
-                q_states_b = q_states.transpose(1, 2).narrow(0, i, 1)
-                k_states_b = k_states_b.transpose(1, 2)
-                v_states_b = v_states_b.transpose(1, 2)
+                    q_states_b = q_states.transpose(1, 2).narrow(0, i, 1)
+                    k_states_b = k_states_b.transpose(1, 2)
+                    v_states_b = v_states_b.transpose(1, 2)
 
-                k_states_b = self.repeat_kv(k_states_b, num_key_value_groups)
-                k_states_b = k_states_b.transpose(-1, -2)
+                    k_states_b = self.repeat_kv(k_states_b, num_key_value_groups)
+                    k_states_b = k_states_b.transpose(-1, -2)
 
-                attn_weights = torch.matmul(q_states_b, k_states_b)
-                q_states_b = None
-                k_states_b = None
+                    attn_weights = torch.matmul(q_states_b, k_states_b)
+                    q_states_b = None
+                    k_states_b = None
 
-                attn_weights /= math.sqrt(head_dim)
-                if attn_mask is not None: attn_weights = attn_weights + attn_mask[i]
-                attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
+                    attn_weights /= math.sqrt(head_dim)
+                    if attn_mask is not None: attn_weights = attn_weights + attn_mask[i]
+                    attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
-                v_states_b = self.repeat_kv(v_states_b, num_key_value_groups)
-                attn_output_b = torch.matmul(attn_weights, v_states_b)
-                v_states_b = None
+                    v_states_b = self.repeat_kv(v_states_b, num_key_value_groups)
+                    attn_output_b = torch.matmul(attn_weights, v_states_b)
+                    v_states_b = None
+                
+                elif attn_mask is not None and attn_mask[i] is not None:
+
+                    q_states_b = q_states.narrow(0, i, 1)
+
+                    q_states_b, k_states_b, v_states_b, indices_q, cu_seq_lens, max_seq_lens = _unpad_input(
+                        q_states_b, k_states_b, v_states_b, attn_mask, q_len
+                    )
+
+                    cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+                    max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+                    attn_output_unpad = flash_attn_varlen_func(
+                        q_states_b,
+                        k_states_b,
+                        v_states_b,
+                        cu_seqlens_q=cu_seqlens_q,
+                        cu_seqlens_k=cu_seqlens_k,
+                        max_seqlen_q=max_seqlen_in_batch_q,
+                        max_seqlen_k=max_seqlen_in_batch_k,
+                        causal=True
+                    )
+                    q_states_b = None
+                    k_states_b = None
+                    v_states_b = None
+
+                    attn_output_b = pad_input(attn_output_unpad, indices_q, batch_size, q_len)
+
+                else:
+
+                    q_states_b = q_states.narrow(0, i, 1)
+
+                    attn_output_b = flash_attn_func(
+                        q_states_b,
+                        k_states_b,
+                        v_states_b,
+                        causal = True
+                    )
+                    q_states_b = None
+                    k_states_b = None
+                    v_states_b = None
 
                 attn_outputs.append(attn_output_b)
 
@@ -603,14 +728,47 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = torch.matmul(attn_weights, value_states)
 
             attn_output = attn_output.transpose(1, 2)
-            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
         # Flash Attention 2
 
+        elif attn_mask is not None:
+
+            query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = _unpad_input(
+                query_states, key_states, value_states, attn_mask, q_len
+            )
+
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                causal=True
+            )
+            query_states = None
+            key_states = None
+            value_states = None
+
+            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, q_len)
+
         else:
 
-            attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
-            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+            attn_output = flash_attn_func(
+                query_states,
+                key_states,
+                value_states,
+                causal = True
+            )
+            query_states = None
+            key_states = None
+            value_states = None
+
+        attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
         # Update 8-bit cache
         # TODO: Only update changed positions of the cache
