@@ -458,8 +458,10 @@ int top_a_cpu
     float top_a
 )
 {
-    // Find the maximum probability
+    // Sort the probabilities and indices
     float top_prob = temp_probs[0];
+    for (int i = 1; i < num_candidates; i++)
+        if (temp_probs[i] > top_prob) top_prob = temp_probs[i];
 
     // Calculate the threshold
     float threshold = top_a * top_prob * top_prob;
