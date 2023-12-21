@@ -459,10 +459,10 @@ int top_a_cpu
 )
 {
     // Find the maximum probability
-    float max_prob = *std::max_element(temp_probs, temp_probs + num_candidates);
+    float top_prob = temp_probs[0];
 
     // Calculate the threshold
-    float threshold = top_a * max_prob * max_prob;
+    float threshold = top_a * top_prob * top_prob;
 
     // Use the keep_threshold function to keep only probabilities above the threshold
     int n = keep_threshold(num_candidates, temp_probs, temp_indices, threshold);
