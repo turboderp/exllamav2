@@ -851,6 +851,7 @@ std::vector<float> sample_basic
     float temperature,
     int top_k,
     float top_p,
+    float top_a,
     float min_p,
     float tfs,
     float typical,
@@ -923,6 +924,12 @@ std::vector<float> sample_basic
         if (top_p > 0.0f && top_p < 1.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (top_a > 0.0f)
+        {
+            num_candidates = top_a_cpu(num_candidates, temp_probs, temp_indices, top_a);
             normalize_cpu(num_candidates, temp_probs);
         }
 

@@ -1,5 +1,6 @@
 #include "sampling.h"
 #include "util.h"
+#include "algorithm"
 #include <math.h>
 #include <vector>
 #include <queue>
@@ -447,6 +448,26 @@ int keep_threshold
         j--;
     }
     return i;
+}
+
+int top_a_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float top_a
+)
+{
+    // Find the maximum probability
+    float max_prob = *std::max_element(temp_probs, temp_probs + num_candidates);
+
+    // Calculate the threshold
+    float threshold = top_a * max_prob * max_prob;
+
+    // Use the keep_threshold function to keep only probabilities above the threshold
+    int n = keep_threshold(num_candidates, temp_probs, temp_indices, threshold);
+
+    return n;
 }
 
 int min_p_cpu

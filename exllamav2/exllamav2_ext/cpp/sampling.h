@@ -63,6 +63,14 @@ int top_p_cpu
     float top_p
 );
 
+int top_a_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    int top_a
+);
+
 int min_p_cpu
 (
     const int num_candidates,
