@@ -24,7 +24,6 @@ try:
         has_flash_attn = True
 except ModuleNotFoundError:
     pass
-from exllamav2.attn_mask import _prepare_4d_causal_attention_mask
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.linear import ExLlamaV2Linear
@@ -496,11 +495,19 @@ class ExLlamaV2:
             for i in range(len(past_len[1])):
 
                 if not has_flash_attn or self.config.no_flash_attn:
-                    attn_mask = _prepare_4d_causal_attention_mask(input_mask[i][:, :seq_len+past_len[1][i]], (batch_size, seq_len), past_len[1][i], torch.float16, device, self.config.sliding_window)
-                elif input_mask is None or input_mask[i] is None:
-                    attn_mask = None
-                else:
+                    attn_mask = torch.zeros((1, 1, seq_len, past_len[1][i] + seq_len), dtype = torch.float16, device = device)
+                    attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
+                    attn_mask[:, :, : seq_len - 1, past_len[1][i] + 1: past_len[1][i] + seq_len] = attn_mask_triu
+
+                    if input_mask is not None and input_mask[i] is not None:
+                        min_mask_width = min(input_mask[i].shape[-1], seq_len + past_len[1][i])
+                        input_mask_part = safe_move_tensor(input_mask[i][:, :min_mask_width], attn_mask.device)
+                        input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
+                        attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
+                elif input_mask is not None and input_mask[i] is not None:
                     attn_mask = input_mask[i][:, :seq_len+past_len[1][i]].to(device)
+                else:
+                    attn_mask = None
 
                 attn_masks.append(attn_mask)
 
@@ -509,11 +516,19 @@ class ExLlamaV2:
         else:
 
             if not has_flash_attn or self.config.no_flash_attn:
-                attn_mask = _prepare_4d_causal_attention_mask(input_mask[:, :seq_len+past_len], (batch_size, seq_len), past_len, torch.float16, device, self.config.sliding_window)
-            elif input_mask is None:
-                attn_mask = None
-            else:
+                attn_mask = torch.zeros((batch_size, 1, seq_len, past_len + seq_len), dtype = torch.float16, device = device)
+                attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
+                attn_mask[:, :, : seq_len - 1, past_len + 1: past_len + seq_len] = attn_mask_triu
+
+                if input_mask is not None:
+                    min_mask_width = min(input_mask.shape[-1], seq_len + past_len)
+                    input_mask_part = safe_move_tensor(input_mask[:, :min_mask_width], attn_mask.device)
+                    input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
+                    attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
+            elif input_mask is not None:
                 attn_mask = input_mask[:, :seq_len+past_len].to(device)
+            else:
+                attn_mask = None
 
             return attn_mask
 
