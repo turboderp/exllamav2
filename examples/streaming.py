@@ -42,6 +42,7 @@ settings = ExLlamaV2Sampler.Settings()
 settings.temperature = 0.85
 settings.top_k = 50
 settings.top_p = 0.8
+settings.top_a = 0.0
 settings.token_repetition_penalty = 1.05
 settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
