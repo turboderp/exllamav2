@@ -1,4 +1,11 @@
 #include "compat.cuh"
+#include "../config.h"
+#include "matrix_view.cuh"
+#include "quant/qdq_4.cuh"
+
+#define GPTQ_BLOCK_KN_SIZE 128
+#define GPTQ_BLOCK_M_SIZE_MAX 8
+#define GPTQ_MAX_GROUPS_IN_BLOCK (GPTQ_BLOCK_KN_SIZE / 32)
 
 __forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result)
 {
@@ -25,6 +32,11 @@ __forceinline__ __device__ half2 dot22_8_h2(half2(&dq)[4], const half* a_ptr)
     #pragma unroll
     for (int i = 0; i < 4; i++) result = __hfma2(dq[i], *a2_ptr++, result);
     return result;
+}
+
+__forceinline__ __device__ float add_halves(half2 h)
+{
+    return __low2float(h) + __high2float(h);
 }
 
 typedef void (*fp_gemm_half_q_half_gptq_kernel)
@@ -231,43 +243,3 @@ __global__ void gemm_half_q_half_gptq_kernel
     }
 }
 
-template <bool use_r_weights, bool mul_r_weights>
-struct map_m_count_gptq {
-    static constexpr fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel(int m_count)
-    {
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 1
-        if (m_count == 1) return gemm_half_q_half_gptq_kernel<1, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 2
-        if (m_count == 2) return gemm_half_q_half_gptq_kernel<2, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 3
-        if (m_count == 3) return gemm_half_q_half_gptq_kernel<3, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 4
-        if (m_count == 4) return gemm_half_q_half_gptq_kernel<4, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 5
-        if (m_count == 5) return gemm_half_q_half_gptq_kernel<5, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 6
-        if (m_count == 6) return gemm_half_q_half_gptq_kernel<6, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 7
-        if (m_count == 7) return gemm_half_q_half_gptq_kernel<7, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 8
-        if (m_count == 8) return gemm_half_q_half_gptq_kernel<8, use_r_weights, mul_r_weights>;
-        #endif
-        return NULL;
-    }
-};
-
-fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel(const int m_count, bool r_weights, bool mul_r_weights)
-{
-    if (!r_weights && !mul_r_weights) return map_m_count_gptq<false, false>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    if (!r_weights &&  mul_r_weights) return map_m_count_gptq<false,  true>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    if ( r_weights && !mul_r_weights) return map_m_count_gptq< true, false>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    if ( r_weights &&  mul_r_weights) return map_m_count_gptq< true,  true>::pick_gemm_half_q_half_gptq_kernel(m_count);
-    return NULL;
-}

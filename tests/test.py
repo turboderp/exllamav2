@@ -74,6 +74,7 @@ def test_gen_normal(prompt, max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -103,6 +104,7 @@ def test_gen_streaming(prompt, max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -150,6 +152,7 @@ def test_gen_batch(max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -183,6 +186,7 @@ def test_multicache(max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 

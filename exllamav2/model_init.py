@@ -24,13 +24,13 @@ def print_options(args):
     print(f" -- Model: {args.model_dir}")
 
     print_opts = []
-    if args.gpu_split: print_opts += [f"gpu_split: {args.gpu_split}"]
-    if args.length: print_opts += [f"length: {args.length}"]
+    if args.gpu_split is not None: print_opts += [f"gpu_split: {args.gpu_split}"]
+    if args.length is not None: print_opts += [f"length: {args.length}"]
     print_opts += [f"rope_scale: {args.rope_scale}"]
     print_opts += [f"rope_alpha: {args.rope_alpha}"]
     if args.no_flash_attn: print_opts += ["no_flash_attn"]
     if args.low_mem: print_opts += ["low_mem"]
-    if args.experts_per_token: print_opts += [f"experts_per_token: {args.experts_per_token}"]
+    if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
     print(f" -- Options: {print_opts}")
 
 

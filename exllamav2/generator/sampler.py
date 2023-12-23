@@ -17,6 +17,7 @@ class ExLlamaV2Sampler:
         temperature = 0.8
         top_k = 50
         top_p = 0.8
+        top_a = 0.0
         min_p = 0
         tfs = 0
         typical = 0
@@ -47,6 +48,7 @@ class ExLlamaV2Sampler:
             c.temperature = self.temperature
             c.top_k = self.top_k
             c.top_p = self.top_p
+            c.top_a = self.top_a
             c.min_p = self.min_p
             c.tfs = self.tfs
             c.typical = self.typical
@@ -192,6 +194,7 @@ class ExLlamaV2Sampler:
                                1.0 if settings.temperature_last else settings.temperature,
                                settings.top_k,
                                settings.top_p,
+                               settings.top_a,
                                settings.min_p,
                                settings.tfs,
                                settings.typical,
