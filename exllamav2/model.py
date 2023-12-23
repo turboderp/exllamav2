@@ -483,7 +483,7 @@ class ExLlamaV2:
             for i in range(len(past_len[1])):
 
                 attn_mask = torch.zeros((1, 1, seq_len, past_len[1][i] + seq_len), dtype = torch.float16, device = device)
-                attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
+                attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), float("-inf")))
                 attn_mask[:, :, : seq_len - 1, past_len[1][i] + 1: past_len[1][i] + seq_len] = attn_mask_triu
 
                 if input_mask is not None:
@@ -499,7 +499,7 @@ class ExLlamaV2:
         else:
 
             attn_mask = torch.zeros((batch_size, 1, seq_len, past_len + seq_len), dtype = torch.float16, device = device)
-            attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
+            attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), float("-inf")))
             attn_mask[:, :, : seq_len - 1, past_len + 1: past_len + seq_len] = attn_mask_triu
 
             if input_mask is not None:

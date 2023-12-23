@@ -341,7 +341,7 @@ class ExLlamaV2Tokenizer:
 
         mask_bool = (ids == self.pad_token_id)
         mask = mask_bool.int()
-        mask *= -65505
+        mask *= -65505 * 2
         mask = mask.half()
         return mask
 
