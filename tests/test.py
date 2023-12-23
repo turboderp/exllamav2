@@ -243,8 +243,8 @@ def tests(model_dir, cache_8bit, use_split):
     unload()
 
 
-q_model_directory = "/mnt/str/models/_exl2/mistral-7b-instruct-exl2/4.0bpw/"
-f_model_directory = "/mnt/str/models/_exl2/tinyllama-1b-ckpt503/"
+q_model_directory = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
+f_model_directory = "/mnt/str/models/tinyllama-1b-ckpt503/"
 
 tests(q_model_directory, False, False)
 tests(q_model_directory, False, True)

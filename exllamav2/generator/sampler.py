@@ -99,8 +99,9 @@ class ExLlamaV2Sampler:
         assert prefix_token is None or prefix_token.shape == (batch_size, 1), "Prefix token list doesn't match batch shape"
         assert batch_size == 1 or len(settings.filters) == 0, "Filters not implemented for batch size > 1"
 
-        logits = logits.clone().squeeze(1)
-        logit_filter = torch.ones((batch_size, vocab_size), dtype = torch.bool)
+        logits = logits.squeeze(1)
+        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
+        ext_c.fast_fill_cpu_ones_bool(logit_filter)
 
         # Repetition penalty
 
@@ -114,7 +115,9 @@ class ExLlamaV2Sampler:
 
         # Token bias
 
-        if settings.token_bias is not None: logits += settings.token_bias
+        if settings.token_bias is not None:
+            # logits = logits + settings.token_bias
+            ext_c.fast_fadd_cpu(logits, settings.token_bias)
 
         # Evaluate filters
 

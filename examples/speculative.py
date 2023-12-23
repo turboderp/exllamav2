@@ -18,8 +18,9 @@ import time
 
 # Initialize model and draft model
 
-model_directory = "/mnt/str/models/_exl2/codellama-34b-instruct-exl2/4.0bpw"
-draft_directory = "/mnt/str/models/_exl2/tinyllama-1b-ckpt503-exl2/3.5bpw"
+# model_directory = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
+model_directory = "/mnt/str/models/_gptq/TheBloke_Phine-CodeLlama-34B-v2-GPTQ/"
+draft_directory = "/mnt/str/models/tinyllama-1b-ckpt503-exl2/3.5bpw"
 
 model_config = ExLlamaV2Config()
 model_config.model_dir = model_directory

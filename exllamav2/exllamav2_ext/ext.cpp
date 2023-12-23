@@ -1138,6 +1138,34 @@ void gemm_half_half_half
     }
 }
 
+// Utility functions
+
+void fast_fill_cpu_ones_bool(torch::Tensor tensor)
+{
+    TORCH_CHECK_DTYPE(tensor, kBool);
+    memset(tensor.data_ptr(), 1, tensor.numel());
+}
+
+void fast_fadd_cpu(torch::Tensor a, torch::Tensor b)
+{
+    TORCH_CHECK_DTYPE(a, kFloat);
+    TORCH_CHECK_DTYPE(b, kFloat);
+    int n = a.numel();
+    int m = b.numel();
+    int bsz = n / m;
+    TORCH_CHECK(bsz * m == n, "a and b are incompatible sizes");
+
+    float* a_ptr = (float*) a.data_ptr();
+    float* b_ptr = (float*) b.data_ptr();
+
+    for (int i = 0; i < bsz; ++i)
+    {
+        float* b_ptr_ = b_ptr;
+        for (int j = 0; j < m; ++j)
+            *a_ptr++ += *b_ptr_++;
+    }
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -1172,6 +1200,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");
     m.def("fp8_to_fp16", &fp8_to_fp16, "fp8_to_fp16");
     m.def("gemm_half_half_half", &gemm_half_half_half, "gemm_half_half_half");
+    m.def("fast_fill_cpu_ones_bool", &fast_fill_cpu_ones_bool, "fast_fill_cpu_ones_bool");
+    m.def("fast_fadd_cpu", &fast_fadd_cpu, "fast_fadd_cpu");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 }
