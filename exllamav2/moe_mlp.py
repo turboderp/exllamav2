@@ -42,9 +42,9 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
         self.submodules = [self.post_attention_layernorm,
                            self.gate] + \
-                          self.w1 + \
-                          self.w2 + \
-                          self.w3
+                           self.w1 + \
+                           self.w2 + \
+                           self.w3
 
     def numel(self):
 
@@ -175,6 +175,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8]:
             return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
+        # TODO: MoE LoRA support
         # if loras is None or self.temp_lora_size == 0:
         #     pass_loras = []
         #     pass_lora_temp = ext.none_tensor
@@ -195,25 +196,30 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
 
+        # Layernorm
+
         hidden_states = self.post_attention_layernorm.forward(hidden_states)
         if intermediates: result = { "post_norm": hidden_states }
 
+        # Get router logits
+
         router_logits = self.gate.forward(hidden_states, loras = loras)  #[:, :self.num_experts]
+
+        # Get routing weights and select top K experts
 
         routing_weights = F.softmax(router_logits, dim = -1, dtype = torch.float)
         routing_weights, selected_experts = torch.topk(routing_weights, self.num_experts_per_token, dim = -1)
         routing_weights /= routing_weights.sum(dim = -1, keepdim = True)
         routing_weights = routing_weights.to(hidden_states.dtype)
 
-        final_hidden_states = torch.zeros((batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device)
+        final_hidden_states = torch.zeros((batch_size * sequence_length, hidden_dim), dtype = hidden_states.dtype, device = hidden_states.device)
 
         expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes = self.num_experts).permute(2, 1, 0)
 
         for expert_idx in range(self.num_experts):
             idx, top_x = torch.where(expert_mask[expert_idx])
 
-            if top_x.shape[0] == 0:
-                continue
+            if top_x.shape[0] == 0: continue  # Skip experts that weren't selected at all
 
             top_x_list = top_x.tolist()
             idx_list = idx.tolist()
