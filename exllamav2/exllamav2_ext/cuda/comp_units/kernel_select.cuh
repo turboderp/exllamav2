@@ -16,9 +16,12 @@ fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel_2(const int m_
 fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel_3(const int m_count, bool r_weights, bool mul_r_weights);
 
 fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count, bool r_weights, bool mul_r_weights);
-fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_1(const int m_count, bool r_weights, bool mul_r_weights);
-fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_2(const int m_count, bool r_weights, bool mul_r_weights);
-fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_3(const int m_count, bool r_weights, bool mul_r_weights);
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_1a(const int m_count, bool r_weights, bool mul_r_weights);
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_1b(const int m_count, bool r_weights, bool mul_r_weights);
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_2a(const int m_count, bool r_weights, bool mul_r_weights);
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_2b(const int m_count, bool r_weights, bool mul_r_weights);
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_3a(const int m_count, bool r_weights, bool mul_r_weights);
+fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel_3b(const int m_count, bool r_weights, bool mul_r_weights);
 
 template <bool use_r_weights, bool mul_r_weights>
 struct map_m_count_gptq {
@@ -53,7 +56,7 @@ struct map_m_count_gptq {
 };
 
 template <bool use_r_weights, bool mul_r_weights>
-struct map_m_count_exl2 {
+struct map_m_count_exl2_a {
     static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count)
     {
         #if EXL2_BLOCK_M_SIZE_MAX >= 1
@@ -68,6 +71,14 @@ struct map_m_count_exl2 {
         #if EXL2_BLOCK_M_SIZE_MAX >= 4
         if (m_count == 4) return gemm_half_q_half_kernel<4, use_r_weights, mul_r_weights>;
         #endif
+        return NULL;
+    }
+};
+
+template <bool use_r_weights, bool mul_r_weights>
+struct map_m_count_exl2_b {
+    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count)
+    {
         #if EXL2_BLOCK_M_SIZE_MAX >= 5
         if (m_count == 5) return gemm_half_q_half_kernel<5, use_r_weights, mul_r_weights>;
         #endif

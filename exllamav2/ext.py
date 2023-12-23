@@ -123,9 +123,12 @@ if build_jit:
         "cuda/comp_units/unit_gptq_1.cu",
         "cuda/comp_units/unit_gptq_2.cu",
         "cuda/comp_units/unit_gptq_3.cu",
-        "cuda/comp_units/unit_exl2_1.cu",
-        "cuda/comp_units/unit_exl2_2.cu",
-        "cuda/comp_units/unit_exl2_3.cu",
+        "cuda/comp_units/unit_exl2_1a.cu",
+        "cuda/comp_units/unit_exl2_1b.cu",
+        "cuda/comp_units/unit_exl2_2a.cu",
+        "cuda/comp_units/unit_exl2_2b.cu",
+        "cuda/comp_units/unit_exl2_3a.cu",
+        "cuda/comp_units/unit_exl2_3b.cu",
         "cpp/quantize_func.cpp",
         "cpp/sampling.cpp"
     ]
