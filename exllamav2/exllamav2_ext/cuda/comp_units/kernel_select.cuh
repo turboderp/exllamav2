@@ -27,71 +27,54 @@ template <bool use_r_weights, bool mul_r_weights>
 struct map_m_count_gptq {
     static constexpr fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel(int m_count)
     {
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 1
-        if (m_count == 1) return gemm_half_q_half_gptq_kernel<1, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 2
-        if (m_count == 2) return gemm_half_q_half_gptq_kernel<2, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 3
-        if (m_count == 3) return gemm_half_q_half_gptq_kernel<3, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 4
-        if (m_count == 4) return gemm_half_q_half_gptq_kernel<4, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 5
-        if (m_count == 5) return gemm_half_q_half_gptq_kernel<5, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 6
-        if (m_count == 6) return gemm_half_q_half_gptq_kernel<6, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 7
-        if (m_count == 7) return gemm_half_q_half_gptq_kernel<7, use_r_weights, mul_r_weights>;
-        #endif
-        #if GPTQ_BLOCK_M_SIZE_MAX >= 8
-        if (m_count == 8) return gemm_half_q_half_gptq_kernel<8, use_r_weights, mul_r_weights>;
-        #endif
+        if (m_count == GPTQ_BLOCK_M_SIZE_MAX) return gemm_half_q_half_gptq_kernel<GPTQ_BLOCK_M_SIZE_MAX, use_r_weights, mul_r_weights>;
+        printf(" ## No GPTQ kernel found for block size %i\n", m_count);
         return NULL;
     }
 };
 
 template <bool use_r_weights, bool mul_r_weights>
 struct map_m_count_exl2_a {
-    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count)
+    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int perm)
     {
-        #if EXL2_BLOCK_M_SIZE_MAX >= 1
-        if (m_count == 1) return gemm_half_q_half_kernel<1, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 2
-        if (m_count == 2) return gemm_half_q_half_kernel<2, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 3
-        if (m_count == 3) return gemm_half_q_half_kernel<3, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 4
-        if (m_count == 4) return gemm_half_q_half_kernel<4, use_r_weights, mul_r_weights>;
-        #endif
-        return NULL;
+        switch (perm)
+        {
+            case 0b00000010: return gemm_half_q_half_kernel<0b00000010, use_r_weights, mul_r_weights>;
+            case 0b00000110: return gemm_half_q_half_kernel<0b00000110, use_r_weights, mul_r_weights>;
+            case 0b00000100: return gemm_half_q_half_kernel<0b00000100, use_r_weights, mul_r_weights>;
+            case 0b00001110: return gemm_half_q_half_kernel<0b00001110, use_r_weights, mul_r_weights>;
+            case 0b00001100: return gemm_half_q_half_kernel<0b00001100, use_r_weights, mul_r_weights>;
+            case 0b00001000: return gemm_half_q_half_kernel<0b00001000, use_r_weights, mul_r_weights>;
+            case 0b00011000: return gemm_half_q_half_kernel<0b00011000, use_r_weights, mul_r_weights>;
+            case 0b00010000: return gemm_half_q_half_kernel<0b00010000, use_r_weights, mul_r_weights>;
+            case 0b00110000: return gemm_half_q_half_kernel<0b00110000, use_r_weights, mul_r_weights>;
+            case 0b00100000: return gemm_half_q_half_kernel<0b00100000, use_r_weights, mul_r_weights>;
+            default:
+                return NULL;
+        }
     }
 };
 
 template <bool use_r_weights, bool mul_r_weights>
 struct map_m_count_exl2_b {
-    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count)
+    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int perm)
     {
-        #if EXL2_BLOCK_M_SIZE_MAX >= 5
-        if (m_count == 5) return gemm_half_q_half_kernel<5, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 6
-        if (m_count == 6) return gemm_half_q_half_kernel<6, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 7
-        if (m_count == 7) return gemm_half_q_half_kernel<7, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 8
-        if (m_count == 8) return gemm_half_q_half_kernel<8, use_r_weights, mul_r_weights>;
-        #endif
-        return NULL;
+        switch (perm)
+        {
+            case 0b10000000: return gemm_half_q_half_kernel<0b10000000, use_r_weights, mul_r_weights>;
+            case 0b00100110: return gemm_half_q_half_kernel<0b00100110, use_r_weights, mul_r_weights>;
+            case 0b00010100: return gemm_half_q_half_kernel<0b00010100, use_r_weights, mul_r_weights>;
+            case 0b10001100: return gemm_half_q_half_kernel<0b10001100, use_r_weights, mul_r_weights>;
+            case 0b10011000: return gemm_half_q_half_kernel<0b10011000, use_r_weights, mul_r_weights>;
+            case 0b10110000: return gemm_half_q_half_kernel<0b10110000, use_r_weights, mul_r_weights>;
+            case 0b10101100: return gemm_half_q_half_kernel<0b10101100, use_r_weights, mul_r_weights>;
+            case 0b00001010: return gemm_half_q_half_kernel<0b00001010, use_r_weights, mul_r_weights>;
+            case 0b00101000: return gemm_half_q_half_kernel<0b00101000, use_r_weights, mul_r_weights>;
+            case 0b10100000: return gemm_half_q_half_kernel<0b10100000, use_r_weights, mul_r_weights>;
+            default:         return gemm_half_q_half_kernel<0b10111110, use_r_weights, mul_r_weights>;
+                // printf(" ## No kernel found for permutation %x\n", perm);
+                // return NULL;
+        }
     }
 };
 

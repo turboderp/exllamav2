@@ -4,7 +4,7 @@
 #include "quant/qdq_4.cuh"
 
 #define GPTQ_BLOCK_KN_SIZE 128
-#define GPTQ_BLOCK_M_SIZE_MAX 8
+#define GPTQ_BLOCK_M_SIZE_MAX MAX_Q_GEMM_ROWS_KERNEL
 #define GPTQ_MAX_GROUPS_IN_BLOCK (GPTQ_BLOCK_KN_SIZE / 32)
 
 __forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result)
@@ -91,8 +91,10 @@ __global__ void gemm_half_q_half_gptq_kernel
     int offset_m = blockIdx.y * m_count;
     int offset_k = blockIdx.z * GPTQ_BLOCK_KN_SIZE;
 
+    int m_count_min = min(size_m - offset_m, m_count);
+
     int end_n = min(offset_n + GPTQ_BLOCK_KN_SIZE * 4, size_n);
-    int end_m = min(offset_m + m_count, size_m);
+    int end_m = min(offset_m + m_count_min, size_m);
     int end_k = min(offset_k + GPTQ_BLOCK_KN_SIZE, size_k);
 
     int n = offset_n + t * 4;
@@ -104,7 +106,7 @@ __global__ void gemm_half_q_half_gptq_kernel
     {
         uint16_t any_w = 0;
         const half* w_ptr = r_weights;
-        for (int m = 0; m < m_count; ++m)
+        for (int m = 0; m < m_count_min; ++m)
         {
             weights[m].as_half = *w_ptr;
             w_ptr += r_weights_stride;
@@ -119,7 +121,7 @@ __global__ void gemm_half_q_half_gptq_kernel
 
     if (offset_k + t < end_k)
     {
-        for (int m = 0; m < m_count; ++m)
+        for (int m = 0; m < m_count_min; ++m)
         {
             const half* a_ptr = a_.item_ptr(offset_m + m, 0);
             half* block_a_ptr = block_a[m];
@@ -137,7 +139,7 @@ __global__ void gemm_half_q_half_gptq_kernel
 
     if (clear && blockIdx.z == 0) // && (threadIdx.x & 1) == 0)
     {
-        for (int m = 0; m < m_count; m++)
+        for (int m = 0; m < m_count_min; m++)
             *((uint64_t*)c_.item_ptr(offset_m + m, n)) = 0;
     }
 
@@ -205,7 +207,7 @@ __global__ void gemm_half_q_half_gptq_kernel
             dequant_4bit_8_gptq(load_int4.w, dq[3], z1z16[3], y1y16[3], size_n, false);
 
             #pragma unroll
-            for (int m = 0; m < m_count; m++)
+            for (int m = 0; m < m_count_min; m++)
             {
                 if constexpr (use_r_weights) { if (!weights[m].as_uint16) continue; }
                 block_c[m][0] = __hfma2(dot22_8_h2(dq[0], a_ptr + m * a_stride), scales[0], block_c[m][0]);
@@ -221,7 +223,7 @@ __global__ void gemm_half_q_half_gptq_kernel
         k += 32;
     }
 
-    for (int m = 0; m < m_count; m++)
+    for (int m = 0; m < m_count_min; m++)
     {
         half2 *out = (half2*) c_.item_ptr(offset_m + m, n);
         half result0 = __hadd(__low2half(block_c[m][0]), __high2half(block_c[m][0]));

@@ -31,7 +31,8 @@ void gemm_half_q_half_cuda_part
         gridDim.y = DIVIDE(size_m, m_count);
         gridDim.z = DIVIDE(size_k, EXL2_BLOCK_KN_SIZE);
 
-        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(m_count, r_weights != NULL, mul_r_weights);
+        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(b->kernel_p, r_weights != NULL, mul_r_weights);
+        if (!kernel) return;
 
         kernel<<<gridDim, blockDim>>>
         (
@@ -64,10 +65,11 @@ void gemm_half_q_half_cuda_part
         blockDim.y = 1;
         blockDim.z = 1;
         gridDim.x = DIVIDE(size_n, GPTQ_BLOCK_KN_SIZE * 4);
-        gridDim.y = DIVIDE(size_m, m_count);
+        gridDim.y = DIVIDE(size_m, GPTQ_BLOCK_M_SIZE_MAX);
         gridDim.z = DIVIDE(size_k, GPTQ_BLOCK_KN_SIZE);
 
-        fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(m_count, r_weights != NULL, mul_r_weights);
+        fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(GPTQ_BLOCK_M_SIZE_MAX, r_weights != NULL, mul_r_weights);
+        if (!kernel) return;
 
 //         DBGX((uint64_t) r_weights);
 //         if (r_weights)
@@ -156,19 +158,8 @@ void gemm_half_q_half_cuda
         // Quantized matmul
 
         int block_m_size_max = b->is_gptq ? GPTQ_BLOCK_M_SIZE_MAX : EXL2_BLOCK_M_SIZE_MAX;
-        int max_chunks = size_m / block_m_size_max;
-        int last_chunk = max_chunks * block_m_size_max;
-        int last_chunk_size = size_m - last_chunk;
-
-        if (max_chunks)
-        {
-            gemm_half_q_half_cuda_part(a, b, c, last_chunk, size_n, size_k, block_m_size_max, clear, r_weights, r_weights_stride, mul_r_weights);
-        }
-
-        if (last_chunk_size)
-        {
-            gemm_half_q_half_cuda_part(a + last_chunk * size_k, b, c + last_chunk * size_n, last_chunk_size, size_n, size_k, last_chunk_size, clear, r_weights, r_weights_stride, mul_r_weights);
-        }
+        int block_m = min(size_m, block_m_size_max);
+        gemm_half_q_half_cuda_part(a, b, c, size_m, size_n, size_k, block_m, clear, r_weights, r_weights_stride, mul_r_weights);
     }
 }
 

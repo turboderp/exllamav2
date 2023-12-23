@@ -101,6 +101,7 @@ QMatrix::QMatrix
     rows_4 = 0;
     rows_3 = 0;
     rows_2 = 0;
+    kernel_p = 0;
 
     if (!is_gptq)
     {
@@ -111,6 +112,7 @@ QMatrix::QMatrix
         for (int i = 0; i < groups; i++)
         {
             int bits = cpu_q_groups[i * 2];
+            kernel_p |= (1 << (bits - 1));
 
             int rows;
             if (i < groups - 1)

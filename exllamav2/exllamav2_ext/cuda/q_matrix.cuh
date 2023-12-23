@@ -26,6 +26,7 @@ public:
     int rows_4;
     int rows_3;
     int rows_2;
+    int kernel_p;
 
     uint32_t* cuda_q_weight = NULL;
     uint16_t* cuda_q_perm = NULL;
