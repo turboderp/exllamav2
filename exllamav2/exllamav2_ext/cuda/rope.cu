@@ -57,10 +57,10 @@ __global__ void rope_cuda_kernel
     else if (past_lens)
     {
         past_len += past_lens[blockIdx.z];
-        past_len = max(past_len, 0);
     }
 
     int sincos_row = past_len + row / num_heads;
+    sincos_row = max(sincos_row, 0);
 
     if constexpr (use_half2)
     {

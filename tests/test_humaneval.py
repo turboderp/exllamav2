@@ -21,24 +21,25 @@ import torch
 
 # model_base = "/mnt/str/models/"
 # variants = ["mistral-7b-instruct"]
-# model_base = "/mnt/str/models/mistral-7b-instruct-exl2"
-# variants = ["2.5bpw"]
-
+# model_base = "/mnt/str/models/mistral-7b-instruct-exl3"
+# variants = ["8.0bpw"]
 model_base = "/mnt/str/models/mixtral-8x7b-instruct-exl2/"
+variants = ["4.0bpw"]
+
 # model_base = "/mnt/str/models/tiefighter-13b-exl4/"
 
 # variants = [v for v in os.listdir(model_base) if os.path.isdir(os.path.join(model_base, v))]
 
-variants = \
-[
-    "2.4bpw",
-    "2.5bpw",
-    "2.7bpw",
-    "3.0bpw",
-    "4.0bpw",
-    "6.0bpw",
-    "8.0bpw",
-]
+# variants = \
+# [
+#     "2.4bpw",
+#     "2.5bpw",
+#     "2.7bpw",
+#     "3.0bpw",
+#     "4.0bpw",
+#     "6.0bpw",
+#     "8.0bpw",
+# ]
 
 gpu_split = (16, 16, 24)
 
@@ -81,8 +82,8 @@ for variant in variants:
     torch.cuda.empty_cache()
     gc.collect()
 
-    batch_size = 20
-    num_samples_per_task = 5
+    batch_size = 10
+    num_samples_per_task = 1
     samples = []
 
     model, cache, tokenizer = get_model(model_base, variant, gpu_split, batch_size)
