@@ -44,6 +44,13 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/rope.cu",
                 "exllamav2/exllamav2_ext/cuda/cache.cu",
                 "exllamav2/exllamav2_ext/cuda/util.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/kernel_select.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_1.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_2.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_3.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_1.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_2.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3.cu",
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
                 "exllamav2/exllamav2_ext/cpp/sampling.cpp"
             ],

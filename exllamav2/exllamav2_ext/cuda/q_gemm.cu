@@ -1,27 +1,10 @@
 #include "q_gemm.cuh"
 #include "util.cuh"
-#include "matrix_view.cuh"
 #include "../config.h"
-
-#include "quant/qdq_2.cuh"
-#include "quant/qdq_3.cuh"
-#include "quant/qdq_4.cuh"
-#include "quant/qdq_5.cuh"
-#include "quant/qdq_6.cuh"
-#include "quant/qdq_8.cuh"
-
-#define GPTQ_BLOCK_KN_SIZE 128
-#define GPTQ_BLOCK_M_SIZE_MAX 8
-#define GPTQ_MAX_GROUPS_IN_BLOCK (GPTQ_BLOCK_KN_SIZE / 32)
-
-#define EXL2_BLOCK_KN_SIZE 64
-#define EXL2_BLOCK_M_SIZE_MAX 8
-#define EXL2_MAX_GROUPS_IN_BLOCK (EXL2_BLOCK_KN_SIZE / 32)
 
 #define CLEAR_N_SIZE 256
 
-#include "q_gemm_kernel.cuh"
-#include "q_gemm_kernel_gptq.cuh"
+#include "comp_units/kernel_select.cuh"
 
 void gemm_half_q_half_cuda_part
 (

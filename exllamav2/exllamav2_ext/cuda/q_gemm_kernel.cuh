@@ -1,4 +1,16 @@
 #include "compat.cuh"
+#include "../config.h"
+#include "matrix_view.cuh"
+#include "quant/qdq_2.cuh"
+#include "quant/qdq_3.cuh"
+#include "quant/qdq_4.cuh"
+#include "quant/qdq_5.cuh"
+#include "quant/qdq_6.cuh"
+#include "quant/qdq_8.cuh"
+
+#define EXL2_BLOCK_KN_SIZE 64
+#define EXL2_BLOCK_M_SIZE_MAX 6
+#define EXL2_MAX_GROUPS_IN_BLOCK (EXL2_BLOCK_KN_SIZE / 32)
 
 __forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result, const half qs_h)
 {
@@ -538,43 +550,3 @@ __global__ void gemm_half_q_half_kernel
     }
 }
 
-template <bool use_r_weights, bool mul_r_weights>
-struct map_m_count_exl2 {
-    static constexpr fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count)
-    {
-        #if EXL2_BLOCK_M_SIZE_MAX >= 1
-        if (m_count == 1) return gemm_half_q_half_kernel<1, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 2
-        if (m_count == 2) return gemm_half_q_half_kernel<2, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 3
-        if (m_count == 3) return gemm_half_q_half_kernel<3, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 4
-        if (m_count == 4) return gemm_half_q_half_kernel<4, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 5
-        if (m_count == 5) return gemm_half_q_half_kernel<5, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 6
-        if (m_count == 6) return gemm_half_q_half_kernel<6, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 7
-        if (m_count == 7) return gemm_half_q_half_kernel<7, use_r_weights, mul_r_weights>;
-        #endif
-        #if EXL2_BLOCK_M_SIZE_MAX >= 8
-        if (m_count == 8) return gemm_half_q_half_kernel<8, use_r_weights, mul_r_weights>;
-        #endif
-        return NULL;
-    }
-};
-
-fp_gemm_half_q_half_kernel pick_gemm_half_q_half_kernel(const int m_count, bool r_weights, bool mul_r_weights)
-{
-    if (!r_weights && !mul_r_weights) return map_m_count_exl2<false, false>::pick_gemm_half_q_half_kernel(m_count);
-    if (!r_weights &&  mul_r_weights) return map_m_count_exl2<false,  true>::pick_gemm_half_q_half_kernel(m_count);
-    if ( r_weights && !mul_r_weights) return map_m_count_exl2< true, false>::pick_gemm_half_q_half_kernel(m_count);
-    if ( r_weights &&  mul_r_weights) return map_m_count_exl2< true,  true>::pick_gemm_half_q_half_kernel(m_count);
-    return NULL;
-}
