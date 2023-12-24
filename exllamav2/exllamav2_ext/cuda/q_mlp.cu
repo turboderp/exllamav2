@@ -215,6 +215,15 @@ QMoEMLP::QMoEMLP
     max_rows(_max_rows),
     hidden_dim(_hidden_dim)
 {
+//    for (int i = 0; i < num_experts; ++i)
+//    {
+//        std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> w1;
+//        std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> w2;
+//        std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> w3;
+//        w1_lora.push_back(w1);
+//        w2_lora.push_back(w2);
+//        w3_lora.push_back(w3);
+//    }
 }
 
 QMoEMLP::~QMoEMLP() {
@@ -226,8 +235,8 @@ void QMoEMLP::forward_
     half* x,
     int rows,
     int columns
-//     const std::vector<uintptr_t>& loras,
-//     half* lora_temp
+//    const std::vector<uintptr_t>& loras,
+//    half* lora_temp
 )
 {
     if (num_experts != 8 && num_experts != 4)
@@ -281,15 +290,18 @@ void QMoEMLP::forward_
             gemm_half_q_half_cuda(cublas_handle, temp_state, w1[i], temp_a, rows, intermediate_size, columns, true, temp_dq, true, temp_logits + i, num_experts, false);
             gemm_half_q_half_cuda(cublas_handle, temp_state, w3[i], temp_b, rows, intermediate_size, columns, true, temp_dq, true, temp_logits + i, num_experts, false);
 
+//            apply_loras_cuda(cublas_handle, w1_lora[i], loras, w1[i], temp_state, temp_a, lora_temp, rows);
+//            apply_loras_cuda(cublas_handle, w3_lora[i], loras, w3[i], temp_state, temp_b, lora_temp, rows);
+
             blockDim.x = THREADS_X;
             blockDim.y = THREADS_Y;
             gridDim.x = DIVIDE(intermediate_size, THREADS_X) / (use_half2 ? 2 : 1);
             gridDim.y = DIVIDE(rows, THREADS_Y);
             kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, temp_logits + i, num_experts);
 
-            // print_global_mem(temp_a+14336-32, 1, 32, 14336);
-
             gemm_half_q_half_cuda(cublas_handle, temp_a, w2[i], x, rows, columns, intermediate_size, false, temp_dq, true, temp_logits + i, num_experts, true);
+
+//            apply_loras_cuda(cublas_handle, w2_lora[i], loras, w2[i], temp_a, x, lora_temp, rows);
         }
     }
 

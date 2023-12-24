@@ -133,8 +133,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         if loras is not None:
             for lora in loras:
-                lora_a = self.lora_a_tensors[lora] if lora in self.lora_a_tensors else None
-                lora_b = self.lora_b_tensors[lora] if lora in self.lora_b_tensors else None
+                lora_a = self.lora_a_tensors.get(lora)
+                lora_b = self.lora_b_tensors.get(lora)
                 if lora_a is not None:
                     assert lora_b is not None
                     temp = torch.matmul(hidden_states, lora_a)

@@ -79,8 +79,8 @@ class ExLlamaV2Lora:
                 ks = target_key.split(".")
                 decoder_idx = int(ks[2])
                 decoder_part = ks[3]
-                decoder_layer = ks[4]
-                lora_half = ks[5]
+                decoder_layer = ".".join(ks[4:-2])
+                lora_half = ks[-2]
 
                 if lora_half == "bias":
                     epsilon = 1e-6

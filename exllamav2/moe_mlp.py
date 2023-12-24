@@ -168,14 +168,14 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
     def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
 
-        assert loras is None or len(loras) == 0, "LoRA support not yet implemented for MoE MLP layers"
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
-        # if True:
-        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8]:
+        # TODO: LoRA currently uses the Torch codepath. Needs conditional (early-exit) kernels with output scaling
+        # for the LoRA matmuls in order to work with the C++ path
+
+        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8] or (loras is not None and len(loras) > 0):
             return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
 
-        # TODO: MoE LoRA support
         # if loras is None or self.temp_lora_size == 0:
         #     pass_loras = []
         #     pass_lora_temp = ext.none_tensor
@@ -184,6 +184,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         #     pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
         # ref = self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
+        # ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]), pass_loras, pass_lora_temp)
         ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]))
 
         return hidden_states
@@ -249,6 +250,31 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
     def update_loras(self):
         pass
+        # if self.q_handle is None: return
+        #
+        # w1_lora_a = []
+        # w1_lora_b = []
+        # w2_lora_a = []
+        # w2_lora_b = []
+        # w3_lora_a = []
+        # w3_lora_b = []
+        # for i in range(self.model.config.num_experts):
+        #     w1_lora_a.append({ id(k): v for k, v in self.w1[i].lora_a_tensors.items() })
+        #     w1_lora_b.append({ id(k): v for k, v in self.w1[i].lora_b_tensors.items() })
+        #     w2_lora_a.append({ id(k): v for k, v in self.w2[i].lora_a_tensors.items() })
+        #     w2_lora_b.append({ id(k): v for k, v in self.w2[i].lora_b_tensors.items() })
+        #     w3_lora_a.append({ id(k): v for k, v in self.w3[i].lora_a_tensors.items() })
+        #     w3_lora_b.append({ id(k): v for k, v in self.w3[i].lora_b_tensors.items() })
+        #
+        # temp_lora_size = ext_c.q_moe_mlp_set_loras(self.q_handle,
+        #                                            w1_lora_a,
+        #                                            w1_lora_b,
+        #                                            w2_lora_a,
+        #                                            w2_lora_b,
+        #                                            w3_lora_a,
+        #                                            w3_lora_b)
+        #
+        # self.temp_lora_size = temp_lora_size * self.model.config.max_batch_size * self.model.config.max_input_len
 
 
     def is_quant(self):

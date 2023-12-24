@@ -654,7 +654,7 @@ uintptr_t make_q_moe_mlp
     std::vector<QMatrix*> qm_w2;
     std::vector<QMatrix*> qm_w3;
 
-    for (int i = 0; i < w1.size(); ++i)
+    for (int i = 0; i < (int)w1.size(); ++i)
     {
         qm_w1.push_back(reinterpret_cast<QMatrix*> (w1[i]));
         qm_w2.push_back(reinterpret_cast<QMatrix*> (w2[i]));
@@ -725,6 +725,59 @@ void q_moe_mlp_forward_
 //        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );
 }
+
+//int q_moe_mlp_set_loras
+//(
+//    uintptr_t q_moe_mlp,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w1_lora_a,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w1_lora_b,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w2_lora_a,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w2_lora_b,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w3_lora_a,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w3_lora_b
+//)
+//{
+//    QMoEMLP* moe_mlp = reinterpret_cast<QMoEMLP*> (q_moe_mlp);
+//
+//    int max_rank = 0;
+//
+//    for (int i = 0; i < moe_mlp->num_experts; ++i)
+//    {
+//        moe_mlp->w1_lora[i].clear();
+//        moe_mlp->w2_lora[i].clear();
+//        moe_mlp->w3_lora[i].clear();
+//
+//        for (const auto& pair : w1_lora_a[i])
+//        {
+//            int rank = pair.second.size(-1);
+//            if (rank > max_rank) max_rank = rank;
+//            half* a = (half*) pair.second.data_ptr();
+//            half* b = (half*) w1_lora_b[i][pair.first].data_ptr();
+//            moe_mlp->w1_lora[i][pair.first] = std::make_tuple(a, b, rank);
+//        }
+//
+//        for (const auto& pair : w2_lora_a[i])
+//        {
+//            int rank = pair.second.size(-1);
+//            if (rank > max_rank) max_rank = rank;
+//            half* a = (half*) pair.second.data_ptr();
+//            half* b = (half*) w2_lora_b[i][pair.first].data_ptr();
+//            moe_mlp->w2_lora[i][pair.first] = std::make_tuple(a, b, rank);
+//        }
+//
+//        for (const auto& pair : w3_lora_a[i])
+//        {
+//            int rank = pair.second.size(-1);
+//            if (rank > max_rank) max_rank = rank;
+//            half* a = (half*) pair.second.data_ptr();
+//            half* b = (half*) w3_lora_b[i][pair.first].data_ptr();
+//            moe_mlp->w3_lora[i][pair.first] = std::make_tuple(a, b, rank);
+//        }
+//    }
+//
+//    return max_rank;
+//}
+
 
 // RoPE rotary positional embeddings, in-place
 
@@ -1184,6 +1237,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
     m.def("q_moe_mlp_forward_", &q_moe_mlp_forward_, "q_moe_mlp_forward_");
+//    m.def("q_moe_mlp_set_loras", &q_moe_mlp_set_loras, "q_moe_mlp_set_loras");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
     m.def("free_q_attn", &free_q_attn, "free_q_attn");
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");

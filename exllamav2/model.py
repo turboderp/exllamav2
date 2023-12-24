@@ -461,6 +461,7 @@ class ExLlamaV2:
         for module in self.modules:
             if isinstance(module, ExLlamaV2Attention): module.update_loras()
             if isinstance(module, ExLlamaV2MLP): module.update_loras()
+            if isinstance(module, ExLlamaV2MoEMLP): module.update_loras()
 
 
     def is_quant(self):
