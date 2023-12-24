@@ -293,7 +293,7 @@ __global__ void gemm_half_q_half_kernel
 
     int k = offset_k;
 
-    if constexpr (kernel_p & 0b10000000)
+    if constexpr (kernel_p & 0b10000000) {
     while (k < rows_8 && k < end_k)
     {
         if (k == nextgroup)
@@ -331,9 +331,9 @@ __global__ void gemm_half_q_half_kernel
             a_ptr += 8;
         }
         k += 32;
-    }
+    }}
 
-    if constexpr (kernel_p & 0b00100000)
+    if constexpr (kernel_p & 0b00100000) {
     while (k < rows_6 && k < end_k)
     {
         if (k == nextgroup)
@@ -372,9 +372,9 @@ __global__ void gemm_half_q_half_kernel
             a_ptr += 16;
         }
         k += 32;
-    }
+    }}
 
-    if constexpr (kernel_p & 0b00010000)
+    if constexpr (kernel_p & 0b00010000) {
     while (k < rows_5 && k < end_k)
     {
         if (k == nextgroup)
@@ -416,9 +416,9 @@ __global__ void gemm_half_q_half_kernel
         }
 
         k += 32;
-    }
+    }}
 
-    if constexpr (kernel_p & 0b00001000)
+    if constexpr (kernel_p & 0b00001000) {
     while (k < rows_4 && k < end_k)
     {
         if (k == nextgroup)
@@ -455,9 +455,9 @@ __global__ void gemm_half_q_half_kernel
             a_ptr += 8;
         }
         k += 32;
-    }
+    }}
 
-    if constexpr (kernel_p & 0b00000100)
+    if constexpr (kernel_p & 0b00000100) {
     while (k < rows_3 && k < end_k)
     {
         if (k == nextgroup)
@@ -496,9 +496,9 @@ __global__ void gemm_half_q_half_kernel
             a_ptr += 32;
         }
         k += 32;
-    }
+    }}
 
-    if constexpr (kernel_p & 0b00000010)
+    if constexpr (kernel_p & 0b00000010) {
     while (k < rows_2 && k < end_k)
     {
         if (k == nextgroup)
@@ -536,7 +536,7 @@ __global__ void gemm_half_q_half_kernel
             a_ptr += 16;
         }
         k += 16;
-    }
+    }}
 
     // Accumulate column sums in c
 
