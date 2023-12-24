@@ -79,7 +79,7 @@ def generate_with_lora(prompt_, lora_, max_new_tokens, streaming_ = True):
         streaming_generator.begin_stream(input_ids, settings, loras = lora_)
         generated_tokens = 0
         while True:
-            chunk, eos, _, prob = streaming_generator.stream()
+            chunk, eos, _ = streaming_generator.stream()
             generated_tokens += 1
             print (chunk, end = "")
             sys.stdout.flush()

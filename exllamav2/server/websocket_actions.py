@@ -184,7 +184,7 @@ async def infer(request, ws, server, response):
     gen_tokens = 0
     response["util_text"] = util_ctx
     while True:
-        chunk, eos, _, prob = server.generator.stream()
+        chunk, eos, _ = server.generator.stream()
         completion += chunk
         gen_tokens += 1
 

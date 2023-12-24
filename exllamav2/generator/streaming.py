@@ -1,4 +1,5 @@
 from ast import Tuple
+from typing import Union, Tuple
 from exllamav2 import (
     ExLlamaV2,
     ExLlamaV2Cache,
@@ -40,6 +41,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     total_draft_tokens: int = 0
     total_tokens: int = 0
     accepted_draft_tokens: int = 0
+    return_probabilities: bool = False
 
     active_loras = []
 
@@ -90,9 +92,19 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
 
 
+    def stream(self) -> Union[Tuple[str, bool, torch.Tensor], Tuple[str, bool, torch.Tensor, float]]:
+
+            chunk, eos, chunk_token_ids, proba = self._stream()
+
+            if self.return_probabilities:
+                return chunk, eos, chunk_token_ids, proba
+            else:
+                return chunk, eos, chunk_token_ids
+
+
     # Get the next chunk of text in the stream. Returns eos if stop condition has been met but does not count tokens
 
-    def stream(self) -> (str, bool, torch.Tensor, float):
+    def _stream(self) -> (str, bool, torch.Tensor, float):
 
         # Token healing
 

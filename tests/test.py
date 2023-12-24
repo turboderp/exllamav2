@@ -121,7 +121,7 @@ def test_gen_streaming(prompt, max_new_tokens):
     generated_tokens = 0
 
     while True:
-        chunk, eos, _, prob = generator.stream()
+        chunk, eos, _ = generator.stream()
         generated_tokens += 1
         print(chunk, end = "")
         sys.stdout.flush()

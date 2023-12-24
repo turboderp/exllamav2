@@ -259,7 +259,7 @@ while True:
 
         # Get response stream
 
-        chunk, eos, tokens, prob = generator.stream()
+        chunk, eos, tokens = generator.stream()
         if len(response_text) == 0: chunk = chunk.lstrip()
         response_text += chunk
         responses_ids[-1] = torch.cat([responses_ids[-1], tokens], dim = -1)
