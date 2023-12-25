@@ -66,7 +66,7 @@ class ExLlamaV2Sampler:
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
-            c.token_bias = self.token_bias
+            c.token_bias = None
             c.filters = []
             return c
 

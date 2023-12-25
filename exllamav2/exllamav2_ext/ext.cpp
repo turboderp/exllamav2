@@ -1219,6 +1219,14 @@ void fast_fadd_cpu(torch::Tensor a, torch::Tensor b)
     }
 }
 
+void fast_copy_cpu(torch::Tensor a, torch::Tensor b)
+{
+    size_t size_a = a.numel() * torch::elementSize(torch::typeMetaToScalarType(a.dtype()));
+    size_t size_b = b.numel() * torch::elementSize(torch::typeMetaToScalarType(b.dtype()));
+    TORCH_CHECK(size_a == size_b, "a and b are not the same size");
+    memcpy(a.data_ptr(), b.data_ptr(), size_a);
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -1256,6 +1264,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("gemm_half_half_half", &gemm_half_half_half, "gemm_half_half_half");
     m.def("fast_fill_cpu_ones_bool", &fast_fill_cpu_ones_bool, "fast_fill_cpu_ones_bool");
     m.def("fast_fadd_cpu", &fast_fadd_cpu, "fast_fadd_cpu");
+    m.def("fast_copy_cpu", &fast_copy_cpu, "fast_copy_cpu");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 }

@@ -14,9 +14,11 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
-import time
+import time, torch
 
 # Initialize model and draft model
+
+torch.set_num_threads(1)
 
 # model_directory = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
 model_directory = "/mnt/str/models/_gptq/TheBloke_Phine-CodeLlama-34B-v2-GPTQ/"
@@ -44,7 +46,7 @@ tokenizer = ExLlamaV2Tokenizer(model_config)
 # Initialize generators
 
 normal_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer)
-speculative_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, 5)
+speculative_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, num_speculative_tokens = 5)
 
 # Make sure CUDA is initialized so we can measure performance
 
@@ -96,12 +98,12 @@ def test_gen(generator, prompt, settings, max_new_tokens):
 # Settings
 
 gen_prompt = "Here is a simple Quicksort implementation in C++:"
+# gen_prompt = "What's the best way to learn a new language?"
 
 gen_settings = ExLlamaV2Sampler.Settings()
 gen_settings.temperature = 0.6
 gen_settings.top_k = 50
 gen_settings.top_p = 0.6
-gen_settings.top_a = 0.0
 gen_settings.token_repetition_penalty = 1.0
 gen_settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
