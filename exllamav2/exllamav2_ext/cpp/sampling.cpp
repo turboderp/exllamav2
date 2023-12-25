@@ -57,7 +57,7 @@ void apply_rep_penalty_cpu
 
     int sust = sustain == -1 ? seq_len : sustain;
 
-    // First token of the "sustain" range
+    // First token of the penalty range, including decay
 
     int beg = seq_len - sust - decay;
     if (beg < 0) beg = 0;

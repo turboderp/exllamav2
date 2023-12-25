@@ -123,12 +123,14 @@ def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn
 
     quantizers["gate_proj"].prepare()
     quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
-    quantizers["down_proj"].prepare()
 
     quant_linear(job, module.gate_proj, quantizers["gate_proj"], strat["gate_proj"])
     del quantizers[f"gate_proj"]
     quant_linear(job, module.up_proj, quantizers["up_proj"], strat["up_proj"])
     del quantizers[f"up_proj"]
+
+    quantizers["down_proj"].prepare()
+
     quant_linear(job, module.down_proj, quantizers["down_proj"], strat["down_proj"])
     del quantizers[f"down_proj"]
 
@@ -198,7 +200,7 @@ def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask):
 @torch.inference_mode()
 def quant(job, save_fn, model):
 
-    snapshot_interval = 10
+    snapshot_interval = 1
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")
     strategy = job["strategy"]

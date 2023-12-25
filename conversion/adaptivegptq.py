@@ -296,7 +296,10 @@ class AdaptiveGPTQ:
 
                     break
 
-                except RuntimeError:
+                except RuntimeError as runtime_error:
+
+                    if "out of memory" in str(runtime_error):
+                        raise runtime_error
 
                     # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift
                     # the eigenvalues in a positive direction.
