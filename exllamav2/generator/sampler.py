@@ -11,6 +11,9 @@ class ExLlamaV2Sampler:
         token_repetition_range = -1
         token_repetition_decay = 0
 
+        token_frequency_penalty = 0.0
+        token_presence_penalty = 0.0
+
         temperature = 0.8
         top_k = 50
         top_p = 0.8
@@ -39,6 +42,9 @@ class ExLlamaV2Sampler:
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
 
+            c.token_frequency_penalty = self.token_frequency_penalty
+            c.token_presence_penalty = self.token_presence_penalty
+
             c.temperature = self.temperature
             c.top_k = self.top_k
             c.top_p = self.top_p
@@ -66,6 +72,8 @@ class ExLlamaV2Sampler:
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
+            c.token_frequency_penalty = self.token_frequency_penalty
+            c.token_presence_penalty = self.token_presence_penalty
             c.token_bias = None
             c.filters = []
             return c
@@ -105,12 +113,16 @@ class ExLlamaV2Sampler:
 
         # Repetition penalty
 
-        if settings.token_repetition_penalty != 1.0:
+        if settings.token_repetition_penalty != 1.0 or \
+            settings.token_frequency_penalty != 0.0 or \
+            settings.token_presence_penalty != 0.0:
 
             ext_c.apply_rep_penalty(sequence_ids,
                                     settings.token_repetition_penalty,
                                     settings.token_repetition_range,
                                     settings.token_repetition_decay,
+                                    settings.token_frequency_penalty,
+                                    settings.token_presence_penalty,
                                     logits)
 
         # Token bias

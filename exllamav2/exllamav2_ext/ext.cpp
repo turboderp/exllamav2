@@ -872,6 +872,8 @@ void apply_rep_penalty
     float penalty_max,
     int sustain,
     int decay,
+    float alpha_frequency,
+    float alpha_presence,
     torch::Tensor logits
 )
 {
@@ -892,6 +894,8 @@ void apply_rep_penalty
             penalty_max,
             sustain,
             decay,
+            alpha_frequency,
+            alpha_presence,
             seq_len,
             ((float*) logits.data_ptr()) + i * vocab_size
         );
@@ -1257,6 +1261,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("rms_norm_", &rms_norm_, "rms_norm_");
     m.def("rope_", &rope_, "rope_");
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
+//    m.def("apply_freq_penalty", &apply_freq_penalty, "apply_freq_penalty");
+//    m.def("apply_presence_penalty", &apply_presence_penalty, "apply_presence_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");

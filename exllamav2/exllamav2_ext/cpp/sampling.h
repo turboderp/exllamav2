@@ -13,6 +13,8 @@ void apply_rep_penalty_cpu
     const float penalty_max,
     const int sustain,
     const int decay,
+    const float alpha_frequency,
+    const float alpha_presence,
     const int seq_len,
     float* logits
 );
