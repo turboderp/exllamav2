@@ -109,8 +109,8 @@ async def infer(request, ws, server, response):
                 typical: float,                     # (optional) typical threshold (0 to disable)
                 temperature: float,                 # (optional) sampling temperature (1.0 = no temp adjust)
                 rep_pen: float,                     # (optional) repetition penalty (1.0 = no penalty)
-                freq_pen: float,                    # (optional) frequency penalty (1.0 = no penalty)
-                pres_pen: float,                    # (optional) presence penalty (1.0 = no penalty)
+                freq_pen: float,                    # (optional) frequency penalty (0.0 = no penalty)
+                pres_pen: float,                    # (optional) presence penalty (0.0 = no penalty)
                 stop_conditions: [str|int],         # (optional) list of stop conditions
                 token_healing: bool,                # (optionsl) enable token healing
                 tag: str }                          # (optional) tag to echo in response packet
@@ -177,8 +177,8 @@ async def infer(request, ws, server, response):
     gs.typical = float(request["typical"]) if "typical" in request else 0
     gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
     gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
-    gs.token_frequency_penalty = float(request["freq_pen"]) if "freq_pen" in request else 1.05
-    gs.token_presence_penalty = float(request["pres_pen"]) if "pres_pen" in request else 1.05
+    gs.token_frequency_penalty = float(request["freq_pen"]) if "freq_pen" in request else 0.0
+    gs.token_presence_penalty = float(request["pres_pen"]) if "pres_pen" in request else 0.0
     gs.disallow_tokens(server.tokenizer, bb)
 
     # Generate
