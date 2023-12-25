@@ -72,6 +72,8 @@ class ExLlamaV2Sampler:
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
+            c.token_frequency_penalty = self.token_frequency_penalty
+            c.token_presence_penalty = self.token_presence_penalty
             c.token_bias = self.token_bias
             c.filters = []
             return c
@@ -110,31 +112,17 @@ class ExLlamaV2Sampler:
 
         # Repetition penalty
 
-        if settings.token_repetition_penalty != 1.0:
+        if settings.token_repetition_penalty != 1.0 or \
+            settings.token_frequency_penalty != 0.0 or \
+            settings.token_presence_penalty != 0.0:
 
             ext_c.apply_rep_penalty(sequence_ids,
                                     settings.token_repetition_penalty,
                                     settings.token_repetition_range,
                                     settings.token_repetition_decay,
+                                    settings.token_frequency_penalty,
+                                    settings.token_presence_penalty,
                                     logits)
-        
-        # Initialize token_counts and token_presence
-        token_counts = torch.zeros(sequence_ids.shape[0], vocab_size, dtype=torch.int, device=sequence_ids.device)
-        token_presence = torch.zeros(sequence_ids.shape[0], vocab_size, dtype=torch.bool, device=sequence_ids.device)
-
-        # Frequency penalty
-        if settings.token_frequency_penalty != 0.0:
-            ext_c.apply_freq_penalty(sequence_ids,
-                                     settings.token_frequency_penalty,
-                                     logits,
-                                     token_counts)
-
-        # Presence penalty
-        if settings.token_presence_penalty != 0.0:
-            ext_c.apply_presence_penalty(sequence_ids,
-                                         settings.token_presence_penalty,
-                                         logits,
-                                         token_presence)
 
         # Token bias
 

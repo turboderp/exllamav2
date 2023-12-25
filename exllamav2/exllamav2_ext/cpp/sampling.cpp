@@ -18,11 +18,15 @@ void apply_rep_penalty_cpu
     const float penalty_max,
     const int sustain,
     const int decay,
+    const float alpha_frequency,
+    const float alpha_presence,
     const int seq_len,
     float* logits
 )
 {
-    if (vocab_size != g_vocab_size)
+    // Map of which logits have already had penalties applied
+
+    if (vocab_size > g_vocab_size)
     {
         if (g_rep_mask) free(g_rep_mask);
         g_vocab_size = vocab_size;
@@ -31,61 +35,62 @@ void apply_rep_penalty_cpu
 
     memset(g_rep_mask, 0, g_vocab_size * sizeof(bool));
 
-    float v = penalty_max;
-    float dv = decay ? (1.0f - penalty_max) / (float) decay : 0.0f;
+    // Penalties to apply
 
-    int s = sustain == -1 ? seq_len : sustain;
-    int beg = seq_len - s - decay;
+    float rep_p = penalty_max;          // Multiplicative penalty, as in HF repetition penalty
+    float freq_p = alpha_frequency;     // Additive frequency penalty, as in OAI spec
+    float pres_p = alpha_presence;      // Additive presence penalty, as in OAI spec
+
+    // Change in penalties over the "decay" range of the context
+
+    float d_rep_p = 0.0f;
+    float d_freq_p = 0.0f;
+    float d_pres_p = 0.0f;
+    if (decay)
+    {
+        d_rep_p = (1.0f - rep_p) / (float) decay;
+        d_freq_p = (0.0f - freq_p) / (float) decay;
+        d_pres_p = (0.0f - pres_p) / (float) decay;
+    }
+
+    // "sustain" length, range of the context over which penalties are fixed
+
+    int sust = sustain == -1 ? seq_len : sustain;
+
+    // First token of the "sustain" range
+
+    int beg = seq_len - sust - decay;
     if (beg < 0) beg = 0;
+
+    // Iter over context, backwards
 
     for (int i = seq_len; i > beg;)
     {
         uint64_t t = sequence[--i];
+
+        // If t has not been encountered before, apply rep_p and pres_p
+
         if (!g_rep_mask[t])
         {
-            if (logits[t] > 0.0) logits[t] /= v;
-            else logits[t] *= v;
-            g_rep_mask[t] = true;
+            if (logits[t] > 0.0) logits[t] /= rep_p;  // Multiplicative penalty
+            else logits[t] *= rep_p;
+
+            logits[t] -= pres_p;  // Additive penalty
+
+            g_rep_mask[t] = true;  // Only once per logit
         }
-        if (--s < 0) v += dv;
-    }
-}
 
-void apply_freq_penalty_cpu
-(
-    const int vocab_size,
-    const int seq_len,
-    const uint64_t* sequence,
-    const float alpha_frequency,
-    int* token_counts,
-    float* logits
-)
-{
-    for (int i = 0; i < seq_len; i++)
-    {
-        uint64_t t = sequence[i];
-        logits[t] -= token_counts[t] * alpha_frequency;
-        token_counts[t]++;
-    }
-}
+        // Apply freq_p penalty for every time a token is encountered, so the total additive penalty is count * freq_p
 
-void apply_presence_penalty_cpu
-(
-    const int vocab_size,
-    const int seq_len,
-    const uint64_t* sequence,
-    const float alpha_presence,
-    bool* token_presence,
-    float* logits
-)
-{
-    for (int i = 0; i < seq_len; i++)
-    {
-        uint64_t t = sequence[i];
-        if (!token_presence[t])
+        logits[t] -= freq_p;
+
+        // If we're in the "decay" range, reduce penalties for every token
+
+        if (--sust < 0)
         {
-            logits[t] -= alpha_presence;
-            token_presence[t] = true;
+            rep_p += d_rep_p;
+            freq_p += d_freq_p;
+            pres_p += d_pres_p;
         }
     }
 }

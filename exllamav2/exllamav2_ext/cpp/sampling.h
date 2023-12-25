@@ -13,27 +13,9 @@ void apply_rep_penalty_cpu
     const float penalty_max,
     const int sustain,
     const int decay,
-    const int seq_len,
-    float* logits
-);
-
-void apply_freq_penalty_cpu
-(
-    const int vocab_size,
-    const int seq_len,
-    const uint64_t* sequence,
     const float alpha_frequency,
-    int* token_counts,
-    float* logits
-);
-
-void apply_presence_penalty_cpu
-(
-    const int vocab_size,
-    const int seq_len,
-    const uint64_t* sequence,
     const float alpha_presence,
-    bool* token_presence,
+    const int seq_len,
     float* logits
 );
 
