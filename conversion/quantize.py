@@ -200,7 +200,7 @@ def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask):
 @torch.inference_mode()
 def quant(job, save_fn, model):
 
-    snapshot_interval = 1
+    snapshot_interval = 10
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")
     strategy = job["strategy"]
