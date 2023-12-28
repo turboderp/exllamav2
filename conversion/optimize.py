@@ -26,6 +26,7 @@ def optimize(job, save_fn, model):
     else:
         raise ValueError(" ## Can't find MLP keys in model")
 
+    num_experts = model.config.num_experts if model.config.num_experts is not None else 1
     shape_q = model.modules_dict[key_q].matrix_shape()
     shape_k = model.modules_dict[key_k].matrix_shape()
     shape_v = model.modules_dict[key_v].matrix_shape()
@@ -37,9 +38,9 @@ def optimize(job, save_fn, model):
     numel_k = shape_k[0] * shape_k[1]
     numel_v = shape_v[0] * shape_v[1]
     numel_o = shape_o[0] * shape_o[1]
-    numel_g = shape_g[0] * shape_g[1] * model.config.num_experts
-    numel_u = shape_u[0] * shape_u[1] * model.config.num_experts
-    numel_d = shape_d[0] * shape_d[1] * model.config.num_experts
+    numel_g = shape_g[0] * shape_g[1] * num_experts
+    numel_u = shape_u[0] * shape_u[1] * num_experts
+    numel_d = shape_d[0] * shape_d[1] * num_experts
     numel_attn = numel_q + numel_k + numel_v + numel_o
     numel_mlp = numel_g + numel_u + numel_d
 
