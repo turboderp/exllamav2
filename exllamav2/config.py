@@ -42,8 +42,8 @@ class ExLlamaV2Config:
     vocab_size: int
     rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
     head_dim: int = 128                         # Constant for all Llama models, except 3b
-    num_experts: int = 1
-    num_experts_per_token: int = 1
+    num_experts: int = None
+    num_experts_per_token: int = None
 
     qkv_embed: bool = False
 
