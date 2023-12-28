@@ -156,8 +156,8 @@ else:
     print(f" !! Conversion script will end after measurement pass")
 
 
-print(f" -- RoPE scale: {job['rope_scale']:.2f}")
-print(f" -- RoPE alpha: {job['rope_alpha']:.2f}")
+if job['rope_scale']: print(f" -- RoPE scale: {job['rope_scale']:.2f}")
+if job['rope_alpha']: print(f" -- RoPE alpha: {job['rope_alpha']:.2f}")
 
 # Make sure subfolders exist
 
