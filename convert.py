@@ -17,8 +17,8 @@ parser.add_argument("-cf", "--compile_full", type = str, help = "Output folder f
 parser.add_argument("-c", "--cal_dataset", type = str, help = "Calibration dataset (.parquet file)")
 parser.add_argument("-b", "--bits", type = float, default = 4.125, help = "Target bits per weight")
 parser.add_argument("-ss", "--shard_size", type = float, help = "Max shard size in MB (default: 8192)", default = 8192)
-parser.add_argument("-rs", "--rope_scale", type = float, default = 1.0, help = "RoPE scaling factor")
-parser.add_argument("-ra", "--rope_alpha", type = float, default = 1.0, help = "RoPE alpha value (NTK)")
+parser.add_argument("-rs", "--rope_scale", type = float, help = "RoPE scaling factor")
+parser.add_argument("-ra", "--rope_alpha", type = float, help = "RoPE alpha value (NTK)")
 parser.add_argument("-hb", "--head_bits", type = int, default = 6, help = "Target bits per weight (head layer)")
 parser.add_argument("-om", "--output_measurement", type = str, help = "Only perform measurement pass, then save measurement to the specified file")
 parser.add_argument("-m", "--measurement", type = str, help = "Reuse previous measurement")
@@ -176,8 +176,8 @@ if not os.path.exists(out_tensor_dir):
 
 # Set scaling for input model
 
-config.scale_pos_emb = job["rope_scale"]
-config.scale_alpha_value = job["rope_alpha"]
+if job["rope_scale"] is not None: config.scale_pos_emb = job["rope_scale"]
+if job["rope_alpha"] is not None: config.scale_alpha_value = job["rope_alpha"]
 
 # Create model without loading weights
 

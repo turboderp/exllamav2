@@ -167,6 +167,15 @@ class ExLlamaV2Config:
             if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
             elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
 
+            rs = read_config.get("rope_scaling", None)
+            if rs and "factor" in rs:
+                factor = rs["factor"]
+                scaling_type = rs.get("type", None)
+                if scaling_type == "linear":
+                    self.scale_pos_emb = factor
+                # elif scaling_type == "yarn":
+                #     self.scale_alpha_value = factor
+
         # Model dimensions
 
         self.head_dim = self.hidden_size // self.num_attention_heads
