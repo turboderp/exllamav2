@@ -282,6 +282,9 @@ class ExLlamaV2:
 
         assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
 
+        # Limit model's max_input_len to max_seq_len if necessary
+        self.config.max_input_len = min(self.config.max_input_len, self.config.max_seq_len)
+
         minimum_reserve_vram = 192 * 1024**2
         last_touched_device = -1
         current_device = 0
