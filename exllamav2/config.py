@@ -47,6 +47,8 @@ class ExLlamaV2Config:
 
     qkv_embed: bool = False
 
+    checkpoint_fused_mlp: bool = False
+
 
     def __init__(self):
         pass
@@ -89,6 +91,8 @@ class ExLlamaV2Config:
             layer_keys_llama_mlp = [["mlp.down_proj"],
                                     ["mlp.gate_proj"],
                                     ["mlp.up_proj"]]
+            layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
+                                           ["mlp.swiglu.w3"]]
             expect_keys_llama = [["lm_head"],
                                  ["model.norm"],
                                  ["model.embed_tokens"]]
@@ -197,6 +201,15 @@ class ExLlamaV2Config:
             with safe_open(st_file, framework = "pt", device = "cpu") as f:
                 for key in f.keys():
                     self.tensor_file_map[key] = st_file
+
+        # For loading checkpoints with fused MLP layers
+
+        if self.architecture == "Llama" or self.architecture == "Yi":
+            if "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
+                "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
+                for x in layer_keys_llama_mlp: layer_keys.remove(x)
+                layer_keys += layer_keys_llama_mlp_swiglu
+                self.checkpoint_fused_mlp = True
 
         # Make sure we found all the layers we need
 

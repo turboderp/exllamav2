@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.linear import ExLlamaV2Linear
@@ -56,9 +57,19 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     def load(self):
 
         self.post_attention_layernorm.load()
-        self.gate_proj.load()
-        self.up_proj.load()
-        self.down_proj.load()
+
+        if self.model.config.checkpoint_fused_mlp:
+            w12 = self.load_weight(self.key + ".mlp.swiglu.w12")
+            w1 = nn.Parameter(w12[:self.model.config.intermediate_size, :].contiguous())
+            w2 = nn.Parameter(w12[self.model.config.intermediate_size:, :].contiguous())
+            w3 = self.load_weight(self.key + ".mlp.swiglu.w3")
+            self.gate_proj.load(w1)
+            self.up_proj.load(w2)
+            self.down_proj.load(w3)
+        else:
+            self.gate_proj.load()
+            self.up_proj.load()
+            self.down_proj.load()
 
         if self.gate_proj.is_quant():
             assert self.up_proj.is_quant() and self.down_proj.is_quant(), "Partially quantized MLP layer"
@@ -89,10 +100,14 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def weight_footprint(self):
 
-        return self.post_attention_layernorm.weight_footprint() + \
-               self.gate_proj.weight_footprint() + \
-               self.up_proj.weight_footprint() + \
-               self.down_proj.weight_footprint()
+        if self.model.config.checkpoint_fused_mlp:
+            return self.post_attention_layernorm.weight_footprint() + \
+                   3 * self.model.config.intermediate_size * self.model.config.hidden_size * 2
+        else:
+            return self.post_attention_layernorm.weight_footprint() + \
+                   self.gate_proj.weight_footprint() + \
+                   self.up_proj.weight_footprint() + \
+                   self.down_proj.weight_footprint()
 
 
     def scratch_space_fixed(self):
