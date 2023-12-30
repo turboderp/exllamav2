@@ -45,7 +45,7 @@ parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw gen
 parser.add_argument("-mix", "--mix_layers", type = str, help = "Load replacement layers from secondary model. Example: --mix_layers 1,6-7:/mnt/models/other_model")
 parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip warmup before testing model")
 parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Load model layer by layer (perplexity evaluation only)")
-parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512")
+parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512 (experimental)")
 
 # Initialize model and tokenizer
 
