@@ -1,4 +1,5 @@
 from ast import Tuple
+from typing import Union, Tuple
 from exllamav2 import (
     ExLlamaV2,
     ExLlamaV2Cache,
@@ -40,6 +41,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     total_draft_tokens: int = 0
     total_tokens: int = 0
     accepted_draft_tokens: int = 0
+    return_probabilities: bool = False
 
     active_loras = []
 
@@ -90,9 +92,19 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
 
 
+    def stream(self) -> Union[Tuple[str, bool, torch.Tensor], Tuple[str, bool, torch.Tensor, float]]:
+
+            chunk, eos, chunk_token_ids, proba = self._stream()
+
+            if self.return_probabilities:
+                return chunk, eos, chunk_token_ids, proba
+            else:
+                return chunk, eos, chunk_token_ids
+
+
     # Get the next chunk of text in the stream. Returns eos if stop condition has been met but does not count tokens
 
-    def stream(self) -> (str, bool, torch.Tensor):
+    def _stream(self) -> (str, bool, torch.Tensor, float):
 
         # Token healing
 
@@ -114,7 +126,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             # Regenerate the last token again, with prefix
 
-            healed_token, eos = self._gen_single_token(self.settings, prefix_token = last_token)
+            healed_token, prob, eos = self._gen_single_token(self.settings, prefix_token = last_token)
             new_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:])[0]
             self.held_text += new_tail[len(old_tail):]
 
@@ -122,7 +134,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             # In case we only needed the healed token
 
-            if eos: return self.held_text, True, self.no_tokens
+            if eos: return self.held_text, True, self.no_tokens, prob
 
         # Start filters when not healing
 
@@ -140,12 +152,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Generate a single token and append to the sequence
 
-        next_token, eos = self._gen_single_token(self.settings)
+        next_token, prob, eos = self._gen_single_token(self.settings)
 
         # End immediately if it was a stop token
 
         if next_token in self.stop_tokens:
-            return self.held_text, True, self.no_tokens
+            return self.held_text, True, self.no_tokens, prob
 
         # Decode the tail end of the sequence with the added token to get (actual) characters added
 
@@ -159,7 +171,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Return now if newly added token ends a filter
 
-        if eos: return self.held_text, True, self.held_tokens
+        if eos: return self.held_text, True, self.held_tokens, prob
 
         # Hold text as long as it contains part of a stop string
 
@@ -170,7 +182,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             position = self.held_text.find(ss)
             if position != -1:
-                return self.held_text[:position], True, self.no_tokens
+                return self.held_text[:position], True, self.no_tokens, prob
 
             # Check for overlap between end of held_text and start of stop string
 
@@ -182,7 +194,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         # If holding text because of a partial stop condition, return nothing but also EOS = False
 
         if partial_ss:
-            return "", False, self.no_tokens
+            return "", False, self.no_tokens, prob
 
         # No stop condition, so return whatever is being held
 
@@ -190,7 +202,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         stream_tokens = self.held_tokens
         self.held_text = ""
         self.held_tokens = self.no_tokens
-        return stream_text, False, stream_tokens
+        return stream_text, False, stream_tokens, prob
     
 
     def _decode_utf8(self):
@@ -309,15 +321,15 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if self.draft_model is None:
 
             logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras).float().cpu()
-            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+            token, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
 
         else:
 
-            token, eos = self._gen_single_token_speculative(gen_settings, prefix_token)
+            token, prob, eos = self._gen_single_token_speculative(gen_settings, prefix_token)
 
         self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
         gen_settings.feed_filters(token)
-        return token, eos
+        return token, prob, eos
 
 
     def _gen_single_token_speculative(self, gen_settings, prefix_token = None):
@@ -359,7 +371,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Sample the first future logits
 
-        token, _, eos = ExLlamaV2Sampler.sample(self.future_logits[:, :1, :], gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        token, prob, eos = ExLlamaV2Sampler.sample(self.future_logits[:, :1, :], gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
         self.future_logits = self.future_logits[:, 1:, :]
         self.future_tokens = self.future_tokens[:, 1:]
         self.cache.current_seq_len += 1
@@ -374,7 +386,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.accepted_draft_tokens += 1
         self.total_tokens += 1
 
-        return token, eos
+        return token, prob, eos
 
 
     def reset_sd_stats(self):
