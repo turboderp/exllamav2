@@ -277,6 +277,40 @@ class PromptFormat_solar(PromptFormat):
         return True
 
 
+class PromptFormat_openchat(PromptFormat):
+    description = "openchat"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are an AI assistant."""
+
+    def first_prompt(self):
+        return \
+            """<|system_prompt|><|end_of_turn|>GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
+
+    def subs_prompt(self):
+        return \
+            """GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """<|end_of_turn|>""",
+             """<|endoftext|>""",
+             """GPT4 Correct User:"""
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 prompt_formats = \
 {
     "raw": PromptFormat_raw,
@@ -287,10 +321,5 @@ prompt_formats = \
     "zephyr": PromptFormat_zephyr,
     "deepseek": PromptFormat_deepseek,
     "solar": PromptFormat_solar,
+    "openchat": PromptFormat_openchat,
 }
-
-
-
-
-
-
