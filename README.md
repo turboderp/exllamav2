@@ -149,3 +149,5 @@ script and its options are explained in [detail here](doc/convert.md)
 - I've uploaded a few EXL2-quantized models to Hugging Face to play around with, [here](https://huggingface.co/turboderp).
 
 - [LoneStriker](https://huggingface.co/LoneStriker) provides a large number of EXL2 models on Hugging Face. 
+
+- [bartowski](https://huggingface.co/bartowski) has some more EXL2 models on HF.
