@@ -1,7 +1,7 @@
 import torch
+import torch.nn.functional as F
 from exllamav2 import ExLlamaV2Tokenizer
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-
 
 class ExLlamaV2Sampler:
 
@@ -30,6 +30,7 @@ class ExLlamaV2Sampler:
         mirostat_mu = None  # (re)initialized from mirostat_tau on first sample
 
         token_bias = None
+        cfg_scale = None
 
         filters = []
 
@@ -105,9 +106,22 @@ class ExLlamaV2Sampler:
 
         assert logits.shape[1] == 1, "Logits tensor is incorrect shape, must be (bsz, 1, vocab_size)"
         assert prefix_token is None or prefix_token.shape == (batch_size, 1), "Prefix token list doesn't match batch shape"
-        assert batch_size == 1 or len(settings.filters) == 0, "Filters not implemented for batch size > 1"
+        if settings.cfg_scale is not None: assert batch_size == 2, "CFG requires logits to be bsz 2"
+        else: assert batch_size == 1 or len(settings.filters) == 0, "Filters not implemented for batch size > 1"
 
         logits = logits.squeeze(1)
+
+        # CFG
+
+        if settings.cfg_scale is not None:
+
+            logits = F.log_softmax(logits, dim = -1)
+            logits = settings.cfg_scale * logits[0] + (1 - settings.cfg_scale) * logits[1]
+            logits = logits.unsqueeze(0)
+            batch_size = 1
+
+        # Prepare filter
+
         logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
         ext_c.fast_fill_cpu_ones_bool(logit_filter)
 
@@ -117,7 +131,7 @@ class ExLlamaV2Sampler:
             settings.token_frequency_penalty != 0.0 or \
             settings.token_presence_penalty != 0.0:
 
-            ext_c.apply_rep_penalty(sequence_ids,
+            ext_c.apply_rep_penalty(sequence_ids[:1, :],
                                     settings.token_repetition_penalty,
                                     settings.token_repetition_range,
                                     settings.token_repetition_decay,
