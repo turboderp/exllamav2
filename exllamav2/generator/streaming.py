@@ -319,7 +319,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if self.draft_model is None:
 
             logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
-            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+            token, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids[:1, :], random.random(), self.tokenizer, prefix_token)
 
         else:
 
@@ -376,7 +376,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Sample the first future logits
 
-        token, _, eos = ExLlamaV2Sampler.sample(self.future_logits[:, :1, :], gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token)
+        token, _, eos = ExLlamaV2Sampler.sample(self.future_logits[:, :1, :], gen_settings, self.sequence_ids[:1, :], random.random(), self.tokenizer, prefix_token)
         self.future_logits = self.future_logits[:, 1:, :]
         self.future_tokens = self.future_tokens[:, 1:]
         self.cache.current_seq_len += 1

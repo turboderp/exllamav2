@@ -131,7 +131,7 @@ class ExLlamaV2Sampler:
             settings.token_frequency_penalty != 0.0 or \
             settings.token_presence_penalty != 0.0:
 
-            ext_c.apply_rep_penalty(sequence_ids[:1, :],
+            ext_c.apply_rep_penalty(sequence_ids[:, :],
                                     settings.token_repetition_penalty,
                                     settings.token_repetition_range,
                                     settings.token_repetition_decay,
