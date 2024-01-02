@@ -245,8 +245,6 @@ class ExLlamaV2:
 
     def load_gen(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
 
-        assert not self.config.qkv_embed or not lazy, "Lazy initialization is unsupported when config.qkv_embed = True"
-
         with torch.inference_mode():
 
             stats_ = self.set_device_map(gpu_split or [99999])
@@ -279,8 +277,6 @@ class ExLlamaV2:
         for item in f: x = item
 
     def load_autosplit_gen(self, cache, reserve_vram = None, last_id_only = False, callback = None, callback_gen = None):
-
-        assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
 
         # Limit model's max_input_len to max_seq_len if necessary
         self.config.max_input_len = min(self.config.max_input_len, self.config.max_seq_len)

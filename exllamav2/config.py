@@ -45,8 +45,6 @@ class ExLlamaV2Config:
     num_experts: int = None
     num_experts_per_token: int = None
 
-    qkv_embed: bool = False
-
     checkpoint_fused_mlp: bool = False
 
 
@@ -58,7 +56,6 @@ class ExLlamaV2Config:
 
     def set_low_mem(self):
 
-        self.qkv_embed = True
         self.max_input_len = 1024
         self.max_attention_size = 1024 ** 2
 
