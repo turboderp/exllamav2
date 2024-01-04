@@ -90,14 +90,14 @@ def test_quant(source: ExLlamaV2Linear,
     return variants, variants_bits
 
 
-def test_error(module, hidden_states, target_states, cache, attn_mask):
+def test_error(module, hidden_states, target_states, cache, attn_params):
 
     rfn_sum = 0
     rfn_count = 0
     for x, xref in zip(hidden_states, target_states):
         x = x.cuda()
         xref = xref.cuda()
-        xtest = module.forward(x, cache, attn_mask)
+        xtest = module.forward(x, cache, attn_params)
         xtest = xtest[0].float()
         xref = xref[0].float()
         rfn_sum += torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')
@@ -106,7 +106,7 @@ def test_error(module, hidden_states, target_states, cache, attn_mask):
     return max(1e-6, 1 - (rfn_sum / rfn_count)).item()
 
 
-def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_mask):
+def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params):
 
     qjobs, qmaps = get_qparams_reduced(qparams_attn)
     results = []
@@ -141,7 +141,7 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_m
         total_bits += bits_o[o]
         total_bpw = total_bits / total_numel
 
-        accuracy = test_error(module, hidden_states, target_states, cache, attn_mask)
+        accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
         print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
 
         torch.cuda.empty_cache()
@@ -157,7 +157,7 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_m
     return results
 
 
-def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_mask):
+def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params):
 
     qjobs, qmaps = get_qparams_reduced(qparams_mlp)
     results = []
@@ -187,7 +187,7 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_ma
         total_bits += bits_d[d]
         total_bpw = total_bits / total_numel
 
-        accuracy = test_error(module, hidden_states, target_states, cache, attn_mask)
+        accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
         print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
 
         torch.cuda.empty_cache()
@@ -333,7 +333,7 @@ def measure_quant(job, save_fn, model):
         # Reference forward pass
 
         cache = None
-        attn_mask = model.build_attn_mask(1, hidden_states[0].shape[1], 0, None, "cuda:0") if mode == "self_attn" else None
+        attn_params = ExLlamaV2Attention.Params(1, hidden_states[0].shape[1], 0, None, None) if mode == "self_attn" else None
 
         target_states = []
         if mode == "block_sparse_moe":
@@ -342,7 +342,7 @@ def measure_quant(job, save_fn, model):
         for i in range(len(hidden_states)):
 
             x = hidden_states[i].to("cuda:0")
-            outputs = module.forward(x, cache, attn_mask, intermediates = True)
+            outputs = module.forward(x, cache, attn_params, intermediates = True)
 
             # Hessians
 
@@ -379,13 +379,13 @@ def measure_quant(job, save_fn, model):
         m = None
 
         if mode == "self_attn":
-            m = measure_attn(module, hidden_states, target_states, quantizers, cache, attn_mask)
+            m = measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params)
 
         if mode == "mlp":
-            m = measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_mask)
+            m = measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params)
 
         if mode == "block_sparse_moe":
-            m = measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, attn_mask)
+            m = measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, attn_params)
 
         measurement[module.key + "." + mode] = m
 

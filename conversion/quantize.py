@@ -106,7 +106,7 @@ def quant_linear(job: dict,
     source.linear.weight.data = recons_w.T
 
 
-def quant_attn(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat):
+def quant_attn(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
 
     quantizers["q_proj"].prepare()
     quantizers["k_proj"].reuse_h(quantizers["q_proj"])
@@ -119,7 +119,7 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, cache, att
     quant_linear(job, module.o_proj, quantizers["o_proj"], strat["o_proj"])
 
 
-def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat):
+def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
 
     quantizers["gate_proj"].prepare()
     quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
@@ -135,7 +135,7 @@ def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn
     del quantizers[f"down_proj"]
 
 
-def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat):
+def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
 
     num_experts = module.model.config.num_experts
 
@@ -154,7 +154,7 @@ def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, 
         del quantizers[f"w2.{i}"]
 
 
-def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask):
+def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params):
 
     quantizers["lm_head"].prepare()
 
@@ -269,7 +269,7 @@ def quant(job, save_fn, model):
         # Reference forward pass
 
         cache = None
-        attn_mask = model.build_attn_mask(1, hidden_states[0].shape[1], 0, None, "cuda:0") if mode == "self_attn" else None
+        attn_params = ExLlamaV2Attention.Params(1, hidden_states[0].shape[1], 0, None, None) if mode == "self_attn" else None
 
         target_states = []
         if mode == "block_sparse_moe":
@@ -278,7 +278,7 @@ def quant(job, save_fn, model):
         for i in range(len(hidden_states)):
 
             x = hidden_states[i].to("cuda:0")
-            outputs = module.forward(x, cache, attn_mask, intermediates = True)
+            outputs = module.forward(x, cache, attn_params, intermediates = True)
 
             # Hessians
 
@@ -318,18 +318,18 @@ def quant(job, save_fn, model):
 
         if mode == "self_attn":
             strat = strategy[module.key + "." + mode]
-            quant_attn(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat)
+            quant_attn(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
 
         if mode == "mlp":
             strat = strategy[module.key + "." + mode]
-            quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat)
+            quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
 
         if mode == "block_sparse_moe":
             strat = strategy[module.key + "." + mode]
-            quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_mask, strat)
+            quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
 
         if mode == "linear":
-            quant_lm_head(job, module, hidden_states, quantizers, cache, attn_mask)
+            quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params)
 
         quantizers.clear()
         gc.collect()
@@ -352,7 +352,7 @@ def quant(job, save_fn, model):
             if mode != "linear":
 
                 x = hidden_states[i].to("cuda:0")
-                output = module.forward(x, cache, attn_mask)
+                output = module.forward(x, cache, attn_params)
                 q_states.append(output.to("cpu"))
 
                 output = output[0].float()
@@ -365,7 +365,7 @@ def quant(job, save_fn, model):
             elif i < job["measurement_rows"]:
 
                 x = hidden_states[i].to("cuda:0")
-                output = module.forward(x, cache, attn_mask)
+                output = module.forward(x, cache, attn_params)
                 if module.padding > 0: output = output[:, :, :-module.padding]
 
                 logits = output[:, :-1, :]

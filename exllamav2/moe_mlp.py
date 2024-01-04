@@ -166,7 +166,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             self.w3[e].set_device_idx(idx)
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
 
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
@@ -174,7 +174,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         # for the LoRA matmuls in order to work with the C++ path
 
         if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8] or (loras is not None and len(loras) > 0):
-            return self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
+            return self.forward_torch(hidden_states, cache, attn_params, intermediates, loras = loras)
 
         # if loras is None or self.temp_lora_size == 0:
         #     pass_loras = []
@@ -183,14 +183,14 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         #     pass_loras = [id(x) for x in loras]
         #     pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
-        # ref = self.forward_torch(hidden_states, cache, attn_mask, intermediates, loras = loras)
+        # ref = self.forward_torch(hidden_states, cache, attn_params, intermediates, loras = loras)
         # ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]), pass_loras, pass_lora_temp)
         ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]))
 
         return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, intermediates = False, loras = None, position_offsets = None):
+    def forward_torch(self, hidden_states, cache = None, attn_params = None, intermediates = False, loras = None, position_offsets = None):
 
         residual = hidden_states
 
