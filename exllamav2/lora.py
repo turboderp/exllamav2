@@ -44,10 +44,6 @@ class ExLlamaV2Lora:
             self.bias_ignored = False
             self.lora_scaling = lora_scaling
 
-            # Check for QKV embed
-
-            assert not self.model.config.qkv_embed, "LoRAs not implemented for models loaded with QKV embeddings"
-
             # Grab relevant items from LoRA config
 
             with open(lora_config_path, encoding = "utf8") as f:
