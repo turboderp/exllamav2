@@ -85,8 +85,8 @@ class ExLlamaV2DeviceTensors:
     def prepare_sincos(self):
 
         base = self.model.config.rotary_embedding_base
-        alpha = self.model.config.scale_alpha_value
-        scale = self.model.config.scale_pos_emb
+        alpha = self.model.config.scale_alpha_value or 1.0
+        scale = self.model.config.scale_pos_emb or 1.0
         head_dim = self.model.config.head_dim
         device = _torch_device(self.device_idx)
 
