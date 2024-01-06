@@ -122,8 +122,12 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temperature
+    float temperature,
+    bool dynatemp,
+    float min_temperature,  
+    float max_temperature   
 );
+
 
 int multinomial_cpu
 (
