@@ -5,6 +5,7 @@
 #include <vector>
 #include <queue>
 #include <utility>
+#include <cstdio> // to be removed.
 
 const int top_k_heap_threshold = 500;
 
@@ -159,6 +160,7 @@ int post_softmax_temperature
     float max_temperature   // User-provided maximum temperature
 )
 {
+    bool dynatemp = true;
     // Calculate probabilities at temperature 1.0
     float sum = 0.0f;
     for (int i = 0; i < num_candidates; ++i)
@@ -168,7 +170,7 @@ int post_softmax_temperature
     float normalized_sum = 1.0f / sum;
     for (int i = 0; i < num_candidates; ++i)
         temp_probs[i] *= normalized_sum;
-
+    
     // Dynamic temperature adjustment based on entropy
     if (dynatemp)
     {
@@ -225,8 +227,6 @@ int post_softmax_temperature
 
     return num_candidates;
 }
-
-
 
 void normalize_cpu
 (
