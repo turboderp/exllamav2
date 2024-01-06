@@ -233,3 +233,11 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return self.q_handle is not None
 
 
+    def rank_reduce(self, k):
+
+        self.gate_proj.rank_reduce(k)
+        self.up_proj.rank_reduce(k)
+        self.down_proj.rank_reduce(k)
+
+
+

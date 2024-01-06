@@ -13,9 +13,9 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
-from exllamav2.attn import (
-    ExLlamaV2Attention
-)
+from exllamav2.attn import ExLlamaV2Attention
+from exllamav2.mlp import ExLlamaV2MLP
+from exllamav2.moe_mlp import ExLlamaV2MoEMLP
 
 import argparse, os, math, time
 import pandas, fastparquet
@@ -50,6 +50,7 @@ parser.add_argument("-mix", "--mix_layers", type = str, help = "Load replacement
 parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip warmup before testing model")
 parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Load model layer by layer (perplexity evaluation only)")
 parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512 (experimental)")
+parser.add_argument("-rr", "--rank_reduce", type = str, help = "Rank-reduction for MLP layers of model, in reverse order (for experimentation)")
 
 # Initialize model and tokenizer
 
@@ -99,6 +100,31 @@ if args.stream_layers:
     stream_batch_size = 2
     model.config.max_batch_size = stream_batch_size
     model.load(lazy = True)
+
+# Rank reduction
+
+if args.rank_reduce:
+
+    if args.stream_layers:
+        print(" ## --rank_reduce can not be combined with --stream_layers")
+        sys.exit()
+
+    rr = args.rank_reduce.split(",")
+    idx = len(model.modules) - 1
+    for r in rr:
+        k = float(r)
+
+        while True:
+            idx -= 1
+            module = model.modules[idx]
+            if isinstance(module, ExLlamaV2MLP): break
+            if isinstance(module, ExLlamaV2MoEMLP): break
+            if idx < 0:
+                print(" ## Not enough layers")
+                sys.exit()
+
+        print(f" -- Reducing {module.key} ({module.name}) to {k * 100:.2f}%")
+        module.rank_reduce(k)
 
 # Replacement
 

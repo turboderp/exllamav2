@@ -280,3 +280,10 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
     def is_quant(self):
         return self.q_handle is not None
 
+
+    def rank_reduce(self, k):
+
+        for e in range(self.num_experts):
+            self.w1[e].rank_reduce(k)
+            self.w2[e].rank_reduce(k)
+            self.w3[e].rank_reduce(k)
