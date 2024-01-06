@@ -193,6 +193,10 @@ int post_softmax_temperature
         float scaled_temperature = min_temperature + entropy_ratio * (max_temperature - min_temperature);
         float temp_inverse = 1.0f / scaled_temperature;
 
+        printf("Scaled Temperature: %f\n", scaled_temperature);
+        printf("Min Temperature: %f\n", min_temperature);
+        printf("Max Temperature: %f\n", max_temperature);
+
         // Apply the new scaled temperature to adjust the probabilities
         sum = 0.0f;
         for (int i = 0; i < num_candidates; ++i)
