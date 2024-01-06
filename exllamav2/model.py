@@ -281,7 +281,7 @@ class ExLlamaV2:
         # Limit model's max_input_len to max_seq_len if necessary
         self.config.max_input_len = min(self.config.max_input_len, self.config.max_seq_len)
 
-        minimum_reserve_vram = 192 * 1024**2
+        minimum_reserve_vram = 256 * 1024**2
         last_touched_device = -1
         current_device = 0
         num_devices = torch.torch.cuda.device_count()
@@ -294,7 +294,7 @@ class ExLlamaV2:
             # Reserved space
 
             if reserve_vram is None:
-                reserve_vram = [192 * 1024**2] + [0] * (num_devices - 1)
+                reserve_vram = [192 * 1024**2] + [64 * 1024**2] * (num_devices - 1)
 
             reserved_vram_tensors = []
             minimum_reserve_tensor = None
