@@ -153,35 +153,75 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temperature
+    float temperature,
+    bool dynatemp,  // Additional parameter to toggle dynatemp functionality
+    float min_temperature,  // User-provided minimum temperature
+    float max_temperature   // User-provided maximum temperature
 )
 {
-//    printf("---- pre\n");
-//    for (int i = 0; i < num_candidates; ++i)
-//        DBGIF(i, temp_probs[i]);
-
-    float psum = 0.0f;
-    float itemp = 1.0f / temperature;
+    // Calculate probabilities at temperature 1.0
+    float sum = 0.0f;
     for (int i = 0; i < num_candidates; ++i)
     {
-        float p = powf(temp_probs[i], itemp);
-        psum += p;
-        temp_probs[i] = p;
+        sum += temp_probs[i];
     }
-
-    float ipsum = 1.0f / psum;
+    float normalized_sum = 1.0f / sum;
     for (int i = 0; i < num_candidates; ++i)
-        temp_probs[i] *= ipsum;
+        temp_probs[i] *= normalized_sum;
 
-//    printf("---- post\n");
-//    DBGF(temperature);
-//    printf("----\n");
-//    for (int i = 0; i < num_candidates; ++i)
-//        DBGIF(i, temp_probs[i]);
-//    printf("\n");
+    // Dynamic temperature adjustment based on entropy
+    if (dynatemp)
+    {
+        // Measure the entropy of the probability distribution
+        float entropy = 0.0f;
+        for (int i = 0; i < num_candidates; ++i)
+        {
+            if (temp_probs[i] > 0.0f)
+            {
+                entropy += -temp_probs[i] * logf(temp_probs[i]);
+            }
+        }
+
+        // Measure the maximum possible entropy
+        float max_entropy = logf(num_candidates);
+
+        // Calculate the ratio of the entropy to the maximum possible entropy
+        float entropy_ratio = entropy / max_entropy;
+
+        // Scale the ratio to fit within the range of min_temperature to max_temperature
+        // Assuming min_temperature < max_temperature and both are positive
+        float scaled_temperature = min_temperature + entropy_ratio * (max_temperature - min_temperature);
+        float temp_inverse = 1.0f / scaled_temperature;
+
+        // Apply the new scaled temperature to adjust the probabilities
+        sum = 0.0f;
+        for (int i = 0; i < num_candidates; ++i)
+        {
+            temp_probs[i] = powf(temp_probs[i], temp_inverse);
+            sum += temp_probs[i];
+        }
+        normalized_sum = 1.0f / sum;
+        for (int i = 0; i < num_candidates; ++i)
+            temp_probs[i] *= normalized_sum;
+    }
+    else
+    {
+        float itemp = 1.0f / temperature;
+        sum = 0.0f;
+        for (int i = 0; i < num_candidates; ++i)
+        {
+            temp_probs[i] = powf(temp_probs[i], itemp);
+            sum += temp_probs[i];
+        }
+        
+        normalized_sum = 1.0f / sum;
+        for (int i = 0; i < num_candidates; ++i)
+            temp_probs[i] *= normalized_sum;
+    }
 
     return num_candidates;
 }
+
 
 
 void normalize_cpu
