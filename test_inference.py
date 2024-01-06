@@ -244,7 +244,7 @@ if args.eval_dataset or args.standard_perplexity:
                 logits_ = logits__[bi:bi+1, cl:, :]
                 input_ids_ = input_ids__[bi:bi+1, cl:]
 
-                chunksize = logits_.shape[1] * 16000 // logits_.shape[2] + 1
+                chunksize = logits_.shape[1] * 4000 // logits_.shape[2] + 1
                 b_ = 0
                 while b_ < logits_.shape[1]:
                     a_ = b_
