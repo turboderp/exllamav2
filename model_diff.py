@@ -8,6 +8,8 @@ from exllamav2 import(
     model_init,
 )
 
+from exllamav2.attn import ExLlamaV2Attention
+
 import argparse, os, math, time
 import pandas, fastparquet
 import torch
@@ -67,7 +69,7 @@ with torch.no_grad():
     num_rows, seq_len = eval_tokens.shape
 
     eval_tokens = [eval_tokens[i:i+1, :] for i in range(eval_tokens.shape[0])]
-    attn_mask = model[0].build_attn_mask(1, seq_len, 0, None, "cuda:0")
+    attn_params = ExLlamaV2Attention.Params(1, seq_len, 0, None, None)
 
     # Get embeddings
 
@@ -99,7 +101,7 @@ with torch.no_grad():
                     hidden_state[1][j] = hidden_state[0][j].clone()
                 else:
                     x = hidden_state[i][j].to("cuda:0")
-                    x = module.forward(x, cache = None, attn_mask = attn_mask, past_len = 0, loras = None, position_offsets = None)
+                    x = module.forward(x, cache = None, attn_params = attn_params, past_len = 0, loras = None)
                     hidden_state[i][j] = x.to("cpu")
                     x = None
 
