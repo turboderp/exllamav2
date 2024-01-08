@@ -292,6 +292,10 @@ def measure_quant(job, save_fn, model):
         index += 1
         if index >= len(model.modules): break
 
+        # Timer
+
+        begin_time = time.time()
+
         # Prepare module
 
         module = model.modules[index]
@@ -397,6 +401,12 @@ def measure_quant(job, save_fn, model):
         # Advance
 
         hidden_states = target_states
+
+        # Timing
+
+        end_time = time.time()
+        duration = end_time - begin_time
+        print(f" -- Duration: {duration:.2f} seconds")
 
         # Checkpoint
 
