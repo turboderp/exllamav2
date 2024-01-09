@@ -52,11 +52,18 @@ class ExLlamaV2BaseGenerator:
                         encode_special_tokens = False,
                         decode_special_tokens = False,
                         loras = None,
-                        stop_token = -1):
+                        stop_token = None,
+                        stop_conditions = None,
+                        no_prompt_output = False):
 
-        # Default stop token
+        # Convert single stop token to list
 
-        if stop_token == -1: stop_token = self.tokenizer.eos_token_id
+        if stop_token is not None and not isinstance(stop_token, list): stop_token = [stop_token]
+
+        # Default stop tokens
+
+        if stop_token is None: stop_token = [self.tokenizer.eos_token_id]
+
 
         # Accept LoRA or list of LoRAs
 
@@ -69,8 +76,7 @@ class ExLlamaV2BaseGenerator:
         # Tokenize input and produce padding mask if needed
 
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
-        ids, position_offsets = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens, return_offsets = True)
-        if batch_size == 1: position_offsets = None
+        ids = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens)
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
         if overflow > 0: ids = ids[:, overflow:]
@@ -87,7 +93,7 @@ class ExLlamaV2BaseGenerator:
 
         # Process prompt and begin gen
 
-        self._gen_begin_base(ids, mask, loras, position_offsets = position_offsets)
+        self._gen_begin_base(ids, mask, loras)
 
         # Begin filters
 
@@ -105,13 +111,13 @@ class ExLlamaV2BaseGenerator:
 
         for i in range(num_tokens):
 
-            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask, loras = loras, position_offsets = position_offsets).float().cpu()
+            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask, loras = loras).float().cpu()
             token, _, _ = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
 
             eos = False
             if stop_token is not None:
                 for b in range(batch_size):
-                    if token[b, 0].item() == stop_token:
+                    if token[b, 0].item() in stop_token:
                         batch_eos[b] = True
                         if all(batch_eos): eos = True
                     if batch_eos[b]:
@@ -120,12 +126,41 @@ class ExLlamaV2BaseGenerator:
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
             gen_settings.feed_filters(token)
 
+            # Check for stop conditions
+
+            if stop_conditions is not None:
+                for b in range(batch_size):
+                    prompt_length = len(ids[b])
+                    text = self.tokenizer.decode(self.sequence_ids[b, prompt_length:], decode_special_tokens = decode_special_tokens)
+                    for condition in stop_conditions:
+                        if condition in text:
+                            batch_eos[b] = True
+                            if all(batch_eos): eos = True
+                            break
+
             unhealed_token = None
             if eos: break
 
+
+        return_sequence_ids = self.sequence_ids
+
+        # Remove prompts
+
+        if no_prompt_output:
+            new_sequence_ids = []
+            batch_size = len(ids)
+
+            for i in range(batch_size):
+                prompt_length = len(ids[i])
+                sequence_id = self.sequence_ids[i]
+                new_sequence_id = sequence_id[prompt_length:]
+                new_sequence_ids.append(new_sequence_id)
+                
+            return_sequence_ids = torch.stack(new_sequence_ids)
+        
         # Decode
 
-        text = self.tokenizer.decode(self.sequence_ids, decode_special_tokens = decode_special_tokens)
+        text = self.tokenizer.decode(return_sequence_ids, decode_special_tokens = decode_special_tokens)
 
         if isinstance(prompt, str): return text[0]
         return text
