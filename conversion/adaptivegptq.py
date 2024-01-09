@@ -9,7 +9,7 @@ import sys
 
 class AdaptiveQuantizer:
 
-    norm: float = 3.0
+    norm: float = 3.5
     max_p: float = 1.0
     min_p: float = 0.75
     p_grid: int = 48
