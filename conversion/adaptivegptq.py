@@ -90,7 +90,7 @@ class AdaptiveGPTQ:
     perm_cpu: torch.tensor = None
     invperm: torch.tensor = None
 
-    g_idx: torch.tensor = None
+    # g_idx: torch.tensor = None
     scale: torch.tensor = None
     qscale: torch.tensor = None
     qscale_max: torch.tensor = None
@@ -125,7 +125,7 @@ class AdaptiveGPTQ:
         self.perm = None
         self.perm_cpu = None
         self.invperm = None
-        self.g_idx = None
+        # self.g_idx = None
         self.scale = None
         self.qscale = None
         self.qscale_max = None
@@ -389,10 +389,10 @@ class AdaptiveGPTQ:
             # Create g_idx to store inverse activation order
 
             # self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32, device = self.device)
-            self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32)
+            # self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32)
 
-            self.invperm = torch.argsort(self.perm_cpu)
-            self.g_idx = self.g_idx[self.invperm]
+            self.invperm = torch.argsort(self.perm)
+            # self.g_idx = self.g_idx[self.invperm]
 
             # Store scales
 
@@ -449,7 +449,7 @@ class AdaptiveGPTQ:
 
     def pack(self, key, qparams):
 
-        self.qgroups = self.qgroups.to("cude:0")
+        self.qgroups = self.qgroups.to("cuda:0")
         # self.qscale_max = self.qscale_max.to("cude:0")
 
         assert qparams.scale_bits in [4]
