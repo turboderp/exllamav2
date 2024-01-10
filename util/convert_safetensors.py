@@ -1,5 +1,5 @@
 import torch
-import argparse, os, glob, sys
+import argparse, os
 from safetensors.torch import save_file
 
 parser = argparse.ArgumentParser(description="Convert .bin/.pt files to .safetensors")
@@ -12,4 +12,4 @@ for file in args.input_files:
 
     out_file = os.path.splitext(file)[0] + ".safetensors"
     print(f" -- Saving {out_file}...")
-    save_file(state_dict, out_file)
+    save_file(state_dict, out_file, metadata = {'format': 'pt'})
