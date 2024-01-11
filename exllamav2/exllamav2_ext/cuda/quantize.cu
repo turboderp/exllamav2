@@ -50,13 +50,13 @@ __global__ void fused_quantize_adjust_kernel
 
     h_x = __hsub(h_x, h_qzero);
     h_x = __hmul(h_x, h_s);
-    quant[idx] = __half2float(h_x);
+    float q = __half2float(h_x);
+    quant[idx] = q;
 
     // Adjust error
 
     float d = hessian_inv[row * rows + row];  // H diagonal
     float w = weights[idx];
-    float q = quant[idx];
     error[idx] = (w - q) / d;
 }
 
@@ -292,9 +292,6 @@ void quantize_err_cuda
         max_p,
         p_grid
     );
-
-    dim3 rthreads(128, 1);
-    dim3 rblocks(DIVIDE(columns / 4, BLOCKSIZE_X), DIVIDE(rows, BLOCKSIZE_Y));
 }
 
 // Compute z = z - x.T @ y
