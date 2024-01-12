@@ -639,7 +639,7 @@ class ExLlamaV2:
         attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
         last_state = None
 
-        if hasattr(self, 'layers'):
+        if hasattr(self, 'layers_list'):
             for i, idx in enumerate(self.layers_list):
                 module = self.modules[idx]
                 x, last_state = process_module(module, x, last_state)
