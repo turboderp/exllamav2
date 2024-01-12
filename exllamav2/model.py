@@ -160,7 +160,7 @@ class ExLlamaV2:
 
 
         if hasattr(config, 'repeats'):
-            self.layers = []
+            self.layers_list = []
 
             def listLeftIndex(alist, value):
                 if value == 0:
@@ -177,12 +177,13 @@ class ExLlamaV2:
             for interval in config.repeats:
                 start_idx = listLeftIndex(layer_list, interval[0])
                 end_idx = listRightIndex(layer_list, interval[1])
-                self.layers.extend(list(range(start_idx, end_idx + 1)))
-            self.layers.extend(list(range(listRightIndex(layer_list, config.repeats[-1][1]), len(layer_list))))
+                self.layers_list.extend(list(range(start_idx, end_idx + 1)))
+            self.layers_list.extend(list(range(listRightIndex(layer_list, config.repeats[-1][1]), len(layer_list))))
 
             # If we have create a Frankenmerge, lets print it to verify!
-            for layer in self.layers:
-                print(layer, self.modules[layer].key)
+            print("Frankenstein Layers list:")
+            for i, layer in enumerate(self.layers_list):
+                print(i, self.modules[layer].key)
 
     def set_device_map(self, allocation, embed_cpu = True):
 
@@ -639,7 +640,7 @@ class ExLlamaV2:
         last_state = None
 
         if hasattr(self, 'layers'):
-            for i, idx in enumerate(self.layers):
+            for i, idx in enumerate(self.layers_list):
                 module = self.modules[idx]
                 x, last_state = process_module(module, x, last_state)
                 if preprocess_only and idx == self.last_kv_layer_idx:
