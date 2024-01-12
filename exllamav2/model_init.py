@@ -1,5 +1,5 @@
 
-import argparse, sys, os, glob
+import argparse, sys, os, glob, ast
 
 from exllamav2 import(
     ExLlamaV2,
@@ -17,6 +17,7 @@ def add_args(parser):
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
+    parser.add_argument("--repeats", type=parse_tuple_list, help="List of tuples of the layers to repeat")
 
 
 def print_options(args):
@@ -60,6 +61,16 @@ def check_args(args):
             print(f" ## Error: Cannot find {filename} in {args.model_dir}")
             sys.exit()
 
+def parse_tuple_list(string):
+    try:
+        # Safely evaluate the string as a Python literal (list of tuples)
+        tuple_list = ast.literal_eval(string)
+        if not all(isinstance(item, tuple) for item in tuple_list):
+            raise ValueError
+        return tuple_list
+    except:
+        raise argparse.ArgumentTypeError("Input must be a list of tuples")
+
 
 def init(args, quiet = False, allow_auto_split = False, skip_load = False):
 
@@ -76,7 +87,8 @@ def init(args, quiet = False, allow_auto_split = False, skip_load = False):
     if args.rope_alpha: config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
     if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
-
+    if args.repeats: config.repeats = args.repeats
+    
     # Set low-mem options
 
     if args.low_mem: config.set_low_mem()
