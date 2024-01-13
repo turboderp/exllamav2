@@ -34,6 +34,8 @@ class ExLlamaV2Sampler:
 
         filters = []
 
+        cutoff_fraction = 0.7  # Example value
+
 
         def clone(self):
 
@@ -211,7 +213,8 @@ class ExLlamaV2Sampler:
                                settings.mirostat_mu if settings.mirostat else [],
                                settings.mirostat_tau,
                                settings.mirostat_eta,
-                               settings.temperature if settings.temperature_last else 1.0)
+                               settings.temperature if settings.temperature_last else 1.0,
+                               settings.cutoff_fraction)
 
         if settings.mirostat: settings.mirostat_mu = m
 

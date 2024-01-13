@@ -920,7 +920,8 @@ std::vector<float> sample_basic
     std::vector<float>& mirostat_mu,
     float mirostat_tau,
     float mirostat_eta,
-    float post_temperature
+    float post_temperature,
+    float cutoff_fraction
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -960,6 +961,21 @@ std::vector<float> sample_basic
             logits_filter_ptr + i * vocab_size,
             temp_probs
         );
+
+        if (cutoff_fraction > 0.f) {
+            // Calculate the cutoff based on the maximum probability
+            float max_prob = *std::max_element(temp_probs, temp_probs + vocab_size);
+            float cutoff = cutoff_fraction * max_prob;
+
+            // Filter out logits below the cutoff threshold
+            for (int j = 0; j < vocab_size; j++)
+            {
+                if (temp_probs[j] < cutoff)
+                {
+                    logits_ptr[i * vocab_size + j] = -1e10; // Set low value to filtered logits
+                }
+            }
+        }
 
         if (top_k == 1)
         {
