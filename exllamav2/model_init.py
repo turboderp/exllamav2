@@ -65,11 +65,17 @@ def parse_tuple_list(string):
     try:
         # Safely evaluate the string as a Python literal (list of tuples)
         tuple_list = ast.literal_eval(string)
+        
+        # Ensure all elements in the list are tuples
         if not all(isinstance(item, tuple) for item in tuple_list):
-            raise ValueError
-        return tuple_list
+            raise ValueError("All elements must be tuples")
+
+        # Convert tuple elements to integers
+        int_tuple_list = [tuple(int(x) for x in item) for item in tuple_list]
+        
+        return int_tuple_list
     except:
-        raise argparse.ArgumentTypeError("Input must be a list of tuples")
+        raise argparse.ArgumentTypeError("Input must be a valid list of tuples with integer elements")
 
 
 def init(args, quiet = False, allow_auto_split = False, skip_load = False):

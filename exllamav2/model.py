@@ -158,32 +158,24 @@ class ExLlamaV2:
 
         self.last_kv_layer_idx = layer_list
 
-
         if hasattr(config, 'repeats'):
-            self.layers_list = []
+            embedTokenLayers = 1
+            transformerSublayers = 2
+            layer_arrangement = [list(range(*interval)) for interval in config.repeats]
+            layer_arrangement = [item for sublist in layer_arrangement for item in sublist] 
+            LayeredModules = self.modules
 
-            def listLeftIndex(alist, value):
-                if value == 0:
-                    return 0
-                return alist.index(str(value))
 
-            def listRightIndex(alist, value):
-                if value > len(alist):
-                    return -1
-                return len(alist) - alist[-1::-1].index(str(value)) -1
+            self.modules = LayeredModules[:embedTokenLayers]
+            for idx in layer_arrangement:
+                self.modules += LayeredModules[idx*transformerSublayers + embedTokenLayers : idx*transformerSublayers + transformerSublayers + embedTokenLayers]
+            self.modules += LayeredModules[-2:]
+            self.head_layer_idx = len(self.modules) -1
+            self.last_kv_layer_idx = len(self.modules) -4
 
-            layer_list = [layer.key.split(".")[-1] for layer in self.modules]
+            for i, m in enumerate(self.modules):
+                print(i, m.key)
 
-            for interval in config.repeats:
-                start_idx = listLeftIndex(layer_list, interval[0])
-                end_idx = listRightIndex(layer_list, interval[1])
-                self.layers_list.extend(list(range(start_idx, end_idx + 1)))
-            self.layers_list.extend(list(range(listRightIndex(layer_list, config.repeats[-1][1]), len(layer_list))))
-
-            # If we have create a Frankenmerge, lets print it to verify!
-            print("Frankenstein Layers list:")
-            for i, layer in enumerate(self.layers_list):
-                print(i, self.modules[layer].key)
 
     def set_device_map(self, allocation, embed_cpu = True):
 
