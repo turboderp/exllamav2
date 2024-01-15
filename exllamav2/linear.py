@@ -201,3 +201,16 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     def is_quant(self):
 
         return self.q_handle is not None
+
+
+    def rank_reduce(self, k):
+
+        assert not self.is_quant(), "Can't rank-reduce quantized layer"
+
+        weight = self.linear.weight.data.float()
+        max_rank = min(weight.shape[0], weight.shape[1])
+        desired_rank = int(max_rank * k)
+        results = torch.svd_lowrank(weight, q = desired_rank, niter = 10)
+        weight_approx = results[0] @ torch.diag(results[1]) @ results[2].T
+
+        self.linear.weight = nn.Parameter(weight_approx.half())

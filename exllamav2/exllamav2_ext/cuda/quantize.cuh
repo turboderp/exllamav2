@@ -18,6 +18,32 @@ void quantize_cuda
     float maxq
 );
 
+void adjust_error_row_cuda
+(
+    const float* hessian_inv,
+    float* error,
+    const float* weights,
+    const float* quant,
+    int c,
+    int columns,
+    int hcolumns
+);
+
+void fused_quantize_adjust_cuda
+(
+    const float*    weights,
+    float*          quant,
+    const float*    scale,
+    uint16_t*       out_q,
+    const float*    hessian_inv,
+    float*          error,
+    int row,
+    int rows,
+    int columns,
+    float qzero,
+    float maxq
+);
+
 void quantize_err_cuda
 (
     const float* input,
@@ -31,17 +57,6 @@ void quantize_err_cuda
     float min_p,
     float max_p,
     int p_grid
-);
-
-void adjust_error_row_cuda
-(
-    const float* hessian_inv,
-    float* error,
-    const float* weights,
-    const float* quant,
-    int c,
-    int columns,
-    int hcolumns
 );
 
 void vv_mul_sub_cuda
