@@ -130,14 +130,14 @@ class ExLlamaV2:
         self.modules.append(ExLlamaV2Embedding(self, "model.embed_tokens"))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
 
-        for layer_idx in range(self.config.num_hidden_layers):
+        for layer_list in range(self.config.num_hidden_layers):
 
-            self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_idx}", layer_idx))
+            self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_list}", layer_list))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
             if self.config.architecture == "Mixtral":
-                self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_idx}", layer_idx))
+                self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_list}", layer_list))
             else:
-                self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
+                self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_list}", layer_list))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
 
 
@@ -150,13 +150,32 @@ class ExLlamaV2:
 
         # Find last layer that affects k/v cache
 
-        layer_idx = len(self.modules)
+        layer_list = len(self.modules)
         while True:
-            layer_idx -= 1
-            if isinstance(self.modules[layer_idx], ExLlamaV2Attention):
+            layer_list -= 1
+            if isinstance(self.modules[layer_list], ExLlamaV2Attention):
                 break
 
-        self.last_kv_layer_idx = layer_idx
+        self.last_kv_layer_idx = layer_list
+
+        if hasattr(config, 'repeats'):
+            embedTokenLayers = 1
+            transformerSublayers = 2
+            layer_arrangement = [list(range(*interval)) for interval in config.repeats]
+            layer_arrangement = [item for sublist in layer_arrangement for item in sublist] 
+
+
+            LayeredModules = self.modules[:embedTokenLayers]
+            for idx in layer_arrangement:
+                LayeredModules += self.modules[idx*transformerSublayers + embedTokenLayers : idx*transformerSublayers + transformerSublayers + embedTokenLayers]
+            LayeredModules += self.modules[-2:]
+            self.head_layer_idx = len(self.modules) -1
+            self.last_kv_layer_idx = len(self.modules) -4
+
+            for i, m in enumerate(LayeredModules):
+                print(i, m.key)
+
+            self.layeredModules = LayeredModules
 
 
     def set_device_map(self, allocation, embed_cpu = True):
@@ -582,6 +601,23 @@ class ExLlamaV2:
                  return_last_state = False,
                  position_offsets = None):
 
+        def process_module(module, x, last_state):
+            device = _torch_device(module.device_idx)
+
+            if idx == self.head_layer_idx:
+                if last_id_only and return_last_state:
+                    x = x.narrow(-2, -1, 1)
+                    last_state = x
+                elif last_id_only:
+                    x = x.narrow(-2, -1, 1)
+                elif return_last_state:
+                    last_state = x.narrow(-2, -1, 1)
+
+            x = safe_move_tensor(x, device)
+            x = module.forward(x, cache=cache, attn_params=attn_params, past_len=past_len, loras=loras)
+
+            return x, last_state
+
         batch_size, seq_len = input_ids.shape
         past_len = 0
         if cache is not None:
@@ -596,27 +632,18 @@ class ExLlamaV2:
         attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
         last_state = None
 
-        for idx, module in enumerate(self.modules):
-
-            device = _torch_device(module.device_idx)
-
-            # Onward
-
-            if idx == self.head_layer_idx:
-                if last_id_only and return_last_state:
-                    x = x.narrow(-2, -1, 1)
-                    last_state = x
-                elif last_id_only:
-                    x = x.narrow(-2, -1, 1)
-                elif return_last_state:
-                    last_state = x.narrow(-2, -1, 1)
-
-            x = safe_move_tensor(x, device)
-            x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras)
-
-            if preprocess_only and idx == self.last_kv_layer_idx:
-                x = None
-                break
+        if hasattr(self, 'layeredModules'):
+            for idx, module in enumerate(self.layeredModules):
+                x, last_state = process_module(module, x, last_state)
+                if preprocess_only and idx == self.last_kv_layer_idx:
+                    x = None
+                    break
+        else:
+            for idx, module in enumerate(self.modules):
+                x, last_state = process_module(module, x, last_state)
+                if preprocess_only and idx == self.last_kv_layer_idx:
+                    x = None
+                    break
 
         # Advance cache
 

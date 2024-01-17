@@ -6,3 +6,4 @@ __pycache__/
 .idea
 venv
 dist
+*.so
