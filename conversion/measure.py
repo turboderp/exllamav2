@@ -100,10 +100,10 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
         xtest = module.forward(x, cache, attn_params)
         xtest = xtest[0].float()
         xref = xref[0].float()
-        rfn_sum += torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')
+        rfn_sum += (torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')).item()
         rfn_count += 1
 
-    return max(1e-6, 1 - (rfn_sum / rfn_count)).item()
+    return max(1e-6, 1 - (rfn_sum / rfn_count))
 
 
 def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params):
