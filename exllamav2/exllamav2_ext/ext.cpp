@@ -1276,7 +1276,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
     m.def("safetensors_open", &safetensors_open, "safetensors_open");
     m.def("safetensors_close", &safetensors_close, "safetensors_close");
-    m.def("safetensors_fastload", &safetensors_fastload, "safetensors_fastload");
+    m.def("safetensors_load", &safetensors_load, "safetensors_load");
     m.def("safetensors_pinned_buffer", &safetensors_pinned_buffer, "safetensors_pinned_buffer");
     m.def("safetensors_free_pinned_buffer", &safetensors_free_pinned_buffer, "safetensors_free_pinned_buffer");
 }

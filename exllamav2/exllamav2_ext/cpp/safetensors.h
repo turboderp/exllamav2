@@ -7,19 +7,20 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <cstdint>
 #include <cstdio>
+#include <aio.h>
 
 class STFile
 {
 public:
-    STFile(const char* filename, uintptr_t pinned_buffer);
+    STFile(const char* filename);
     ~STFile();
 
-    void fastload
+    void load
     (
-        std::vector<torch::Tensor>& targets,
-        std::vector<size_t> offsets,
-        std::vector<size_t> lengths,
-        size_t h_offset
+        torch::Tensor target,
+        size_t offset,
+        size_t length,
+        bool gpu
     );
 
     int file_descriptor;
@@ -29,18 +30,19 @@ public:
     void* aligned_buffer;
 };
 
-uintptr_t safetensors_open(const char* filename, uintptr_t pinned_buffer);
-void safetensors_close(uintptr_t handle);
-uintptr_t safetensors_pinned_buffer();
-void safetensors_free_pinned_buffer(uintptr_t b);
+void safetensors_pinned_buffer();
+void safetensors_free_pinned_buffer();
 
-void safetensors_fastload
+uintptr_t safetensors_open(const char* filename);
+void safetensors_close(uintptr_t handle);
+
+void safetensors_load
 (
     uintptr_t handle,
-    std::vector<torch::Tensor>& targets,
-    std::vector<size_t> offsets,
-    std::vector<size_t> lengths,
-    size_t h_offset
+    torch::Tensor target,
+    size_t offset,
+    size_t length
 );
+
 
 #endif

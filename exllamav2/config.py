@@ -1,5 +1,5 @@
 import torch
-from safetensors import safe_open
+from exllamav2.fasttensors import STFile
 import os, glob, json
 
 class ExLlamaV2Config:
@@ -46,6 +46,8 @@ class ExLlamaV2Config:
     num_experts_per_token: int = None
 
     checkpoint_fused_mlp: bool = False
+
+    fasttensors: bool = False
 
 
     def __init__(self):
@@ -194,10 +196,9 @@ class ExLlamaV2Config:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
         for st_file in self.tensor_files:
-
-            with safe_open(st_file, framework = "pt", device = "cpu") as f:
-                for key in f.keys():
-                    self.tensor_file_map[key] = st_file
+            f = STFile.open(st_file, fast = self.fasttensors)
+            for key in f.get_dict():
+                self.tensor_file_map[key] = st_file
 
         # For loading checkpoints with fused MLP layers
 

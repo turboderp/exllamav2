@@ -1,5 +1,5 @@
 
-import argparse, sys, os, glob
+import argparse, sys, os, glob, time
 
 from exllamav2 import(
     ExLlamaV2,
@@ -17,6 +17,7 @@ def add_args(parser):
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
+    parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Optimized safetensors loading with direct I/O (experimental!)")
 
 
 def print_options(args):
@@ -30,6 +31,7 @@ def print_options(args):
     if args.rope_alpha is not None: print_opts += [f"rope_alpha: {args.rope_alpha}"]
     if args.no_flash_attn: print_opts += ["no_flash_attn"]
     if args.low_mem: print_opts += ["low_mem"]
+    if args.fast_safetensors: print_opts += ["fast_safetensors"]
     if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
     print(f" -- Options: {print_opts}")
 
@@ -61,12 +63,13 @@ def check_args(args):
             sys.exit()
 
 
-def init(args, quiet = False, allow_auto_split = False, skip_load = False):
+def init(args, quiet = False, allow_auto_split = False, skip_load = False, benchmark = False):
 
     # Create config
 
     config = ExLlamaV2Config()
     config.model_dir = args.model_dir
+    config.fasttensors = args.fast_safetensors
     config.prepare()
 
     # Set config options
@@ -93,7 +96,11 @@ def init(args, quiet = False, allow_auto_split = False, skip_load = False):
 
     if args.gpu_split != "auto" and not skip_load:
         if not quiet: print(" -- Loading model...")
+        t = time.time()
         model.load(split)
+        t = time.time() - t
+        if benchmark and not quiet:
+            print(f" -- Loaded model in {t:.4f} seconds")
     else:
         assert allow_auto_split, "Auto split not allowed."
 
