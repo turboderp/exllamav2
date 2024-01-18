@@ -22,4 +22,6 @@
         DBGI(duration_us); \
     } while (false)
 
+#define DIVIDE(x, size) (((x) + (size) - 1) / (size))
+
 #endif

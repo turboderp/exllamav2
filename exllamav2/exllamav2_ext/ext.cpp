@@ -23,6 +23,7 @@
 
 #include "cpp/quantize_func.h"
 #include "cpp/sampling.h"
+#include "cpp/safetensors.h"
 
 #include "cpp/util.h"
 
@@ -1273,4 +1274,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("fast_copy_cpu", &fast_copy_cpu, "fast_copy_cpu");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
+    m.def("safetensors_open", &safetensors_open, "safetensors_open");
+    m.def("safetensors_close", &safetensors_close, "safetensors_close");
+    m.def("safetensors_fastload", &safetensors_fastload, "safetensors_fastload");
+    m.def("safetensors_pinned_buffer", &safetensors_pinned_buffer, "safetensors_pinned_buffer");
+    m.def("safetensors_free_pinned_buffer", &safetensors_free_pinned_buffer, "safetensors_free_pinned_buffer");
 }

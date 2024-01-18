@@ -7,3 +7,4 @@ sentencepiece>=0.1.97
 pygments
 websockets
 regex
+numpy
