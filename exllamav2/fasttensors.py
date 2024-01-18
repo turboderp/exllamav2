@@ -40,7 +40,8 @@ class STFile:
         self.fast = fast
         if self.fast:
             self.handle = ext_c.safetensors_open(filename)
-            global_stfiles.append(self)
+
+        global_stfiles.append(self)
 
 
     @staticmethod

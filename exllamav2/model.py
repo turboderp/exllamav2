@@ -25,6 +25,7 @@ from exllamav2.moe_mlp import ExLlamaV2MoEMLP
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.compat import safe_move_tensor
+from exllamav2.fasttensors import cleanup_stfiles
 import gc
 
 def _torch_device(idx):
@@ -243,6 +244,7 @@ class ExLlamaV2:
         f = self.load_gen(gpu_split, lazy, stats, callback, callback_gen)
         for item in f: return item
 
+
     def load_gen(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
 
         with torch.inference_mode():
@@ -268,6 +270,8 @@ class ExLlamaV2:
             self.set_cache_map()
 
             self.loaded = True
+            cleanup_stfiles()
+
             if stats: yield gpu_split, stats_
             else: yield gpu_split
 
@@ -409,6 +413,7 @@ class ExLlamaV2:
             gc.collect()
             torch.cuda.empty_cache()
             self.loaded = True
+            cleanup_stfiles()
 
         if 'yield' in locals():
             yield
