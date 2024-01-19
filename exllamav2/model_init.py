@@ -32,7 +32,7 @@ def print_options(args):
     if args.rope_alpha is not None: print_opts += [f"rope_alpha: {args.rope_alpha}"]
     if args.no_flash_attn: print_opts += ["no_flash_attn"]
     if args.low_mem: print_opts += ["low_mem"]
-    if args.fast_safetensors: print_opts += ["fast_safetensors"]
+    if hasattr(args, "fast_safetensors") and args.fast_safetensors: print_opts += ["fast_safetensors"]
     if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
     print(f" -- Options: {print_opts}")
 
@@ -70,7 +70,7 @@ def init(args, quiet = False, allow_auto_split = False, skip_load = False, bench
 
     config = ExLlamaV2Config()
     config.model_dir = args.model_dir
-    config.fasttensors = args.fast_safetensors
+    config.fasttensors = hasattr(args, "fast_safetensors") and args.fast_safetensors
     config.prepare()
 
     # Set config options
