@@ -5,7 +5,6 @@
 #include <vector>
 #include <queue>
 #include <utility>
-#include <cstdio> // to be removed.
 
 const int top_k_heap_threshold = 500;
 
@@ -154,79 +153,89 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temperature,
-    bool dynatemp,  // Additional parameter to toggle dynatemp functionality
-    float min_temperature,  // User-provided minimum temperature
-    float max_temperature   // User-provided maximum temperature
+    float temperature
 )
 {
-    bool dynatemp = true;
-    // Calculate probabilities at temperature 1.0
-    float sum = 0.0f;
+//    printf("---- pre\n");
+//    for (int i = 0; i < num_candidates; ++i)
+//        DBGIF(i, temp_probs[i]);
+
+    float psum = 0.0f;
+    float itemp = 1.0f / temperature;
     for (int i = 0; i < num_candidates; ++i)
     {
-        sum += temp_probs[i];
+        float p = powf(temp_probs[i], itemp);
+        psum += p;
+        temp_probs[i] = p;
     }
-    float normalized_sum = 1.0f / sum;
+
+    float ipsum = 1.0f / psum;
     for (int i = 0; i < num_candidates; ++i)
-        temp_probs[i] *= normalized_sum;
-    
-    // Dynamic temperature adjustment based on entropy
-    if (dynatemp)
-    {
-        // Measure the entropy of the probability distribution
-        float entropy = 0.0f;
-        for (int i = 0; i < num_candidates; ++i)
-        {
-            if (temp_probs[i] > 0.0f)
-            {
-                entropy += -temp_probs[i] * logf(temp_probs[i]);
-            }
+        temp_probs[i] *= ipsum;
+
+//    printf("---- post\n");
+//    DBGF(temperature);
+//    printf("----\n");
+//    for (int i = 0; i < num_candidates; ++i)
+//        DBGIF(i, temp_probs[i]);
+//    printf("\n");
+
+    return num_candidates;
+}
+
+int post_softmax_dynatemp
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float temp,
+    float min_temp = 0,
+    float max_temp = 2.0f
+)
+{
+    float exponent_val = 1.0f;
+
+    // Calculate entropy of the softmax probabilities
+    float entropy = 0.0f;
+    for (int i = 0; i < num_candidates; ++i) {
+        float prob = temp_probs[i];
+        if (prob > 0.0f) { // Ensure no log(0)
+            entropy -= prob * logf(prob);
         }
-
-        // Measure the maximum possible entropy
-        float max_entropy = logf(num_candidates);
-
-        // Calculate the ratio of the entropy to the maximum possible entropy
-        float entropy_ratio = entropy / max_entropy;
-
-        // Scale the ratio to fit within the range of min_temperature to max_temperature
-        // Assuming min_temperature < max_temperature and both are positive
-        float scaled_temperature = min_temperature + entropy_ratio * (max_temperature - min_temperature);
-        float temp_inverse = 1.0f / scaled_temperature;
-
-        printf("Scaled Temperature: %f\n", scaled_temperature);
-        printf("Min Temperature: %f\n", min_temperature);
-        printf("Max Temperature: %f\n", max_temperature);
-
-        // Apply the new scaled temperature to adjust the probabilities
-        sum = 0.0f;
-        for (int i = 0; i < num_candidates; ++i)
-        {
-            temp_probs[i] = powf(temp_probs[i], temp_inverse);
-            sum += temp_probs[i];
-        }
-        normalized_sum = 1.0f / sum;
-        for (int i = 0; i < num_candidates; ++i)
-            temp_probs[i] *= normalized_sum;
     }
-    else
+
+    // Calculate maximum possible entropy
+    float max_entropy = -logf(1.0f / num_candidates);
+
+    // Guard against division by zero
+    if (max_entropy == 0.0f) {
+        max_entropy = 1.0f;
+    }
+
+    // Normalize the entropy
+    float normalized_entropy = entropy / max_entropy;
+
+    // Map the normalized entropy to the desired temperature range
+    // using the power function
+    float dyn_temp = min_temp + (max_temp - min_temp) * powf(normalized_entropy, exponent_val);
+
+    float psum = 0.0f;
+    float itemp = 1.0f / dyn_temp;
+    for (int i = 0; i < num_candidates; ++i)
     {
-        float itemp = 1.0f / temperature;
-        sum = 0.0f;
-        for (int i = 0; i < num_candidates; ++i)
-        {
-            temp_probs[i] = powf(temp_probs[i], itemp);
-            sum += temp_probs[i];
-        }
-        
-        normalized_sum = 1.0f / sum;
-        for (int i = 0; i < num_candidates; ++i)
-            temp_probs[i] *= normalized_sum;
+        float p = powf(temp_probs[i], itemp);
+        psum += p;
+        temp_probs[i] = p;
+    }
+
+    float ipsum = 1.0f / psum;
+    for (int i = 0; i < num_candidates; ++i) {
+        temp_probs[i] *= ipsum;
     }
 
     return num_candidates;
 }
+
 
 void normalize_cpu
 (
@@ -769,6 +778,5 @@ int multinomial_cpu
 
     return 1;
 }
-
 
 
