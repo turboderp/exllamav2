@@ -7,6 +7,7 @@
 # )
 
 import json
+import asyncio
 
 from exllamav2.generator import (
     ExLlamaV2StreamingGenerator,
@@ -25,7 +26,7 @@ async def dispatch(request, ws, server):
     elif action_ == "estimate_token": estimate_token(request, ws, server, response)
     elif action_ == "lefttrim_token": lefttrim_token(request, ws, server, response)
     elif action_ == "infer": await infer(request, ws, server, response)
-    elif action_ == "stop": await stop(request, ws, server, response)
+    elif action_ == "stop": stop(request, ws, server, response)
 
     else:
         print(f" ## Unknown request from client: {request}")
@@ -133,99 +134,103 @@ async def infer(request, ws, server, response):
                 stop_reason: str }                  # "eos", "num_tokens" or "interrupted"
     """
 
-    server.stop_signal.clear()
+    async with server.model_lock:
 
-    # Mode
+        server.stop_signal.clear()
 
-    stream = request["stream"]
-    if "tag" in request:
-        response["tag"] = request["tag"]
+        # Mode
 
-    # Stop conditions
+        stream = request["stream"]
+        if "tag" in request:
+            response["tag"] = request["tag"]
 
-    sc = [server.tokenizer.eos_token_id]
-    if "stop_conditions" in request:
-        ss = request["stop_conditions"]
-        if not isinstance(ss, list): ss = [ss]
-        sc += ss
+        # Stop conditions
 
-    if "bann_bann" in request:
-        bb = request["bann_bann"]
-        if not isinstance(bb, list): bb = [bb]
-    else:
-        bb = None
+        sc = [server.tokenizer.eos_token_id]
+        if "stop_conditions" in request:
+            ss = request["stop_conditions"]
+            if not isinstance(ss, list): ss = [ss]
+            sc += ss
 
-    # Full response
+        if "bann_bann" in request:
+            bb = request["bann_bann"]
+            if not isinstance(bb, list): bb = [bb]
+        else:
+            bb = None
 
-    full_response = request['stream_full'] if 'stream_full' in request else False
-    # Tokenize and trim prompt
+        # Full response
 
-    full_ctx = request["text"]
-    num_tokens = request["max_new_tokens"]
+        full_response = request['stream_full'] if 'stream_full' in request else False
+        # Tokenize and trim prompt
 
-    ids = server.tokenizer.cached_encode_str(full_ctx)
-    overflow = ids.shape[-1] + num_tokens - server.model.config.max_seq_len
-    if overflow > 0:
-        ids = ids[:, overflow:]
-        util_ctx = server.tokenizer.decode(ids)
-    else:
-        util_ctx = full_ctx
+        full_ctx = request["text"]
+        num_tokens = request["max_new_tokens"]
 
-    # Sampler
+        ids = server.tokenizer.cached_encode_str(full_ctx)
+        overflow = ids.shape[-1] + num_tokens - server.model.config.max_seq_len
+        if overflow > 0:
+            ids = ids[:, overflow:]
+            util_ctx = server.tokenizer.decode(ids)
+        else:
+            util_ctx = full_ctx
 
-    gs = ExLlamaV2Sampler.Settings()
-    gs.top_k = int(request["top_k"]) if "top_k" in request else 100
-    gs.top_p = float(request["top_p"]) if "top_p" in request else 0.8
-    gs.top_a = float(request["top_a"]) if "top_a" in request else 0
-    gs.min_p = float(request["min_p"]) if "min_p" in request else 0
-    gs.typical = float(request["typical"]) if "typical" in request else 0
-    gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
-    gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
-    gs.token_frequency_penalty = float(request["freq_pen"]) if "freq_pen" in request else 0.0
-    gs.token_presence_penalty = float(request["pres_pen"]) if "pres_pen" in request else 0.0
-    if bb is not None:
-        gs.disallow_tokens(server.tokenizer, bb)
+        # Sampler
 
-    # Generate
+        gs = ExLlamaV2Sampler.Settings()
+        gs.top_k = int(request["top_k"]) if "top_k" in request else 100
+        gs.top_p = float(request["top_p"]) if "top_p" in request else 0.8
+        gs.top_a = float(request["top_a"]) if "top_a" in request else 0
+        gs.min_p = float(request["min_p"]) if "min_p" in request else 0
+        gs.typical = float(request["typical"]) if "typical" in request else 0
+        gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
+        gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
+        gs.token_frequency_penalty = float(request["freq_pen"]) if "freq_pen" in request else 0.0
+        gs.token_presence_penalty = float(request["pres_pen"]) if "pres_pen" in request else 0.0
+        if bb is not None:
+            gs.disallow_tokens(server.tokenizer, bb)
 
-    server.generator.set_stop_conditions(sc)
-    server.generator.begin_stream(ids, gs, token_healing = request["token_healing"] if "token_healing" in request else False)
+        # Generate
 
-    completion = ""
-    gen_tokens = 0
-    response["util_text"] = util_ctx
-    while True:
-        chunk, eos, _ = server.generator.stream()
-        completion += chunk
-        gen_tokens += 1
+        server.generator.set_stop_conditions(sc)
+        server.generator.begin_stream(ids, gs, token_healing = request["token_healing"] if "token_healing" in request else False)
 
-        if stream and chunk != "":
-            response["response_type"] = "chunk"
-            response["chunk"] = chunk
-            if full_response: response["response"] = completion
-            await ws.send(json.dumps(response))
-        response["chunk"] = ''
+        completion = ""
+        gen_tokens = 0
+        response["util_text"] = util_ctx
+        while True:
+            chunk, eos, _ = server.generator.stream()
+            completion += chunk
+            gen_tokens += 1
 
-        if eos:
-            response["stop_reason"] = "eos"
-            break
+            if stream and chunk != "":
+                response["response_type"] = "chunk"
+                response["chunk"] = chunk
+                if full_response: response["response"] = completion
+                await ws.send(json.dumps(response))
+            response["chunk"] = ''
 
-        if gen_tokens >= num_tokens:
-            response["stop_reason"] = "num_tokens"
-            break
+            if eos:
+                response["stop_reason"] = "eos"
+                break
 
-        if server.stop_signal.is_set():
-            server.stop_signal.clear()
-            response["stop_reason"] = "interrupted"
-            break
+            if gen_tokens >= num_tokens:
+                response["stop_reason"] = "num_tokens"
+                break
 
-    #if stream: del response["chunk"]
-    response["response_type"] = "full"
-    
-    response["response"] = completion
+            await asyncio.sleep(0)
+
+            if server.stop_signal.is_set():
+                server.stop_signal.clear()
+                response["stop_reason"] = "interrupted"
+                break
+
+        #if stream: del response["chunk"]
+        response["response_type"] = "full"
+
+        response["response"] = completion
 
 
-async def stop(request, ws, server, response):
+def stop(request, ws, server, response):
 
     """
     request:  { action: str = "stop",

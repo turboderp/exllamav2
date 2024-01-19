@@ -15,7 +15,7 @@ import exllamav2.server.websocket_actions as actions
 
 import websockets, asyncio
 import json
-import threading
+import threading, asyncio
 
 class ExLlamaV2WebSocketServer:
 
@@ -28,6 +28,8 @@ class ExLlamaV2WebSocketServer:
     generator = ExLlamaV2StreamingGenerator
 
     stop_signal = threading.Event()
+    model_lock = asyncio.Lock()
+    active_requests: list
 
 
     def __init__(self, ip: str, port: int, model: ExLlamaV2, tokenizer: ExLlamaV2Tokenizer, cache: ExLlamaV2Cache):
@@ -41,6 +43,7 @@ class ExLlamaV2WebSocketServer:
         self.generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
 
         self.stop_signal.clear()
+        self.active_requests = []
 
 
     def serve(self):
@@ -57,4 +60,6 @@ class ExLlamaV2WebSocketServer:
         async for message in websocket:
 
             request = json.loads(message)
-            await actions.dispatch(request, websocket, self)
+            r = asyncio.create_task(actions.dispatch(request, websocket, self))
+            self.active_requests.append(r)
+            self.active_requests = [r for r in self.active_requests if not r.done()]
