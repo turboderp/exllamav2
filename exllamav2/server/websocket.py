@@ -15,6 +15,7 @@ import exllamav2.server.websocket_actions as actions
 
 import websockets, asyncio
 import json
+import threading
 
 class ExLlamaV2WebSocketServer:
 
@@ -26,6 +27,8 @@ class ExLlamaV2WebSocketServer:
     cache: ExLlamaV2Cache
     generator = ExLlamaV2StreamingGenerator
 
+    stop_signal = threading.Event()
+
 
     def __init__(self, ip: str, port: int, model: ExLlamaV2, tokenizer: ExLlamaV2Tokenizer, cache: ExLlamaV2Cache):
 
@@ -36,6 +39,8 @@ class ExLlamaV2WebSocketServer:
         self.cache = cache
 
         self.generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
+
+        self.stop_signal.clear()
 
 
     def serve(self):

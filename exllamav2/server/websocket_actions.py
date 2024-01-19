@@ -25,6 +25,7 @@ async def dispatch(request, ws, server):
     elif action_ == "estimate_token": estimate_token(request, ws, server, response)
     elif action_ == "lefttrim_token": lefttrim_token(request, ws, server, response)
     elif action_ == "infer": await infer(request, ws, server, response)
+    elif action_ == "stop": await stop(request, ws, server, response)
 
     else:
         print(f" ## Unknown request from client: {request}")
@@ -128,8 +129,11 @@ async def infer(request, ws, server, response):
                 response_type: str = "full",
                 util_text: str,                     # input context (pruned if max_seq_len exceeded)
                 response: str,                      # full response excluding input prompt
-                tag: str }                          # (optional)
+                tag: str,                           # (optional)
+                stop_reason: str }                  # "eos", "num_tokens" or "interrupted"
     """
+
+    server.stop_signal.clear()
 
     # Mode
 
@@ -201,9 +205,36 @@ async def infer(request, ws, server, response):
             if full_response: response["response"] = completion
             await ws.send(json.dumps(response))
         response["chunk"] = ''
-        if eos or gen_tokens >= num_tokens: break
-    
+
+        if eos:
+            response["stop_reason"] = "eos"
+            break
+
+        if gen_tokens >= num_tokens:
+            response["stop_reason"] = "num_tokens"
+            break
+
+        if server.stop_signal.is_set():
+            server.stop_signal.clear()
+            response["stop_reason"] = "interrupted"
+            break
+
     #if stream: del response["chunk"]
     response["response_type"] = "full"
     
     response["response"] = completion
+
+
+async def stop(request, ws, server, response):
+
+    """
+    request:  { action: str = "stop",
+                request_id: str,                    # (optional) request ID to echo in response packet
+                response_id: str }                  # (optional) response ID to echo in response packet
+
+    response: { action: str = "stop",
+                request_id: str,                    # (optional)
+                response_id: str }                  # (optional)
+    """
+
+    server.stop_signal.set()
