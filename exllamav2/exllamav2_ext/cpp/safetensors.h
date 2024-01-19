@@ -7,7 +7,6 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <cstdint>
 #include <cstdio>
-#include <aio.h>
 
 class STFile
 {
@@ -43,6 +42,5 @@ void safetensors_load
     size_t offset,
     size_t length
 );
-
 
 #endif

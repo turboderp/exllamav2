@@ -1,16 +1,19 @@
 #include "safetensors.h"
 
-#include <iostream>
-#include <fstream>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cerrno>
 #include <c10/cuda/CUDAGuard.h>
 #include "util.h"
+
+#ifdef __linux__
+#include <aio.h>
 #include <atomic>
 #include <thread>
 #include <limits>
+#include <cerrno>
+#include <iostream>
+#include <fstream>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #define MAX_BLOCK_SIZE (128*1024)
 #define MAX_PAGES 4
@@ -27,11 +30,13 @@ struct STPage
 {
 public:
     int file_descriptor;
+    #ifdef __linux__
     size_t file_a;
     size_t file_b;
     long access;
     std::atomic<int> locks;
     char* ptr;
+    #endif
 };
 
 STPage pages[MAX_PAGES];
@@ -39,6 +44,8 @@ long serial = 1;
 
 void safetensors_pinned_buffer()
 {
+    #ifdef __linux__
+
     if (pinned_buffer) return;
     cudaMallocHost((void**) &pinned_buffer, PINNED_MEMORY + MAX_BLOCK_SIZE);
     TORCH_CHECK(pinned_buffer, "Unable to allocate pinned memory");
@@ -53,18 +60,26 @@ void safetensors_pinned_buffer()
         pages[i].locks.store(0);
         pages[i].ptr = ((char*) aligned_buffer) + i * PAGESIZE;
     }
+
+    #endif
 }
 
 void safetensors_free_pinned_buffer()
 {
+    #ifdef __linux__
+
     if (!pinned_buffer) return;
     cudaFreeHost((void*) pinned_buffer);
     pinned_buffer = nullptr;
     aligned_buffer = nullptr;
+
+    #endif
 }
 
 STPage* get_cache_page(size_t file_descriptor, size_t block_size, size_t filesize, size_t file_a, size_t file_b)
 {
+    #ifdef __linux__
+
     #ifdef ST_DEBUG
     printf("-- get cache page\n");
     DBGX3(file_descriptor, file_a, file_b);
@@ -184,22 +199,43 @@ STPage* get_cache_page(size_t file_descriptor, size_t block_size, size_t filesiz
     }
 
     return &pages[p];
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    return NULL;
+    #endif
 }
 
 uintptr_t safetensors_open(const char* filename)
 {
+    #ifdef __linux__
+
     STFile* f = new STFile(filename);
     return reinterpret_cast<uintptr_t> (f);
+
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    return 0;
+    #endif
 }
 
 void safetensors_close(uintptr_t handle)
 {
+    #ifdef __linux__
+
     STFile* f = reinterpret_cast<STFile*> (handle);
     delete f;
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    #endif
 }
 
 STFile::STFile(const char* filename)
 {
+    #ifdef __linux__
+
     file_descriptor = open(filename, O_RDONLY | O_DIRECT);
     TORCH_CHECK(file_descriptor != -1, "Safetensors file I/O error");
 
@@ -210,17 +246,29 @@ STFile::STFile(const char* filename)
     block_size = sb.st_blksize;
     padded_size = DIVIDE(filesize, block_size) * block_size;
     TORCH_CHECK(block_size <= MAX_BLOCK_SIZE, "Block size too large")
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    #endif
 }
 
 STFile::~STFile()
 {
+    #ifdef __linux__
+
     close(file_descriptor);
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    #endif
 }
 
 void CUDART_CB dec_lock(cudaStream_t stream, cudaError_t status, void *user_data)
 {
+    #ifdef __linux__
     STPage* p = (STPage*) user_data;
     p->locks--;
+    #endif
 }
 
 void STFile::load
@@ -231,6 +279,8 @@ void STFile::load
     bool gpu
 )
 {
+    #ifdef __linux__
+
     safetensors_pinned_buffer();
 
     #ifdef ST_DEBUG
@@ -286,6 +336,10 @@ void STFile::load
 
         tensor_offset += copy_len;
     }
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    #endif
 }
 
 void safetensors_load
@@ -296,6 +350,8 @@ void safetensors_load
     size_t length
 )
 {
+    #ifdef __linux__
+
     STFile* f = reinterpret_cast<STFile*> (handle);
     c10::optional<torch::Device> device = torch::device_of(target);
 
@@ -308,5 +364,9 @@ void safetensors_load
         const at::cuda::OptionalCUDAGuard device_guard(device);
         f->load(target, offset, length, true);
     }
+
+    #else
+    TORCH_CHECK(false, "fasttensors only supported on Linux");
+    #endif
 }
 

@@ -17,7 +17,8 @@ def add_args(parser):
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
-    parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Optimized safetensors loading with direct I/O (experimental!)")
+    if os.name != "nt":
+        parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Optimized safetensors loading with direct I/O (experimental!)")
 
 
 def print_options(args):

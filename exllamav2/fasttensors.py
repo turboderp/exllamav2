@@ -3,6 +3,7 @@ from safetensors import safe_open
 import numpy as np
 import json
 from exllamav2.ext import exllamav2_ext as ext_c
+import os
 
 def convert_dtype(dt: str):
     if dt == "I32": return torch.int, 4
@@ -39,7 +40,11 @@ class STFile:
 
         self.fast = fast
         if self.fast:
-            self.handle = ext_c.safetensors_open(filename)
+            if os.name == "nt":
+                print(" !! Warning, fasttensors disabled on Windows")
+                self.fast = False
+            else:
+                self.handle = ext_c.safetensors_open(filename)
 
         global_stfiles.append(self)
 

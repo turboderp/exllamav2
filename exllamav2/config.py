@@ -47,7 +47,7 @@ class ExLlamaV2Config:
 
     checkpoint_fused_mlp: bool = False
 
-    fasttensors: bool = False
+    fasttensors: bool = False   # Experimental, Linux only
 
 
     def __init__(self):
