@@ -18,7 +18,7 @@ import time
 
 # Initialize model and cache
 
-model_directory = "/mnt/str/models/_exl2/mistral-7b-instruct-exl2/4.0bpw/"
+model_directory = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
