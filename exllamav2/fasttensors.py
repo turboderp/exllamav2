@@ -14,12 +14,19 @@ def convert_dtype(dt: str):
     else: raise ValueError(f"Unknown dtype {dt}")
 
 global_stfiles = []
+global_cm = {}
 
 def cleanup_stfiles():
-    global global_stfiles
+    global global_stfiles, global_cm
+
     for stf in global_stfiles:
         stf.close()
     global_stfiles = []
+
+    for f in global_cm.values():
+        f.__exit__(None, None, None)
+    global_cm = {}
+
     ext_c.safetensors_free_pinned_buffer()
 
 
@@ -31,6 +38,7 @@ class STFile:
     metadata: object = None
     handle: int = 0
     fast: bool
+    st_context = None
 
     def __init__(self, filename: str, fast = True):
         global global_stfiles
@@ -38,13 +46,13 @@ class STFile:
         self.filename = filename
         self.read_dict()
 
+        if fast and os.name == "nt":
+            print(" !! Warning, fasttensors disabled on Windows")
+            fast = False
+
         self.fast = fast
         if self.fast:
-            if os.name == "nt":
-                print(" !! Warning, fasttensors disabled on Windows")
-                self.fast = False
-            else:
-                self.handle = ext_c.safetensors_open(filename)
+            self.handle = ext_c.safetensors_open(filename)
 
         global_stfiles.append(self)
 
@@ -88,11 +96,26 @@ class STFile:
         return length
 
 
+    def get_cm(self, device):
+        global global_cm
+
+        cm_key = self.filename + "::" + device
+
+        if cm_key in global_cm:
+            return global_cm[cm_key]
+
+        f = safe_open(self.filename, framework = "pt", device = device)
+        f.__enter__()
+        global_cm[cm_key] = f
+        return f
+
+
     def get_tensor(self, key, device, not_fast = False):
 
         if not_fast or not self.fast:
-            with safe_open(self.filename, framework = "pt", device = device) as f:
-                return f.get_tensor(key)
+            f = self.get_cm(device)
+            # with safe_open(self.filename, framework = "pt", device = device) as f:
+            return f.get_tensor(key)
 
         v = self.header[key]
         dtt, dts = convert_dtype(v["dtype"])
