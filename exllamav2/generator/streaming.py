@@ -23,8 +23,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     expect_utf8: int = 0
     held_tokens: torch.Tensor or None = None
     settings: ExLlamaV2Sampler.Settings = None
-    stop_strings: list = []
-    stop_tokens: list = []
+    stop_strings: set = set()
+    stop_tokens: set = set()
     no_tokens: torch.Tensor = None
 
     first_token = False
@@ -49,8 +49,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
         super().__init__(model, cache, tokenizer)
 
-        self.stop_strings = []
-        self.stop_tokens = [tokenizer.eos_token_id]
+        self.stop_strings = set()
+        self.stop_tokens = {tokenizer.eos_token_id,}
 
         self.no_tokens = torch.empty((1, 0), dtype = torch.long)
 
@@ -67,13 +67,17 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     def set_stop_conditions(self, stop_conditions):
 
-        assert isinstance(stop_conditions, list)
+        assert isinstance(stop_conditions, (list, tuple, set))
 
-        self.stop_strings = []
-        self.stop_tokens = []
+        self.stop_strings = set()
+        self.stop_tokens = set()
         for t in stop_conditions:
-            if isinstance(t, int): self.stop_tokens += [t]
-            elif isinstance(t, str): self.stop_strings += [t]
+            if isinstance(t, int):
+              self.stop_tokens.add(t)
+            elif isinstance(t, str):
+              t_tokens = self.tokenizer.encode(t)[0]
+              if len(t_tokens) == 1: self.stop_tokens.add(t_tokens[0])
+              else: self.stop_strings.add(t)
             else: raise ValueError("Unsupported type in stop_conditions")
     
     
