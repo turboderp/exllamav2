@@ -263,7 +263,7 @@ STFile::~STFile()
     #endif
 }
 
-void CUDART_CB dec_lock(cudaStream_t stream, cudaError_t status, void *user_data)
+void dec_lock(cudaStream_t stream, cudaError_t status, void *user_data)
 {
     #ifdef __linux__
     STPage* p = (STPage*) user_data;
