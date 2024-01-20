@@ -430,8 +430,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                     # Key/value tensors with past
 
-                    k_states = batch_keys.narrow(1, 0, past_len + q_len)
-                    v_states = batch_values.narrow(1, 0, past_len + q_len)
+                    k_states = batch_keys.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
+                    v_states = batch_values.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
 
             # Torch matmul attention
 
