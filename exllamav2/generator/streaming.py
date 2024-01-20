@@ -72,12 +72,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.stop_strings = set()
         self.stop_tokens = set()
         for t in stop_conditions:
-            if isinstance(t, int):
-              self.stop_tokens.add(t)
-            elif isinstance(t, str):
-              t_tokens = self.tokenizer.encode(t)[0]
-              if len(t_tokens) == 1: self.stop_tokens.add(t_tokens[0])
-              else: self.stop_strings.add(t)
+            if isinstance(t, int): self.stop_tokens.add(t)
+            elif isinstance(t, str): self.stop_strings.add(t)
             else: raise ValueError("Unsupported type in stop_conditions")
     
     
