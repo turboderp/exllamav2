@@ -171,7 +171,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # End immediately if it was a stop token
 
-        if next_token in self.stop_tokens:
+        if next_token.item() in self.stop_tokens:
             return self.held_text, True, self.no_tokens, self.no_probs
 
         # Decode the tail end of the sequence with the added token to get (actual) characters added
