@@ -74,8 +74,8 @@ jobs:
           if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
           python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
-          python -m pip3 install --upgrade setuptools==65.5.1
-          python -m pip3 install --upgrade build wheel safetensors sentencepiece ninja
+          python -m pip install --upgrade setuptools==65.5.1
+          python -m pip install --upgrade build wheel safetensors sentencepiece ninja
 
       - name: Build Wheel
         id: build-wheel
