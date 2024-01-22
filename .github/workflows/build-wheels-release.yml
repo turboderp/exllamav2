@@ -5,9 +5,10 @@ on:
     inputs:
       pypi:
         description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
-        default: '1'
+        default: '0'
         required: true
         type: string
+
 
 permissions:
   contents: write
@@ -18,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-20.04, windows-latest]
         pyver: ["3.8", "3.9", "3.10", "3.11"]
         cuda: ["11.7.0", "11.8.0", "12.1.1"]
     defaults:
@@ -41,10 +42,7 @@ jobs:
           swap-storage: false
           
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
-        with:
-          python-version: ${{ matrix.pyver }}
-        
+
       - name: Setup Mamba
         uses: conda-incubator/setup-miniconda@v2.2.0
         with:
@@ -55,7 +53,11 @@ jobs:
           use-mamba: true
           add-pip-as-python-dependency: true
           auto-activate-base: false
-          
+
+      - uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.pyver }}
+
       - name: Install Dependencies
         run: |
           $cudaVersion = $env:CUDAVER
@@ -72,8 +74,10 @@ jobs:
           if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
           python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
-          python -m pip install build wheel safetensors sentencepiece ninja
-        
+#          python -m pip install build wheel safetensors sentencepiece ninja
+          pip3 install --upgrade build wheel safetensors sentencepiece ninja
+
+
       - name: Build Wheel
         id: build-wheel
         run: |
@@ -96,7 +100,7 @@ jobs:
           $BUILDTAG = "+cu$cudaVersionPytorch"
           
           $env:TORCH_CUDA_ARCH_LIST = if ([version]$env:CUDAVER -lt [version]'11.8') {'6.0 6.1 7.0 7.5 8.0 8.6+PTX'} else {'6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX'}
-          python -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+          python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
         
       - uses: actions/upload-artifact@v3
         with:
