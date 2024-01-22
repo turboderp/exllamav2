@@ -72,10 +72,10 @@ jobs:
           if (!(mamba list cuda)[-1].contains('cuda')) {throw 'CUDA Toolkit failed to install!'}
           
           if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
-          python3 -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
+          python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
-          pip3 install --upgrade setuptools==65.5.1
-          pip3 install --upgrade build wheel safetensors sentencepiece ninja
+          python -m pip3 install --upgrade setuptools==65.5.1
+          python -m pip3 install --upgrade build wheel safetensors sentencepiece ninja
 
       - name: Build Wheel
         id: build-wheel
@@ -160,8 +160,8 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          python3 -m pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
-          python3 -m pip install build wheel ninja
+          python -m pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install build wheel ninja
         
       - name: Build Wheel
         id: build-wheel-sdist
@@ -177,7 +177,7 @@ jobs:
           }
           
           $env:EXLLAMA_NOCOMPILE=1
-          python3 -m build -n
+          python -m build -n
         
       - uses: actions/upload-artifact@v3
         with:
