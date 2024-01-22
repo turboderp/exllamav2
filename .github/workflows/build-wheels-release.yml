@@ -159,7 +159,7 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          python3 -m pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          python3 -m pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
           python3 -m pip install build wheel ninja
         
       - name: Build Wheel
