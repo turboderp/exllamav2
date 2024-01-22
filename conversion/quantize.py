@@ -408,7 +408,7 @@ def quant(job, save_fn, model):
 
             if mode != "linear":
                 save_dict = {f"row.{idx:05}": h for idx, h in enumerate(hidden_states)}
-                # save_dict |= {f"i_row.{idx:05}": h for idx, h in enumerate(hidden_i_states)}
+                # save_dict.update( {f"i_row.{idx:05}": h for idx, h in enumerate(hidden_i_states)} )
                 save_file(save_dict, temp_filename)
                 save_dict = None
 

@@ -55,7 +55,8 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3a.cu",
                 "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3b.cu",
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
-                "exllamav2/exllamav2_ext/cpp/sampling.cpp"
+                "exllamav2/exllamav2_ext/cpp/sampling.cpp",
+                "exllamav2/exllamav2_ext/cpp/safetensors.cpp"
             ],
             extra_compile_args=extra_compile_args,
             libraries=["cublas"] if windows else [],

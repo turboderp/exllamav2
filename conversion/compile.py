@@ -55,40 +55,40 @@ def compile_model(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2Embedding):
 
-            d = get_f_module(job, module); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2Attention):
 
-            d = get_f_module(job, module.input_layernorm); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.q_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.k_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.v_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.o_proj); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.q_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.k_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.v_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.o_proj); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2MLP):
 
-            d = get_f_module(job, module.post_attention_layernorm); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.gate_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.up_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.down_proj); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.gate_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.up_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.down_proj); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2MoEMLP):
 
-            d = get_f_module(job, module.post_attention_layernorm); out_dict |= d; current_size += _dsize(d)
-            d = get_f_module(job, module.gate); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_f_module(job, module.gate); out_dict.update(d); current_size += _dsize(d)
             for i in range(model.config.num_experts):
-                d = get_q_module(job, module.w1[i]); out_dict |= d; current_size += _dsize(d)
-                d = get_q_module(job, module.w3[i]); out_dict |= d; current_size += _dsize(d)
-                d = get_q_module(job, module.w2[i]); out_dict |= d; current_size += _dsize(d)
+                d = get_q_module(job, module.w1[i]); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2RMSNorm):
 
-            d = get_f_module(job, module); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2Linear):
 
             assert module.key == "lm_head"
-            d = get_q_module(job, module); out_dict |= d; current_size += _dsize(d)
+            d = get_q_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
         index += 1
 

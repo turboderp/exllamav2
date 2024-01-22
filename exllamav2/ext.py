@@ -130,7 +130,8 @@ if build_jit:
         "cuda/comp_units/unit_exl2_3a.cu",
         "cuda/comp_units/unit_exl2_3b.cu",
         "cpp/quantize_func.cpp",
-        "cpp/sampling.cpp"
+        "cpp/sampling.cpp",
+        "cpp/safetensors.cpp"
     ]
 
     sources = [os.path.join(sources_dir, s) for s in sources_]

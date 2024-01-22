@@ -81,7 +81,7 @@ if args.stream_layers:
 
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args, allow_auto_split = True, skip_load = args.stream_layers)
+model, tokenizer = model_init.init(args, allow_auto_split = True, skip_load = args.stream_layers, benchmark = True)
 cache = None
 
 # Auto split
@@ -93,7 +93,10 @@ if not model.loaded and not args.stream_layers:
 
     print(" -- Loading model...")
     cache = ExLlamaV2Cache(model, lazy = True)
+    t = time.time()
     model.load_autosplit(cache)
+    t = time.time() - t
+    print(f" -- Loaded model in {t:.4f} seconds")
 
 if args.stream_layers:
 
