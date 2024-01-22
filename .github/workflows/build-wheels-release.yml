@@ -48,7 +48,7 @@ jobs:
           python-version: ${{ matrix.pyver }}
 
       - name: Setup Mamba
-        uses: conda-incubator/setup-miniconda@v3.0.1
+        uses: conda-incubator/setup-miniconda@v2.3.0
         with:
           activate-environment: "build"
           python-version: ${{ matrix.pyver }}
@@ -99,7 +99,7 @@ jobs:
           $BUILDTAG = "+cu$cudaVersionPytorch"
           
           $env:TORCH_CUDA_ARCH_LIST = if ([version]$env:CUDAVER -lt [version]'11.8') {'6.0 6.1 7.0 7.5 8.0 8.6+PTX'} else {'6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX'}
-          python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+          python -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
         
       - uses: actions/upload-artifact@v3
         with:
