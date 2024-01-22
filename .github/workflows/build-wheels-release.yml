@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-20.04, windows-latest]
         pyver: ["3.8", "3.9", "3.10", "3.11"]
-        cuda: ["11.7.0", "11.8.0", "12.1.1"]
+        cuda: ["11.8.0", "12.1.1"]
     defaults:
       run:
         shell: pwsh
