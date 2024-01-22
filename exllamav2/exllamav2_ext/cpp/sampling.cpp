@@ -153,13 +153,42 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temperature
+    float temp,
+    float min_temp = 0,
+    float max_temp = 0.0f,
+    float temp_exponent = 1.0f
 )
 {
+    if (max_temp > min_temp) {
+        // Calculate entropy of the softmax probabilities
+        float entropy = 0.0f;
+        for (int i = 0; i < num_candidates; ++i) {
+            float prob = temp_probs[i];
+            if (prob > 0.0f) { // Ensure no log(0)
+                entropy -= prob * logf(prob);
+            }
+        }
+
+        // Calculate maximum possible entropy
+        float max_entropy = -logf(1.0f / num_candidates);
+
+        // Guard against division by zero
+        if (max_entropy == 0.0f) {
+            max_entropy = 1.0f;
+        }
+
+        // Normalize the entropy
+        float normalized_entropy = entropy / max_entropy;
+
+        // Map the normalized entropy to the desired temperature range
+        // using the power function
+        temp = min_temp + (max_temp - min_temp) * powf(normalized_entropy, temp_exponent);
+    }
+
 //    printf("---- pre\n");
 //    for (int i = 0; i < num_candidates; ++i)
 //        DBGIF(i, temp_probs[i]);
-
+    
     float psum = 0.0f;
     float itemp = 1.0f / temperature;
     for (int i = 0; i < num_candidates; ++i)
@@ -182,60 +211,6 @@ int post_softmax_temperature
 
     return num_candidates;
 }
-
-int post_softmax_dynatemp
-(
-    const int num_candidates,
-    float* temp_probs,
-    int* temp_indices,
-    float temp,
-    float min_temp = 0,
-    float max_temp = 2.0f
-)
-{
-    float exponent_val = 1.0f;
-
-    // Calculate entropy of the softmax probabilities
-    float entropy = 0.0f;
-    for (int i = 0; i < num_candidates; ++i) {
-        float prob = temp_probs[i];
-        if (prob > 0.0f) { // Ensure no log(0)
-            entropy -= prob * logf(prob);
-        }
-    }
-
-    // Calculate maximum possible entropy
-    float max_entropy = -logf(1.0f / num_candidates);
-
-    // Guard against division by zero
-    if (max_entropy == 0.0f) {
-        max_entropy = 1.0f;
-    }
-
-    // Normalize the entropy
-    float normalized_entropy = entropy / max_entropy;
-
-    // Map the normalized entropy to the desired temperature range
-    // using the power function
-    float dyn_temp = min_temp + (max_temp - min_temp) * powf(normalized_entropy, exponent_val);
-
-    float psum = 0.0f;
-    float itemp = 1.0f / dyn_temp;
-    for (int i = 0; i < num_candidates; ++i)
-    {
-        float p = powf(temp_probs[i], itemp);
-        psum += p;
-        temp_probs[i] = p;
-    }
-
-    float ipsum = 1.0f / psum;
-    for (int i = 0; i < num_candidates; ++i) {
-        temp_probs[i] *= ipsum;
-    }
-
-    return num_candidates;
-}
-
 
 void normalize_cpu
 (
