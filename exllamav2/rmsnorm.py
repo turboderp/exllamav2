@@ -1,11 +1,12 @@
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
-from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.ext import exllamav2_ext as ext_c
 
 class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
     weight: nn.Parameter or None = None
+    bias: nn.Parameter or None = None
     variance_epsilon: float
 
     name: str = "RMSNorm"
@@ -21,9 +22,18 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     def load(self):
 
         w = self.load_weight()
-        assert isinstance(w, nn.Parameter)
 
-        self.weight = w
+        if isinstance(w, tuple):
+            self.weight = w[0]
+            self.bias = w[1]
+        else:
+            self.weight = w
+            self.bias = None
+
+        assert isinstance(self.weight, nn.Parameter)
+        assert self.bias is None, "RMSNorm does not support bias"
+        # or isinstance(self.bias, nn.Parameter)
+
         self.variance_epsilon = self.model.config.rms_norm_eps
 
 
@@ -32,6 +42,10 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         if self.weight is not None:
             del self.weight
             self.weight = None
+
+        if self.bias is not None:
+            del self.bias
+            self.bias = None
 
 
     def get_weight(self):
@@ -69,7 +83,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, position_offsets = None):
+    def forward_torch(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
 
         hidden_states[hidden_states == -float('inf')] = -65504.0
         hidden_states[hidden_states == float('inf')] = 65504.0

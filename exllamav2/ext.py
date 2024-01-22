@@ -116,6 +116,7 @@ if build_jit:
         "cuda/q_mlp.cu",
         "cuda/q_gemm.cu",
         "cuda/rms_norm.cu",
+        "cuda/layer_norm.cu",
         "cuda/rope.cu",
         "cuda/cache.cu",
         "cuda/util.cu",

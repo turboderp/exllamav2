@@ -1,6 +1,7 @@
 #include "q_mlp.cuh"
 #include "q_gemm.cuh"
 #include "rms_norm.cuh"
+#include "layer_norm.cuh"
 #include "util.cuh"
 #include "matrix_view.cuh"
 #include "lora.cuh"
@@ -118,6 +119,8 @@ fp_silu_mul_kernel pick_silu_mul_kernel(bool use_half2, bool mul_r_weights)
 QMLP::QMLP
 (
     half* _layernorm,
+    half* _layernorm_bias,
+    bool _layernorm_is_rms,
     float _norm_epsilon,
     QMatrix* _gate,
     QMatrix* _up,
@@ -129,6 +132,8 @@ QMLP::QMLP
     int _max_rows
 ):
     layernorm(_layernorm),
+    layernorm_bias(_layernorm_bias),
+    layernorm_is_rms(_layernorm_is_rms),
     norm_epsilon(_norm_epsilon),
     gate(_gate),
     up(_up),
@@ -157,7 +162,11 @@ void QMLP::forward_
     bool use_half2 = true;
     int intermediate_size = gate->width;
 
-    rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+    if (layernorm_is_rms)
+        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+    else
+        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+
     gemm_half_q_half_cuda(cublas_handle, temp_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
 
@@ -182,6 +191,8 @@ void QMLP::forward_
 QMoEMLP::QMoEMLP
 (
     half* _layernorm,
+    half* _layernorm_bias,
+    bool _layernorm_is_rms,
     float _norm_epsilon,
     half* _gate,
     int _num_experts,
@@ -199,6 +210,8 @@ QMoEMLP::QMoEMLP
     int _hidden_dim
 ):
     layernorm(_layernorm),
+    layernorm_bias(_layernorm_bias),
+    layernorm_is_rms(_layernorm_is_rms),
     norm_epsilon(_norm_epsilon),
     gate(_gate),
     num_experts(_num_experts),
@@ -249,7 +262,10 @@ void QMoEMLP::forward_
 
     // Norm
 
-    rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+    if (layernorm_is_rms)
+        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+    else
+        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
 
     // Compute gate logits
 

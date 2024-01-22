@@ -5,7 +5,8 @@ from exllamav2.model import \
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2Linear,
-    ExLlamaV2RMSNorm
+    ExLlamaV2RMSNorm,
+    ExLlamaV2LayerNorm
 )
 
 import os, glob, shutil
@@ -27,7 +28,13 @@ def get_f_module(job, module):
 
     mod_dict = {}
     module.load()
-    mod_dict[module.key + ".weight"] = module.get_weight()
+    w = module.get_weight()
+    if isinstance(w, tuple):
+        mod_dict[module.key + ".weight"] = w[0]
+        mod_dict[module.key + ".bias"] = w[1]
+    else:
+        mod_dict[module.key + ".weight"] = w
+
     return mod_dict
 
 
@@ -81,7 +88,7 @@ def compile_model(job, save_fn, model):
                 d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
                 d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2RMSNorm):
+        if isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
 
             d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 

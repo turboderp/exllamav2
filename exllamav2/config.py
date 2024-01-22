@@ -135,6 +135,16 @@ class ExLlamaV2Config:
                 expect_keys += \
                     expect_keys_llama
 
+            elif "OrionForCausalLM" in read_config["architectures"]:
+                self.architecture = "Orion"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+
             else:
                 print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
                 print(f" !! Loading as LlamaForCausalLM")
