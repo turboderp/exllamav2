@@ -174,6 +174,10 @@ def compile_model(job, save_fn, model):
         all_files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         tensor_files = glob.glob(os.path.join(input_dir, "*.safetensors"))
         tensor_files_set = set(tensor_files)
+        bin_files = glob.glob(os.path.join(input_dir, "*.bin"))
+        if len(bin_files) > 0:
+            print(f" !! Ignoring *.bin files in source dir")
+            tensor_files_set.update(bin_files)
         non_tensor_files = [f for f in all_files if os.path.join(input_dir, f) not in tensor_files_set]
 
         for f in non_tensor_files:
