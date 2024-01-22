@@ -43,6 +43,10 @@ jobs:
           
       - uses: actions/checkout@v3
 
+      - uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.pyver }}
+
       - name: Setup Mamba
         uses: conda-incubator/setup-miniconda@v2.2.0
         with:
@@ -53,10 +57,6 @@ jobs:
           use-mamba: true
           add-pip-as-python-dependency: true
           auto-activate-base: false
-
-      - uses: actions/setup-python@v3
-        with:
-          python-version: ${{ matrix.pyver }}
 
       - name: Install Dependencies
         run: |
@@ -74,9 +74,7 @@ jobs:
           if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
           python3 -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
-#          python -m pip install build wheel safetensors sentencepiece ninja
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
-
 
       - name: Build Wheel
         id: build-wheel
