@@ -5,7 +5,8 @@ from exllamav2.model import \
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2Linear,
-    ExLlamaV2RMSNorm
+    ExLlamaV2RMSNorm,
+    ExLlamaV2LayerNorm
 )
 
 from safetensors import safe_open
@@ -263,8 +264,9 @@ def quant(job, save_fn, model):
             assert module.key == "lm_head"
             quantizers["lm_head"] = AdaptiveGPTQ(module.linear)
 
-        elif isinstance(module, ExLlamaV2RMSNorm):
+        elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
             mode = "norm"
+
 
         # Reference forward pass
 

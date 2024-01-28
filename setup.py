@@ -41,6 +41,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/q_mlp.cu",
                 "exllamav2/exllamav2_ext/cuda/q_gemm.cu",
                 "exllamav2/exllamav2_ext/cuda/rms_norm.cu",
+                "exllamav2/exllamav2_ext/cuda/layer_norm.cu",
                 "exllamav2/exllamav2_ext/cuda/rope.cu",
                 "exllamav2/exllamav2_ext/cuda/cache.cu",
                 "exllamav2/exllamav2_ext/cuda/util.cu",

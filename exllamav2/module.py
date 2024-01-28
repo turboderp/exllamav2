@@ -107,9 +107,15 @@ class ExLlamaV2Module:
         # Torch
 
         if key + ".weight" in self.model.config.tensor_file_map:
-            tensor = self.load_multi(["weight"], override_key = override_key)["weight"]
-            tensor = tensor.half()
-            return nn.Parameter(tensor)
+            if key + ".bias" in self.model.config.tensor_file_map:
+                tensors = self.load_multi(["weight", "bias"], override_key = override_key)
+                tensor = tensors["weight"].half()
+                bias = tensors["bias"].half()
+                return nn.Parameter(tensor), nn.Parameter(bias)
+            else:
+                tensors = self.load_multi(["weight"], override_key = override_key)
+                tensor = tensors["weight"].half()
+                return nn.Parameter(tensor)
 
         # No weights found for key
 

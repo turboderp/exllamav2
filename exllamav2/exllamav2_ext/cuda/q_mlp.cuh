@@ -14,6 +14,8 @@ class QMLP
 public:
 
     half* layernorm;
+    half* layernorm_bias;
+    bool layernorm_is_rms;
     float norm_epsilon;
 
     QMatrix* gate;
@@ -35,6 +37,8 @@ public:
     QMLP
     (
         half* _layernorm,
+        half* _layermorm_bias,
+        bool _layernorm_is_rms,
         float _norm_epsilon,
         QMatrix* _gate,
         QMatrix* _up,
@@ -67,6 +71,8 @@ class QMoEMLP
 public:
 
     half* layernorm;
+    half* layernorm_bias;
+    bool layernorm_is_rms;
     float norm_epsilon;
 
     half* gate;
@@ -95,6 +101,8 @@ public:
     QMoEMLP
     (
         half* _layernorm,
+        half* _layermorm_bias,
+        bool _layernorm_is_rms,
         float _norm_epsilon,
         half* _gate,
         int _num_experts,

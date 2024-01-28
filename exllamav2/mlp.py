@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
+from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2 import ext
@@ -16,7 +17,7 @@ from exllamav2 import ext
 class ExLlamaV2MLP(ExLlamaV2Module):
 
     layer_idx: int
-    post_attention_layernorm: ExLlamaV2RMSNorm
+    post_attention_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm
     gate_proj: ExLlamaV2Linear
     up_proj: ExLlamaV2Linear
     down_proj: ExLlamaV2Linear
@@ -36,7 +37,11 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         hidden_size = self.model.config.hidden_size
         intermediate_size = self.model.config.intermediate_size
 
-        self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + ".post_attention_layernorm")
+        if self.model.config.architecture == "Orion":
+            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + ".post_attention_layernorm")
+        else:
+            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + ".post_attention_layernorm")
+
         self.gate_proj = ExLlamaV2Linear(model, key + ".mlp.gate_proj", hidden_size, intermediate_size, False)
         self.up_proj = ExLlamaV2Linear(model, key + ".mlp.up_proj", hidden_size, intermediate_size, False)
         self.down_proj = ExLlamaV2Linear(model, key + ".mlp.down_proj", intermediate_size, hidden_size, False)
@@ -76,6 +81,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             device_tensors = self.model.get_device_tensors(self.device_idx)
             device_tensors.begin_scratch_alloc()
             self.q_handle = ext_c.make_q_mlp(self.post_attention_layernorm.weight,
+                                             self.post_attention_layernorm.bias if self.post_attention_layernorm.bias is not None else ext.none_tensor,
+                                             isinstance(self.post_attention_layernorm, ExLlamaV2RMSNorm),
                                              self.post_attention_layernorm.variance_epsilon,
                                              self.gate_proj.q_handle,
                                              self.up_proj.q_handle,

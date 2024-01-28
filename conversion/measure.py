@@ -5,7 +5,8 @@ from exllamav2.model import \
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2Linear,
-    ExLlamaV2RMSNorm
+    ExLlamaV2RMSNorm,
+    ExLlamaV2LayerNorm
 )
 
 from safetensors import safe_open
@@ -331,7 +332,7 @@ def measure_quant(job, save_fn, model):
             mode = "linear"
             # Don't measure head layer
 
-        elif isinstance(module, ExLlamaV2RMSNorm):
+        elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
             mode = "norm"
 
         # Reference forward pass

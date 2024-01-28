@@ -5,7 +5,8 @@ from exllamav2.model import \
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2Linear,
-    ExLlamaV2RMSNorm
+    ExLlamaV2RMSNorm,
+    ExLlamaV2LayerNorm
 )
 
 import os, glob, shutil
@@ -27,7 +28,13 @@ def get_f_module(job, module):
 
     mod_dict = {}
     module.load()
-    mod_dict[module.key + ".weight"] = module.get_weight()
+    w = module.get_weight()
+    if isinstance(w, tuple):
+        mod_dict[module.key + ".weight"] = w[0]
+        mod_dict[module.key + ".bias"] = w[1]
+    else:
+        mod_dict[module.key + ".weight"] = w
+
     return mod_dict
 
 
@@ -81,7 +88,7 @@ def compile_model(job, save_fn, model):
                 d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
                 d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2RMSNorm):
+        if isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
 
             d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
@@ -167,6 +174,10 @@ def compile_model(job, save_fn, model):
         all_files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         tensor_files = glob.glob(os.path.join(input_dir, "*.safetensors"))
         tensor_files_set = set(tensor_files)
+        bin_files = glob.glob(os.path.join(input_dir, "*.bin"))
+        if len(bin_files) > 0:
+            print(f" !! Ignoring *.bin files in source dir")
+            tensor_files_set.update(bin_files)
         non_tensor_files = [f for f in all_files if os.path.join(input_dir, f) not in tensor_files_set]
 
         for f in non_tensor_files:

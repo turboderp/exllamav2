@@ -18,6 +18,7 @@ from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
+from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
@@ -141,8 +142,10 @@ class ExLlamaV2:
                 self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
 
-
-        self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
+        if self.config.architecture == "Orion":
+            self.modules.append(ExLlamaV2LayerNorm(self, "model.norm"))
+        else:
+            self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
 
         self.head_layer_idx = len(self.modules)
