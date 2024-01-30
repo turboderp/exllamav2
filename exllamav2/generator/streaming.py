@@ -47,6 +47,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     total_tokens: int = 0
     accepted_draft_tokens: int = 0
     return_probabilities: bool = False
+    return_logits: bool = False
 
     active_loras = []
     position_offsets = None
