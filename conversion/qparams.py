@@ -89,7 +89,7 @@ class QParams:
         total_bits += groups * 16                           # q_scale_max
         total_bits += groups * (16 + 16)                    # q_groups
         total_bits += groups * columns * self.scale_bits    # q_scale
-        total_bits ++ rows * 32                             # q_invperm
+        total_bits += rows * 32                             # q_invperm
 
         return total_bits
 
