@@ -36,6 +36,7 @@ parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help =
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
 
 parser.add_argument("-temp", "--temperature", type = float, default = 0.95, help = "Sampler temperature, default = 0.95 (1 to disable)")
+parser.add_argument("-dyntemp", "--dynamic_temperature", type = str, help = "Dynamic temperature min,max,exponent, e.g. -dyntemp 0.2,1.5,1")
 parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sampler top-K, default = 50 (0 to disable)")
 parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
 parser.add_argument("-topa", "--top_a", type = float, default = 0.0, help = "Sampler top-A, default = 0.0 (0 to disable)")
@@ -195,6 +196,12 @@ settings.typical = args.typical
 settings.token_repetition_penalty = args.repetition_penalty
 settings.token_frequency_penalty = args.frequency_penalty
 settings.token_presence_penalty = args.presence_penalty
+
+if args.dynamic_temperature:
+    dt_args = [float(alloc) for alloc in args.dynamic_temperature.split(",")]
+    settings.min_temp = dt_args[0]
+    settings.max_temp = dt_args[1]
+    settings.temp_exponent = dt_args[2]
 
 max_response_tokens = args.max_response_tokens
 min_space_in_context = args.response_chunk
