@@ -10,9 +10,9 @@ import sys
 class AdaptiveQuantizer:
 
     norm: float = 3.5
-    max_p: float = 1.0
-    min_p: float = 0.75
-    p_grid: int = 48
+    max_p: float = 1.2
+    min_p: float = 0.70
+    p_grid: int = 96
 
     bits: int
     scale_bits: int
