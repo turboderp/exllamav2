@@ -3,7 +3,7 @@
 
 #define MAX_Q_GEMM_ROWS 32
 #define MAX_Q_GEMM_ROWS_KERNEL 4
-#define MAX_Q_GEMM_WEIGHTS 4  // must be <= MAX_Q_GEMM_ROWS
+#define MAX_Q_GEMM_WEIGHTS 4  // must be <= MAX_Q_GEMM_ROWS_KERNEL
 
 #define QMODE_2BIT 1
 #define QMODE_3BIT 1

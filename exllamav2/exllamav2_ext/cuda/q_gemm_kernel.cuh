@@ -136,7 +136,7 @@ typedef void (*fp_gemm_half_q_half_kernel)
     const int
 );
 
-template <int kernel_p, bool use_r_weights, bool mul_r_weights>
+template <int m_count, int kernel_p, bool use_r_weights, bool mul_r_weights>
 __global__ void gemm_half_q_half_kernel
 (
     const half*      __restrict__ a,
@@ -169,7 +169,7 @@ __global__ void gemm_half_q_half_kernel
 
     // Block
 
-    const int m_count = EXL2_BLOCK_M_SIZE_MAX;
+//    const int m_count = EXL2_BLOCK_M_SIZE_MAX;
 
     int offset_n = blockIdx.x * EXL2_BLOCK_KN_SIZE * 4;
     int offset_m = blockIdx.y * m_count;

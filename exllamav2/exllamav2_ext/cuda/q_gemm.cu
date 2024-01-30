@@ -31,7 +31,9 @@ void gemm_half_q_half_cuda_part
         gridDim.y = DIVIDE(size_m, m_count);
         gridDim.z = DIVIDE(size_k, EXL2_BLOCK_KN_SIZE);
 
-        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(b->kernel_p, r_weights != NULL, mul_r_weights);
+        int max_m = min(EXL2_BLOCK_M_SIZE_MAX, size_m);
+
+        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(max_m, b->kernel_p, r_weights != NULL, mul_r_weights);
         if (!kernel) return;
 
         kernel<<<gridDim, blockDim>>>
@@ -67,6 +69,8 @@ void gemm_half_q_half_cuda_part
         gridDim.x = DIVIDE(size_n, GPTQ_BLOCK_KN_SIZE * 4);
         gridDim.y = DIVIDE(size_m, GPTQ_BLOCK_M_SIZE_MAX);
         gridDim.z = DIVIDE(size_k, GPTQ_BLOCK_KN_SIZE);
+
+        int max_m = min(GPTQ_BLOCK_M_SIZE_MAX, size_m);
 
         fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(GPTQ_BLOCK_M_SIZE_MAX, r_weights != NULL, mul_r_weights);
         if (!kernel) return;
