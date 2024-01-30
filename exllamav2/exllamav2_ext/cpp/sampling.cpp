@@ -159,29 +159,31 @@ int post_softmax_temperature
     float temp_exponent = 1.0f
 )
 {
-    if (max_temp > min_temp) {
+    if (max_temp > min_temp)
+    {
         // Calculate entropy of the softmax probabilities
+
         float entropy = 0.0f;
-        for (int i = 0; i < num_candidates; ++i) {
+        for (int i = 0; i < num_candidates; ++i)
+        {
             float prob = temp_probs[i];
-            if (prob > 0.0f) { // Ensure no log(0)
-                entropy -= prob * logf(prob);
-            }
+            if (prob > 0.0f) entropy -= prob * logf(prob);  // Ensure no log(0)
         }
 
         // Calculate maximum possible entropy
+
         float max_entropy = -logf(1.0f / num_candidates);
 
         // Guard against division by zero
-        if (max_entropy == 0.0f) {
-            max_entropy = 1.0f;
-        }
+
+        if (max_entropy == 0.0f) max_entropy = 1.0f;
 
         // Normalize the entropy
+
         float normalized_entropy = entropy / max_entropy;
 
-        // Map the normalized entropy to the desired temperature range
-        // using the power function
+        // Map the normalized entropy to the desired temperature range using the power function
+
         temperature = min_temp + (max_temp - min_temp) * powf(normalized_entropy, temp_exponent);
     }
 
