@@ -15,6 +15,9 @@ class ExLlamaV2Sampler:
         token_presence_penalty = 0.0
 
         temperature = 0.8
+        min_temp = 0
+        max_temp = 0.0
+        temp_exponent = 1.0
         top_k = 50
         top_p = 0.8
         top_a = 0.0
@@ -47,6 +50,9 @@ class ExLlamaV2Sampler:
             c.token_presence_penalty = self.token_presence_penalty
 
             c.temperature = self.temperature
+            c.min_temp = self.min_temp
+            c.max_temp = self.max_temp
+            c.temp_exponent = self.temp_exponent
             c.top_k = self.top_k
             c.top_p = self.top_p
             c.top_a = self.top_a
@@ -211,7 +217,10 @@ class ExLlamaV2Sampler:
                                settings.mirostat_mu if settings.mirostat else [],
                                settings.mirostat_tau,
                                settings.mirostat_eta,
-                               settings.temperature if settings.temperature_last else 1.0)
+                               settings.temperature if settings.temperature_last else 1.0,
+                               settings.min_temp,
+                               settings.max_temp,
+                               settings.temp_exponent)
 
         if settings.mirostat: settings.mirostat_mu = m
 
