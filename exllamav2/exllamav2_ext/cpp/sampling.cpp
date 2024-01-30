@@ -153,7 +153,7 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temp,
+    float temperature,
     float min_temp = 0,
     float max_temp = 0.0f,
     float temp_exponent = 1.0f
@@ -182,7 +182,7 @@ int post_softmax_temperature
 
         // Map the normalized entropy to the desired temperature range
         // using the power function
-        temp = min_temp + (max_temp - min_temp) * powf(normalized_entropy, temp_exponent);
+        temperature = min_temp + (max_temp - min_temp) * powf(normalized_entropy, temp_exponent);
     }
 
 //    printf("---- pre\n");
