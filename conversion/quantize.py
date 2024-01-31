@@ -422,11 +422,9 @@ def quant(job, save_fn, model):
             save_fn()
 
             if mode != "linear":
-                os.remove(states_filename)
-                os.rename(temp_filename, states_filename)
+                os.replace(temp_filename, states_filename)
 
             job["q_last_module_idx"] = index
 
             del job["invalid"]
             save_fn()
-
