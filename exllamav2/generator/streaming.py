@@ -115,17 +115,15 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     def stream(self) -> Union[Tuple[str, bool, torch.Tensor], Tuple[str, bool, torch.Tensor, torch.Tensor], Tuple[str, bool, torch.Tensor, torch.Tensor, torch.Tensor]]:
 
         chunk, eos, chunk_token_ids, probs, logits = self._stream()
+        ret = [chunk, eos, chunk_token_ids]
 
+        if self.return_probabilities:
+            ret.append(probs)
+        
         if self.return_logits:
-            if self.return_probabilities:
-                return chunk, eos, chunk_token_ids, probs, logits
-            else:
-                return chunk, eos, chunk_token_ids, logits
-        else:
-            if self.return_probabilities:
-                return chunk, eos, chunk_token_ids, probs
-            else:
-                return chunk, eos, chunk_token_ids
+            ret.append(logits)
+        
+        return tuple(ret)
 
 
     # Get the next chunk of text in the stream. Returns eos if stop condition has been met but does not count tokens
