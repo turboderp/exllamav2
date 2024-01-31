@@ -422,7 +422,7 @@ def quant(job, save_fn, model):
             save_fn()
 
             if mode != "linear":
-                os.replace(temp_filename, states_filename)
+                os.replace(temp_filename, states_filename) # atomic
 
             job["q_last_module_idx"] = index
 
