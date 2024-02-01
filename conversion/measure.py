@@ -516,8 +516,7 @@ def measure_quant(job, save_fn, model):
             job["invalid"] = True
             save_fn()
 
-            os.remove(states_filename)
-            os.rename(temp_filename, states_filename)
+            os.replace(temp_filename, states_filename)
 
             job["measurement"] = measurement.copy()
             job["last_module_idx"] = index
