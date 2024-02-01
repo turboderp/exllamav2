@@ -4,10 +4,7 @@ from exllamav2.module import ExLlamaV2Module
 
 class ExLlamaV2Embedding(ExLlamaV2Module):
 
-    embedding: nn.Embedding or None
-    embedding_q: nn.Embedding or None
-    embedding_k: nn.Embedding or None
-    embedding_v: nn.Embedding or None
+    embedding: nn.Embedding or None = None
 
     name: str = "Embedding"
     native_vocab_size: int = None
