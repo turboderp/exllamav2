@@ -488,8 +488,7 @@ def measure_quant(job, save_fn, model):
         average_time_per_step = sum(time_spent_list) / len(time_spent_list)
 
         remaining_steps = total_modules - index
-        estimated_total_time = average_time_per_step * remaining_steps
-        estimated_time_remaining = max(estimated_total_time - sum(time_spent_list), 0)
+        estimated_time_remaining = average_time_per_step * remaining_steps
         completed_steps = index
 
         completed_module_name_str = f"Measured: {module.key} ({module.name})"
