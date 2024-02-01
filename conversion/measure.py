@@ -326,8 +326,15 @@ def measure_quant(job, save_fn, model):
 
     # Quantize
 
+    last_ckpt_layer_name = "None"
+
     if not "last_module_idx" in job:
         job["last_module_idx"] = 0
+    else:
+        i = job["last_module_idx"]
+        if i < len(model.modules):
+            last_ckpt_layer_name = f"{model.modules[i].key} ({model.modules[i].name})"
+            print(f" -- Resuming from layer: {last_ckpt_layer_name}")
 
     # vars to support status box
     total_modules = len(model.modules)  
@@ -497,8 +504,15 @@ def measure_quant(job, save_fn, model):
         avg_time_str = f"Avg time / step (rolling): {average_time_per_step:.2f} seconds"
         remaining_time_str = f"Estimated remaining time: {get_remaining_time_str(estimated_time_remaining)}"
         # overall_accuracy_str = f"Overall avg accuracy: {overall_rolling_accuracy:.8f}" if accuracy_count > 0 else ""
+        last_ckpt_str = f"Last checkpoint layer: {last_ckpt_layer_name}"
 
-        content_lines = [completed_module_name_str, duration_str, completed_step_str, avg_time_str, remaining_time_str]
+        content_lines = [completed_module_name_str,
+                         duration_str,
+                         completed_step_str,
+                         avg_time_str,
+                         remaining_time_str,
+                         last_ckpt_str]
+
         # if accuracy_count > 0:
         #     content_lines.append(overall_accuracy_str)
 
@@ -519,6 +533,8 @@ def measure_quant(job, save_fn, model):
 
             job["measurement"] = measurement.copy()
             job["last_module_idx"] = index
+
+            last_ckpt_layer_name = f"{module.key} ({module.name})"
 
             del job["invalid"]
             save_fn()
