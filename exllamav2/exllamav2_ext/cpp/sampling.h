@@ -23,10 +23,19 @@ void softmax_cpu
 (
     const int vocab_size,
     const float temperature,
+    const float* logits,
+    const bool* logits_filter,
+    float* output
+);
+
+void quadratic_sampling
+(
+    const int vocab_size,
+    const float temperature,
     float* logits,
     const bool* logits_filter,
-    float* output,
-    float smoothing_factor
+    float smoothing_factor,
+    float* output
 );
 
 void normalize_cpu
