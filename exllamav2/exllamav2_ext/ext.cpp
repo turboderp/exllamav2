@@ -987,7 +987,8 @@ std::vector<float> sample_basic
     float post_temperature,
     float min_temp = 0,
     float max_temp = 0.0f,
-    float temp_exponent = 1.0f
+    float temp_exponent = 1.0f,
+    float smoothing_factor = 0.0f
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -1025,7 +1026,8 @@ std::vector<float> sample_basic
             temperature,
             logits_ptr + i * vocab_size,
             logits_filter_ptr + i * vocab_size,
-            temp_probs
+            temp_probs,
+            smoothing_factor
         );
 
         if (top_k == 1)

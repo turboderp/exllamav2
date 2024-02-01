@@ -23,9 +23,10 @@ void softmax_cpu
 (
     const int vocab_size,
     const float temperature,
-    const float* logits,
+    float* logits,
     const bool* logits_filter,
-    float* output
+    float* output,
+    float smoothing_factor
 );
 
 void normalize_cpu
