@@ -90,7 +90,7 @@ STPage* get_cache_page(size_t file_descriptor, size_t block_size, size_t filesiz
 
     for (int i = 0; i < MAX_PAGES; i++)
     {
-        if (pages[i].file_descriptor == file_descriptor &&
+        if (static_cast<size_t>(pages[i].file_descriptor) == file_descriptor &&
             pages[i].file_a == file_a &&
             pages[i].file_b == file_b)
         {
@@ -195,7 +195,8 @@ STPage* get_cache_page(size_t file_descriptor, size_t block_size, size_t filesiz
         DBGX2(bytes_read, read_lens[i]);
         #endif
 
-        TORCH_CHECK(bytes_read == read_lens[i], "Async read error (2)");
+        TORCH_CHECK(bytes_read == static_cast<ssize_t>(read_lens[i]), "Async read error (2)");
+
     }
 
     return &pages[p];
@@ -292,7 +293,10 @@ void STFile::load
     // Get cache pages
 
     size_t file_b = offset / PAGESIZE * PAGESIZE;
+ 
+   /* doest appear to be utilized rn 
     size_t file_c = DIVIDE(offset + length, PAGESIZE) * PAGESIZE;
+   */
 
     // Loop over pages
 
