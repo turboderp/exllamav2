@@ -215,9 +215,12 @@ while True:
         save_job()
 
     if progress == "measure_quant":
-
         print(f" -- Measuring quantization impact...")
-        measure_quant(job, save_job, model)
+        status = measure_quant(job, save_job, model)  # capturing the graceful exits
+        if status == "interrupted":
+            print("Process interrupted. Exiting gracefully.")
+            save_job()
+            sys.exit(1)  
         if job["output_measurement"] is None:
             job["progress"] = "optimize"
         else:
