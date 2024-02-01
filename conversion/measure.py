@@ -458,15 +458,15 @@ def measure_quant(job, save_fn, model):
 
         measurement[module.key + "." + mode] = m
 
-        # track overall accuracy for status box
-        if m is not None and len(m) > 0:
-            layer_accuracies = [result['accuracy'] for result in m]
-            layer_accuracy_sum = sum(layer_accuracies)
-            layer_accuracy_count = len(layer_accuracies)
-            
-            accuracy_sum += layer_accuracy_sum
-            accuracy_count += layer_accuracy_count
-            overall_rolling_accuracy = accuracy_sum / accuracy_count 
+        # # track overall accuracy for status box
+        # if m is not None and len(m) > 0:
+        #     layer_accuracies = [result['accuracy'] for result in m]
+        #     layer_accuracy_sum = sum(layer_accuracies)
+        #     layer_accuracy_count = len(layer_accuracies)
+        #
+        #     accuracy_sum += layer_accuracy_sum
+        #     accuracy_count += layer_accuracy_count
+        #     overall_rolling_accuracy = accuracy_sum / accuracy_count
 
         # Unload module
 
@@ -492,16 +492,16 @@ def measure_quant(job, save_fn, model):
         estimated_time_remaining = max(estimated_total_time - sum(time_spent_list), 0)
         completed_steps = index
 
-        completed_module_name_str = f"Completed: {module.key} ({module.name})"
+        completed_module_name_str = f"Measured: {module.key} ({module.name})"
         duration_str = f"Duration: {duration:.2f} seconds"
         completed_step_str = f"Completed step: {completed_steps}/{total_modules}"
         avg_time_str = f"Avg time / step (rolling): {average_time_per_step:.2f} seconds"
         remaining_time_str = f"Estimated remaining time: {get_remaining_time_str(estimated_time_remaining)}"
-        overall_accuracy_str = f"Overall avg accuracy: {overall_rolling_accuracy:.8f}" if accuracy_count > 0 else ""
+        # overall_accuracy_str = f"Overall avg accuracy: {overall_rolling_accuracy:.8f}" if accuracy_count > 0 else ""
 
         content_lines = [completed_module_name_str, duration_str, completed_step_str, avg_time_str, remaining_time_str]
-        if accuracy_count > 0:
-            content_lines.append(overall_accuracy_str)
+        # if accuracy_count > 0:
+        #     content_lines.append(overall_accuracy_str)
 
         print_status_box(*content_lines)
 
