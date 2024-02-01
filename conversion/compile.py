@@ -111,7 +111,7 @@ def compile_model(job, save_fn, model):
                 if this_shard_size + tsize <= shard_bytes:
                     this_shard_size += tsize
                     current_size -= tsize
-                    save_dict[k] = v
+                    save_dict[k] = v.contiguous()
                 else:
                     dont_save_dict[k] = v
 

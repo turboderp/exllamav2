@@ -78,7 +78,7 @@ def embeddings(job, save_fn, model, measure = False):
     hidden_state = module.forward(input_ids)
     module.unload()
 
-    embeddings_dict = { f"row.{i:05}": hidden_state[i:i+1, :, :] for i in range(hidden_state.shape[0]) }
+    embeddings_dict = { f"row.{i:05}": hidden_state[i:i+1, :, :].contiguous() for i in range(hidden_state.shape[0]) }
     save_file(embeddings_dict, os.path.join(job["out_dir"], "hidden_states.safetensors"))
 
 
