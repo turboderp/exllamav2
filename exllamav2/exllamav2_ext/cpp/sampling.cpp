@@ -95,6 +95,36 @@ void apply_rep_penalty_cpu
     }
 }
 
+void quadratic_sampling
+(
+    const int vocab_size,
+    const float temperature,
+    float* logits,
+    const bool* logits_filter,
+    float smoothing_factor,
+    float* output
+)
+{
+    // Calculate maxl as the maximum logit value
+    float maxl = -1e38;
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (!logits_filter[i]) continue;
+        maxl = fmaxf(logits[i], maxl);
+    }
+
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (!logits_filter[i]) continue;
+        float logit_shifted = logits[i] - maxl;
+        logits[i] = -smoothing_factor * logit_shifted * logit_shifted + maxl;
+        // Limit the range of logits to prevent extreme values
+        logits[i] = fminf(fmaxf(logits[i], -1e20), 1e20);
+    }
+
+    softmax_cpu(vocab_size, temperature, logits, logits_filter, output);
+}
+
 void softmax_cpu
 (
     const int vocab_size,

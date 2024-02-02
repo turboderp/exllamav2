@@ -15,6 +15,7 @@ class ExLlamaV2Sampler:
         token_presence_penalty = 0.0
 
         temperature = 0.8
+        smoothing_factor = 0.0
         min_temp = 0
         max_temp = 0.0
         temp_exponent = 1.0
@@ -50,6 +51,7 @@ class ExLlamaV2Sampler:
             c.token_presence_penalty = self.token_presence_penalty
 
             c.temperature = self.temperature
+            c.smoothing_factor = self.smoothing_factor
             c.min_temp = self.min_temp
             c.max_temp = self.max_temp
             c.temp_exponent = self.temp_exponent
@@ -220,7 +222,8 @@ class ExLlamaV2Sampler:
                                settings.temperature if settings.temperature_last else 1.0,
                                settings.min_temp,
                                settings.max_temp,
-                               settings.temp_exponent)
+                               settings.temp_exponent,
+                               settings.smoothing_factor)
 
         if settings.mirostat: settings.mirostat_mu = m
 
