@@ -1020,14 +1020,30 @@ std::vector<float> sample_basic
 
     for (int i = 0; i < bsz; i++)
     {
-        softmax_cpu
-        (
-            vocab_size,
-            temperature,
-            logits_ptr + i * vocab_size,
-            logits_filter_ptr + i * vocab_size,
-            temp_probs
-        );
+        if (smoothing_factor > 0)
+        {
+            // Apply quadratic_sampling to the logits
+            quadratic_sampling
+            (
+                 vocab_size,
+                 temperature,
+                 logits_ptr + i * vocab_size,
+                 logits_filter_ptr + i * vocab_size,
+                 smoothing_factor,
+                 temp_probs
+            );
+        }
+        else
+        {
+            softmax_cpu
+            (
+                 vocab_size,
+                 temperature,
+                 logits_ptr + i * vocab_size,
+                 logits_filter_ptr + i * vocab_size,
+                 temp_probs
+            );
+        }
 
         if (top_k == 1)
         {
@@ -1066,16 +1082,7 @@ std::vector<float> sample_basic
 
         if (smoothing_factor > 0)
         {
-            // Apply quadratic_sampling to the logits
-            quadratic_sampling
-                    (
-                            num_candidates,
-                            temperature,
-                            temp_probs,
-                            logits_filter_ptr + i * vocab_size,
-                            smoothing_factor,
-                            temp_probs
-                    );
+
         }
 
         if (tfs > 0.0f && tfs < 1.0f)
