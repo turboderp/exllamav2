@@ -1,4 +1,4 @@
-name: Build Wheels & Release
+pip name: Build Wheels & Release
 
 on:
   workflow_dispatch:
@@ -71,7 +71,7 @@ jobs:
           if (!(mamba list cuda)[-1].contains('cuda')) {sleep -s 10; mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()}
           if (!(mamba list cuda)[-1].contains('cuda')) {throw 'CUDA Toolkit failed to install!'}
           
-          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.2.0"} else {$torchver = "torch==2.2.0"}
+          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.2.0"}
           python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
           python -m pip install --upgrade setuptools==65.5.1
