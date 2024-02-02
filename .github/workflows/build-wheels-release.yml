@@ -1,4 +1,4 @@
-pip name: Build Wheels & Release
+name: Build Wheels & Release
 
 on:
   workflow_dispatch:
