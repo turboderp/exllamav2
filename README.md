@@ -15,29 +15,31 @@ ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs
 Some quick tests to compare performance with V1. There may be more performance optimizations in the future, and
 speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
 
-| Model      | Mode         | Size  | grpsz | act | V1: 3090Ti | V1: 4090 | V2: 3090Ti | V2: 4090    |
-|------------|--------------|-------|-------|-----|------------|----------|------------|-------------|
-| Llama      | GPTQ         | 7B    | 128   | no  | 143 t/s    | 173 t/s  | 175 t/s    | **195** t/s |
-| Llama      | GPTQ         | 13B   | 128   | no  | 84 t/s     | 102 t/s  | 105 t/s    | **110** t/s |
-| Llama      | GPTQ         | 33B   | 128   | yes | 37 t/s     | 45 t/s   | 45 t/s     | **48** t/s  |
-| OpenLlama  | GPTQ         | 3B    | 128   | yes | 194 t/s    | 226 t/s  | 295 t/s    | **321** t/s |
-| CodeLlama  | EXL2 4.0 bpw | 34B   | -     | -   | -          | -        | 42 t/s     | **48** t/s  |
-| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | -          | -        | 195 t/s    | **224** t/s |
-| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | -          | -        | 164 t/s    | **197** t/s |
-| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | -          | -        | 144 t/s    | **160** t/s |
-| Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | -          | -        | 30 t/s     | **35** t/s  |
-| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | -          | -        | 536 t/s    | **635** t/s |
-| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | -          | -        | 509 t/s    | **590** t/s |
+| Model      | Mode         | Size  | grpsz | act | 3090Ti   | 4090        |
+|------------|--------------|-------|-------|-----|----------|-------------|
+| Llama      | GPTQ         | 7B    | 128   | no  | 175 t/s  | **195** t/s |
+| Llama      | GPTQ         | 13B   | 128   | no  | 105 t/s  | **110** t/s |
+| Llama      | GPTQ         | 33B   | 128   | yes | 45 t/s   | **48** t/s  |
+| OpenLlama  | GPTQ         | 3B    | 128   | yes | 295 t/s  | **321** t/s |
+| CodeLlama  | EXL2 4.0 bpw | 34B   | -     | -   | 42 t/s   | **48** t/s  |
+| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 195 t/s  | **224** t/s |
+| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 164 t/s  | **197** t/s |
+| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 144 t/s  | **160** t/s |
+| Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | 30 t/s   | **35** t/s  |
+| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 536 t/s  | **635** t/s |
+| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 509 t/s  | **590** t/s |
 
 
 ## How to
 
-Clone the repository and install dependencies:
+To install from the repo you'll need the CUDA Toolkit and either gcc on Linux or (Build Tools for) Visual Studio
+on Windows). Also make sure you have an appropriate version of [PyTorch](https://pytorch.org/get-started/locally/),
+then run:
 
 ```
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
-pip install -r requirements.txt
+pip install .
 
 python test_inference.py -m <path_to_model> -p "Once upon a time,"
 ```
@@ -76,14 +78,14 @@ To install the current dev version, clone the repo and run the setup script:
 ```
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
-python setup.py install --user
+pip install .
 ```
 
 By default this will also compile and install the Torch C++ extension (`exllamav2_ext`) that the library relies on. 
 You can skip this step by setting the `EXLLAMA_NOCOMPILE` environment variable:
 
 ```
-EXLLAMA_NOCOMPILE= python setup.py install --user
+EXLLAMA_NOCOMPILE= pip install .
 ```
 
 This will install the "JIT version" of the package, i.e. it will install the Python components without building the
@@ -94,10 +96,10 @@ C++ extension in the process. Instead, the extension will be built the first tim
 
 Releases are available [here](https://github.com/turboderp/exllamav2/releases), with prebuilt wheels that contain the
 extension binaries. Make sure to grab the right version, matching your platform, Python version (`cp`) and CUDA version.
-Download an appropriate wheel, then run:
+Either download an appropriate wheel or install directly from the appropriate URL:
 
 ```
-pip install exllamav2-0.0.4+cu118-cp310-cp310-linux_x86_64.whl
+pip install https://github.com/turboderp/exllamav2/releases/download/v0.0.12/exllamav2-0.0.12+cu121-cp311-cp311-linux_x86_64.whl
 ```
 
 The `py3-none-any.whl` version is the JIT version which will build the extension on first launch. The `.tar.gz` file
