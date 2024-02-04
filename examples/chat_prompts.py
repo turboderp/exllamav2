@@ -236,7 +236,117 @@ class PromptFormat_deepseek(PromptFormat):
 
     def print_extra_newline(self):
         return True
-    
+
+
+class PromptFormat_solar(PromptFormat):
+    description = "Solar-instruct"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are an AI assistant."""
+
+    def first_prompt(self):
+        return \
+            """### System\n""" + \
+            """<|system_prompt|>\n\n""" + \
+            """### User:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """### Assistant:\n"""
+
+    def subs_prompt(self):
+        return \
+            """### User:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """### Assistant:\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """\n\n### User""",
+             """\n### User""",
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
+class PromptFormat_openchat(PromptFormat):
+    description = "openchat"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are an AI assistant."""
+
+    def first_prompt(self):
+        return \
+            """<|system_prompt|><|end_of_turn|>GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
+
+    def subs_prompt(self):
+        return \
+            """GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """<|end_of_turn|>""",
+             """<|endoftext|>""",
+             """GPT4 Correct User:"""
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
+class PromptFormat_nous(PromptFormat):
+    description = "Nous Research"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""Perform the task to the best of your ability."""
+
+    def first_prompt(self):
+        return \
+            """<|system_prompt|>\n\n""" + \
+            """USER:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """ASSISTANT:\n"""
+
+    def subs_prompt(self):
+        return \
+            """USER:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """ASSISTANT:\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """</s>""",
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
 
 prompt_formats = \
 {
@@ -246,11 +356,8 @@ prompt_formats = \
     "chatml": PromptFormat_chatml,
     "tinyllama": PromptFormat_tinyllama,
     "zephyr": PromptFormat_zephyr,
-    "deepseek": PromptFormat_deepseek
+    "deepseek": PromptFormat_deepseek,
+    "solar": PromptFormat_solar,
+    "openchat": PromptFormat_openchat,
+    "nous": PromptFormat_nous,
 }
-
-
-
-
-
-

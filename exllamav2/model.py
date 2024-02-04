@@ -18,12 +18,15 @@ from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
+from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
+from exllamav2.moe_mlp import ExLlamaV2MoEMLP
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.compat import safe_move_tensor
+from exllamav2.fasttensors import cleanup_stfiles
 import gc
 
 def _torch_device(idx):
@@ -84,8 +87,8 @@ class ExLlamaV2DeviceTensors:
     def prepare_sincos(self):
 
         base = self.model.config.rotary_embedding_base
-        alpha = self.model.config.scale_alpha_value
-        scale = self.model.config.scale_pos_emb
+        alpha = self.model.config.scale_alpha_value or 1.0
+        scale = self.model.config.scale_pos_emb or 1.0
         head_dim = self.model.config.head_dim
         device = _torch_device(self.device_idx)
 
@@ -133,10 +136,16 @@ class ExLlamaV2:
 
             self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
-            self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
+            if self.config.architecture == "Mixtral":
+                self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_idx}", layer_idx))
+            else:
+                self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
 
-        self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
+        if self.config.architecture == "Orion":
+            self.modules.append(ExLlamaV2LayerNorm(self, "model.norm"))
+        else:
+            self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
 
         self.head_layer_idx = len(self.modules)
@@ -167,7 +176,7 @@ class ExLlamaV2:
         # TODO: Option to reserve space for cache while loading model
 
         state_size = self.config.hidden_size * self.config.max_input_len * self.config.max_batch_size * 2
-        mask_size = self.config.max_input_len ** 2 * 2
+        mask_size = self.config.max_input_len ** 2 * self.config.max_batch_size * 2
 
         # Bytes remaining per device
 
@@ -238,9 +247,8 @@ class ExLlamaV2:
         f = self.load_gen(gpu_split, lazy, stats, callback, callback_gen)
         for item in f: return item
 
-    def load_gen(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
 
-        assert not self.config.qkv_embed or not lazy, "Lazy initialization is unsupported when config.qkv_embed = True"
+    def load_gen(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
 
         with torch.inference_mode():
 
@@ -265,6 +273,8 @@ class ExLlamaV2:
             self.set_cache_map()
 
             self.loaded = True
+            cleanup_stfiles()
+
             if stats: yield gpu_split, stats_
             else: yield gpu_split
 
@@ -275,9 +285,10 @@ class ExLlamaV2:
 
     def load_autosplit_gen(self, cache, reserve_vram = None, last_id_only = False, callback = None, callback_gen = None):
 
-        assert not self.config.qkv_embed, "Auto GPU split is unsupported when config.qkv_embed = True"
+        # Limit model's max_input_len to max_seq_len if necessary
+        self.config.max_input_len = min(self.config.max_input_len, self.config.max_seq_len)
 
-        minimum_reserve_vram = 32 * 1024**2
+        minimum_reserve_vram = 256 * 1024**2
         last_touched_device = -1
         current_device = 0
         num_devices = torch.torch.cuda.device_count()
@@ -290,7 +301,7 @@ class ExLlamaV2:
             # Reserved space
 
             if reserve_vram is None:
-                reserve_vram = [32 * 1024**2] + [0] * (num_devices - 1)
+                reserve_vram = [192 * 1024**2] + [64 * 1024**2] * (num_devices - 1)
 
             reserved_vram_tensors = []
             minimum_reserve_tensor = None
@@ -300,7 +311,7 @@ class ExLlamaV2:
             hidden_state = torch.zeros((1, self.config.max_input_len), dtype = torch.long)
             batch_size, seq_len = hidden_state.shape
             past_len = 0
-            attn_mask = None
+            attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, None, None)
 
             # Size of fixed scratch space
 
@@ -327,16 +338,16 @@ class ExLlamaV2:
 
                 while True:
 
-                    # If we've reached a new device, allocate fixed tensors and attention mask
+                    # If we've reached a new device, allocate fixed tensors
 
                     if current_device > last_touched_device:
 
                         self.device_tensors.append(ExLlamaV2DeviceTensors(self, current_device, scratch_fixed))
-                        if attn_mask is not None:
-                            reserved_vram_tensors.append(attn_mask)
-                            attn_mask = safe_move_tensor(attn_mask, _torch_device(current_device))
-                        else:
-                            attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, None, _torch_device(current_device))
+                        # if attn_mask is not None:
+                        #     reserved_vram_tensors.append(attn_mask)
+                        #     attn_mask = safe_move_tensor(attn_mask, _torch_device(current_device))
+                        # else:
+                        #     attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, None, _torch_device(current_device))
 
                         b = reserve_vram[current_device]
                         reserved_vram_tensors.append(torch.empty((b,), dtype = torch.int8, device = _torch_device(current_device)))
@@ -362,7 +373,7 @@ class ExLlamaV2:
                                 hidden_state = hidden_state.narrow(-2, -1, 1)
 
                         hidden_state = safe_move_tensor(hidden_state, _torch_device(current_device))
-                        hidden_state = module.forward(hidden_state, cache = cache, attn_mask = attn_mask, past_len = past_len, loras = loras)
+                        hidden_state = module.forward(hidden_state, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras)
                         fail = False
 
                     except Exception as e:
@@ -399,12 +410,13 @@ class ExLlamaV2:
             if callback_gen is not None: yield from callback_gen(len(self.modules), len(self.modules))
 
             hidden_state = None
-            attn_mask = None
+            attn_params = None
             reserved_vram_tensors = None
 
             gc.collect()
             torch.cuda.empty_cache()
             self.loaded = True
+            cleanup_stfiles()
 
         if 'yield' in locals():
             yield
@@ -456,6 +468,7 @@ class ExLlamaV2:
         for module in self.modules:
             if isinstance(module, ExLlamaV2Attention): module.update_loras()
             if isinstance(module, ExLlamaV2MLP): module.update_loras()
+            if isinstance(module, ExLlamaV2MoEMLP): module.update_loras()
 
 
     def is_quant(self):
@@ -466,44 +479,6 @@ class ExLlamaV2:
 
         return False
 
-
-    def build_attn_mask(self, batch_size, seq_len, past_len, input_mask, device):
-
-        if input_mask is None and seq_len == 1: return None
-
-        if isinstance(past_len, tuple):
-
-            attn_masks = []
-
-            for i in range(len(past_len[1])):
-
-                attn_mask = torch.zeros((1, 1, seq_len, past_len[1][i] + seq_len), dtype = torch.float16, device = device)
-                attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
-                attn_mask[:, :, : seq_len - 1, past_len[1][i] + 1: past_len[1][i] + seq_len] = attn_mask_triu
-
-                if input_mask is not None:
-                    min_mask_width = min(input_mask[i].shape[-1], seq_len + past_len[1][i])
-                    input_mask_part = safe_move_tensor(input_mask[i][:, :min_mask_width], attn_mask.device)
-                    input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
-                    attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
-
-                attn_masks.append(attn_mask)
-
-            return attn_masks
-
-        else:
-
-            attn_mask = torch.zeros((batch_size, 1, seq_len, past_len + seq_len), dtype = torch.float16, device = device)
-            attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.))
-            attn_mask[:, :, : seq_len - 1, past_len + 1: past_len + seq_len] = attn_mask_triu
-
-            if input_mask is not None:
-                min_mask_width = min(input_mask.shape[-1], seq_len + past_len)
-                input_mask_part = safe_move_tensor(input_mask[:, :min_mask_width], attn_mask.device)
-                input_mask_part = input_mask_part.unsqueeze(1).unsqueeze(2)
-                attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
-
-            return attn_mask
 
     @torch.inference_mode()
     def forward(self,
@@ -621,29 +596,17 @@ class ExLlamaV2:
             if isinstance(cache, ExLlamaV2CacheBase):
                 past_len = cache.current_seq_len
             else:
-                pl = [c.current_seq_len for c in cache]
-                past_len = torch.tensor(pl, dtype = torch.int)
-                past_len = (past_len, past_len)
+                past_len = [c.current_seq_len for c in cache]
 
         # assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
 
         x = input_ids
-        prev_device = None
-        attn_mask = None
+        attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
         last_state = None
 
         for idx, module in enumerate(self.modules):
 
             device = _torch_device(module.device_idx)
-
-            # Build attention mask
-
-            if device != prev_device and device != "cpu":
-
-                prev_device = device
-                attn_mask = self.build_attn_mask(batch_size, seq_len, past_len, input_mask, device)
-                if isinstance(past_len, tuple): past_len = (safe_move_tensor(past_len[0], device), past_len[1])
-                if position_offsets is not None: position_offsets = safe_move_tensor(position_offsets, device)
 
             # Onward
 
@@ -657,14 +620,11 @@ class ExLlamaV2:
                     last_state = x.narrow(-2, -1, 1)
 
             x = safe_move_tensor(x, device)
-            x = module.forward(x, cache = cache, attn_mask = attn_mask, past_len = past_len, loras = loras, position_offsets = position_offsets)
+            x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras)
 
             if preprocess_only and idx == self.last_kv_layer_idx:
                 x = None
                 break
-
-            # print(module.key, module.name, x[0, 0])
-            # print("max", torch.max(x).item(), "min",torch.min(x).item())
 
         # Advance cache
 

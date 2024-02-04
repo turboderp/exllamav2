@@ -5,14 +5,14 @@ import torch.nn.functional as F
 import math
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.util import list_live_tensors
-
+import sys
 
 class AdaptiveQuantizer:
 
     norm: float = 3.5
-    max_p: float = 1.0
-    min_p: float = 0.75
-    p_grid: int = 48
+    max_p: float = 1.2
+    min_p: float = 0.70
+    p_grid: int = 96
 
     bits: int
     scale_bits: int
@@ -63,8 +63,6 @@ class AdaptiveQuantizer:
         best_pif = best_pi / self.p_grid
         best_p = self.max_p * best_pif + self.min_p * (1 - best_pif)
 
-        # best_p = 1.0
-
         self.qscale = qscale_t.to(torch.short)
         self.scale = qscale_tw * best_p
         self.qscale_max = qscale_max_t * best_p
@@ -89,9 +87,10 @@ class AdaptiveGPTQ:
     total_groups: int
 
     perm: torch.tensor = None
+    perm_cpu: torch.tensor = None
     invperm: torch.tensor = None
 
-    g_idx: torch.tensor = None
+    # g_idx: torch.tensor = None
     scale: torch.tensor = None
     qscale: torch.tensor = None
     qscale_max: torch.tensor = None
@@ -124,8 +123,9 @@ class AdaptiveGPTQ:
     def drop_buffers(self):
 
         self.perm = None
+        self.perm_cpu = None
         self.invperm = None
-        self.g_idx = None
+        # self.g_idx = None
         self.scale = None
         self.qscale = None
         self.qscale_max = None
@@ -212,7 +212,7 @@ class AdaptiveGPTQ:
 
             self.num_batches += 1
             num_samples = len(inputs)
-            inputs = torch.cat(inputs, dim = 0)
+            # inputs = torch.cat(inputs, dim = 0)
             inputs = inputs.view((-1, inputs.shape[-1])).float().T.to("cuda:0")
             inputs *= math.sqrt(2 / num_samples)
             self.hessian += inputs.matmul(inputs.T)
@@ -236,6 +236,7 @@ class AdaptiveGPTQ:
             # Activation order
 
             self.perm = torch.argsort(diagonal, descending = True)
+            self.perm_cpu = self.perm.cpu()
             self.weights = self.weights[self.perm, :]
             hessian = self.hessian[self.perm][:, self.perm]
             self.hessian = None
@@ -296,7 +297,10 @@ class AdaptiveGPTQ:
 
                     break
 
-                except RuntimeError:
+                except RuntimeError as runtime_error:
+
+                    if "out of memory" in str(runtime_error):
+                        raise runtime_error
 
                     # If inverting failed, assume there were non-positive eigenvalues, so apply more damping to shift
                     # the eigenvalues in a positive direction.
@@ -317,6 +321,7 @@ class AdaptiveGPTQ:
             self.hessian_inv = other.hessian_inv
             self.hessian = None
             self.perm = other.perm
+            self.perm_cpu = other.perm_cpu
             self.weights = self.weights[self.perm, :]
 
 
@@ -337,9 +342,13 @@ class AdaptiveGPTQ:
 
             # Quantize groups
 
+            num_groups = 0
+            for bits_idx in range(len(self.bits)):
+                num_groups += self.bits_groups[bits_idx]
+
             scale = []
             qscale = []
-            qscale_max = []
+            qscale_max = torch.empty((num_groups,), dtype = torch.float, device = self.weights.device)
             qgroups = []
 
             error = weights.clone()
@@ -360,7 +369,7 @@ class AdaptiveGPTQ:
                     quantizer.find_params(weights[a : b, :])
                     scale.append(quantizer.scale)
                     qscale.append(quantizer.qscale)
-                    qscale_max.append(quantizer.qscale_max)
+                    qscale_max[group_idx] = quantizer.qscale_max
 
                     ext_c.quantize_range(self.quant,
                                          quantizer.scale,
@@ -379,17 +388,18 @@ class AdaptiveGPTQ:
 
             # Create g_idx to store inverse activation order
 
-            self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32, device = self.device)
+            # self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32, device = self.device)
+            # self.g_idx = torch.tensor(group_idx_list, dtype = torch.int32)
 
             self.invperm = torch.argsort(self.perm)
-            self.g_idx = self.g_idx[self.invperm]
+            # self.g_idx = self.g_idx[self.invperm]
 
             # Store scales
 
             self.scale = torch.stack(scale, dim = 0)
             self.qscale = torch.stack(qscale, dim = 0)
-            self.qscale_max = torch.tensor(qscale_max, dtype = torch.float16, device = self.device)
-            self.qgroups = torch.tensor(qgroups, dtype = torch.short, device = self.device)
+            self.qscale_max = qscale_max.to(torch.float16)
+            self.qgroups = torch.tensor(qgroups, dtype = torch.short)
 
             # Apply
 
@@ -438,6 +448,9 @@ class AdaptiveGPTQ:
 
 
     def pack(self, key, qparams):
+
+        self.qgroups = self.qgroups.to("cuda:0")
+        # self.qscale_max = self.qscale_max.to("cude:0")
 
         assert qparams.scale_bits in [4]
         # assert self.columns % 32 == 0

@@ -5,9 +5,10 @@ on:
     inputs:
       pypi:
         description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
-        default: '1'
+        default: '0'
         required: true
         type: string
+
 
 permissions:
   contents: write
@@ -18,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         pyver: ["3.8", "3.9", "3.10", "3.11"]
         cuda: ["11.7.0", "11.8.0", "12.1.1"]
     defaults:
@@ -41,12 +42,13 @@ jobs:
           swap-storage: false
           
       - uses: actions/checkout@v3
+
       - uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.pyver }}
-        
+
       - name: Setup Mamba
-        uses: conda-incubator/setup-miniconda@v2.2.0
+        uses: conda-incubator/setup-miniconda@v2.3.0
         with:
           activate-environment: "build"
           python-version: ${{ matrix.pyver }}
@@ -55,7 +57,7 @@ jobs:
           use-mamba: true
           add-pip-as-python-dependency: true
           auto-activate-base: false
-          
+
       - name: Install Dependencies
         run: |
           $cudaVersion = $env:CUDAVER
@@ -69,11 +71,12 @@ jobs:
           if (!(mamba list cuda)[-1].contains('cuda')) {sleep -s 10; mamba install -y 'cuda' $cudaChannels.TrimEnd().Split()}
           if (!(mamba list cuda)[-1].contains('cuda')) {throw 'CUDA Toolkit failed to install!'}
           
-          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.1.0"}
+          if ([version]$env:CUDAVER -lt [version]'11.8.0') {$torchver = "torch==2.0.1"} else {$torchver = "torch==2.2.0"}
           python -m pip install $torchver --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           
-          python -m pip install build wheel safetensors sentencepiece ninja
-        
+          python -m pip install --upgrade setuptools==65.5.1
+          python -m pip install --upgrade build wheel safetensors sentencepiece ninja
+
       - name: Build Wheel
         id: build-wheel
         run: |
@@ -157,7 +160,7 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          python -m pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install build wheel ninja
         
       - name: Build Wheel

@@ -101,6 +101,7 @@ QMatrix::QMatrix
     rows_4 = 0;
     rows_3 = 0;
     rows_2 = 0;
+    kernel_p = 0;
 
     if (!is_gptq)
     {
@@ -111,6 +112,7 @@ QMatrix::QMatrix
         for (int i = 0; i < groups; i++)
         {
             int bits = cpu_q_groups[i * 2];
+            kernel_p |= (1 << (bits - 1));
 
             int rows;
             if (i < groups - 1)
@@ -456,7 +458,7 @@ __global__ void reconstruct_kernel
     while (k < rows_2 && k < end_k)
     {
         if (k == nextgroup) { group++; qs_h = dq_scale(b_q_scale_.item(group, n), b_q_scale_max[group]); nextgroup += b_q_group_map[k * 2 + 1]; qs_h2 = __halves2half2(qs_h, qs_h); }
-        for (int p = 0; p < 2; p++)
+        for (int p = 0; p < 1; p++)
         {
             half2 dq[8];
             uint32_t q_0 = *b_ptr; b_ptr += size_n;
@@ -465,7 +467,7 @@ __global__ void reconstruct_kernel
             half* dqh = (half*) dq;
             for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);
         }
-        k += 32;
+        k += 16;
     }
 }
 

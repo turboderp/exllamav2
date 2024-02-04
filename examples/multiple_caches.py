@@ -5,6 +5,7 @@ from exllamav2 import(
     ExLlamaV2,
     ExLlamaV2Config,
     ExLlamaV2Cache,
+    ExLlamaV2Cache_8bit,
     ExLlamaV2Tokenizer,
 )
 
@@ -19,7 +20,7 @@ import random
 
 # Initialize model
 
-model_directory =  "/mnt/str/models/_exl2/llama2-7b-exl2/4.0bpw/"
+model_directory =  "/mnt/str/models/llama2-7b-exl2/4.0bpw/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
@@ -31,6 +32,10 @@ print("Loading model: " + model_directory)
 model.load()
 
 tokenizer = ExLlamaV2Tokenizer(config)
+
+# Cache mode
+
+cache_8bit = False
 
 # Create some sampling settings
 
@@ -79,7 +84,10 @@ while len(prompts) or len(input_ids):
 
         prompt = prompts.pop()
         ids = tokenizer.encode(prompt)
-        cache = ExLlamaV2Cache(model, max_seq_len = 256)  # (max_seq_len could be different for each cache)
+        if cache_8bit:
+            cache = ExLlamaV2Cache_8bit(model, max_seq_len = 256)  # (max_seq_len could be different for each cache)
+        else:
+            cache = ExLlamaV2Cache(model, max_seq_len = 256)  # (max_seq_len could be different for each cache)
 
         model.forward(ids[:, :-1], cache, preprocess_only = True)
         input_ids.append(ids)

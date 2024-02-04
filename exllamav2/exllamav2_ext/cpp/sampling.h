@@ -13,6 +13,8 @@ void apply_rep_penalty_cpu
     const float penalty_max,
     const int sustain,
     const int decay,
+    const float alpha_frequency,
+    const float alpha_presence,
     const int seq_len,
     float* logits
 );
@@ -23,6 +25,7 @@ void softmax_cpu
     const float temperature,
     const float* logits,
     const bool* logits_filter,
+    const float exponent,
     float* output
 );
 
@@ -61,6 +64,14 @@ int top_p_cpu
     float* temp_probs,
     int* temp_indices,
     float top_p
+);
+
+int top_a_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float top_a
 );
 
 int min_p_cpu
@@ -112,7 +123,10 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temperature
+    float temp,
+    float min_temp,
+    float max_temp,
+    float temp_exponent
 );
 
 int multinomial_cpu
@@ -124,5 +138,3 @@ int multinomial_cpu
 );
 
 #endif
-
-

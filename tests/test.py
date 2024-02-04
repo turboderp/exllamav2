@@ -74,6 +74,7 @@ def test_gen_normal(prompt, max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -103,6 +104,7 @@ def test_gen_streaming(prompt, max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -150,6 +152,7 @@ def test_gen_batch(max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -183,6 +186,7 @@ def test_multicache(max_new_tokens):
     settings.temperature = 0.85
     settings.top_k = 50
     settings.top_p = 0.8
+    settings.top_a = 0.0
     settings.token_repetition_penalty = 1.15
     settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
@@ -239,8 +243,8 @@ def tests(model_dir, cache_8bit, use_split):
     unload()
 
 
-q_model_directory = "/mnt/str/models/_exl2/mistral-7b-instruct-exl2/4.0bpw/"
-f_model_directory = "/mnt/str/models/_exl2/tinyllama-1b-ckpt503/"
+q_model_directory = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
+f_model_directory = "/mnt/str/models/tinyllama-1b-ckpt503/"
 
 tests(q_model_directory, False, False)
 tests(q_model_directory, False, True)

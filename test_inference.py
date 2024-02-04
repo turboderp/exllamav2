@@ -13,12 +13,19 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
+from exllamav2.attn import ExLlamaV2Attention
+from exllamav2.mlp import ExLlamaV2MLP
+from exllamav2.moe_mlp import ExLlamaV2MoEMLP
+
 import argparse, os, math, time
 import pandas, fastparquet
 import torch
 import torch.nn.functional as F
 from conversion.tokenize import get_tokens
 from conversion.quantize import list_live_tensors
+import gc
+
+# from exllamav2.mlp import set_catch
 
 import sys
 import json
@@ -39,23 +46,117 @@ parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt (
 parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no. tokens")
 parser.add_argument("-ps", "--prompt_speed", action = "store_true", help = "Test prompt processing (batch) speed over context length")
 parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
+parser.add_argument("-mix", "--mix_layers", type = str, help = "Load replacement layers from secondary model. Example: --mix_layers 1,6-7:/mnt/models/other_model")
+parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip warmup before testing model")
+parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Load model layer by layer (perplexity evaluation only)")
+parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512 (experimental)")
+parser.add_argument("-rr", "--rank_reduce", type = str, help = "Rank-reduction for MLP layers of model, in reverse order (for experimentation)")
 
 # Initialize model and tokenizer
 
 model_init.add_args(parser)
 args = parser.parse_args()
+
+# Check conflicting settings
+
+if args.stream_layers:
+    if args.eval_token or args.eval_token_8bit:
+        print(" ## Can't test token ppl while streaming layers")
+        sys.exit()
+    if args.prompt:
+        print(" ## Can't generate while streaming layers")
+        sys.exit()
+    if args.speed or args.prompt_speed:
+        print(" ## Can't test speed while streaming layers")
+        sys.exit()
+    if args.gpu_split:
+        print(" ## Can only use one GPU when streaming layers")
+        sys.exit()
+    if args.eval_dataset:
+        if args.length and args.eval_length != args.length:
+            print(" !! Overriding model context length to match eval row length")
+        args.length = args.eval_length
+
+# Init
+
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args, allow_auto_split = True)
+model, tokenizer = model_init.init(args, allow_auto_split = True, skip_load = args.stream_layers, benchmark = True)
+cache = None
 
 # Auto split
 
-if not model.loaded:
+if not model.loaded and not args.stream_layers:
+
+    if args.mix_layers:
+        print(" !! Warning, auto split does not account for VRAM requirement of replacement layers")
 
     print(" -- Loading model...")
     cache = ExLlamaV2Cache(model, lazy = True)
+    t = time.time()
     model.load_autosplit(cache)
-    cache = None
+    t = time.time() - t
+    print(f" -- Loaded model in {t:.4f} seconds")
+
+if args.stream_layers:
+
+    stream_batch_size = 2
+    model.config.max_batch_size = stream_batch_size
+    model.load(lazy = True)
+
+# Rank reduction
+
+if args.rank_reduce:
+
+    if args.stream_layers:
+        print(" ## --rank_reduce can not be combined with --stream_layers")
+        sys.exit()
+
+    rr = args.rank_reduce.split(",")
+    idx = len(model.modules) - 1
+    for r in rr:
+        k = float(r)
+
+        while True:
+            idx -= 1
+            module = model.modules[idx]
+            if isinstance(module, ExLlamaV2MLP): break
+            if isinstance(module, ExLlamaV2MoEMLP): break
+            if idx < 0:
+                print(" ## Not enough layers")
+                sys.exit()
+
+        print(f" -- Reducing {module.key} ({module.name}) to {k * 100:.2f}%")
+        module.rank_reduce(k)
+
+# Replacement
+
+if args.mix_layers:
+    intervals_, extra_dir = args.mix_layers.split(":")
+
+    print(f" -- Loading replacement layers from: {extra_dir}")
+
+    extra_config = ExLlamaV2Config()
+    extra_config.model_dir = extra_dir
+    extra_config.prepare()
+    intervals = intervals_.split(",")
+    for interval in intervals:
+        ab = interval.split("-")
+        a, b = int(ab[0]), int(ab[-1])
+        for idx in range(a, b + 1):
+            print(f" --   Layer {idx}...")
+            layerkey = "model.layers." + str(idx) + "."
+            remove = [k for k in model.config.tensor_file_map.keys() if k.startswith(layerkey)]
+            replace = [k for k in extra_config.tensor_file_map.keys() if k.startswith(layerkey)]
+            # reload = [k for k in model.modules_dict.keys() if k.startswith(layerkey)]
+            for k in remove: del model.config.tensor_file_map[k]
+            for k in replace: model.config.tensor_file_map[k] = extra_config.tensor_file_map[k]
+            # for k in reload:
+            #     model.modules_dict[k].unload()
+            #     model.modules_dict[k].load()
+            if not args.stream_layers:
+                model.modules[idx * 2 + 1].reload()
+                model.modules[idx * 2 + 2].reload()
 
 # Test generation
 
@@ -63,7 +164,8 @@ if args.prompt:
 
     with torch.inference_mode():
 
-        cache = ExLlamaV2Cache(model)
+        if cache is None:
+            cache = ExLlamaV2Cache(model)
 
         ids = tokenizer.encode(args.prompt)
         tokens_prompt = ids.shape[-1]
@@ -71,16 +173,16 @@ if args.prompt:
         print(f" -- Warmup...")
 
         generator = ExLlamaV2BaseGenerator(model, cache, tokenizer)
-        generator.warmup()
+        if not args.no_warmup: generator.warmup()
 
         print(f" -- Generating...")
         print()
 
         settings = ExLlamaV2Sampler.Settings()
-        settings.temperature = 0.85
-        settings.top_k = 50
-        settings.top_p = 0.8
-        settings.token_repetition_penalty = 1.15
+        settings.temperature = 0.75
+        settings.top_k = 100
+        settings.top_p = 0.75
+        settings.token_repetition_penalty = 1.05
         settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
         time_begin = time.time()
@@ -98,52 +200,163 @@ if args.prompt:
     total_gen = time_end - time_begin
     print(f" -- Response generated in {total_gen:.2f} seconds, {args.tokens} tokens, {args.tokens / total_gen:.2f} tokens/second (includes prompt eval.)")
 
-    cache = None
-
 
 # Test perplexity
 
-if args.eval_dataset:
+if args.eval_dataset or args.standard_perplexity:
 
     with torch.inference_mode():
 
-        eval_dataset = args.eval_dataset
-        eval_rows = args.eval_rows
-        eval_length = args.eval_length
-
         print(f" -- Running perplexity test")
-        print(f" -- Dataset: {eval_dataset}")
-        print(f" -- Tokenizing eval data, {eval_rows} rows x {eval_length} tokens...")
 
-        eval_tokens = get_tokens(eval_rows, eval_length, eval_dataset, tokenizer)
+        if args.standard_perplexity:
 
-        print(f" -- Inference", end = "")
-        sys.stdout.flush()
+            if args.eval_dataset:
+                print(f" !! Note, overriding specified --eval_dataset with {args.standard_perplexity}")
+
+            from datasets import load_dataset
+
+            if args.standard_perplexity == "wiki2":
+                ds = "wikitext"
+                part = "wikitext-2-raw-v1"
+                split = "test"
+            # if args.standard_perplexity == "c4":
+            #     ds = "allenai/c4"
+            #     part = "allenai--c4"
+            #     split = "train"
+
+            print(f" -- Loading dataset {ds}, {part}, {split}...")
+            test = load_dataset(ds, part, split = split)
+
+            print(f" -- Tokenizing samples...")
+            text = "\n\n".join(test["text"])
+            eval_tokens = tokenizer.encode(text)
+
+            stride = 512
+            seqs = []
+            eval_len = []
+            a = 0
+            while True:
+                b = a + model.config.max_seq_len
+                if b > eval_tokens.shape[-1]: break
+                seqs.append(eval_tokens[:, a:b])
+                eval_len.append(b if a == 0 else stride)
+                a += stride
+
+            eval_tokens = torch.cat(seqs, dim = 0)
+
+        else:
+
+            eval_dataset = args.eval_dataset
+            eval_rows = args.eval_rows
+            eval_length = args.eval_length
+
+            print(f" -- Dataset: {eval_dataset}")
+            print(f" -- Tokenizing eval data, {eval_rows} rows x {eval_length} tokens...")
+
+            eval_tokens = get_tokens(eval_rows, eval_length, eval_dataset, tokenizer)
+            eval_len = [eval_tokens.shape[1]] * eval_tokens.shape[0]
 
         logprob_sum = 0.0
         logprob_count = 0
 
-        cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
+        def ppl(input_ids__, logits__, lengths__):
 
-        for i in range(eval_tokens.shape[0]):
+            logprob_sum_ = 0.0
+            logprob_count_ = 0
 
-            if i % 10 == 0: print(".", end = "")
+            assert logits__.shape[0] == input_ids__.shape[0]
+            ll = logits__.shape[1]
+
+            for bi in range(logits__.shape[0]):
+                cl = max(ll - lengths__[bi], 0)
+                logits_ = logits__[bi:bi+1, cl:, :]
+                input_ids_ = input_ids__[bi:bi+1, cl:]
+
+                chunksize = logits_.shape[1] * 4000 // logits_.shape[2] + 1
+                b_ = 0
+                while b_ < logits_.shape[1]:
+                    a_ = b_
+                    b_ = min(b_ + chunksize, logits_.shape[1])
+
+                    logits_f = logits_[:, a_:b_, :].float() + 1e-10
+                    target_ids = input_ids_[:, a_ + 1:b_ + 1].to(logits_.device)
+
+                    log_probs = F.log_softmax(logits_f, dim=-1)
+                    token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
+                    logprob_sum_ += token_log_probs.sum().item()
+                    logprob_count_ += target_ids.numel()
+
+            return logprob_sum_, logprob_count_
+
+        if args.stream_layers:
+
+            print(f" -- Inference (streamed)", end = "")
             sys.stdout.flush()
 
-            input_ids = eval_tokens[i:i+1, :]
+            batch_size, seq_len = eval_tokens.shape
+            attn_params = ExLlamaV2Attention.Params(stream_batch_size, seq_len, 0, None, None)
+            # attn_mask = model.build_attn_mask(stream_batch_size, seq_len, 0, None, "cuda:0")
 
-            input_ids = input_ids[:, :]
-            if cache is not None: cache.current_seq_len = 0
-            logits = model.forward(input_ids, cache)
-            logits = logits[:, :-1, :]
-            logits = logits.float() + 1e-10
+            for idx, module in enumerate(model.modules):
+                module.set_device_idx(-1 if idx == 0 else 0)
 
-            target_ids = input_ids[:, 1:].to(logits.device)
+            model.modules[0].load()
+            hidden_state = model.modules[0].forward(eval_tokens)
+            model.modules[0].unload()
 
-            log_probs = F.log_softmax(logits, dim = -1)
-            token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
-            logprob_sum += token_log_probs.sum().item()
-            logprob_count += target_ids.numel()
+            for idx, module in enumerate(model.modules):
+                if idx == 0: continue
+
+                print(".", end = "")
+                sys.stdout.flush()
+                module.load()
+
+                b = 0
+                while b < eval_tokens.shape[0]:
+                    a = b
+                    b = min(b + stream_batch_size, eval_tokens.shape[0])
+                    x = hidden_state[a:b, :, :].to("cuda:0")
+                    x = module.forward(x, cache = None, attn_params = attn_params, past_len = 0, loras = None)
+
+                    if idx < len(model.modules) - 1:
+                        hidden_state[a:b, :, :] = x.to("cpu")
+
+                    else:
+                        input_ids = eval_tokens[a:b, :]
+                        logits = x[:, :-1, :]
+
+                        logprob_sum__, logprob_count__ = ppl(input_ids, logits, eval_len[a:b])
+                        logprob_sum += logprob_sum__
+                        logprob_count += logprob_count__
+
+                module.unload()
+
+            print()
+
+        else:
+
+            print(f" -- Inference", end = "")
+            sys.stdout.flush()
+
+            if cache is None:
+                cache = ExLlamaV2Cache(model, max_seq_len = eval_length) if eval_length > model.config.max_input_len else None
+
+            for i in range(eval_tokens.shape[0]):
+
+                if i % 10 == 0: print(".", end = "")
+                sys.stdout.flush()
+
+                input_ids = eval_tokens[i:i+1, :]
+
+                input_ids = input_ids[:, :]
+                if cache is not None: cache.current_seq_len = 0
+                logits = model.forward(input_ids, cache)
+                logits = logits[:, :-1, :]
+
+                logprob_sum__, logprob_count__ = ppl(input_ids, logits, eval_len[i:i+1])
+                logprob_sum += logprob_sum__
+                logprob_count += logprob_count__
 
         print()
 
@@ -156,6 +369,8 @@ if args.eval_dataset:
             global logits, target_ids, log_probs, token_log_probs
             global mean_log_prob, perplexity
 
+            # set_catch("model.layers.3")
+
             logprob_sum = 0
             logprob_count = 0
 
@@ -164,7 +379,7 @@ if args.eval_dataset:
                 cache.current_seq_len = 0
 
                 for j in range(eval_tokens.shape[1] - 1):
-                    if j % 256 == 0: print(".", end="")
+                    if j % 256 == 0: print(".", end = "")
                     sys.stdout.flush()
 
                     input_ids = eval_tokens[i:i + 1, j:j + 1]
@@ -175,24 +390,33 @@ if args.eval_dataset:
                     logprob_sum += log_probs[0, 0, eval_tokens[i, j+1]]
                     logprob_count += 1
 
+                    # mean_log_prob = logprob_sum / logprob_count
+                    # perplexity = math.exp(-mean_log_prob)
+                    # print(f" -- Token {j}: {perplexity:.4f}")
+
             print()
 
             mean_log_prob = logprob_sum / logprob_count
             perplexity = math.exp(-mean_log_prob)
             print(f" -- Evaluation perplexity: {perplexity:.4f}")
 
-
         if args.eval_token:
-            print(f" -- Inference (token)", end="")
-            sys.stdout.flush()
-            cache = ExLlamaV2Cache(model, max_seq_len = eval_length)
-            test_ppl_token()
+            if args.standard_perplexity:
+                print(f" !! Note, can't evalutate token perplexity on standard test")
+            else:
+                print(f" -- Inference (token)", end = "")
+                sys.stdout.flush()
+                cache = ExLlamaV2Cache(model, max_seq_len = eval_length)
+                test_ppl_token()
 
         if args.eval_token_8bit:
-            print(f" -- Inference (token, 8-bit cache)", end="")
-            sys.stdout.flush()
-            cache = ExLlamaV2Cache_8bit(model, max_seq_len = eval_length)
-            test_ppl_token()
+            if args.standard_perplexity:
+                print(f" !! Note, can't evalutate token perplexity on standard test")
+            else:
+                print(f" -- Inference (token, 8-bit cache)", end = "")
+                sys.stdout.flush()
+                cache = ExLlamaV2Cache_8bit(model, max_seq_len = eval_length)
+                test_ppl_token()
 
 
 # Test prompt speed
@@ -201,13 +425,15 @@ if args.prompt_speed:
 
     with torch.inference_mode():
 
-        cache = ExLlamaV2Cache(model)
+        if cache is None:
+            cache = ExLlamaV2Cache(model)
 
         ids = torch.randint(0, model.config.vocab_size - 1, (1, model.config.max_seq_len))
 
         print(f" -- Warmup...")
 
-        model.forward(ids[:, -1:])
+        if not args.no_warmup:
+            model.forward(ids[:, -1:])
 
         print(f" -- Measuring prompt speed...")
 
@@ -229,8 +455,6 @@ if args.prompt_speed:
             current_len = min(current_len + 128, model.config.max_seq_len)
             if current_len == current_len_: break
 
-    cache = None
-
 
 # Test token speed
 
@@ -238,7 +462,9 @@ if args.speed:
 
     with torch.inference_mode():
 
-        cache = ExLlamaV2Cache(model)
+        if cache is None:
+            cache = ExLlamaV2Cache(model)
+        cache.current_seq_len = 0
 
         print(f" -- Measuring token speed...")
         ids = tokenizer.encode("X")
@@ -266,3 +492,4 @@ if args.speed:
             current_idx = next_stop
             next_stop = min(next_stop + 128, model.config.max_seq_len)
             if next_stop == current_idx: break
+

@@ -1,5 +1,5 @@
 import torch
-from safetensors import safe_open
+from exllamav2.fasttensors import STFile
 import os, glob, json
 
 class ExLlamaV2Config:
@@ -42,8 +42,12 @@ class ExLlamaV2Config:
     vocab_size: int
     rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
     head_dim: int = 128                         # Constant for all Llama models, except 3b
+    num_experts: int = None
+    num_experts_per_token: int = None
 
-    qkv_embed: bool = False
+    checkpoint_fused_mlp: bool = False
+
+    fasttensors: bool = False   # Experimental, Linux only
 
 
     def __init__(self):
@@ -54,7 +58,6 @@ class ExLlamaV2Config:
 
     def set_low_mem(self):
 
-        self.qkv_embed = True
         self.max_input_len = 1024
         self.max_attention_size = 1024 ** 2
 
@@ -74,13 +77,84 @@ class ExLlamaV2Config:
         with open(self.model_config, encoding = "utf8") as f:
             read_config = json.load(f)
 
-            if "LlamaForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
-            elif "MistralForCausalLM" in read_config["architectures"]: self.architecture = "Llama"
-            elif "YiForCausalLM" in read_config["architectures"]: self.architecture = "Yi"
+            layer_keys = []
+            expect_keys = []
+            layer_keys_llama_norms = [["input_layernorm"],
+                                      ["post_attention_layernorm"]]
+            layer_keys_yi_norms = [["ln1", "input_layernorm"],
+                                   ["ln2", "post_attention_layernorm"]]
+            layer_keys_llama_attn = [["self_attn.q_proj"],
+                                     ["self_attn.k_proj"],
+                                     ["self_attn.v_proj"],
+                                     ["self_attn.o_proj"]]
+            layer_keys_llama_mlp = [["mlp.down_proj"],
+                                    ["mlp.gate_proj"],
+                                    ["mlp.up_proj"]]
+            layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
+                                           ["mlp.swiglu.w3"]]
+            expect_keys_llama = [["lm_head"],
+                                 ["model.norm"],
+                                 ["model.embed_tokens"]]
+
+            if "LlamaForCausalLM" in read_config["architectures"]:
+                self.architecture = "Llama"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "MistralForCausalLM" in read_config["architectures"]:
+                self.architecture = "Llama"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "YiForCausalLM" in read_config["architectures"]:
+                self.architecture = "Yi"
+                layer_keys += \
+                    layer_keys_yi_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "MixtralForCausalLM" in read_config["architectures"]:
+                self.architecture = "Mixtral"
+                self.num_experts = read_config["num_local_experts"]
+                self.num_experts_per_token = read_config["num_experts_per_tok"]
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    [[f"block_sparse_moe.experts.{e}.w{w}" for e in range(8) for w in range(3)]] + \
+                    [["block_sparse_moe.gate"]]
+                expect_keys += \
+                    expect_keys_llama
+
+            elif "OrionForCausalLM" in read_config["architectures"]:
+                self.architecture = "Orion"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
+
+
             else:
                 print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
                 print(f" !! Loading as LlamaForCausalLM")
                 self.architecture = "Llama"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_llama
 
             self.bos_token_id = read_config["bos_token_id"] if "bos_token_id" in read_config else 1
             self.eos_token_id = read_config["eos_token_id"] if "eos_token_id" in read_config else 2
@@ -106,6 +180,15 @@ class ExLlamaV2Config:
             if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
             elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
 
+            rs = read_config.get("rope_scaling", None)
+            if rs and "factor" in rs:
+                factor = rs["factor"]
+                scaling_type = rs.get("type", None)
+                if scaling_type == "linear":
+                    self.scale_pos_emb = factor
+                # elif scaling_type == "yarn":
+                #     self.scale_alpha_value = factor
+
         # Model dimensions
 
         self.head_dim = self.hidden_size // self.num_attention_heads
@@ -123,31 +206,20 @@ class ExLlamaV2Config:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
         for st_file in self.tensor_files:
+            f = STFile.open(st_file, fast = self.fasttensors)
+            for key in f.get_dict():
+                self.tensor_file_map[key] = st_file
 
-            with safe_open(st_file, framework = "pt", device = "cpu") as f:
-                for key in f.keys():
-                    self.tensor_file_map[key] = st_file
+        # For loading checkpoints with fused MLP layers
+
+        if self.architecture == "Llama" or self.architecture == "Yi":
+            if "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
+                "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
+                for x in layer_keys_llama_mlp: layer_keys.remove(x)
+                layer_keys += layer_keys_llama_mlp_swiglu
+                self.checkpoint_fused_mlp = True
 
         # Make sure we found all the layers we need
-
-        layer_keys = [
-            ["input_layernorm", "ln1"],
-            ["post_attention_layernorm", "ln2"],
-            ["self_attn.q_proj"],
-            ["self_attn.k_proj"],
-            ["self_attn.v_proj"],
-            ["self_attn.o_proj"],
-            ["mlp.down_proj"],
-            ["mlp.gate_proj"],
-            ["mlp.up_proj"]
-        ]
-
-        expect_keys = []
-        expect_keys += [
-            ["lm_head"],
-            ["model.norm"],
-            ["model.embed_tokens"]
-        ]
 
         for layer_idx in range(self.num_hidden_layers):
             for ks in layer_keys:

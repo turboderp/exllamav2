@@ -1,5 +1,6 @@
 #include "sampling.h"
 #include "util.h"
+#include "algorithm"
 #include <math.h>
 #include <vector>
 #include <queue>
@@ -17,11 +18,15 @@ void apply_rep_penalty_cpu
     const float penalty_max,
     const int sustain,
     const int decay,
+    const float alpha_frequency,
+    const float alpha_presence,
     const int seq_len,
     float* logits
 )
 {
-    if (vocab_size != g_vocab_size)
+    // Map of which logits have already had penalties applied
+
+    if (vocab_size > g_vocab_size)
     {
         if (g_rep_mask) free(g_rep_mask);
         g_vocab_size = vocab_size;
@@ -30,23 +35,63 @@ void apply_rep_penalty_cpu
 
     memset(g_rep_mask, 0, g_vocab_size * sizeof(bool));
 
-    float v = penalty_max;
-    float dv = decay ? (1.0f - penalty_max) / (float) decay : 0.0f;
+    // Penalties to apply
 
-    int s = sustain == -1 ? seq_len : sustain;
-    int beg = seq_len - s - decay;
+    float rep_p = penalty_max;          // Multiplicative penalty, as in HF repetition penalty
+    float freq_p = alpha_frequency;     // Additive frequency penalty, as in OAI spec
+    float pres_p = alpha_presence;      // Additive presence penalty, as in OAI spec
+
+    // Change in penalties over the "decay" range of the context
+
+    float d_rep_p = 0.0f;
+    float d_freq_p = 0.0f;
+    float d_pres_p = 0.0f;
+    if (decay)
+    {
+        d_rep_p = (1.0f - rep_p) / (float) decay;
+        d_freq_p = (0.0f - freq_p) / (float) decay;
+        d_pres_p = (0.0f - pres_p) / (float) decay;
+    }
+
+    // "sustain" length, range of the context over which penalties are fixed
+
+    int sust = sustain == -1 ? seq_len : sustain;
+
+    // First token of the penalty range, including decay
+
+    int beg = seq_len - sust - decay;
     if (beg < 0) beg = 0;
+
+    // Iter over context, backwards
 
     for (int i = seq_len; i > beg;)
     {
         uint64_t t = sequence[--i];
+
+        // If t has not been encountered before, apply rep_p and pres_p
+
         if (!g_rep_mask[t])
         {
-            if (logits[t] > 0.0) logits[t] /= v;
-            else logits[t] *= v;
-            g_rep_mask[t] = true;
+            if (logits[t] > 0.0) logits[t] /= rep_p;  // Multiplicative penalty
+            else logits[t] *= rep_p;
+
+            logits[t] -= pres_p;  // Additive penalty
+
+            g_rep_mask[t] = true;  // Only once per logit
         }
-        if (--s < 0) v += dv;
+
+        // Apply freq_p penalty for every time a token is encountered, so the total additive penalty is count * freq_p
+
+        logits[t] -= freq_p;
+
+        // If we're in the "decay" range, reduce penalties for every token
+
+        if (--sust < 0)
+        {
+            rep_p += d_rep_p;
+            freq_p += d_freq_p;
+            pres_p += d_pres_p;
+        }
     }
 }
 
@@ -56,6 +101,7 @@ void softmax_cpu
     const float temperature,
     const float* logits,
     const bool* logits_filter,
+    const float exponent,
     float* output
 )
 {
@@ -63,31 +109,31 @@ void softmax_cpu
     float itemp = 1.0f / temperature;
     float maxl = -1e38;
 
-    #pragma unroll(32)
     for (int i = 0; i < vocab_size; i++)
     {
         if (!logits_filter[i]) continue;
         maxl = fmaxf(logits[i], maxl);
     }
-    maxl *= itemp;
 
-    #pragma unroll(32)
     for (int i = 0; i < vocab_size; i++)
     {
         if (!logits_filter[i]) continue;
-        float e = expf(logits[i] * itemp - maxl);
+        float l = logits[i] - maxl;
+        if (exponent == 2.0f)
+            l *= -l;
+        else if (exponent != 1.0f)
+            l = -powf(fabs(l), exponent);
+        float e = expf(l * itemp);
         output[i] = e;
         esum += e;
     }
+
     float isum = 1.0f / esum;
 
-    #pragma unroll(32)
     for (int i = 0; i < vocab_size; i++)
     {
-        if (logits_filter[i])
-            output[i] *= isum;
-        else
-            output[i] = 0.0f;
+        if (logits_filter[i]) output[i] *= isum;
+        else output[i] = 0.0f;
     }
 
 //    printf("Softmax:");
@@ -96,11 +142,12 @@ void softmax_cpu
 //    {
 //        if (logits_filter[i])
 //        {
-//            printf("%d, %f\n", i, output[i]);
 //            summ += output[i];
+//            if (output[i] < 1e-5) continue;
+//            printf("%d, %f\n", i, output[i]);
 //        }
 //    }
-//    printf("sum: %f\n", summ);
+//    printf("sum: %f\n\n", summ);
 }
 
 int post_softmax_temperature
@@ -108,13 +155,44 @@ int post_softmax_temperature
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    float temperature
+    float temperature,
+    float min_temp = 0,
+    float max_temp = 0.0f,
+    float temp_exponent = 1.0f
 )
 {
+    if (max_temp > min_temp)
+    {
+        // Calculate entropy of the softmax probabilities
+
+        float entropy = 0.0f;
+        for (int i = 0; i < num_candidates; ++i)
+        {
+            float prob = temp_probs[i];
+            if (prob > 0.0f) entropy -= prob * logf(prob);  // Ensure no log(0)
+        }
+
+        // Calculate maximum possible entropy
+
+        float max_entropy = -logf(1.0f / num_candidates);
+
+        // Guard against division by zero
+
+        if (max_entropy == 0.0f) max_entropy = 1.0f;
+
+        // Normalize the entropy
+
+        float normalized_entropy = entropy / max_entropy;
+
+        // Map the normalized entropy to the desired temperature range using the power function
+
+        temperature = min_temp + (max_temp - min_temp) * powf(normalized_entropy, temp_exponent);
+    }
+
 //    printf("---- pre\n");
 //    for (int i = 0; i < num_candidates; ++i)
 //        DBGIF(i, temp_probs[i]);
-
+    
     float psum = 0.0f;
     float itemp = 1.0f / temperature;
     for (int i = 0; i < num_candidates; ++i)
@@ -137,7 +215,6 @@ int post_softmax_temperature
 
     return num_candidates;
 }
-
 
 void normalize_cpu
 (
@@ -449,6 +526,28 @@ int keep_threshold
     return i;
 }
 
+int top_a_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    float top_a
+)
+{
+    // Find top probability
+    float top_prob = temp_probs[0];
+    for (int i = 1; i < num_candidates; i++)
+        if (temp_probs[i] > top_prob) top_prob = temp_probs[i];
+
+    // Calculate the threshold
+    float threshold = top_a * top_prob * top_prob;
+
+    // Use the keep_threshold function to keep only probabilities above the threshold
+    int n = keep_threshold(num_candidates, temp_probs, temp_indices, threshold);
+
+    return n;
+}
+
 int min_p_cpu
 (
     const int num_candidates,
@@ -642,6 +741,16 @@ int multinomial_cpu
     float random
 )
 {
+//    printf("\n-----------------\n");
+//    int j = 0;
+//    for (int i = 0; i < num_candidates && j < 10; ++i)
+//    {
+//        if (temp_probs[i] < 1e-6) continue;
+//        DBGIF(i, temp_probs[i]);
+//        j++;
+//    }
+//    printf("-----------------\n");
+
     int idx = 0;
     float accum = temp_probs[idx];
 
@@ -658,6 +767,5 @@ int multinomial_cpu
 
     return 1;
 }
-
 
 

@@ -1,6 +1,7 @@
 #include "q_attn.cuh"
 #include "q_gemm.cuh"
 #include "rms_norm.cuh"
+#include "layer_norm.cuh"
 #include "rope.cuh"
 #include "util.cuh"
 #include "lora.cuh"
@@ -70,6 +71,8 @@ __global__ void update_cache_kernel
 QAttn::QAttn
 (
     half* _layernorm,
+    half* _layernorm_bias,
+    bool _layernorm_is_rms,
     float _norm_epsilon,
     QMatrix* _q_proj,
     QMatrix* _k_proj,
@@ -88,6 +91,8 @@ QAttn::QAttn
     int _max_seq_len
 ):
     layernorm(_layernorm),
+    layernorm_bias(_layernorm_bias),
+    layernorm_is_rms(_layernorm_is_rms),
     norm_epsilon(_norm_epsilon),
     q_proj(_q_proj),
     k_proj(_k_proj),
@@ -128,7 +133,10 @@ void QAttn::forward_cuda_1
     half* lora_temp
 )
 {
-    rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
+    if (layernorm_is_rms)
+        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
+    else
+        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
 
     gemm_half_q_half_cuda(cublas_handle, temp_state, q_proj, temp_q, q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, temp_state, k_proj, temp_k, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);

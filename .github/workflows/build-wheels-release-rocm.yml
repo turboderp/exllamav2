@@ -61,9 +61,9 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          pip3 install torch==2.1.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          pip3 install torch==2.2.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
-        
+
       - name: Build Wheel
         id: build-wheel
         run: |

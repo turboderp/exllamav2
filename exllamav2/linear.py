@@ -25,10 +25,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     lora_a_tensors: dict
     lora_b_tensors: dict
 
-    def __init__(self, model, key, in_features, out_features, has_bias):
+    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True):
         super().__init__(model, key)
 
-        self.padding = -out_features % 32
+        if pad32: self.padding = -out_features % 32
 
         self.in_features = in_features
         self.out_features = out_features + self.padding
@@ -56,6 +56,16 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.linear.weight = w
 
 
+    def matrix_shape(self):
+
+        return self.in_features, self.out_features
+
+
+    def numel(self):
+
+        return self.in_features * self.out_features
+
+
     def unload(self):
 
         if self.linear is not None:
@@ -69,6 +79,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         if self.q_tensors is not None:
             for k, v in self.q_tensors.items(): del v
             self.q_tensors = None
+
+        self.temp_dq = None
 
 
     def get_weight(self):
@@ -98,7 +110,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.out_features * self.model.config.max_input_len * self.model.config.max_batch_size * 4 + 128
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None, force_recons = False, force_cuda = False, position_offsets = None):
+    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, force_recons = False, force_cuda = False):
 
         # Linear forward
 
@@ -121,8 +133,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         if loras is not None:
             for lora in loras:
-                lora_a = self.lora_a_tensors[lora] if lora in self.lora_a_tensors else None
-                lora_b = self.lora_b_tensors[lora] if lora in self.lora_b_tensors else None
+                lora_a = self.lora_a_tensors.get(lora)
+                lora_b = self.lora_b_tensors.get(lora)
                 if lora_a is not None:
                     assert lora_b is not None
                     temp = torch.matmul(hidden_states, lora_a)
@@ -189,3 +201,16 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     def is_quant(self):
 
         return self.q_handle is not None
+
+
+    def rank_reduce(self, k):
+
+        assert not self.is_quant(), "Can't rank-reduce quantized layer"
+
+        weight = self.linear.weight.data.float()
+        max_rank = min(weight.shape[0], weight.shape[1])
+        desired_rank = int(max_rank * k)
+        results = torch.svd_lowrank(weight, q = desired_rank, niter = 10)
+        weight_approx = results[0] @ torch.diag(results[1]) @ results[2].T
+
+        self.linear.weight = nn.Parameter(weight_approx.half())

@@ -171,6 +171,5 @@ class ExLlamaV2BaseGenerator:
         self.cache.current_seq_len = 0
         self.model.forward(input_ids[:, :-1], self.cache, input_mask = mask, preprocess_only = True, loras = loras, position_offsets = position_offsets)
 
-        self.sequence_ids = input_ids.clone()
         self.sequence_ids = input_ids
 

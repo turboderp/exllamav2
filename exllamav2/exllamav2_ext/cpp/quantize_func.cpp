@@ -17,30 +17,23 @@ void quantize_range
 {
     int columns = weights.size(1);
     int hcolumns = hessian_inv.size(1);
+    TORCH_CHECK(hcolumns == weights.size(0), "H shape mismatch")
 
     for (int c = a; c < b; c++)
     {
-        quantize_cuda
+        fused_quantize_adjust_cuda
         (
-            ((const float*) weights.data_ptr()) + c * columns,
-            ((float*) quant.data_ptr()) + c * columns,
+            (const float*) weights.data_ptr(),
+            (float*) quant.data_ptr(),
             (const float*) scale.data_ptr(),
-            out_q.device().is_meta() ? NULL : ((uint16_t*) out_q.data_ptr()) + c * columns,
-            1,
+            out_q.device().is_meta() ? NULL : (uint16_t*) out_q.data_ptr(),
+            (const float*) hessian_inv.data_ptr(),
+            (float*) error.data_ptr(),
+            c,          // row
+            hcolumns,   // rows
             columns,
             qzero,
             maxq
-        );
-
-        adjust_error_row_cuda
-        (
-            (const float*) hessian_inv.data_ptr(),
-            (float*) error.data_ptr(),
-            (const float*) weights.data_ptr(),
-            (const float*) quant.data_ptr(),
-            c,
-            columns,
-            hcolumns
         );
 
         vv_mul_sub_cuda

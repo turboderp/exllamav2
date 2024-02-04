@@ -1,7 +1,7 @@
 import torch
+import torch.nn.functional as F
 from exllamav2 import ExLlamaV2Tokenizer
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-
 
 class ExLlamaV2Sampler:
 
@@ -11,9 +11,17 @@ class ExLlamaV2Sampler:
         token_repetition_range = -1
         token_repetition_decay = 0
 
+        token_frequency_penalty = 0.0
+        token_presence_penalty = 0.0
+
         temperature = 0.8
+        smoothing_factor = 0.0
+        min_temp = 0
+        max_temp = 0.0
+        temp_exponent = 1.0
         top_k = 50
         top_p = 0.8
+        top_a = 0.0
         min_p = 0
         tfs = 0
         typical = 0
@@ -26,6 +34,7 @@ class ExLlamaV2Sampler:
         mirostat_mu = None  # (re)initialized from mirostat_tau on first sample
 
         token_bias = None
+        cfg_scale = None
 
         filters = []
 
@@ -38,9 +47,17 @@ class ExLlamaV2Sampler:
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
 
+            c.token_frequency_penalty = self.token_frequency_penalty
+            c.token_presence_penalty = self.token_presence_penalty
+
             c.temperature = self.temperature
+            c.smoothing_factor = self.smoothing_factor
+            c.min_temp = self.min_temp
+            c.max_temp = self.max_temp
+            c.temp_exponent = self.temp_exponent
             c.top_k = self.top_k
             c.top_p = self.top_p
+            c.top_a = self.top_a
             c.min_p = self.min_p
             c.tfs = self.tfs
             c.typical = self.typical
@@ -64,7 +81,9 @@ class ExLlamaV2Sampler:
             c.token_repetition_penalty = self.token_repetition_penalty
             c.token_repetition_range = self.token_repetition_range
             c.token_repetition_decay = self.token_repetition_decay
-            c.token_bias = self.token_bias
+            c.token_frequency_penalty = self.token_frequency_penalty
+            c.token_presence_penalty = self.token_presence_penalty
+            c.token_bias = None
             c.filters = []
             return c
 
@@ -95,24 +114,44 @@ class ExLlamaV2Sampler:
 
         assert logits.shape[1] == 1, "Logits tensor is incorrect shape, must be (bsz, 1, vocab_size)"
         assert prefix_token is None or prefix_token.shape == (batch_size, 1), "Prefix token list doesn't match batch shape"
-        assert batch_size == 1 or len(settings.filters) == 0, "Filters not implemented for batch size > 1"
+        if settings.cfg_scale is not None: assert batch_size == 2, "CFG requires logits to be bsz 2"
+        else: assert batch_size == 1 or len(settings.filters) == 0, "Filters not implemented for batch size > 1"
 
-        logits = logits.clone().squeeze(1)
-        logit_filter = torch.ones((batch_size, vocab_size), dtype = torch.bool)
+        logits = logits.squeeze(1)
+
+        # CFG
+
+        if settings.cfg_scale is not None:
+
+            logits = F.log_softmax(logits, dim = -1)
+            logits = settings.cfg_scale * logits[0] + (1 - settings.cfg_scale) * logits[1]
+            logits = logits.unsqueeze(0)
+            batch_size = 1
+
+        # Prepare filter
+
+        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
+        ext_c.fast_fill_cpu_ones_bool(logit_filter)
 
         # Repetition penalty
 
-        if settings.token_repetition_penalty != 1.0:
+        if settings.token_repetition_penalty != 1.0 or \
+            settings.token_frequency_penalty != 0.0 or \
+            settings.token_presence_penalty != 0.0:
 
-            ext_c.apply_rep_penalty(sequence_ids,
+            ext_c.apply_rep_penalty(sequence_ids[:, :],
                                     settings.token_repetition_penalty,
                                     settings.token_repetition_range,
                                     settings.token_repetition_decay,
+                                    settings.token_frequency_penalty,
+                                    settings.token_presence_penalty,
                                     logits)
 
         # Token bias
 
-        if settings.token_bias is not None: logits += settings.token_bias
+        if settings.token_bias is not None:
+            # logits = logits + settings.token_bias
+            ext_c.fast_fadd_cpu(logits, settings.token_bias)
 
         # Evaluate filters
 
@@ -168,6 +207,7 @@ class ExLlamaV2Sampler:
                                1.0 if settings.temperature_last else settings.temperature,
                                settings.top_k,
                                settings.top_p,
+                               settings.top_a,
                                settings.min_p,
                                settings.tfs,
                                settings.typical,
@@ -179,7 +219,11 @@ class ExLlamaV2Sampler:
                                settings.mirostat_mu if settings.mirostat else [],
                                settings.mirostat_tau,
                                settings.mirostat_eta,
-                               settings.temperature if settings.temperature_last else 1.0)
+                               settings.temperature if settings.temperature_last else 1.0,
+                               settings.min_temp,
+                               settings.max_temp,
+                               settings.temp_exponent,
+                               settings.smoothing_factor)
 
         if settings.mirostat: settings.mirostat_mu = m
 

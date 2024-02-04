@@ -17,12 +17,14 @@
 #include "cuda/q_mlp.cuh"
 #include "cuda/q_gemm.cuh"
 #include "cuda/rms_norm.cuh"
+#include "cuda/layer_norm.cuh"
 #include "cuda/rope.cuh"
 #include "cuda/cache.cuh"
 #include "cuda/h_gemm.cuh"
 
 #include "cpp/quantize_func.h"
 #include "cpp/sampling.h"
+#include "cpp/safetensors.h"
 
 #include "cpp/util.h"
 
@@ -308,6 +310,8 @@ void gemm_half_q_half
 uintptr_t make_q_attn
 (
     torch::Tensor layernorm,
+    torch::Tensor layernorm_bias,
+    bool layernorm_is_rms,
     float norm_epsilon,
     uintptr_t q_q_proj,
     uintptr_t q_k_proj,
@@ -341,6 +345,8 @@ uintptr_t make_q_attn
     QAttn* attn = new QAttn
     (
         (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
+        (half*) layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
+        layernorm_is_rms,
         norm_epsilon,
         qm_q_proj,
         qm_k_proj,
@@ -508,6 +514,8 @@ int q_attn_set_loras
 uintptr_t make_q_mlp
 (
     torch::Tensor layernorm,
+    torch::Tensor layernorm_bias,
+    bool layernorm_is_rms,
     float norm_epsilon,
     uintptr_t q_gate,
     uintptr_t q_up,
@@ -529,7 +537,9 @@ uintptr_t make_q_mlp
 
     QMLP* mlp = new QMLP
     (
-        (half*) layernorm.data_ptr(),
+        (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
+        (half*) layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
+        layernorm_is_rms,
         norm_epsilon,
         qm_gate,
         qm_up,
@@ -629,6 +639,159 @@ int q_mlp_set_loras
     return max_rank;
 }
 
+// Quant MoE MLP
+
+uintptr_t make_q_moe_mlp
+(
+    torch::Tensor layernorm,
+    torch::Tensor layernorm_bias,
+    bool layernorm_is_rms,
+    float norm_epsilon,
+    torch::Tensor gate,
+    int num_experts,
+    int num_experts_per_token,
+    const std::vector<uintptr_t>& w1,
+    const std::vector<uintptr_t>& w2,
+    const std::vector<uintptr_t>& w3,
+    torch::Tensor temp_state,
+    torch::Tensor temp_gathered_state,
+    torch::Tensor temp_a,
+    torch::Tensor temp_b,
+    torch::Tensor temp_logits,
+    torch::Tensor temp_dq,
+    int max_rows
+)
+{
+    std::vector<QMatrix*> qm_w1;
+    std::vector<QMatrix*> qm_w2;
+    std::vector<QMatrix*> qm_w3;
+
+    for (int i = 0; i < (int)w1.size(); ++i)
+    {
+        qm_w1.push_back(reinterpret_cast<QMatrix*> (w1[i]));
+        qm_w2.push_back(reinterpret_cast<QMatrix*> (w2[i]));
+        qm_w3.push_back(reinterpret_cast<QMatrix*> (w3[i]));
+    }
+
+    TORCH_CHECK_DTYPE(layernorm, kHalf);
+    TORCH_CHECK_SHAPES(layernorm, 0, gate, 1, 1);  // gate is transposed
+    TORCH_CHECK(gate.size(0) == num_experts, "gate output features != num_experts");
+
+    int hidden_dim = gate.size(1);
+
+    QMoEMLP* moe_mlp = new QMoEMLP
+    (
+        (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
+        (half*) layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
+        layernorm_is_rms,
+        norm_epsilon,
+        (half*) gate.data_ptr(),
+        num_experts,
+        num_experts_per_token,
+        qm_w1,
+        qm_w2,
+        qm_w3,
+        (half*) temp_state.data_ptr(),
+        (half*) temp_gathered_state.data_ptr(),
+        (half*) temp_a.data_ptr(),
+        (half*) temp_b.data_ptr(),
+        (half*) temp_logits.data_ptr(),
+        (half*) temp_dq.data_ptr(),
+        max_rows,
+        hidden_dim
+    );
+
+    return reinterpret_cast<uintptr_t> (moe_mlp);
+}
+
+void free_q_moe_mlp
+(
+   uintptr_t handle
+)
+{
+    QMoEMLP* moe_mlp = reinterpret_cast<QMoEMLP*> (handle);
+    delete moe_mlp;
+}
+
+void q_moe_mlp_forward_
+(
+    uintptr_t q_moe_mlp,
+    torch::Tensor x
+//    const std::vector<uintptr_t>& loras,
+//    torch::Tensor loras_temp
+)
+{
+    QMoEMLP* moe_mlp = reinterpret_cast<QMoEMLP*> (q_moe_mlp);
+    TORCH_CHECK_DTYPE(x, kHalf);
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+
+    TORCH_CHECK(x.size(1) == moe_mlp->hidden_dim, "x is wrong shape");
+    TORCH_CHECK(x.size(0) <= moe_mlp->max_rows, "Too many rows in x");
+
+    moe_mlp->forward_
+    (
+        at::cuda::getCurrentCUDABlasHandle(),
+        (half*) x.data_ptr(),
+        x.size(0), // rows
+        x.size(1) // columns == hidden_size
+//        loras,
+//        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+    );
+}
+
+//int q_moe_mlp_set_loras
+//(
+//    uintptr_t q_moe_mlp,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w1_lora_a,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w1_lora_b,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w2_lora_a,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w2_lora_b,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w3_lora_a,
+//    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w3_lora_b
+//)
+//{
+//    QMoEMLP* moe_mlp = reinterpret_cast<QMoEMLP*> (q_moe_mlp);
+//
+//    int max_rank = 0;
+//
+//    for (int i = 0; i < moe_mlp->num_experts; ++i)
+//    {
+//        moe_mlp->w1_lora[i].clear();
+//        moe_mlp->w2_lora[i].clear();
+//        moe_mlp->w3_lora[i].clear();
+//
+//        for (const auto& pair : w1_lora_a[i])
+//        {
+//            int rank = pair.second.size(-1);
+//            if (rank > max_rank) max_rank = rank;
+//            half* a = (half*) pair.second.data_ptr();
+//            half* b = (half*) w1_lora_b[i][pair.first].data_ptr();
+//            moe_mlp->w1_lora[i][pair.first] = std::make_tuple(a, b, rank);
+//        }
+//
+//        for (const auto& pair : w2_lora_a[i])
+//        {
+//            int rank = pair.second.size(-1);
+//            if (rank > max_rank) max_rank = rank;
+//            half* a = (half*) pair.second.data_ptr();
+//            half* b = (half*) w2_lora_b[i][pair.first].data_ptr();
+//            moe_mlp->w2_lora[i][pair.first] = std::make_tuple(a, b, rank);
+//        }
+//
+//        for (const auto& pair : w3_lora_a[i])
+//        {
+//            int rank = pair.second.size(-1);
+//            if (rank > max_rank) max_rank = rank;
+//            half* a = (half*) pair.second.data_ptr();
+//            half* b = (half*) w3_lora_b[i][pair.first].data_ptr();
+//            moe_mlp->w3_lora[i][pair.first] = std::make_tuple(a, b, rank);
+//        }
+//    }
+//
+//    return max_rank;
+//}
+
 
 // RoPE rotary positional embeddings, in-place
 
@@ -715,6 +878,56 @@ void rms_norm_
 }
 
 
+// Layernorm
+
+void layer_norm
+(
+    torch::Tensor x,
+    torch::Tensor w,
+    torch::Tensor b,
+    torch::Tensor y,
+    float epsilon
+)
+{
+    TORCH_CHECK_DTYPE(x, kHalf);
+    TORCH_CHECK_DTYPE(w, kHalf);
+    TORCH_CHECK_DTYPE_OPT(b, kHalf);
+    TORCH_CHECK_DTYPE(y, kHalf);
+    TORCH_CHECK_SHAPES(x, 1, w, 0, 1);
+    TORCH_CHECK_SHAPES(x, 1, w, 0, 1);
+    TORCH_CHECK_SHAPES(x, 0, y, 0, 1);
+    TORCH_CHECK_SHAPES(x, 1, y, 1, 1);
+    TORCH_CHECK_SHAPES_OPT(w, 0, b, 0, 1);
+
+    int rows = x.size(0);
+    int dim = x.size(1);
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+
+    layer_norm_cuda
+    (
+        (half*) x.data_ptr(),
+        (half*) w.data_ptr(),
+        b.device().is_meta() ? NULL : (half*) b.data_ptr(),
+        (half*) y.data_ptr(),
+        epsilon,
+        rows,
+        dim
+    );
+}
+
+void layer_norm_
+(
+    torch::Tensor x,
+    torch::Tensor w,
+    torch::Tensor b,
+    float epsilon
+)
+{
+    layer_norm(x, w, b, x, epsilon);
+}
+
+
 // Sampling
 
 void apply_rep_penalty
@@ -723,6 +936,8 @@ void apply_rep_penalty
     float penalty_max,
     int sustain,
     int decay,
+    float alpha_frequency,
+    float alpha_presence,
     torch::Tensor logits
 )
 {
@@ -743,6 +958,8 @@ void apply_rep_penalty
             penalty_max,
             sustain,
             decay,
+            alpha_frequency,
+            alpha_presence,
             seq_len,
             ((float*) logits.data_ptr()) + i * vocab_size
         );
@@ -755,6 +972,7 @@ std::vector<float> sample_basic
     float temperature,
     int top_k,
     float top_p,
+    float top_a,
     float min_p,
     float tfs,
     float typical,
@@ -766,7 +984,11 @@ std::vector<float> sample_basic
     std::vector<float>& mirostat_mu,
     float mirostat_tau,
     float mirostat_eta,
-    float post_temperature
+    float post_temperature,
+    float min_temp = 0,
+    float max_temp = 0.0f,
+    float temp_exponent = 1.0f,
+    float smoothing_factor = 0.0f
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -798,13 +1020,20 @@ std::vector<float> sample_basic
 
     for (int i = 0; i < bsz; i++)
     {
+        float exponent = 1.0f;
+        if (smoothing_factor > 0)
+        {
+            exponent = 2.0f;
+            temperature /= smoothing_factor;
+        }
         softmax_cpu
         (
-            vocab_size,
-            temperature,
-            logits_ptr + i * vocab_size,
-            logits_filter_ptr + i * vocab_size,
-            temp_probs
+             vocab_size,
+             temperature,
+             logits_ptr + i * vocab_size,
+             logits_filter_ptr + i * vocab_size,
+             exponent,
+             temp_probs
         );
 
         if (top_k == 1)
@@ -827,6 +1056,12 @@ std::vector<float> sample_basic
         if (top_p > 0.0f && top_p < 1.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (top_a > 0.0f)
+        {
+            num_candidates = top_a_cpu(num_candidates, temp_probs, temp_indices, top_a);
             normalize_cpu(num_candidates, temp_probs);
         }
 
@@ -854,10 +1089,11 @@ std::vector<float> sample_basic
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (post_temperature != 1.0f)
+        if (post_temperature != 1.0f || max_temp > min_temp)
         {
-            num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature);
+            num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature, min_temp, max_temp, temp_exponent);
         }
+
 
         num_candidates = multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
         output_tokens[i] = temp_indices[0];
@@ -870,7 +1106,7 @@ std::vector<float> sample_basic
 
         // Derive some more totally random numbers for subsequent samples in the same batch
 
-        if (bsz > 10000)
+        if (bsz > 1)
         {
             float r = random;
             for (int j = 0; j < 10; ++j)
@@ -1035,6 +1271,42 @@ void gemm_half_half_half
     }
 }
 
+// Utility functions
+
+void fast_fill_cpu_ones_bool(torch::Tensor tensor)
+{
+    TORCH_CHECK_DTYPE(tensor, kBool);
+    memset(tensor.data_ptr(), 1, tensor.numel());
+}
+
+void fast_fadd_cpu(torch::Tensor a, torch::Tensor b)
+{
+    TORCH_CHECK_DTYPE(a, kFloat);
+    TORCH_CHECK_DTYPE(b, kFloat);
+    int n = a.numel();
+    int m = b.numel();
+    int bsz = n / m;
+    TORCH_CHECK(bsz * m == n, "a and b are incompatible sizes");
+
+    float* a_ptr = (float*) a.data_ptr();
+    float* b_ptr = (float*) b.data_ptr();
+
+    for (int i = 0; i < bsz; ++i)
+    {
+        float* b_ptr_ = b_ptr;
+        for (int j = 0; j < m; ++j)
+            *a_ptr++ += *b_ptr_++;
+    }
+}
+
+void fast_copy_cpu(torch::Tensor a, torch::Tensor b)
+{
+    size_t size_a = a.numel() * torch::elementSize(torch::typeMetaToScalarType(a.dtype()));
+    size_t size_b = b.numel() * torch::elementSize(torch::typeMetaToScalarType(b.dtype()));
+    TORCH_CHECK(size_a == size_b, "a and b are not the same size");
+    memcpy(a.data_ptr(), b.data_ptr(), size_a);
+}
+
 // Bindings
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
@@ -1048,8 +1320,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("make_q_mlp", &make_q_mlp, "make_q_mlp");
     m.def("free_q_mlp", &free_q_mlp, "free_q_mlp");
+    m.def("make_q_moe_mlp", &make_q_moe_mlp, "make_q_moe_mlp");
+    m.def("free_q_moe_mlp", &free_q_moe_mlp, "free_q_moe_mlp");
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
+    m.def("q_moe_mlp_forward_", &q_moe_mlp_forward_, "q_moe_mlp_forward_");
+//    m.def("q_moe_mlp_set_loras", &q_moe_mlp_set_loras, "q_moe_mlp_set_loras");
     m.def("make_q_attn", &make_q_attn, "make_q_attn");
     m.def("free_q_attn", &free_q_attn, "free_q_attn");
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");
@@ -1059,13 +1335,25 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("gemm_half_q_half", &gemm_half_q_half, "gemm_half_q_half");
     m.def("rms_norm", &rms_norm, "rms_norm");
     m.def("rms_norm_", &rms_norm_, "rms_norm_");
+    m.def("layer_norm", &layer_norm, "layer_norm");
+    m.def("layer_norm_", &layer_norm_, "layer_norm_");
     m.def("rope_", &rope_, "rope_");
     m.def("apply_rep_penalty", &apply_rep_penalty, "apply_rep_penalty");
+//    m.def("apply_freq_penalty", &apply_freq_penalty, "apply_freq_penalty");
+//    m.def("apply_presence_penalty", &apply_presence_penalty, "apply_presence_penalty");
     m.def("sample_basic", &sample_basic, "sample_basic");
     m.def("logit_filter_exclusive", &logit_filter_exclusive, "logit_filter_exclusive");
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");
     m.def("fp8_to_fp16", &fp8_to_fp16, "fp8_to_fp16");
     m.def("gemm_half_half_half", &gemm_half_half_half, "gemm_half_half_half");
+    m.def("fast_fill_cpu_ones_bool", &fast_fill_cpu_ones_bool, "fast_fill_cpu_ones_bool");
+    m.def("fast_fadd_cpu", &fast_fadd_cpu, "fast_fadd_cpu");
+    m.def("fast_copy_cpu", &fast_copy_cpu, "fast_copy_cpu");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
+    m.def("safetensors_open", &safetensors_open, "safetensors_open");
+    m.def("safetensors_close", &safetensors_close, "safetensors_close");
+    m.def("safetensors_load", &safetensors_load, "safetensors_load");
+    m.def("safetensors_pinned_buffer", &safetensors_pinned_buffer, "safetensors_pinned_buffer");
+    m.def("safetensors_free_pinned_buffer", &safetensors_free_pinned_buffer, "safetensors_free_pinned_buffer");
 }

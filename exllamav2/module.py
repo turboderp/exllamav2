@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from exllamav2.config import ExLlamaV2Config
+from exllamav2.fasttensors import STFile
 from safetensors import safe_open
-
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -39,20 +39,27 @@ class ExLlamaV2Module:
         self.footprint = -1
 
 
+    def numel(self):
+
+        return 0
+
+
     def device(self):
 
         return _torch_device(self.device_idx)
 
 
-    def load_multi(self, keys, measure = False):
+    def load_multi(self, keys, override_key = None, measure = False):
 
         tensors = {}
         submap = {}
         submap_i = {}
         size = 0
 
+        key = self.key if override_key is None else override_key
+
         for k in keys:
-            ck = self.key + "." + k
+            ck = key + "." + k
             if ck in self.model.config.tensor_file_map:
                 submap[k] = self.model.config.tensor_file_map[ck]
 
@@ -62,37 +69,53 @@ class ExLlamaV2Module:
             submap_i[v].append(k)
 
         for v, ks in submap_i.items():
-            with safe_open(v, framework="pt", device="cpu") as st:
-                for k in ks:
-                    if measure:
-                        size += _tsize(st, self.key + "." + k)
-                    else:
-                        tensors[k] = st.get_tensor(self.key + "." + k).to(self.device())
+            stfile = STFile.open(v, fast = self.model.config.fasttensors)
+            for k in ks:
+                if measure:
+                    size += stfile.measure(key + "." + k)
+                else:
+                    tensors[k] = stfile.get_tensor(key + "." + k, device = self.device())
+
+            # with safe_open(v, framework="pt", device="cpu") as st:
+            #     for k in ks:
+            #         if measure:
+            #             size += _tsize(st, key + "." + k)
+            #         else:
+            #             tensors[k] = st.get_tensor(key + "." + k).to(self.device())
 
         return size if measure else tensors
 
 
-    def load_weight(self):
+    def load_weight(self, override_key = None):
+
+        key = self.key if override_key is None else override_key
 
         # EXL2
 
-        if self.key + ".q_weight" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm"])
+        if key + ".q_weight" in self.model.config.tensor_file_map:
+            qtensors = self.load_multi(["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm"], override_key = override_key)
             qtensors["q_perm"] = torch.argsort(qtensors["q_invperm"]).to(torch.int)
             return qtensors
 
         # GPTQ
 
-        if self.key + ".qweight" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx"])
+        if key + ".qweight" in self.model.config.tensor_file_map:
+            qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx"], override_key = override_key)
+            qtensors["scales"] = qtensors["scales"].half()
             return qtensors
 
         # Torch
 
-        if self.key + ".weight" in self.model.config.tensor_file_map:
-            tensor = self.load_multi(["weight"])["weight"]
-            tensor = tensor.half()
-            return nn.Parameter(tensor)
+        if key + ".weight" in self.model.config.tensor_file_map:
+            if key + ".bias" in self.model.config.tensor_file_map:
+                tensors = self.load_multi(["weight", "bias"], override_key = override_key)
+                tensor = tensors["weight"].half()
+                bias = tensors["bias"].half()
+                return nn.Parameter(tensor), nn.Parameter(bias)
+            else:
+                tensors = self.load_multi(["weight"], override_key = override_key)
+                tensor = tensors["weight"].half()
+                return nn.Parameter(tensor)
 
         # No weights found for key
 
@@ -132,3 +155,8 @@ class ExLlamaV2Module:
 
     def is_quant(self):
         return False
+
+
+    def reload(self):
+        self.unload()
+        self.load()

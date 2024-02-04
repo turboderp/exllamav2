@@ -1,27 +1,10 @@
 #include "q_gemm.cuh"
 #include "util.cuh"
-#include "matrix_view.cuh"
 #include "../config.h"
-
-#include "quant/qdq_2.cuh"
-#include "quant/qdq_3.cuh"
-#include "quant/qdq_4.cuh"
-#include "quant/qdq_5.cuh"
-#include "quant/qdq_6.cuh"
-#include "quant/qdq_8.cuh"
-
-#define GPTQ_BLOCK_KN_SIZE 128
-#define GPTQ_BLOCK_M_SIZE_MAX 8
-#define GPTQ_MAX_GROUPS_IN_BLOCK (GPTQ_BLOCK_KN_SIZE / 32)
-
-#define EXL2_BLOCK_KN_SIZE 64
-#define EXL2_BLOCK_M_SIZE_MAX 8
-#define EXL2_MAX_GROUPS_IN_BLOCK (EXL2_BLOCK_KN_SIZE / 32)
 
 #define CLEAR_N_SIZE 256
 
-#include "q_gemm_kernel.cuh"
-#include "q_gemm_kernel_gptq.cuh"
+#include "comp_units/kernel_select.cuh"
 
 void gemm_half_q_half_cuda_part
 (
@@ -32,7 +15,10 @@ void gemm_half_q_half_cuda_part
     int size_n,
     int size_k,
     int m_count,
-    bool clear
+    bool clear,
+    const half* r_weights,
+    int r_weights_stride,
+    bool mul_r_weights
 )
 {
     if (!b->is_gptq)
@@ -45,7 +31,10 @@ void gemm_half_q_half_cuda_part
         gridDim.y = DIVIDE(size_m, m_count);
         gridDim.z = DIVIDE(size_k, EXL2_BLOCK_KN_SIZE);
 
-        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(true, m_count);
+        int max_m = min(EXL2_BLOCK_M_SIZE_MAX, size_m);
+
+        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(max_m, b->kernel_p, r_weights != NULL, mul_r_weights);
+        if (!kernel) return;
 
         kernel<<<gridDim, blockDim>>>
         (
@@ -66,7 +55,9 @@ void gemm_half_q_half_cuda_part
             b->rows_4,
             b->rows_3,
             b->rows_2,
-            clear
+            clear,
+            r_weights,
+            r_weights_stride
         );
     }
     else
@@ -76,14 +67,18 @@ void gemm_half_q_half_cuda_part
         blockDim.y = 1;
         blockDim.z = 1;
         gridDim.x = DIVIDE(size_n, GPTQ_BLOCK_KN_SIZE * 4);
-        gridDim.y = DIVIDE(size_m, m_count);
+        gridDim.y = DIVIDE(size_m, GPTQ_BLOCK_M_SIZE_MAX);
         gridDim.z = DIVIDE(size_k, GPTQ_BLOCK_KN_SIZE);
 
-        fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(true, m_count);
+        int max_m = min(GPTQ_BLOCK_M_SIZE_MAX, size_m);
 
-//         DBGX((uint64_t) b->cuda_q_perm);
-//         DBGI(b->rows_4);
-//         DBGI(b->height);
+        fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(GPTQ_BLOCK_M_SIZE_MAX, r_weights != NULL, mul_r_weights);
+        if (!kernel) return;
+
+//         DBGX((uint64_t) r_weights);
+//         if (r_weights)
+//             print_global_mem(r_weights, 1, 1, 1);
+//         DBGI(r_weights_stride);
 
         kernel<<<gridDim, blockDim>>>
         (
@@ -99,7 +94,9 @@ void gemm_half_q_half_cuda_part
             b->gptq_groupsize,
             b->cuda_q_perm,
             b->rows_4,
-            clear
+            clear,
+            r_weights,
+            r_weights_stride
         );
     }
 }
@@ -115,13 +112,14 @@ void gemm_half_q_half_cuda
     int size_k,
     bool clear,
     half* temp_dq,
-    bool force_cuda
+    bool force_cuda,
+    const half* r_weights,
+    const int r_weights_stride,
+    bool mul_r_weights
 )
 {
     if (size_m > MAX_Q_GEMM_ROWS && !force_cuda)
     {
-        //printf("cublas\n");
-
         // Reconstruct FP16 matrix, then cuBLAS
 
         if (!temp_dq) temp_dq = b->temp_dq;
@@ -161,26 +159,11 @@ void gemm_half_q_half_cuda
     }
     else
     {
-        //printf("cuda\n");
-
         // Quantized matmul
 
-        //if (clear) clear_tensor_cuda(c, size_m, size_n);
-
         int block_m_size_max = b->is_gptq ? GPTQ_BLOCK_M_SIZE_MAX : EXL2_BLOCK_M_SIZE_MAX;
-        int max_chunks = size_m / block_m_size_max;
-        int last_chunk = max_chunks * block_m_size_max;
-        int last_chunk_size = size_m - last_chunk;
-
-        if (max_chunks)
-        {
-            gemm_half_q_half_cuda_part(a, b, c, last_chunk, size_n, size_k, block_m_size_max, clear);
-        }
-
-        if (last_chunk_size)
-        {
-            gemm_half_q_half_cuda_part(a + last_chunk * size_k, b, c + last_chunk * size_n, last_chunk_size, size_n, size_k, last_chunk_size, clear);
-        }
+        int block_m = min(size_m, block_m_size_max);
+        gemm_half_q_half_cuda_part(a, b, c, size_m, size_n, size_k, block_m, clear, r_weights, r_weights_stride, mul_r_weights);
     }
 }
 
@@ -205,11 +188,10 @@ void clear_tensor_cuda
     int size_n
 )
 {
-    return;
-    dim3 blockDim, gridDim;
-    blockDim.x = CLEAR_N_SIZE;
-    blockDim.y = 1;
-    gridDim.x = DIVIDE(size_n / 8, CLEAR_N_SIZE);
-    gridDim.y = size_m;
-    clear_kernel<<<gridDim, blockDim>>>(c, size_m, size_n);
+//     dim3 blockDim, gridDim;
+//     blockDim.x = CLEAR_N_SIZE;
+//     blockDim.y = 1;
+//     gridDim.x = DIVIDE(size_n / 8, CLEAR_N_SIZE);
+//     gridDim.y = size_m;
+//     clear_kernel<<<gridDim, blockDim>>>(c, size_m, size_n);
 }

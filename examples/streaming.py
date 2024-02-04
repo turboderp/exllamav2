@@ -18,7 +18,7 @@ import time
 
 # Initialize model and cache
 
-model_directory = "/mnt/str/models/_exl2/mistral-7b-instruct-exl2/4.0bpw/"
+model_directory = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
@@ -42,6 +42,7 @@ settings = ExLlamaV2Sampler.Settings()
 settings.temperature = 0.85
 settings.top_k = 50
 settings.top_p = 0.8
+settings.top_a = 0.0
 settings.token_repetition_penalty = 1.05
 settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 

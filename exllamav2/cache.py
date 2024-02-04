@@ -37,6 +37,9 @@ class ExLlamaV2CacheBase:
 
         assert copy_from is None or lazy == False, "Cannot use lazy cache initialization while copying"
 
+        if copy_from:
+            self.current_seq_len = copy_from.current_seq_len
+
         if not lazy:
 
             for i in range(self.num_hidden_layers):
