@@ -62,7 +62,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.no_tokens = torch.empty((1, 0), dtype = torch.long)
         self.no_probs = torch.empty((1, 0), dtype = torch.float)
-        self.no_logits = torch.empty((0, self.model.config.vocab_size), dtype = torch.float)
+        self.no_logits = torch.empty((0, ((self.model.config.vocab_size + 31) // 32) * 32), dtype = torch.float)
 
         if draft_model:
             self.draft_model = draft_model
@@ -193,7 +193,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.held_text += new_text
         self.held_tokens = torch.cat([self.held_tokens, next_token], dim = -1)
         self.held_probs = torch.cat([self.held_probs, next_prob], dim = -1)
-        self.held_logits = torch.cat([self.held_logits, next_logits], dim = 0)
+        if self.return_logits:
+            self.held_logits = torch.cat([self.held_logits, next_logits], dim = 0)
 
         # Return now if newly added token ends a filter
 
