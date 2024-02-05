@@ -8,4 +8,4 @@ venv
 dist
 
 # produced by `pip install -e .`
-exllamav2_ext.cpython-312-x86_64-linux-gnu.so
+exllamav2_ext.cpython-*.so
