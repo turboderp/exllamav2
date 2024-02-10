@@ -35,11 +35,11 @@ void normalize_cpu
     float* probs
 );
 
-int greedy_sample
+int pre_sort_descending
 (
     const int num_candidates,
-    const float* probs,
-    const bool* logits_filter
+    float* arr,
+    int* idx
 );
 
 int sort_descending

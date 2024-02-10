@@ -230,27 +230,6 @@ void normalize_cpu
     for (int i = 0; i < num_candidates; i++) probs[i] *= isum;
 }
 
-int greedy_sample
-(
-    const int num_candidates,
-    const float* probs,
-    const bool* logits_filter
-)
-{
-    int maxidx = -1;
-    float max = -1e38;
-
-    for(int i = 1; i < num_candidates; i++)
-    {
-        if (logits_filter[i] && (maxidx == -1 || probs[i] > max))
-        {
-            max = probs[i];
-            maxidx = i;
-        }
-    }
-    return maxidx;
-}
-
 template <typename T>
 inline void swap(T &a, T &b)
 {
@@ -417,9 +396,29 @@ int top_k_cpu
 {
     //TIME_START;
 
+    // Special case greedy sampling
+
+    if (top_k == 1)
+    {
+        int maxidx = -1;
+        float max = -1e38;
+
+        for(int i = 0; i < num_candidates; i++)
+        {
+            if (maxidx == -1 || temp_probs[i] > max)
+            {
+                max = temp_probs[i];
+                maxidx = i;
+            }
+        }
+
+        swap<float>(temp_probs[0], temp_probs[maxidx]);
+        swap<int>(temp_indices[0], temp_indices[maxidx]);
+    }
+
     // Use min-heap for lower values of K
 
-    if (top_k <= top_k_heap_threshold)
+    else if (top_k <= top_k_heap_threshold)
     {
         std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> min_heap;
 
@@ -762,8 +761,8 @@ int multinomial_cpu
         accum += temp_probs[idx];
     }
 
-    temp_probs[0] = temp_probs[idx];
-    temp_indices[0] = temp_indices[idx];
+    swap<float>(temp_probs[0], temp_probs[idx]);
+    swap<int>(temp_indices[0], temp_indices[idx]);
 
     return 1;
 }

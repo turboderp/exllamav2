@@ -22,7 +22,8 @@ std::vector<float> sample_basic
     float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
-    torch::Tensor output_probs,     // shape [bsz, 1]
+    torch::Tensor output_probs,     // shape [bsz, 1] or [bsz, 1, num_probs]
+    torch::Tensor output_ptokens,   // None or [bsz, 1, num_probs]
     torch::Tensor logit_filter,     // shape [bsz, vocab_size]
     bool mirostat,
     std::vector<float>& mirostat_mu,

@@ -63,7 +63,8 @@ std::vector<float> sample_basic
     float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
-    torch::Tensor output_probs,     // shape [bsz, 1]
+    torch::Tensor output_probs,     // shape [bsz, 1] or [bsz, 1, num_probs]
+    torch::Tensor output_ptokens,   // None or [bsz, 1, num_probs]
     torch::Tensor logit_filter,     // shape [bsz, vocab_size]
     bool mirostat,
     std::vector<float>& mirostat_mu,
@@ -90,10 +91,11 @@ std::vector<float> sample_basic
 
     float* temp_probs = (float*) malloc(vocab_size * sizeof(float));
     int* temp_indices = (int*) malloc(vocab_size * sizeof(int));
-
-//    int64_t* output_tokens_ptr = (int64_t*) output_tokens.data_ptr();
-//    float* output_probs_ptr = (float*) output_tokens.data_ptr();
     float* logits_ptr = (float*) logits.data_ptr();
+
+    int num_probs = 1;
+    if (output_probs.dim() == 3)
+        num_probs = output_probs.size(2);
 
     bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
 
@@ -111,6 +113,7 @@ std::vector<float> sample_basic
             exponent = 2.0f;
             temperature /= smoothing_factor;
         }
+
         softmax_cpu
         (
              vocab_size,
@@ -121,14 +124,6 @@ std::vector<float> sample_basic
              temp_probs
         );
 
-        if (top_k == 1)
-        {
-            int index = greedy_sample(vocab_size, logits_ptr + i * vocab_size, logits_filter_ptr + i * vocab_size);
-            output_tokens[i] = index;
-            output_probs[i] = temp_probs[index];
-            continue;
-        }
-
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
@@ -138,51 +133,83 @@ std::vector<float> sample_basic
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (top_p > 0.0f && top_p < 1.0f)
+        if (num_candidates > 1 && top_p > 0.0f && top_p < 1.0f)
         {
             num_candidates = top_p_cpu(num_candidates, temp_probs, temp_indices, top_p);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (top_a > 0.0f)
+        if (num_candidates > 1 && top_a > 0.0f)
         {
             num_candidates = top_a_cpu(num_candidates, temp_probs, temp_indices, top_a);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (min_p > 0.0f && min_p < 1.0f)
+        if (num_candidates > 1 && min_p > 0.0f && min_p < 1.0f)
         {
             num_candidates = min_p_cpu(num_candidates, temp_probs, temp_indices, min_p);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (tfs > 0.0f && tfs < 1.0f)
+        if (num_candidates > 1 && tfs > 0.0f && tfs < 1.0f)
         {
             num_candidates = tfs_cpu(num_candidates, temp_probs, temp_indices, tfs);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (typical > 0.0f && typical < 1.0f)
+        if (num_candidates > 1 && typical > 0.0f && typical < 1.0f)
         {
             num_candidates = typical_cpu(num_candidates, temp_probs, temp_indices, typical);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (mirostat)
+        if (num_candidates > 1 && mirostat)
         {
             num_candidates = mirostat_pre_cpu(num_candidates, temp_probs, temp_indices, mirostat_mu[i], mirostat_tau, mirostat_eta);
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (post_temperature != 1.0f || max_temp > min_temp)
+        if (num_candidates > 1 && post_temperature != 1.0f || max_temp > min_temp)
         {
             num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature, min_temp, max_temp, temp_exponent);
         }
 
+        multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
 
-        num_candidates = multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
-        output_tokens[i] = temp_indices[0];
-        output_probs[i] = temp_probs[0];
+        output_tokens[i][0] = temp_indices[0];
+
+        if (num_probs == 1)
+        {
+            output_probs[i][0] = temp_probs[0];
+        }
+        else
+        {
+            num_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
+            sort_descending(num_candidates, temp_probs, temp_indices, num_probs);
+
+            int j = 0;
+            for (; j < num_candidates && j < num_probs; ++j)
+            {
+                float tp = temp_probs[j];
+                if (tp == 0.0f) break;
+
+                output_ptokens[i][0][j] = temp_indices[j];
+                output_probs[i][0][j] = tp;
+            }
+
+            // Candidate tokens are only valid up to num_candidates, so fake the ones with prob == 0
+
+            int fake_idx = 0;
+            for (; j < num_probs; ++j)
+            {
+                for (int k = 0; k < num_candidates; ++k)
+                    if (temp_indices[k] == fake_idx) { fake_idx++; k = 0; }
+
+                output_ptokens[i][0][j] = fake_idx;
+                output_probs[i][0][j] = 0.0f;
+                fake_idx++;
+            }
+        }
 
         if (mirostat)
         {
