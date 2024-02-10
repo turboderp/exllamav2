@@ -682,12 +682,14 @@ int typical_cpu
 
     const float epsilon = 1e-10;
 
-    float* temp = (float*) malloc(num_candidates * sizeof(float));
-    int* entropy_dev_order = (int*) malloc(num_candidates * sizeof(int));
-    int* temp_indices_2 = (int*) malloc(num_candidates * sizeof(int));
+    int r_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
+
+    float* temp = (float*) malloc(r_candidates * sizeof(float));
+    int* entropy_dev_order = (int*) malloc(r_candidates * sizeof(int));
+    int* temp_indices_2 = (int*) malloc(r_candidates * sizeof(int));
 
     float neg_entropy = 0.0f;
-    for (int i = 0; i < num_candidates; i++)
+    for (int i = 0; i < r_candidates; i++)
     {
         float x = temp_probs[i];
         float y = x + logf(x + epsilon);
@@ -695,16 +697,16 @@ int typical_cpu
         temp[i] = y;  // temp = log_probs
     }
 
-    for (int i = 0; i < num_candidates; i++)
+    for (int i = 0; i < r_candidates; i++)
     {
         temp[i] = fabs(temp[i] - neg_entropy);  // temp = entropy_dev
         entropy_dev_order[i] = i;
     }
 
-    quicksort_with_idx<cmp_asc>(temp, entropy_dev_order, 0, num_candidates - 1, num_candidates);
+    quicksort_with_idx<cmp_asc>(temp, entropy_dev_order, 0, r_candidates - 1, r_candidates);
 
-    memcpy(temp, temp_probs, num_candidates * sizeof(float));  // temp = temp_probs
-    memcpy(temp_indices_2, temp_indices, num_candidates * sizeof(int));
+    memcpy(temp, temp_probs, r_candidates * sizeof(float));  // temp = temp_probs
+    memcpy(temp_indices_2, temp_indices, r_candidates * sizeof(int));
 
     float cumprob = 0.0f;
     int num = 0;
@@ -719,7 +721,7 @@ int typical_cpu
         cumprob += p;
         if (cumprob >= typical) break;
         num++;
-        if (num >= num_candidates) break;
+        if (num >= r_candidates) break;
     }
 
     free(temp);
