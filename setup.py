@@ -31,7 +31,17 @@ setup_kwargs = {
         cpp_extension.CUDAExtension(
             extension_name,
             [
-                "exllamav2/exllamav2_ext/ext.cpp",
+                "exllamav2/exllamav2_ext/ext_bindings.cpp",
+                "exllamav2/exllamav2_ext/ext_cache.cpp",
+                "exllamav2/exllamav2_ext/ext_gemm.cpp",
+                "exllamav2/exllamav2_ext/ext_norm.cpp",
+                "exllamav2/exllamav2_ext/ext_qattn.cpp",
+                "exllamav2/exllamav2_ext/ext_qmatrix.cpp",
+                "exllamav2/exllamav2_ext/ext_qmlp.cpp",
+                "exllamav2/exllamav2_ext/ext_quant.cpp",
+                "exllamav2/exllamav2_ext/ext_rope.cpp",
+                "exllamav2/exllamav2_ext/ext_safetensors.cpp",
+                "exllamav2/exllamav2_ext/ext_sampling.cpp",
                 "exllamav2/exllamav2_ext/cuda/h_gemm.cu",
                 "exllamav2/exllamav2_ext/cuda/lora.cu",
                 "exllamav2/exllamav2_ext/cuda/pack_tensor.cu",

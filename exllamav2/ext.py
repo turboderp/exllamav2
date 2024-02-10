@@ -106,7 +106,17 @@ if build_jit:
 
     sources_ = \
     [
-        "ext.cpp",
+        "ext_bindings.cpp",
+        "ext_cache.cpp",
+        "ext_gemm.cpp",
+        "ext_norm.cpp",
+        "ext_qattn.cpp",
+        "ext_qmatrix.cpp",
+        "ext_qmlp.cpp",
+        "ext_quant.cpp",
+        "ext_rope.cpp",
+        "ext_safetensors.cpp",
+        "ext_sampling.cpp",
         "cuda/h_gemm.cu",
         "cuda/lora.cu",
         "cuda/pack_tensor.cu",
