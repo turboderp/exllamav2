@@ -53,9 +53,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     return_probabilities_k: int = 1        # Number of probabilities to return per token
     return_logits: bool = False             # Return raw logits prior to softmax, per token
 
-    active_loras = []
+    active_loras = None
     position_offsets = None
     input_mask = None
+
+    queued_logits = None
 
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
@@ -118,6 +120,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.held_logits = self.no_logits
         self.settings = gen_settings
         self._gen_begin_reuse(input_ids, gen_settings)
+
+        self.queued_logits = []
 
         # Initialize token healing
         if token_healing and self.sequence_ids.shape[-1] >= max(2, self.tail_decode_tokens):
@@ -342,11 +346,21 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.future_tokens = None
 
 
+    def append_logits(self, logits):
+
+        assert self.draft_model is None
+        assert logits.shape[0] == self.sequence_ids.shape[0]
+
+        self.queued_logits.append(logits)
+
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
         if self.draft_model is None:
 
-            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
+            if self.queued_logits:
+                logits = self.queued_logits.pop()
+            else:
+                logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
             token, ptokens, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids[:1, :], random.random(), self.tokenizer, prefix_token, self.return_probabilities_k)
 
         else:
