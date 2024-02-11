@@ -124,11 +124,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.queued_logits = []
 
         # Initialize token healing
-        if token_healing and self.sequence_ids.shape[-1] >= max(2, self.tail_decode_tokens):
+        if token_healing and self.sequence_ids.shape[-1] >= max(2, self.tail_decode_tokens + 1):
 
             # Pop the last token, remembering tail len for first stream decode
 
-            self.heal_old_tail_len = len(self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:])[0])
+            self.heal_old_tail_len = len(self.tokenizer.decode(self.sequence_ids[:, -(self.tail_decode_tokens + 1):])[0])
             self.heal_prefix_token = self.sequence_ids[:, -1:]
             self.sequence_ids = self.sequence_ids[:, :-1]
             self.cache.current_seq_len -= 1
