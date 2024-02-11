@@ -108,7 +108,13 @@ class ExLlamaV2Sampler:
 
 
     @staticmethod
-    def sample(logits: torch.tensor, settings: Settings, sequence_ids: torch.tensor, random: float, tokenizer: ExLlamaV2Tokenizer, prefix_token = None, num_probs = 1):
+    def sample(logits: torch.tensor,
+               settings: Settings,
+               sequence_ids: torch.tensor,
+               random: float,
+               tokenizer: ExLlamaV2Tokenizer,
+               prefix_token = None,
+               return_top_tokens = 0):
 
         batch_size, _, vocab_size = logits.shape
 
@@ -201,12 +207,13 @@ class ExLlamaV2Sampler:
         batch_size = logits.shape[0]
 
         output_tokens = torch.empty((batch_size, 1), device="cpu", dtype=torch.long)
-        if num_probs == 1:
-            output_probs = torch.empty((batch_size, 1), device = "cpu", dtype = torch.float)
-            output_ptokens = none_tensor
+        output_probs = torch.empty((batch_size, 1), device="cpu", dtype=torch.float)
+        if return_top_tokens == 0:
+            output_ktokens = none_tensor
+            output_kprobs = none_tensor
         else:
-            output_probs = torch.empty((batch_size, 1, num_probs), device = "cpu", dtype = torch.float)
-            output_ptokens = torch.empty((batch_size, 1, num_probs), device = "cpu", dtype = torch.long)
+            output_ktokens = torch.empty((batch_size, 1, return_top_tokens), device = "cpu", dtype = torch.long)
+            output_kprobs = torch.empty((batch_size, 1, return_top_tokens), device = "cpu", dtype = torch.float)
 
         m = ext_c.sample_basic(logits,
                                1.0 if settings.temperature_last else settings.temperature,
@@ -219,7 +226,8 @@ class ExLlamaV2Sampler:
                                random,
                                output_tokens,
                                output_probs,
-                               output_ptokens,
+                               output_kprobs,
+                               output_ktokens,
                                logit_filter,
                                settings.mirostat,
                                settings.mirostat_mu if settings.mirostat else [],
@@ -238,4 +246,4 @@ class ExLlamaV2Sampler:
         end_filter = False
         if len(settings.filters) > 0 and output_tokens[0].item() in end_tokens: end_filter = True
 
-        return output_tokens, output_ptokens, output_probs, end_filter
+        return output_tokens, output_ktokens, output_kprobs, output_probs, end_filter

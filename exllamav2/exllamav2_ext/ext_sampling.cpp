@@ -63,8 +63,9 @@ std::vector<float> sample_basic
     float typical,
     float random,
     torch::Tensor output_tokens,    // shape [bsz, 1]
-    torch::Tensor output_probs,     // shape [bsz, 1] or [bsz, 1, num_probs]
-    torch::Tensor output_ptokens,   // None or [bsz, 1, num_probs]
+    torch::Tensor output_probs,     // shape [bsz, 1]
+    torch::Tensor output_kprobs,    // None or [bsz, 1, num_probs]
+    torch::Tensor output_ktokens,   // None or [bsz, 1, num_probs]
     torch::Tensor logit_filter,     // shape [bsz, vocab_size]
     bool mirostat,
     std::vector<float>& mirostat_mu,
@@ -93,9 +94,9 @@ std::vector<float> sample_basic
     int* temp_indices = (int*) malloc(vocab_size * sizeof(int));
     float* logits_ptr = (float*) logits.data_ptr();
 
-    int num_probs = 1;
-    if (output_probs.dim() == 3)
-        num_probs = output_probs.size(2);
+    int num_probs = 0;
+    if (!output_kprobs.device().is_meta())
+        num_probs = output_kprobs.size(2);
 
     bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
 
@@ -177,12 +178,9 @@ std::vector<float> sample_basic
         multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
 
         output_tokens[i][0] = temp_indices[0];
+        output_probs[i][0] = temp_probs[0];
 
-        if (num_probs == 1)
-        {
-            output_probs[i][0] = temp_probs[0];
-        }
-        else
+        if (num_probs)
         {
             num_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
             sort_descending(num_candidates, temp_probs, temp_indices, num_probs);
@@ -193,8 +191,8 @@ std::vector<float> sample_basic
                 float tp = temp_probs[j];
                 if (tp == 0.0f) break;
 
-                output_ptokens[i][0][j] = temp_indices[j];
-                output_probs[i][0][j] = tp;
+                output_ktokens[i][0][j] = temp_indices[j];
+                output_kprobs[i][0][j] = tp;
             }
 
             // Candidate tokens are only valid up to num_candidates, so fake the ones with prob == 0
@@ -205,8 +203,8 @@ std::vector<float> sample_basic
                 for (int k = 0; k < num_candidates; ++k)
                     if (temp_indices[k] == fake_idx) { fake_idx++; k = 0; }
 
-                output_ptokens[i][0][j] = fake_idx;
-                output_probs[i][0][j] = 0.0f;
+                output_ktokens[i][0][j] = fake_idx;
+                output_kprobs[i][0][j] = 0.0f;
                 fake_idx++;
             }
         }
