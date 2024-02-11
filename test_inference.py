@@ -18,7 +18,6 @@ from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.moe_mlp import ExLlamaV2MoEMLP
 
 import argparse, os, math, time
-import pandas, fastparquet
 import torch
 import torch.nn.functional as F
 from conversion.tokenize import get_tokens
