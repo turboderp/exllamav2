@@ -378,7 +378,9 @@ class ExLlamaV2:
                     except Exception as e:
 
                         test = 0
-                        if ("CUDA out of memory" in str(e)) or ("HIP out of memory" in str(e)):
+                        if e.__class__.__name__ == "OutOfMemoryError" or \
+                            "CUDA out of memory" in str(e) or \
+                            "HIP out of memory" in str(e):
                             fail = True  # Exception object will hold references to tensors so we can't free them here
                         else:
                             raise
