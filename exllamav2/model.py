@@ -9,9 +9,14 @@ if sys.version_info < min_version:
 # Set CUDA context to lazy loading since we won't need 95% of the modules in Torch
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
-# Set cudaMallocAsync allocator by default as it appears slightly more memory efficient
+# Set cudaMallocAsync allocator by default as it appears slightly more memory efficient, unless Torch is already
+# imported in which case changing the allocator would cause it to crash
 if not "PYTORCH_CUDA_ALLOC_CONF" in os.environ:
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
+    try:
+        x = torch.__version__
+        # TODO: Should maybe be a warning here?
+    except NameError:
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
 
 import torch
 import math
