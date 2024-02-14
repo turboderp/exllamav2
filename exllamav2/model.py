@@ -173,7 +173,6 @@ class ExLlamaV2:
         constant_size = sincos_size * 2
 
         # Max size of hidden state
-        # TODO: Option to reserve space for cache while loading model
 
         state_size = self.config.hidden_size * self.config.max_input_len * self.config.max_batch_size * 2
         mask_size = self.config.max_input_len ** 2 * self.config.max_batch_size * 2

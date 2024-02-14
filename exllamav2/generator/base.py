@@ -42,8 +42,6 @@ class ExLlamaV2BaseGenerator:
         return self.sequence_ids.shape[-1] >= self.model.config.max_seq_len
 
 
-    # TODO: Argument to allow different random samples over batch dimension
-
     def generate_simple(self, prompt: str or list,
                         gen_settings: ExLlamaV2Sampler.Settings,
                         num_tokens: int,
