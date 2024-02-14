@@ -245,7 +245,7 @@ class ExLlamaV2:
 
     def load(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
         f = self.load_gen(gpu_split, lazy, stats, callback, callback_gen)
-        for item in f: return item
+        for item in f: x = item
 
 
     def load_gen(self, gpu_split = None, lazy = False, stats = False, callback = None, callback_gen = None):
@@ -275,8 +275,8 @@ class ExLlamaV2:
             self.loaded = True
             cleanup_stfiles()
 
-            if stats: yield gpu_split, stats_
-            else: yield gpu_split
+            # if stats: yield gpu_split, stats_
+            # else: yield gpu_split
 
 
     def load_autosplit(self, cache, reserve_vram = None, last_id_only = False, callback = None, callback_gen = None):

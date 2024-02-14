@@ -35,7 +35,7 @@ cache = ExLlamaV2Cache(model)
 
 # Load LoRA
 
-lora_directory = "/mnt/str/models/_test_loras/tloen_alpaca-lora-7b/"
+lora_directory = "/mnt/str/models/_lora/tloen_alpaca-lora-7b/"
 lora = ExLlamaV2Lora.from_directory(model, lora_directory)
 
 # Initialize generators
