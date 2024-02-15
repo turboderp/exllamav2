@@ -170,7 +170,7 @@ std::vector<float> sample_basic
             normalize_cpu(num_candidates, temp_probs);
         }
 
-        if (num_candidates > 1 && post_temperature != 1.0f || max_temp > min_temp)
+        if (num_candidates > 1 && (post_temperature != 1.0f || max_temp > min_temp))
         {
             num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature, min_temp, max_temp, temp_exponent);
         }
