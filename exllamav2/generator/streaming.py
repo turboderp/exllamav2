@@ -199,6 +199,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return tuple(ret)
 
 
+    # @profile
     def _stream(self) -> (str, bool, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
 
         # Token healing
@@ -240,9 +241,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 self.settings.begin_filters()
                 self.first_token = False
 
-        # Decode the current tail end of the sequence
-
-        old_tail = self.tokenizer.decode(self.sequence_ids[:1, -self.tail_decode_tokens:])[0]
+        # # Decode the current tail end of the sequence
+        #
+        # old_tail = self.tokenizer.decode(self.sequence_ids[:1, -self.tail_decode_tokens:])[0]
 
         # Generate a single token and append to the sequence
 
@@ -253,10 +254,13 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if next_token.item() in self.stop_tokens:
             return self.held_text, True, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits
 
-        # Decode the tail end of the sequence with the added token to get (actual) characters added
+        # # Decode the tail end of the sequence with the added token to get (actual) characters added
+        #
+        # new_tail = self.tokenizer.decode(self.sequence_ids[:1, -(self.tail_decode_tokens + 1):])[0]
+        # new_text = new_tail[len(old_tail):]
 
-        new_tail = self.tokenizer.decode(self.sequence_ids[:1, -(self.tail_decode_tokens + 1):])[0]
-        new_text = new_tail[len(old_tail):]
+        piece_to_id = self.tokenizer.get_id_to_piece_list()
+        new_text = piece_to_id[self.sequence_ids[0, -1].item()]
 
         next_token, new_text = self._catch_utf8(next_token, new_text)
 

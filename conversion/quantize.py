@@ -55,7 +55,7 @@ def quant_linear(job: dict,
     # Quantize
 
     lq.configure(qp.group_size, qp.bits, qp.bits_prop, qp.scale_bits)
-    lq.quantize(keep_qweight = True, apply = True, drop = drop)
+    lq.quantize(keep_qweight = True, apply = True)
 
     # Pack and save quantized layer
 
@@ -69,10 +69,12 @@ def quant_linear(job: dict,
 
     # Reconstruct from packed layer
 
-    recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features, False)
+    recons_linear = ExLlamaV2Linear(source.model, source.key, source.in_features, source.out_features, source.has_bias)
     recons_linear.device_idx = source.device_idx
     recons_dict = {}
-    for k in ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]:
+    recons_keys = ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]
+    if source.has_bias: recons_keys += ["bias"]
+    for k in recons_keys:
         recons_dict[k] = packed_dict[source.key + "." + k]
     recons_dict["q_perm"] = torch.argsort(recons_dict["q_invperm"]).to(torch.int)
     recons_linear.load(recons_dict)
@@ -86,6 +88,7 @@ def quant_linear(job: dict,
     recons_w2 = recons_linear.forward(ident, force_cuda = True)
 
     recons_w2.sub_(quant_w)
+    if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
     recons_w2.abs_()
     diff2 = torch.max(recons_w2)
 

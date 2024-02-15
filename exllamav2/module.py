@@ -93,14 +93,14 @@ class ExLlamaV2Module:
         # EXL2
 
         if key + ".q_weight" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm"], override_key = override_key)
+            qtensors = self.load_multi(["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "bias"], override_key = override_key)
             qtensors["q_perm"] = torch.argsort(qtensors["q_invperm"]).to(torch.int)
             return qtensors
 
         # GPTQ
 
         if key + ".qweight" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx"], override_key = override_key)
+            qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx", "bias"], override_key = override_key)
             qtensors["scales"] = qtensors["scales"].half()
             return qtensors
 

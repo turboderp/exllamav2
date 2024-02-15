@@ -465,6 +465,8 @@ class AdaptiveGPTQ:
         output[key + ".q_invperm"] = self.invperm.to(torch.int)
         output[key + ".q_scale_max"] = self.qscale_max
         output[key + ".q_groups"] = self.qgroups
+        if self.layer.bias is not None:
+            output[key + ".bias"] = self.layer.bias.data
 
         columns = self.columns
         rem_rows = self.rows

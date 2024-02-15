@@ -11,6 +11,7 @@ uintptr_t make_q_matrix
     torch::Tensor gptq_qzeros,
     torch::Tensor gptq_scales,
     torch::Tensor gptq_g_idx,
+    torch::Tensor bias,
     torch::Tensor temp_dq
 );
 

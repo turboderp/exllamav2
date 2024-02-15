@@ -63,6 +63,8 @@ QMatrix::QMatrix
     half* _gptq_scales,
     uint32_t* _gptq_g_idx,
 
+    half* _bias,
+
     half* _temp_dq
 ) :
     device(_device),
@@ -84,6 +86,7 @@ QMatrix::QMatrix
     cuda_q_group_map = _q_group_map;
     cuda_gptq_qzeros = _gptq_qzeros;
     cuda_gptq_scales = _gptq_scales;
+    cuda_bias = _bias;
 
     is_gptq = (_gptq_qzeros != NULL);
 

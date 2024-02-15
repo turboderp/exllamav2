@@ -91,8 +91,9 @@ def test_quant(source: ExLlamaV2Linear,
     variants = []
     variants_bits = []
 
-    original = nn.Linear(source.in_features, source.out_features, False, device = "meta", dtype = torch.float16)
+    original = nn.Linear(source.in_features, source.out_features, source.has_bias, device = "meta", dtype = torch.float16)
     original.weight = nn.Parameter(source.linear.weight.clone())
+    if source.has_bias: original.bias.weight = nn.Parameter(source.linear.bias.clone())
 
     for qp in qparams:
 
@@ -102,10 +103,12 @@ def test_quant(source: ExLlamaV2Linear,
         quantized.to("cpu")
 
         variants.append(quantized)
-        total_bits = qp.total_bits(quantized.weight.T.shape)
+        total_bits = qp.total_bits(quantized.weight.T.shape, original.bias.weight.shape if source.has_bias else None)
         variants_bits.append(total_bits)
 
-        bpw = total_bits / quantized.weight.numel()
+        numel = quantized.weight.numel()
+        if source.has_bias: numel += original.bias.numel()
+        bpw = total_bits / numel
         desc = qp.desc
 
         print(f" -- {source.key:50} {desc:50} {bpw:2.2f} bpw")

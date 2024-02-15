@@ -29,6 +29,7 @@ uintptr_t make_q_matrix
     torch::Tensor gptq_qzeros,
     torch::Tensor gptq_scales,
     torch::Tensor gptq_g_idx,
+    torch::Tensor bias,
     torch::Tensor temp_dq
 )
 {
@@ -42,6 +43,7 @@ uintptr_t make_q_matrix
     TORCH_CHECK_DTYPE_OPT(gptq_qzeros, kInt);
     TORCH_CHECK_DTYPE_OPT(gptq_scales, kHalf);
     TORCH_CHECK_DTYPE_OPT(gptq_g_idx, kInt);
+    TORCH_CHECK_DTYPE_OPT(bias, kHalf);
 
     TORCH_CHECK_SHAPES(q_perm, 0, q_invperm, 0, 1);
 
@@ -65,6 +67,11 @@ uintptr_t make_q_matrix
         height = q_weight.size(0) * 8;
     }
 
+    if (!bias.device().is_meta())
+    {
+        TORCH_CHECK_SHAPES(q_weight, 1, bias, 0, 1);
+    }
+
     TORCH_CHECK(temp_dq.size(0) >= width * height, "Insufficient size of temp_dq buffer")
 
     QMatrix* m = new QMatrix
@@ -83,6 +90,7 @@ uintptr_t make_q_matrix
         gptq_qzeros.device().is_meta() ? NULL : (uint32_t*) gptq_qzeros.data_ptr(),
         gptq_scales.device().is_meta() ? NULL : (half*) gptq_scales.data_ptr(),
         gptq_g_idx.device().is_meta() ? NULL : (uint32_t*) gptq_g_idx.data_ptr(),
+        bias.device().is_meta() ? NULL : (half*) bias.data_ptr(),
         (half*) temp_dq.data_ptr()
     );
 

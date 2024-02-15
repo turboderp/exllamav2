@@ -37,6 +37,7 @@ public:
     uint16_t* cuda_q_group_map = NULL;
     uint32_t* cuda_gptq_qzeros = NULL;
     half* cuda_gptq_scales = NULL;
+    half* cuda_bias = NULL;
 
     half* temp_dq;
 
@@ -60,6 +61,8 @@ public:
         uint32_t* _gptq_qzeros,
         half* _gptq_scales,
         uint32_t* _gptq_g_idx,
+
+        half* bias,
 
         half* _temp_dq
     );

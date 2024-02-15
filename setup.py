@@ -42,6 +42,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/ext_rope.cpp",
                 "exllamav2/exllamav2_ext/ext_safetensors.cpp",
                 "exllamav2/exllamav2_ext/ext_sampling.cpp",
+                "exllamav2/exllamav2_ext/cuda/h_add.cu",
                 "exllamav2/exllamav2_ext/cuda/h_gemm.cu",
                 "exllamav2/exllamav2_ext/cuda/lora.cu",
                 "exllamav2/exllamav2_ext/cuda/pack_tensor.cu",

@@ -117,6 +117,7 @@ if build_jit:
         "ext_rope.cpp",
         "ext_safetensors.cpp",
         "ext_sampling.cpp",
+        "cuda/h_add.cu",
         "cuda/h_gemm.cu",
         "cuda/lora.cu",
         "cuda/pack_tensor.cu",
@@ -216,6 +217,7 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
                                    none_tensor,
                                    none_tensor,
                                    none_tensor,
+                                   w.get("bias", none_tensor),
                                    temp_dq)
 
     # GPTQ
@@ -241,6 +243,7 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
                                        w["qzeros"],
                                        w["scales"],
                                        w["g_idx"].cpu(),
+                                       w.get("bias", none_tensor),
                                        temp_dq)
 
         # GPTQ without g_idx
@@ -257,6 +260,7 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
                                        w["qzeros"],
                                        w["scales"],
                                        none_tensor,
+                                       w.get("bias", none_tensor),
                                        temp_dq)
 
 

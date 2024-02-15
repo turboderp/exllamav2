@@ -57,7 +57,7 @@ class QParams:
                        qp_dict["scale_bits"])
 
 
-    def total_bits(self, shape):
+    def total_bits(self, shape, bias_shape = None):
 
         rows = shape[0]
         columns = shape[1]
@@ -91,16 +91,26 @@ class QParams:
         total_bits += groups * columns * self.scale_bits    # q_scale
         total_bits += rows * 32                             # q_invperm
 
+        if bias_shape is not None:
+            bias_numel = 1
+            for d in bias_shape: bias_numel *= d
+            total_bits += 16 * d
+
         return total_bits
 
 
-    def bpw(self, shape):
+    def bpw(self, shape, bias_shape = None):
 
         rows = shape[0]
         columns = shape[1]
         numel = rows * columns
 
-        return self.total_bits(shape) / numel
+        if bias_shape is not None:
+            bias_numel = 1
+            for d in bias_shape: bias_numel *= d
+            numel += d
+
+        return self.total_bits(shape, bias_shape) / numel
 
 
     def get_desc(self, filename = False):

@@ -5,6 +5,7 @@
 #define CLEAR_N_SIZE 256
 
 #include "comp_units/kernel_select.cuh"
+#include "h_add.cuh"
 
 void gemm_half_q_half_cuda_part
 (
@@ -165,6 +166,8 @@ void gemm_half_q_half_cuda
         int block_m = min(size_m, block_m_size_max);
         gemm_half_q_half_cuda_part(a, b, c, size_m, size_n, size_k, block_m, clear, r_weights, r_weights_stride, mul_r_weights);
     }
+
+    if (b->cuda_bias) cuda_vector_add_(c, b->cuda_bias, size_m, size_n);
 }
 
 __global__ void clear_kernel
