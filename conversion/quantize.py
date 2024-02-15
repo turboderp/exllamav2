@@ -164,7 +164,7 @@ def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params):
     quantizers["lm_head"].prepare()
 
     qp = qparams_headoptions[job["head_bits"]]
-    quant_linear(job, module, quantizers["lm_head"], qp.get_dict())
+    quant_linear(job, module, quantizers["lm_head"], qp.get_dict(), drop = True)
 
 
 # def testc(module, states, target_states, norm, layers):
@@ -368,6 +368,9 @@ def quant(job, save_fn, model):
                 rfn_sum += (torch.linalg.norm(output - output_ref, 'fro') / torch.linalg.norm(output_ref, 'fro')).item()
                 rfn_count += 1
 
+                output_ref = None
+                output = None
+
             elif i < job["measurement_rows"]:
 
                 x = hidden_states[i].to("cuda:0")
@@ -382,6 +385,10 @@ def quant(job, save_fn, model):
                 token_log_probs = log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
                 logprob_sum += token_log_probs.sum().item()
                 logprob_count += target_ids.numel()
+
+                output = None
+                logits = None
+                token_log_probs = None
 
         if mode != "linear":
 
@@ -407,6 +414,7 @@ def quant(job, save_fn, model):
             # hidden_states = target_states
             # hidden_states = [(x + y) / 2 for x, y in zip(target_states, q_states)]
             hidden_states = q_states
+            q_states = None
 
         # Checkpoint
 
