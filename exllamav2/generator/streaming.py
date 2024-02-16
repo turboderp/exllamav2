@@ -26,6 +26,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     remaining_tokens: int = 0
     held_utf8_tokens: torch.tensor = None
+    held_fallback_tokens: torch.tensor = None
+    max_fallback_tokens: int = 4
     expect_utf8: int = 0
 
     no_tokens: torch.Tensor = None
@@ -144,6 +146,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.held_text = ""
         self.held_utf8_tokens = self.no_tokens
+        self.held_fallback_tokens = self.no_tokens
         self.expect_utf8 = 0
         self.held_tokens = self.no_tokens
         self.held_ptokens = self.no_ptokens
@@ -241,10 +244,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 self.settings.begin_filters()
                 self.first_token = False
 
-        # # Decode the current tail end of the sequence
-        #
-        # old_tail = self.tokenizer.decode(self.sequence_ids[:1, -self.tail_decode_tokens:])[0]
-
         # Generate a single token and append to the sequence
 
         next_token, next_ptokens, next_pprobs, next_prob, eos, next_logits = self._gen_single_token(self.settings)
@@ -254,15 +253,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if next_token.item() in self.stop_tokens:
             return self.held_text, True, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits
 
-        # # Decode the tail end of the sequence with the added token to get (actual) characters added
-        #
-        # new_tail = self.tokenizer.decode(self.sequence_ids[:1, -(self.tail_decode_tokens + 1):])[0]
-        # new_text = new_tail[len(old_tail):]
-
-        piece_to_id = self.tokenizer.get_id_to_piece_list()
-        new_text = piece_to_id[self.sequence_ids[0, -1].item()]
+        id_to_piece = self.tokenizer.get_id_to_piece_list()
+        new_text = id_to_piece[next_token]
 
         next_token, new_text = self._catch_utf8(next_token, new_text)
+        next_token, new_text = self._catch_fallback(next_token, new_text)
 
         self.held_text += new_text
         self.held_tokens = torch.cat([self.held_tokens, next_token], dim = -1)
@@ -326,18 +321,37 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             id_to_ord = self.tokenizer.get_id_to_ord_list()
             b = [id_to_ord[x] for x in self.held_utf8_tokens[0].tolist()]
             c = bytes(b).decode('utf-8')
-        except ValueError:
+        except ValueError or UnicodeDecodeError:
             id_to_piece = self.tokenizer.get_id_to_piece_list()
             c = "".join(id_to_piece[x] for x in self.held_utf8_tokens[0].tolist())
-        except UnicodeDecodeError:
-            c = "�"
+        # except UnicodeDecodeError:
+        #     c = "�"
 
         pre_t = self.held_utf8_tokens
-        self.held_utf_tokens = self.no_tokens
+        self.held_utf8_tokens = self.no_tokens
         return pre_t, c
 
 
+    def _catch_fallback(self, next_token, new_text):
+
+        if self.held_fallback_tokens.shape[-1] == 0:
+            if "�" not in new_text: return next_token, new_text
+
+        self.held_fallback_tokens = torch.cat((self.held_fallback_tokens, next_token), dim = -1)
+        new_decode = self.tokenizer.decode(self.held_fallback_tokens)[0]
+
+        if "�" not in new_decode or self.held_fallback_tokens.shape[-1] >= self.max_fallback_tokens:
+            r_tokens = self.held_fallback_tokens
+            self.held_fallback_tokens = self.no_tokens
+            return r_tokens, new_decode
+
+        return self.no_tokens, ""
+
+
     def _catch_utf8(self, next_token, new_text):
+
+        if self.held_fallback_tokens.shape[-1] > 0:
+            return next_token, new_text
 
         if self.expect_utf8 == 0:
 

@@ -13,6 +13,7 @@ class ExLlamaV2TokenizerHF(ExLlamaV2TokenizerBase):
 
     space_char_: str = " "
     newline_char_: str = "\n"
+    vocab = None
 
     def __init__(self, tokenizer_json: str) -> None:
         super().__init__()
@@ -44,8 +45,14 @@ class ExLlamaV2TokenizerHF(ExLlamaV2TokenizerBase):
     def newline_char(self): return self.newline_char_
 
     def enumerate_tokens(self):
-        items = self.hf_tokenizer.get_vocab().items()
-        return ((v, k) for k, v in items)
+        if self.vocab is not None: return enumerate(self.vocab)
+        self.vocab = []
+        for i in range(self.vocab_size()):
+            d = self.hf_tokenizer.decode([i])
+            # p = self.hf_tokenizer.id_to_token(i)
+            # if "�" in d: d = self.clean_special_chars(p)
+            self.vocab.append(d)
+        return enumerate(self.vocab)
 
     def vocab_size(self) -> int:
         return self.hf_tokenizer.get_vocab_size()

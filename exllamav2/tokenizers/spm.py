@@ -4,6 +4,8 @@ from exllamav2.tokenizers.base import ExLlamaV2TokenizerBase
 
 class ExLlamaV2TokenizerSPM(ExLlamaV2TokenizerBase):
 
+    vocab = None
+
     def __init__(self, tokenizer_model: str):
         super().__init__()
         self.spm = SentencePieceProcessor(model_file = tokenizer_model)
@@ -21,8 +23,14 @@ class ExLlamaV2TokenizerSPM(ExLlamaV2TokenizerBase):
     def newline_char(self): return "\n"
 
     def enumerate_tokens(self):
-        all_tokens = list(range(self.vocab_size()))
-        return enumerate(self.spm.id_to_piece(all_tokens))
+        if self.vocab is not None: return enumerate(self.vocab)
+        self.vocab = []
+        for i in range(self.vocab_size()):
+            p = self.spm.id_to_piece(i)
+            d = self.spm.decode(i)
+            if p.startswith(self.space_char()): d = " " + d
+            self.vocab.append(d)
+        return enumerate(self.vocab)
 
     def id_to_piece(self, idx: int) -> str:
         return self.spm.id_to_piece(idx)

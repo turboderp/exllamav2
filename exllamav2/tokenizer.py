@@ -367,9 +367,10 @@ class ExLlamaV2Tokenizer:
 
         if self.id_to_ord is not None: return self.id_to_ord
 
-        self.id_to_ord = [-1] * self.tokenizer.vocab_size()
-        for idx, p in self.tokenizer.enumerate_tokens():
-            self.id_to_ord[idx] = self.tokenizer.piece_to_ord(p)
+        self.id_to_ord = []
+        for idx in range(self.tokenizer.vocab_size()):
+            p = self.tokenizer.id_to_piece(idx)
+            self.id_to_ord.append(self.tokenizer.piece_to_ord(p))
 
         i = self.tokenizer.vocab_size()
         while True:
@@ -393,10 +394,11 @@ class ExLlamaV2Tokenizer:
 
         self.id_to_piece = [""] * self.tokenizer.vocab_size()
         for idx, p in self.tokenizer.enumerate_tokens():
-            if id_to_ord[idx] != -1:
-                self.id_to_piece[idx] = chr(id_to_ord[idx])
-            else:
-                self.id_to_piece[idx] = self.tokenizer.clean_special_chars(p)
+            # if id_to_ord[idx] != -1:
+            #     self.id_to_piece[idx] = chr(id_to_ord[idx])
+            # else:
+            #     self.id_to_piece[idx] = self.tokenizer.clean_special_chars(p)
+            self.id_to_piece[idx] = p
 
         i = self.tokenizer.vocab_size()
         while True:
