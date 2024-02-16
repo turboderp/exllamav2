@@ -274,7 +274,6 @@ def quant(job, save_fn, model):
         elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
             mode = "norm"
 
-
         # Reference forward pass
 
         cache = None
@@ -338,6 +337,10 @@ def quant(job, save_fn, model):
             quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
 
         if mode == "linear":
+
+            model.drop_device_tensors()
+            gc.collect()  # shruge
+            torch.cuda.empty_cache()
             quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params)
 
         quantizers.clear()
@@ -362,6 +365,7 @@ def quant(job, save_fn, model):
 
                 x = hidden_states[i].to("cuda:0")
                 output = module.forward(x, cache, attn_params)
+                x = None
                 q_states.append(output.to("cpu"))
 
                 output = output[0].float()

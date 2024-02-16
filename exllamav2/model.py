@@ -75,6 +75,14 @@ class ExLlamaV2DeviceTensors:
         self.ready = True
 
 
+    def drop(self):
+
+        self.scratch = None
+        self.sin = None
+        self.cos = None
+        self.ready = False
+
+
     def begin_scratch_alloc(self):
 
         self.scratch_idx = 0
@@ -457,6 +465,12 @@ class ExLlamaV2:
 
             tensors = ExLlamaV2DeviceTensors(self, idx, bytes)
             self.device_tensors.append(tensors)
+
+
+    def drop_device_tensors(self):
+
+        for dt in self.device_tensors:
+            dt.drop()
 
 
     def get_device_tensors(self, device_idx, scratch = True):
