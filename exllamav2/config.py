@@ -146,7 +146,7 @@ class ExLlamaV2Config:
                 expect_keys += \
                     expect_keys_llama
 
-            if "Qwen2ForCausalLM" in read_config["architectures"]:
+            elif "Qwen2ForCausalLM" in read_config["architectures"]:
                 self.architecture = "Qwen2"
                 layer_keys += \
                     layer_keys_llama_norms + \
