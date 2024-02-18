@@ -425,6 +425,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.future_logits = None
             self.future_tokens = None
 
+        self.first_token = True
+
 
     def _gen_feed_tokens(self, in_tokens, gen_settings):
 
