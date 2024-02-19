@@ -60,7 +60,7 @@ def completion(prompt, filters = None, max_new_tokens = 200, eos_bias = False):
 
     # If using a filter, sample the EOS token as soon as filter allows it
 
-    if len(filters) > 0: settings.filter_prefer_eos = True
+    settings.filter_prefer_eos = eos_bias
 
     # Send prompt to generator to begin stream
 
