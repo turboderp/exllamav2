@@ -101,6 +101,8 @@ class ExLlamaV2Module:
 
         if key + ".qweight" in self.model.config.tensor_file_map:
             qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx", "bias"], override_key = override_key)
+            if "bias" in qtensors and torch.all(qtensors["bias"].eq(0)):
+                del qtensors["bias"]
             qtensors["scales"] = qtensors["scales"].half()
             return qtensors
 
