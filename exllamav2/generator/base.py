@@ -50,7 +50,8 @@ class ExLlamaV2BaseGenerator:
                         encode_special_tokens = False,
                         decode_special_tokens = False,
                         loras = None,
-                        stop_token = -1):
+                        stop_token = -1,
+                        add_bos = False):
 
         # Default stop token
 
@@ -67,7 +68,7 @@ class ExLlamaV2BaseGenerator:
         # Tokenize input and produce padding mask if needed
 
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
-        ids, position_offsets = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens, return_offsets = True)
+        ids, position_offsets = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens, return_offsets = True, add_bos = add_bos)
         if batch_size == 1: position_offsets = None
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len

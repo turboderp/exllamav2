@@ -42,6 +42,7 @@ parser.add_argument("-el", "--eval_length", type = int, default = 2048, help = "
 parser.add_argument("-et", "--eval_token", action = "store_true", help = "Evaluate perplexity on token-by-token inference using cache")
 parser.add_argument("-e8", "--eval_token_8bit", action = "store_true", help = "Evaluate perplexity on token-by-token inference using 8-bit cache")
 parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt (basic sampling settings)")
+parser.add_argument("-pnb", "--prompt_no_bos", action = "store_true", help = "Don't add BOS token to prompt")
 parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no. tokens")
 parser.add_argument("-ps", "--prompt_speed", action = "store_true", help = "Test prompt processing (batch) speed over context length")
 parser.add_argument("-s", "--speed", action = "store_true", help = "Test raw generation speed over context length")
@@ -186,7 +187,7 @@ if args.prompt:
 
         time_begin = time.time()
 
-        output = generator.generate_simple(args.prompt, settings, args.tokens, token_healing = True)
+        output = generator.generate_simple(args.prompt, settings, args.tokens, token_healing = True, add_bos = not args.prompt_no_bos)
 
         torch.cuda.synchronize()
         time_prompt = time.time()
