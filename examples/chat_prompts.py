@@ -348,6 +348,43 @@ class PromptFormat_nous(PromptFormat):
         return True
 
 
+class PromptFormat_gemma(PromptFormat):
+    description = "Gemma"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return ""
+
+    def first_prompt(self):
+        return \
+            """<bos><start_of_turn>user\n""" + \
+            """<|user_prompt|><end_of_turn>\n""" + \
+            """<start_of_turn>model\n"""
+
+    def subs_prompt(self):
+        return \
+            """<end_of_turn>\n""" + \
+            """<bos><start_of_turn>user\n""" + \
+            """<|user_prompt|><end_of_turn>\n""" + \
+            """<start_of_turn>model\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """</s>""",
+             """<end_of_turn>""",
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 prompt_formats = \
 {
     "raw": PromptFormat_raw,
@@ -360,4 +397,5 @@ prompt_formats = \
     "solar": PromptFormat_solar,
     "openchat": PromptFormat_openchat,
     "nous": PromptFormat_nous,
+    "gemma": PromptFormat_gemma,
 }

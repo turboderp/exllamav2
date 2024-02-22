@@ -42,7 +42,7 @@ parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sample
 parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
 parser.add_argument("-topa", "--top_a", type = float, default = 0.0, help = "Sampler top-A, default = 0.0 (0 to disable)")
 parser.add_argument("-typical", "--typical", type = float, default = 0.0, help = "Sampler typical threshold, default = 0.0 (0 to disable)")
-parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.05, help = "Sampler repetition penalty, default = 1.05 (1 to disable)")
+parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.01, help = "Sampler repetition penalty, default = 1.01 (1 to disable)")
 parser.add_argument("-freqpen", "--frequency_penalty", type = float, default = 0.0, help = "Sampler frequency penalty, default = 0.0 (0 to disable)")
 parser.add_argument("-prespen", "--presence_penalty", type = float, default = 0.0, help = "Sampler presence penalty, default = 0.0 (0 to disable)")
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
