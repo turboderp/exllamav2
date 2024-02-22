@@ -9,6 +9,7 @@ from exllamav2.model import \
     ExLlamaV2LayerNorm
 )
 
+import torch
 import os, glob, shutil
 from safetensors import safe_open
 from safetensors.torch import save_file
@@ -48,6 +49,7 @@ def get_q_module(job, module):
     return mod_dict
 
 
+@torch.inference_mode()
 def compile_model(job, save_fn, model):
 
     out_dict = {}
