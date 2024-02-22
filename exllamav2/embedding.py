@@ -68,6 +68,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         hidden_states = self.embedding.forward(hidden_states)
 
+        # Normalize the input embeddings for Gemma
+        if self.model.config.architecture == "Gemma":
+            hidden_states = hidden_states * (self.model.config.hidden_size ** 0.5)
+
         if intermediates:
             return {"hidden_states": hidden_states}
         else:

@@ -12,7 +12,8 @@ uintptr_t make_q_mlp
     torch::Tensor temp_a,
     torch::Tensor temp_b,
     torch::Tensor temp_dq,
-    int max_rows
+    int max_rows,
+    bool act_gelu
 );
 
 void free_q_mlp
@@ -57,7 +58,8 @@ uintptr_t make_q_moe_mlp
     torch::Tensor temp_b,
     torch::Tensor temp_logits,
     torch::Tensor temp_dq,
-    int max_rows
+    int max_rows,
+    bool act_gelu
 );
 
 void free_q_moe_mlp

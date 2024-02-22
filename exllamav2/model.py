@@ -164,10 +164,13 @@ class ExLlamaV2:
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
 
         self.head_layer_idx = len(self.modules)
+
         self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
+        if self.config.architecture == "Gemma":
+            self.modules[-1].alt_key = "model.embed_tokens"
 
-        # Find last layer that affects k/v cache
+    # Find last layer that affects k/v cache
 
         layer_idx = len(self.modules)
         while True:

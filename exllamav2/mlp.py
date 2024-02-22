@@ -91,7 +91,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              device_tensors.get_scratch_slice(self.temp_a_size()),
                                              device_tensors.get_scratch_slice(self.temp_b_size()),
                                              device_tensors.get_scratch_slice(self.temp_dq_size()),
-                                             self.model.config.max_input_len * self.model.config.max_batch_size)
+                                             self.model.config.max_input_len * self.model.config.max_batch_size,
+                                             self.model.config.architecture == "Gemma")
 
 
     def unload(self):
@@ -195,7 +196,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         post_norm = self.post_attention_layernorm.forward(hidden_states)
 
         gate = self.gate_proj.forward(post_norm, loras = loras)
-        y = F.silu(gate)
+        y = F.gelu(gate) if self.model.config.architecture == "Gemma" else F.silu(gate)
         up = self.up_proj.forward(post_norm, loras = loras)
         y *= up
         y.clamp_(min = -65504.0, max = 65504.0)

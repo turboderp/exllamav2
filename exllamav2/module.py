@@ -29,6 +29,7 @@ class ExLlamaV2Module:
     model = None
     config: ExLlamaV2Config
     key: str
+    alt_key: str = None
     device_idx: int
     footprint: int
 
@@ -49,14 +50,14 @@ class ExLlamaV2Module:
         return _torch_device(self.device_idx)
 
 
-    def load_multi(self, keys, override_key = None, measure = False):
+    def load_multi(self, key, keys, override_key = None, measure = False):
 
         tensors = {}
         submap = {}
         submap_i = {}
         size = 0
 
-        key = self.key if override_key is None else override_key
+        # key = self.key if override_key is None else override_key
 
         for k in keys:
             ck = key + "." + k
@@ -88,38 +89,45 @@ class ExLlamaV2Module:
 
     def load_weight(self, override_key = None):
 
-        key = self.key if override_key is None else override_key
+        if override_key is not None:
+            keys = [override_key]
+        else:
+            keys = [self.key]
+            if self.alt_key is not None:
+                keys += [self.alt_key]
 
-        # EXL2
+        for key in keys:
 
-        if key + ".q_weight" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "bias"], override_key = override_key)
-            qtensors["q_perm"] = torch.argsort(qtensors["q_invperm"]).to(torch.int)
-            return qtensors
+            # EXL2
 
-        # GPTQ
+            if key + ".q_weight" in self.model.config.tensor_file_map:
+                qtensors = self.load_multi(key, ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "bias"], override_key = override_key)
+                qtensors["q_perm"] = torch.argsort(qtensors["q_invperm"]).to(torch.int)
+                return qtensors
 
-        if key + ".qweight" in self.model.config.tensor_file_map:
-            qtensors = self.load_multi(["qweight", "qzeros", "scales", "g_idx", "bias"], override_key = override_key)
-            if "bias" in qtensors and torch.all(qtensors["bias"].eq(0)):
-                del qtensors["bias"]
-            qtensors["scales"] = qtensors["scales"].half()
-            return qtensors
+            # GPTQ
 
-        # Torch
+            if key + ".qweight" in self.model.config.tensor_file_map:
+                qtensors = self.load_multi(key, ["qweight", "qzeros", "scales", "g_idx", "bias"], override_key = override_key)
+                if "bias" in qtensors and torch.all(qtensors["bias"].eq(0)):
+                    del qtensors["bias"]
+                qtensors["scales"] = qtensors["scales"].half()
+                return qtensors
 
-        if key + ".weight" in self.model.config.tensor_file_map:
-            if key + ".bias" in self.model.config.tensor_file_map:
-                tensors = self.load_multi(["weight", "bias"], override_key = override_key)
-                tensor = tensors["weight"].half()
-                bias = tensors["bias"].half()
-                return nn.Parameter(tensor), nn.Parameter(bias)
-            else:
-                tensors = self.load_multi(["weight"], override_key = override_key)
-                tensor = tensors["weight"].half()
-                return nn.Parameter(tensor)
+            # Torch
 
-        # No weights found for key
+            if key + ".weight" in self.model.config.tensor_file_map:
+                if key + ".bias" in self.model.config.tensor_file_map:
+                    tensors = self.load_multi(key, ["weight", "bias"], override_key = override_key)
+                    tensor = tensors["weight"].half()
+                    bias = tensors["bias"].half()
+                    return nn.Parameter(tensor), nn.Parameter(bias)
+                else:
+                    tensors = self.load_multi(key, ["weight"], override_key = override_key)
+                    tensor = tensors["weight"].half()
+                    return nn.Parameter(tensor)
+
+            # No weights found for key
 
         return None
 
@@ -128,24 +136,33 @@ class ExLlamaV2Module:
 
         if self.footprint == -1:
 
-            # EXL2
+            keys = [self.key]
+            if self.alt_key is not None:
+                keys += [self.alt_key]
 
-            if self.key + ".q_weight" in self.model.config.tensor_file_map:
-                self.footprint = self.load_multi(["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "q_perm"], measure = True)
+            for key in keys:
 
-            # GPTQ
+                # EXL2
 
-            elif self.key + ".qweight" in self.model.config.tensor_file_map:
-                self.footprint = self.load_multi(["qweight", "qzeros", "scales", "g_idx"], measure = True)
+                if key + ".q_weight" in self.model.config.tensor_file_map:
+                    self.footprint = self.load_multi(key, ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "q_perm"], measure = True)
 
-            # Torch
+                # GPTQ
 
-            elif self.key + ".weight" in self.model.config.tensor_file_map:
-                self.footprint = self.load_multi(["weight"], measure = True)
+                elif key + ".qweight" in self.model.config.tensor_file_map:
+                    self.footprint = self.load_multi(key, ["qweight", "qzeros", "scales", "g_idx"], measure = True)
+
+                # Torch
+
+                elif key + ".weight" in self.model.config.tensor_file_map:
+                    self.footprint = self.load_multi(key, ["weight"], measure = True)
+
+                if self.footprint != -1: break
 
             # Error
 
-            else: raise ValueError("Unknown tensor type: " + self.key)
+            if self.footprint == -1:
+                raise ValueError("Unknown tensor type: " + self.key)
 
         return self.footprint
 

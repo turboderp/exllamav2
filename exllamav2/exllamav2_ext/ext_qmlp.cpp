@@ -28,7 +28,8 @@ uintptr_t make_q_mlp
     torch::Tensor temp_a,
     torch::Tensor temp_b,
     torch::Tensor temp_dq,
-    int max_rows
+    int max_rows,
+    bool act_gelu
 )
 {
     QMatrix* qm_gate = reinterpret_cast<QMatrix*> (q_gate);
@@ -52,7 +53,8 @@ uintptr_t make_q_mlp
         (half*) temp_a.data_ptr(),
         (half*) temp_b.data_ptr(),
         (half*) temp_dq.data_ptr(),
-        max_rows
+        max_rows,
+        act_gelu
     );
 
     return reinterpret_cast<uintptr_t> (mlp);
@@ -163,7 +165,8 @@ uintptr_t make_q_moe_mlp
     torch::Tensor temp_b,
     torch::Tensor temp_logits,
     torch::Tensor temp_dq,
-    int max_rows
+    int max_rows,
+    bool act_gelu
 )
 {
     std::vector<QMatrix*> qm_w1;
@@ -202,7 +205,8 @@ uintptr_t make_q_moe_mlp
         (half*) temp_logits.data_ptr(),
         (half*) temp_dq.data_ptr(),
         max_rows,
-        hidden_dim
+        hidden_dim,
+        act_gelu
     );
 
     return reinterpret_cast<uintptr_t> (moe_mlp);

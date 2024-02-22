@@ -36,6 +36,10 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
         self.variance_epsilon = self.model.config.rms_norm_eps
 
+        # Gemma adds 1 to the norm tensor for some reason
+        if self.model.config.architecture == "Gemma":
+            self.weight += 1
+
 
     def unload(self):
 
@@ -49,6 +53,10 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
 
     def get_weight(self):
+
+        # Make sure to return the original weight tensor for Gemma
+        if self.model.config.architecture == "Gemma":
+            return self.weight.data - 1
 
         return self.weight.data
 

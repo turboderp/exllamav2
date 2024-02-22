@@ -97,6 +97,9 @@ class ExLlamaV2Config:
             expect_keys_llama = [["lm_head"],
                                  ["model.norm"],
                                  ["model.embed_tokens"]]
+            expect_keys_gemma = [["model.norm"],
+                                 ["model.embed_tokens"]]
+
 
             if "LlamaForCausalLM" in read_config["architectures"]:
                 self.architecture = "Llama"
@@ -157,6 +160,15 @@ class ExLlamaV2Config:
                 self.attention_bias_qkv = True
                 self.attention_bias_o = False
 
+            elif "GemmaForCausalLM" in read_config["architectures"]:
+                self.architecture = "Gemma"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_llama_mlp
+                expect_keys += \
+                    expect_keys_gemma
+
             else:
                 print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
                 print(f" !! Loading as LlamaForCausalLM")
@@ -206,7 +218,10 @@ class ExLlamaV2Config:
 
         # Model dimensions
 
-        self.head_dim = self.hidden_size // self.num_attention_heads
+        if "head_dim" in read_config:
+            self.head_dim = read_config["head_dim"]
+        else:
+            self.head_dim = self.hidden_size // self.num_attention_heads
 
         # Create map of model tensors
 

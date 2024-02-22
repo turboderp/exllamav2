@@ -267,7 +267,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_state_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.hidden_size * 2 + 128
+        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
 
 
     def temp_q_size(self):
@@ -465,7 +465,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 v_states = None
 
                 attn_output = attn_output.transpose(1, 2)
-                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+                attn_output = attn_output.reshape((batch_size, q_len, self.model.config.num_attention_heads * self.model.config.head_dim))
 
             # Flash Attention 2
 
@@ -473,7 +473,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
                 # TODO: Enable flash-attn with input mask
                 attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
-                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+                attn_output = attn_output.reshape((batch_size, q_len, self.model.config.num_attention_heads * self.model.config.head_dim))
 
             # xformers memory_efficient_attention
 
@@ -661,17 +661,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = torch.matmul(attn_weights, value_states)
 
             attn_output = attn_output.transpose(1, 2)
-            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+            attn_output = attn_output.reshape((batch_size, q_len, self.model.config.num_attention_heads * self.model.config.head_dim))
 
         # Flash Attention 2
 
         else:
 
             attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
-            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+            attn_output = attn_output.reshape((batch_size, q_len, self.model.config.num_attention_heads * self.model.config.head_dim))
 
         # Update 8-bit cache
-        # TODO: Only update changed positions of the cache
 
         if cache is not None:
             cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)

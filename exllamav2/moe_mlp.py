@@ -84,7 +84,8 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                                                  device_tensors.get_scratch_slice(self.temp_b_size()),
                                                  device_tensors.get_scratch_slice(self.temp_logit_size()),
                                                  device_tensors.get_scratch_slice(self.temp_dq_size()),
-                                                 self.model.config.max_input_len * self.model.config.max_batch_size)
+                                                 self.model.config.max_input_len * self.model.config.max_batch_size,
+                                                 self.model.config.architecture == "Gemma")
 
 
     def unload(self):
@@ -237,7 +238,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             gate = self.w1[expert_idx].forward(current_state, loras = loras)
             up = self.w3[expert_idx].forward(current_state, loras = loras)
 
-            current_hidden_states = F.silu(gate) * up
+            current_hidden_states = (F.gelu(gate) if self.model.config.architecture == "Gemma" else F.silu(gate)) * up
             if intermediates: result[f"pre_down.{expert_idx}"] = current_hidden_states
 
             current_hidden_states = self.w2[expert_idx].forward(current_hidden_states, loras = loras)
