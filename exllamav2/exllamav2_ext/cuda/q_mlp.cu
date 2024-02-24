@@ -55,7 +55,7 @@ __device__ __forceinline__ half gelu(half x)
 
 __device__ __forceinline__ half2 gelu(half2 x)
 {
-    return __halves2half2(gelu(x.x), gelu(x.y));
+    return __halves2half2(gelu(__low2half(x)), gelu(__high2half(x)));
 }
 
 typedef void (*fp_silu_mul_kernel)
