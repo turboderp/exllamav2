@@ -75,7 +75,8 @@ std::vector<float> sample_basic
     float min_temp = 0,
     float max_temp = 0.0f,
     float temp_exponent = 1.0f,
-    float smoothing_factor = 0.0f
+    float smoothing_factor = 0.0f,
+    float skew = 0.0f
 )
 {
     TORCH_CHECK_DTYPE(logits, kFloat);
@@ -175,16 +176,14 @@ std::vector<float> sample_basic
             num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature, min_temp, max_temp, temp_exponent);
         }
 
-        multinomial_cpu(num_candidates, temp_probs, temp_indices, random);
-
-        output_tokens[i][0] = temp_indices[0];
-        output_probs[i][0] = temp_probs[0];
-
-        if (num_probs)
+        if (num_probs || (skew != 0.0f))
         {
             num_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
             sort_descending(num_candidates, temp_probs, temp_indices, num_probs);
+        }
 
+        if (num_probs)
+        {
             int j = 0;
             for (; j < num_candidates && j < num_probs; ++j)
             {
@@ -208,6 +207,18 @@ std::vector<float> sample_basic
                 fake_idx++;
             }
         }
+
+        float random_s = random;
+
+        if (skew != 0.0f)
+        {
+            random_s = powf(random, expf(-skew));
+        }
+
+        multinomial_cpu(num_candidates, temp_probs, temp_indices, random_s);
+
+        output_tokens[i][0] = temp_indices[0];
+        output_probs[i][0] = temp_probs[0];
 
         if (mirostat)
         {

@@ -25,6 +25,7 @@ class ExLlamaV2Sampler:
         min_p = 0
         tfs = 0
         typical = 0
+        skew = 0
 
         temperature_last = False
 
@@ -240,7 +241,8 @@ class ExLlamaV2Sampler:
                                settings.min_temp,
                                settings.max_temp,
                                settings.temp_exponent,
-                               settings.smoothing_factor)
+                               settings.smoothing_factor,
+                               settings.skew)
 
         if settings.mirostat: settings.mirostat_mu = m
 

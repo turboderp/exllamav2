@@ -113,6 +113,7 @@ async def infer(request, ws, server, response):
                 rep_pen: float,                     # (optional) repetition penalty (1.0 = no penalty)
                 freq_pen: float,                    # (optional) frequency penalty (0.0 = no penalty)
                 pres_pen: float,                    # (optional) presence penalty (0.0 = no penalty)
+                skew: float,                        # (optional) skew factor (0.0 = disabled)
                 stop_conditions: [str|int],         # (optional) list of stop conditions
                 token_healing: bool,                # (optionsl) enable token healing
                 tag: str }                          # (optional) tag to echo in response packet
@@ -183,6 +184,7 @@ async def infer(request, ws, server, response):
         gs.min_p = float(request["min_p"]) if "min_p" in request else 0
         gs.typical = float(request["typical"]) if "typical" in request else 0
         gs.temperature = float(request["temperature"]) if "temperature" in request else 0.9
+        gs.skew = float(request["skew"]) if "skew" in request else 0.0
         gs.token_repetition_penalty = float(request["rep_pen"]) if "rep_pen" in request else 1.05
         gs.token_frequency_penalty = float(request["freq_pen"]) if "freq_pen" in request else 0.0
         gs.token_presence_penalty = float(request["pres_pen"]) if "pres_pen" in request else 0.0

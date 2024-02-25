@@ -34,7 +34,8 @@ std::vector<float> sample_basic
     float min_temp,
     float max_temp,
     float temp_exponent,
-    float smoothing_factor
+    float smoothing_factor,
+    float skew
 );
 
 void logit_filter_exclusive
