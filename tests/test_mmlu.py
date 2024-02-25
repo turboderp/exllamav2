@@ -14,18 +14,22 @@ import torch
 
 # Models to test
 
-model_base = "/mnt/str/models/_exl2/llama2-70b-chat-exl2/"
+# model_base = "/mnt/str/models/_exl2"
+# model_base = "/mnt/str/models/mixtral-8x7b-instruct-exl2/"
+model_base = "/mnt/str/models/tiefighter-13b-exl4/"
 
-# variants = [v for v in os.listdir(model_base) if os.path.isdir(os.path.join(model_base, v))]
+variants = [v for v in os.listdir(model_base) if os.path.isdir(os.path.join(model_base, v))]
 
-variants = \
-[
-    "3.0bpw",
-    "4.0bpw",
-    "4.65bpw",
-]
+# variants = \
+# [
+#     "2.4bpw",
+#     "2.5bpw",
+#     "3.0bpw",
+#     "4.0bpw",
+#     "6.0bpw",
+# ]
 
-gpu_split = (19.5, 24)
+gpu_split = (20, 21.3, 24)
 
 qa_set = "cais/mmlu"
 qa_split = "test"
@@ -36,7 +40,6 @@ categories = \
     "computer_security",
     "formal_logic",
     "logical_fallacies",
-    "computer_security",
     "philosophy",
     "nutrition",
 ]
@@ -53,6 +56,7 @@ def get_model(base, variant_, gpu_split_, batch_size_):
     config = ExLlamaV2Config()
     config.model_dir = model_dir
     config.prepare()
+    config.max_seq_len = 2048
     config.max_batch_size = batch_size_
 
     model_ = ExLlamaV2(config)
@@ -146,7 +150,7 @@ for variant in variants:
     llabels = "ABCD"
     for i in range(4):
         answer_ = "The answer is: " + llabels[i]
-        answer_logits.append(tokenizer.tokenizer.EncodeAsIds(answer_)[-1])
+        answer_logits.append(tokenizer.tokenizer.encode(answer_)[-1])
 
     # Categories
 

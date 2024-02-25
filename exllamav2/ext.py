@@ -10,9 +10,13 @@ ext_debug = False
 
 windows = (os.name == "nt")
 
+build_jit = False
 try:
     import exllamav2_ext
 except ModuleNotFoundError:
+    build_jit = True
+
+if build_jit:
     # Kludge to get compilation working on Windows
 
     if windows:
@@ -82,6 +86,8 @@ except ModuleNotFoundError:
     extra_cuda_cflags = ["-lineinfo", "-O3"]
     # extra_cuda_cflags += ["-maxrregcount=128"]
 
+    if torch.version.hip:
+        extra_cuda_cflags += ["-DHIPBLAS_USE_HIP_HALF"]
 
     # linker flags
 
@@ -100,7 +106,18 @@ except ModuleNotFoundError:
 
     sources_ = \
     [
-        "ext.cpp",
+        "ext_bindings.cpp",
+        "ext_cache.cpp",
+        "ext_gemm.cpp",
+        "ext_norm.cpp",
+        "ext_qattn.cpp",
+        "ext_qmatrix.cpp",
+        "ext_qmlp.cpp",
+        "ext_quant.cpp",
+        "ext_rope.cpp",
+        "ext_safetensors.cpp",
+        "ext_sampling.cpp",
+        "cuda/h_add.cu",
         "cuda/h_gemm.cu",
         "cuda/lora.cu",
         "cuda/pack_tensor.cu",
@@ -110,14 +127,26 @@ except ModuleNotFoundError:
         "cuda/q_mlp.cu",
         "cuda/q_gemm.cu",
         "cuda/rms_norm.cu",
+        "cuda/layer_norm.cu",
         "cuda/rope.cu",
         "cuda/cache.cu",
+        "cuda/util.cu",
+        "cuda/comp_units/kernel_select.cu",
+        "cuda/comp_units/unit_gptq_1.cu",
+        "cuda/comp_units/unit_gptq_2.cu",
+        "cuda/comp_units/unit_gptq_3.cu",
+        "cuda/comp_units/unit_exl2_1a.cu",
+        "cuda/comp_units/unit_exl2_1b.cu",
+        "cuda/comp_units/unit_exl2_2a.cu",
+        "cuda/comp_units/unit_exl2_2b.cu",
+        "cuda/comp_units/unit_exl2_3a.cu",
+        "cuda/comp_units/unit_exl2_3b.cu",
         "cpp/quantize_func.cpp",
-        "cpp/sampling.cpp"
+        "cpp/sampling.cpp",
+        "cpp/safetensors.cpp"
     ]
 
     sources = [os.path.join(sources_dir, s) for s in sources_]
-
 
     # Load extension
 
@@ -140,6 +169,29 @@ ext_c = exllamav2_ext
 none_tensor = torch.empty((1, 1), device = "meta")
 
 
+# Group map needed for irregular group sizes
+
+def make_group_map(q_groups, num_qrows):
+
+    gr = q_groups.tolist()
+    group_map = []
+    num_groups = len(gr) // 2
+    row = 0
+
+    for i in range(num_groups):
+        bits = gr[i * 2]
+        if i < num_groups - 1:
+            qrows = gr[i * 2 + 3] - gr[i * 2 + 1]
+        else:
+            qrows = num_qrows - gr[i * 2 + 1]
+        rows = qrows * 32 // bits
+        for j in range(rows):
+            group_map += [i]
+            group_map += [rows - j]
+
+    return torch.tensor(group_map, dtype = torch.short, device = q_groups.device)
+
+
 # Create Q matrix
 
 def make_q_matrix(w: dict, temp_dq, key: str = None):
@@ -152,17 +204,21 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
         w["q_perm"] = w["q_perm"].short()
         w["q_invperm"] = w["q_invperm"].short()
 
+        if "q_group_map" not in w:
+            w["q_group_map"] = make_group_map(w["q_groups"], w["q_weight"].shape[0])
+
         return ext_c.make_q_matrix(w["q_weight"],
                                    w["q_perm"],
                                    w["q_invperm"],
                                    w["q_scale"],
                                    w["q_scale_max"],
                                    w["q_groups"],
+                                   w["q_group_map"],
                                    none_tensor,
                                    none_tensor,
                                    none_tensor,
+                                   w.get("bias", none_tensor),
                                    temp_dq)
-
 
     # GPTQ
 
@@ -183,9 +239,11 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
                                        none_tensor,
                                        none_tensor,
                                        none_tensor,
+                                       none_tensor,
                                        w["qzeros"],
                                        w["scales"],
                                        w["g_idx"].cpu(),
+                                       w.get("bias", none_tensor),
                                        temp_dq)
 
         # GPTQ without g_idx
@@ -198,9 +256,11 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
                                        none_tensor,
                                        none_tensor,
                                        none_tensor,
+                                       none_tensor,
                                        w["qzeros"],
                                        w["scales"],
                                        none_tensor,
+                                       w.get("bias", none_tensor),
                                        temp_dq)
 
 

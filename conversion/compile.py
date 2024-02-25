@@ -1,8 +1,18 @@
+from exllamav2.model import \
+(
+    ExLlamaV2Embedding,
+    ExLlamaV2Attention,
+    ExLlamaV2MLP,
+    ExLlamaV2MoEMLP,
+    ExLlamaV2Linear,
+    ExLlamaV2RMSNorm,
+    ExLlamaV2LayerNorm
+)
+
+import torch
 import os, glob, shutil
 from safetensors import safe_open
 from safetensors.torch import save_file
-from exllamav2.model import ExLlamaV2Attention, ExLlamaV2MLP, ExLlamaV2RMSNorm, ExLlamaV2Embedding, ExLlamaV2Linear
-
 
 def _tsize(t):
 
@@ -19,7 +29,13 @@ def get_f_module(job, module):
 
     mod_dict = {}
     module.load()
-    mod_dict[module.key + ".weight"] = module.get_weight()
+    w = module.get_weight()
+    if isinstance(w, tuple):
+        mod_dict[module.key + ".weight"] = w[0]
+        mod_dict[module.key + ".bias"] = w[1]
+    else:
+        mod_dict[module.key + ".weight"] = w
+
     return mod_dict
 
 
@@ -33,6 +49,7 @@ def get_q_module(job, module):
     return mod_dict
 
 
+@torch.inference_mode()
 def compile_model(job, save_fn, model):
 
     out_dict = {}
@@ -47,31 +64,40 @@ def compile_model(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2Embedding):
 
-            d = get_f_module(job, module); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2Attention):
 
-            d = get_f_module(job, module.input_layernorm); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.q_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.k_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.v_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.o_proj); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.q_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.k_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.v_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.o_proj); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2MLP):
 
-            d = get_f_module(job, module.post_attention_layernorm); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.gate_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.up_proj); out_dict |= d; current_size += _dsize(d)
-            d = get_q_module(job, module.down_proj); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.gate_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.up_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.down_proj); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2RMSNorm):
+        if isinstance(module, ExLlamaV2MoEMLP):
 
-            d = get_f_module(job, module); out_dict |= d; current_size += _dsize(d)
+            d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_f_module(job, module.gate); out_dict.update(d); current_size += _dsize(d)
+            for i in range(model.config.num_experts):
+                d = get_q_module(job, module.w1[i]); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
+
+        if isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
+
+            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2Linear):
 
             assert module.key == "lm_head"
-            d = get_q_module(job, module); out_dict |= d; current_size += _dsize(d)
+            d = get_q_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
         index += 1
 
@@ -87,7 +113,7 @@ def compile_model(job, save_fn, model):
                 if this_shard_size + tsize <= shard_bytes:
                     this_shard_size += tsize
                     current_size -= tsize
-                    save_dict[k] = v
+                    save_dict[k] = v.contiguous()
                 else:
                     dont_save_dict[k] = v
 
@@ -150,6 +176,10 @@ def compile_model(job, save_fn, model):
         all_files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         tensor_files = glob.glob(os.path.join(input_dir, "*.safetensors"))
         tensor_files_set = set(tensor_files)
+        bin_files = glob.glob(os.path.join(input_dir, "*.bin"))
+        if len(bin_files) > 0:
+            print(f" !! Ignoring *.bin files in source dir")
+            tensor_files_set.update(bin_files)
         non_tensor_files = [f for f in all_files if os.path.join(input_dir, f) not in tensor_files_set]
 
         for f in non_tensor_files:

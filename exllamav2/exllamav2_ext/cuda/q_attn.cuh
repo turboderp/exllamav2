@@ -14,6 +14,8 @@ class QAttn
 public:
 
     half* layernorm;
+    half* layernorm_bias;
+    bool layernorm_is_rms;
     float norm_epsilon;
 
     QMatrix* q_proj;
@@ -43,6 +45,8 @@ public:
     QAttn
     (
         half* _layernorm,
+        half* _layermorm_bias,
+        bool _layernorm_is_rms,
         float _norm_epsilon,
         QMatrix* _q_proj,
         QMatrix* _k_proj,
@@ -70,7 +74,7 @@ public:
         int batch_size,
         int q_len,
         int past_len,
-        const uint32_t* past_lens,
+        const int32_t* past_lens,
         half* temp_q,
         half* temp_k,
         half* temp_v,

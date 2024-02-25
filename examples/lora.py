@@ -35,7 +35,7 @@ cache = ExLlamaV2Cache(model)
 
 # Load LoRA
 
-lora_directory = "/mnt/str/models/_test_loras/tloen_alpaca-lora-7b/"
+lora_directory = "/mnt/str/models/_lora/tloen_alpaca-lora-7b/"
 lora = ExLlamaV2Lora.from_directory(model, lora_directory)
 
 # Initialize generators
@@ -52,6 +52,7 @@ settings = ExLlamaV2Sampler.Settings()
 settings.temperature = 0.85
 settings.top_k = 50
 settings.top_p = 0.8
+settings.top_a = 0.0
 settings.token_repetition_penalty = 1.1
 
 # Alpaca-style prompt
@@ -69,7 +70,7 @@ prompt = \
 
 def generate_with_lora(prompt_, lora_, max_new_tokens, streaming_ = True):
 
-    print(prompt, end="")
+    print(prompt_, end="")
     sys.stdout.flush()
 
     if streaming_:
@@ -89,9 +90,9 @@ def generate_with_lora(prompt_, lora_, max_new_tokens, streaming_ = True):
 
     else:
 
-        output = simple_generator.generate_simple(prompt, settings, max_new_tokens, loras = lora_)
+        output = simple_generator.generate_simple(prompt_, settings, max_new_tokens, loras = lora_)
 
-        print (output[len(prompt):])
+        print (output[len(prompt_):])
         print()
 
 

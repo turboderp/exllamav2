@@ -2,7 +2,7 @@
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from exllamav2.model import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Cache, ExLlamaV2Linear
+from exllamav2.model import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Linear
 from exllamav2.tokenizer import ExLlamaV2Tokenizer
 import argparse, os, math, time
 import pandas, fastparquet
@@ -12,13 +12,13 @@ from conversion.tokenize import get_tokens
 from conversion.quantize import list_live_tensors
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
-with torch.no_grad():
+with torch.inference_mode():
 
     # Full-precision model
 
     config_full = ExLlamaV2Config()
     # config_full.model_dir = "/mnt/str/models/llama-7b"
-    config_full.model_dir = "/mnt/str/models/_exl2/llama2-7b"
+    config_full.model_dir = "/mnt/str/models/_exl2/tiefighter-13b/"
     config_full.prepare()
     model_full = ExLlamaV2(config_full)
     model_full.load(lazy = True)
@@ -29,7 +29,7 @@ with torch.no_grad():
 
     config_quant = ExLlamaV2Config()
     # config_quant.model_dir = "/mnt/str/models/_exl2/llama-7b-4.0bpw-h6-exl2/"
-    config_quant.model_dir = "/mnt/str/models/_exl2/llama2-7b-5.0bpw-h6-exl2/"
+    config_quant.model_dir = "/mnt/str/models/_exl2/tiefighter-13b-exl3/4.0bpw/"
     # config_quant.model_dir = "/mnt/str/models/llama-7b-4bit-128g/"
     # config_quant.model_dir = "/mnt/str/models/_test_models/TheBloke_WizardLM-30B-Uncensored-GPTQ/"
     config_quant.prepare()
@@ -129,7 +129,7 @@ with torch.no_grad():
 
     # Load all matrices in a full layer of the quant model
 
-    target_layer = 4
+    target_layer = 3
     prefix = f"layers.{target_layer}."
 
     for k in model_quant.modules_dict.keys():
@@ -149,7 +149,8 @@ with torch.no_grad():
         module_quant.load()
         if isinstance(module_quant, ExLlamaV2Linear):
 
-            gi = module_quant.dump_group_info()
+            # gi = module_quant.dump_group_info()
+            gi = "-----"
 
             mat = torch.eye(module_quant.in_features, dtype = torch.half).cuda()
             test1 = module_quant.forward(mat, force_cuda = True)

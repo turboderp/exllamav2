@@ -6,6 +6,7 @@ from exllamav2 import(
     ExLlamaV2,
     ExLlamaV2Config,
     ExLlamaV2Cache,
+    ExLlamaV2Cache_8bit,
     ExLlamaV2Tokenizer,
     model_init,
 )
@@ -35,15 +36,23 @@ parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help =
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
 
 parser.add_argument("-temp", "--temperature", type = float, default = 0.95, help = "Sampler temperature, default = 0.95 (1 to disable)")
+parser.add_argument("-smooth", "--smoothing_factor", type = float, default = 0.0, help = "Smoothing Factor, default = 0.0 (0 to disable")
+parser.add_argument("-dyntemp", "--dynamic_temperature", type = str, help = "Dynamic temperature min,max,exponent, e.g. -dyntemp 0.2,1.5,1")
 parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sampler top-K, default = 50 (0 to disable)")
 parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
+parser.add_argument("-topa", "--top_a", type = float, default = 0.0, help = "Sampler top-A, default = 0.0 (0 to disable)")
 parser.add_argument("-typical", "--typical", type = float, default = 0.0, help = "Sampler typical threshold, default = 0.0 (0 to disable)")
-parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.1, help = "Sampler repetition penalty, default = 1.1 (1 to disable)")
+parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.01, help = "Sampler repetition penalty, default = 1.01 (1 to disable)")
+parser.add_argument("-freqpen", "--frequency_penalty", type = float, default = 0.0, help = "Sampler frequency penalty, default = 0.0 (0 to disable)")
+parser.add_argument("-prespen", "--presence_penalty", type = float, default = 0.0, help = "Sampler presence penalty, default = 0.0 (0 to disable)")
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
 
+parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit cache")
+
 parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
+parser.add_argument("-amnesia", "--amnesia", action = "store_true", help = "Forget context after every response")
 
 # Arrrgs
 
@@ -75,9 +84,9 @@ if system_prompt is None: system_prompt = prompt_format.default_system_prompt()
 
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args)
+model, tokenizer = model_init.init(args, allow_auto_split = True)
 
-# Initialize draft model if provided
+# Initialize draft model if provided, assume it always fits on first device
 
 draft_model = None
 draft_cache = None
@@ -102,17 +111,31 @@ if args.draft_model_dir:
 
     draft_config.max_seq_len = model.config.max_seq_len
     draft_config.no_flash_attn = args.no_flash_attn
+    draft_config.scale_pos_emb = args.rope_scale
 
     print(" -- Loading draft model...")
 
     draft_model = ExLlamaV2(draft_config)
     draft_model.load()
 
-    draft_cache = ExLlamaV2Cache(draft_model)
+    if args.cache_8bit:
+        draft_cache = ExLlamaV2Cache_8bit(draft_model)
+    else:
+        draft_cache = ExLlamaV2Cache(draft_model)
 
 # Create cache
 
-cache = ExLlamaV2Cache(model)
+if args.cache_8bit:
+    cache = ExLlamaV2Cache_8bit(model, lazy = not model.loaded)
+else:
+    cache = ExLlamaV2Cache(model, lazy = not model.loaded)
+
+# Load model now if auto split enabled
+
+if not model.loaded:
+
+    print(" -- Loading model...")
+    model.load_autosplit(cache)
 
 # Chat context
 
@@ -169,8 +192,18 @@ settings = ExLlamaV2Sampler.Settings()
 settings.temperature = args.temperature
 settings.top_k = args.top_k
 settings.top_p = args.top_p
+settings.top_a = args.top_a
 settings.typical = args.typical
 settings.token_repetition_penalty = args.repetition_penalty
+settings.token_frequency_penalty = args.frequency_penalty
+settings.token_presence_penalty = args.presence_penalty
+settings.smoothing_factor = args.smoothing_factor
+
+if args.dynamic_temperature:
+    dt_args = [float(alloc) for alloc in args.dynamic_temperature.split(",")]
+    settings.min_temp = dt_args[0]
+    settings.max_temp = dt_args[1]
+    settings.temp_exponent = dt_args[2]
 
 max_response_tokens = args.max_response_tokens
 min_space_in_context = args.response_chunk
@@ -197,6 +230,7 @@ delim_overflow = ""
 # Other options
 
 print_timings = args.print_timings
+amnesia = args.amnesia
 
 # Main loop
 
@@ -332,3 +366,9 @@ while True:
 
         print()
         print(col_sysprompt + f"(Response: {response_tokens} tokens, {speed:.2f} tokens/second{sd_stats})" + col_default)
+
+    # Optionally forget context after each response
+
+    if amnesia:
+        user_prompts = []
+        responses_ids = []

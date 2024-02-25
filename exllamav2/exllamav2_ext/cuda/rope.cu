@@ -16,7 +16,7 @@ typedef void (*fp_rope_cuda_kernel)
     int,
     int,
     int,
-    const uint32_t*,
+    const int32_t*,
     int
 );
 
@@ -30,7 +30,7 @@ __global__ void rope_cuda_kernel
     int head_dim,
     int num_heads,
     int past_len,
-    const uint32_t* __restrict__ past_lens,
+    const int32_t* __restrict__ past_lens,
     int threads_y
 )
 {
@@ -49,8 +49,18 @@ __global__ void rope_cuda_kernel
 
     // Get sin and cos
 
-    if (past_len == -1) past_len = past_lens[blockIdx.z];
+    if (past_len == -1)
+    {
+        past_len = past_lens[blockIdx.z];
+        past_len = max(past_len, 0);
+    }
+    else if (past_lens)
+    {
+        past_len += past_lens[blockIdx.z];
+    }
+
     int sincos_row = past_len + row / num_heads;
+    sincos_row = max(sincos_row, 0);
 
     if constexpr (use_half2)
     {
@@ -108,7 +118,7 @@ void rope_cuda
     const int head_dim,
     const int num_heads,
     const int past_len,
-    const uint32_t* past_lens
+    const int32_t* past_lens
 )
 {
     bool use_half2 = true;
@@ -121,7 +131,7 @@ void rope_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_X;
     blockDim.y = threads_y;
-    gridDim.x = DIVIDE(head_dim, THREADS_X) / (use_half2 ? 2 : 1);
+    gridDim.x = DIVIDE(head_dim / (use_half2 ? 2 : 1), THREADS_X);
     gridDim.y = DIVIDE(rows_per_batch, threads_y);
     gridDim.z = batch_size;
 

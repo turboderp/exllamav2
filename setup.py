@@ -1,5 +1,6 @@
 from setuptools import setup, Extension
 from torch.utils import cpp_extension
+from torch import version as torch_version
 import os
 
 extension_name = "exllamav2_ext"
@@ -15,9 +16,14 @@ extra_cflags = ["/Ox"] if windows else ["-O3"]
 if ext_debug:
     extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
 
+extra_cuda_cflags = ["-lineinfo", "-O3"]
+
+if torch_version.hip:
+    extra_cuda_cflags += ["-DHIPBLAS_USE_HIP_HALF"]
+
 extra_compile_args = {
     "cxx": extra_cflags,
-    "nvcc": ["-lineinfo", "-O3"],
+    "nvcc": extra_cuda_cflags,
 }
 
 setup_kwargs = {
@@ -25,7 +31,18 @@ setup_kwargs = {
         cpp_extension.CUDAExtension(
             extension_name,
             [
-                "exllamav2/exllamav2_ext/ext.cpp",
+                "exllamav2/exllamav2_ext/ext_bindings.cpp",
+                "exllamav2/exllamav2_ext/ext_cache.cpp",
+                "exllamav2/exllamav2_ext/ext_gemm.cpp",
+                "exllamav2/exllamav2_ext/ext_norm.cpp",
+                "exllamav2/exllamav2_ext/ext_qattn.cpp",
+                "exllamav2/exllamav2_ext/ext_qmatrix.cpp",
+                "exllamav2/exllamav2_ext/ext_qmlp.cpp",
+                "exllamav2/exllamav2_ext/ext_quant.cpp",
+                "exllamav2/exllamav2_ext/ext_rope.cpp",
+                "exllamav2/exllamav2_ext/ext_safetensors.cpp",
+                "exllamav2/exllamav2_ext/ext_sampling.cpp",
+                "exllamav2/exllamav2_ext/cuda/h_add.cu",
                 "exllamav2/exllamav2_ext/cuda/h_gemm.cu",
                 "exllamav2/exllamav2_ext/cuda/lora.cu",
                 "exllamav2/exllamav2_ext/cuda/pack_tensor.cu",
@@ -35,10 +52,23 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/q_mlp.cu",
                 "exllamav2/exllamav2_ext/cuda/q_gemm.cu",
                 "exllamav2/exllamav2_ext/cuda/rms_norm.cu",
+                "exllamav2/exllamav2_ext/cuda/layer_norm.cu",
                 "exllamav2/exllamav2_ext/cuda/rope.cu",
                 "exllamav2/exllamav2_ext/cuda/cache.cu",
+                "exllamav2/exllamav2_ext/cuda/util.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/kernel_select.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_1.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_2.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_3.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_1a.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_1b.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_2a.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_2b.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3a.cu",
+                "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3b.cu",
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
-                "exllamav2/exllamav2_ext/cpp/sampling.cpp"
+                "exllamav2/exllamav2_ext/cpp/sampling.cpp",
+                "exllamav2/exllamav2_ext/cpp/safetensors.cpp"
             ],
             extra_compile_args=extra_compile_args,
             libraries=["cublas"] if windows else [],
@@ -47,7 +77,7 @@ setup_kwargs = {
 } if precompile else {}
 
 version_py = {}
-with open("exllamav2/version.py") as fp:
+with open("exllamav2/version.py", encoding = "utf8") as fp:
     exec(fp.read(), version_py)
 version = version_py["__version__"]
 print("Version:", version)

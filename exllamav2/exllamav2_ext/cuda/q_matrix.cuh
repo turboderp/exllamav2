@@ -18,7 +18,7 @@ public:
     int height;
     int width;
     int groups;
-    int groupsize;
+    int gptq_groupsize;
 
     int rows_8;
     int rows_6;
@@ -26,6 +26,7 @@ public:
     int rows_4;
     int rows_3;
     int rows_2;
+    int kernel_p;
 
     uint32_t* cuda_q_weight = NULL;
     uint16_t* cuda_q_perm = NULL;
@@ -33,10 +34,14 @@ public:
     uint32_t* cuda_q_scale = NULL;
     half* cuda_q_scale_max = NULL;
     uint16_t* cuda_q_groups = NULL;
+    uint16_t* cuda_q_group_map = NULL;
     uint32_t* cuda_gptq_qzeros = NULL;
     half* cuda_gptq_scales = NULL;
+    half* cuda_bias = NULL;
 
     half* temp_dq;
+
+    bool failed;
 
     QMatrix
     (
@@ -51,10 +56,13 @@ public:
         uint32_t* _q_scale,
         half* _q_scale_max,
         uint16_t* _q_groups,
+        uint16_t* _q_group_map,
 
         uint32_t* _gptq_qzeros,
         half* _gptq_scales,
         uint32_t* _gptq_g_idx,
+
+        half* bias,
 
         half* _temp_dq
     );
@@ -62,7 +70,7 @@ public:
     ~QMatrix();
 
     void reconstruct(half* out);
-    void make_sequential(const uint32_t* cpu_g_idx);
+    bool make_sequential(const uint32_t* cpu_g_idx);
 
 private:
 

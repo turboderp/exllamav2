@@ -1,35 +1,62 @@
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
-from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.ext import exllamav2_ext as ext_c
 
 class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
-    weight: nn.Parameter or None
+    weight: nn.Parameter or None = None
+    bias: nn.Parameter or None = None
     variance_epsilon: float
 
     name: str = "RMSNorm"
 
+
     def __init__(self, model, key):
+        if model.config.architecture == "Yi":
+            key = key.replace(".input_layernorm", ".ln1")
+            key = key.replace(".post_attention_layernorm", ".ln2")
         super().__init__(model, key)
 
 
     def load(self):
 
         w = self.load_weight()
-        assert isinstance(w, nn.Parameter)
 
-        self.weight = w
+        if isinstance(w, tuple):
+            self.weight = w[0]
+            self.bias = w[1]
+        else:
+            self.weight = w
+            self.bias = None
+
+        assert isinstance(self.weight, nn.Parameter)
+        assert self.bias is None, "RMSNorm does not support bias"
+        # or isinstance(self.bias, nn.Parameter)
+
         self.variance_epsilon = self.model.config.rms_norm_eps
+
+        # Gemma adds 1 to the norm tensor for some reason
+        if self.model.config.architecture == "Gemma":
+            self.weight += 1
 
 
     def unload(self):
 
-        del self.weight
-        self.weight = None
+        if self.weight is not None:
+            del self.weight
+            self.weight = None
+
+        if self.bias is not None:
+            del self.bias
+            self.bias = None
 
 
     def get_weight(self):
+
+        # Make sure to return the original weight tensor for Gemma
+        if self.model.config.architecture == "Gemma":
+            return self.weight.data - 1
 
         return self.weight.data
 
@@ -50,7 +77,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False, loras = None):
+    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -64,7 +91,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_mask = None, past_len = None, intermediates = False):
+    def forward_torch(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
 
         hidden_states[hidden_states == -float('inf')] = -65504.0
         hidden_states[hidden_states == float('inf')] = 65504.0

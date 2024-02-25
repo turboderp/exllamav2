@@ -14,12 +14,15 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
-import time
+import time, torch
 
 # Initialize model and draft model
 
-model_directory = "/mnt/str/models/_exl2/codellama-34b-instruct-exl2/4.0bpw"
-draft_directory = "/mnt/str/models/_exl2/tinyllama-1b-ckpt503-exl2/3.5bpw"
+torch.set_num_threads(1)
+
+# model_directory = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
+model_directory = "/mnt/str/models/_gptq/TheBloke_Phine-CodeLlama-34B-v2-GPTQ/"
+draft_directory = "/mnt/str/models/tinyllama-1b-ckpt503-exl2/3.5bpw"
 
 model_config = ExLlamaV2Config()
 model_config.model_dir = model_directory
@@ -32,20 +35,18 @@ draft_config.prepare()
 draft_config.max_seq_len = 2048
 
 draft = ExLlamaV2(draft_config)
-draft.load([24, 0])
-
 model = ExLlamaV2(model_config)
-model.load([14, 24])
-
-model_cache = ExLlamaV2Cache(model)
-draft_cache = ExLlamaV2Cache(draft)
+model_cache = ExLlamaV2Cache(model, lazy = True)
+draft_cache = ExLlamaV2Cache(draft, lazy = True)
+draft.load_autosplit(draft_cache)
+model.load_autosplit(model_cache)
 
 tokenizer = ExLlamaV2Tokenizer(model_config)
 
 # Initialize generators
 
 normal_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer)
-speculative_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, 5)
+speculative_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, num_speculative_tokens = 5)
 
 # Make sure CUDA is initialized so we can measure performance
 
@@ -97,6 +98,7 @@ def test_gen(generator, prompt, settings, max_new_tokens):
 # Settings
 
 gen_prompt = "Here is a simple Quicksort implementation in C++:"
+# gen_prompt = "What's the best way to learn a new language?"
 
 gen_settings = ExLlamaV2Sampler.Settings()
 gen_settings.temperature = 0.6
@@ -121,3 +123,10 @@ print()
 
 test_gen(speculative_generator, gen_prompt, gen_settings, gen_max_tokens)
 
+efficiency, accuracy, total_tokens, total_draft_tokens, accepted_draft_tokens = speculative_generator.get_sd_stats()
+
+print("efficiency:", efficiency)
+print("accuracy:", accuracy)
+print("total_tokens:", total_tokens)
+print("total_draft_tokens:", total_draft_tokens)
+print("accepted_draft_tokens:", accepted_draft_tokens)
