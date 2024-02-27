@@ -68,6 +68,7 @@ directly with chat and notebook modes.
 - [text-generation-webui](https://github.com/oobabooga/text-generation-webui) supports ExLlamaV2 through the **exllamav2**
 and **exllamav2_HF** loaders.
 
+- [lollms-webui](https://github.com/ParisNeo/lollms-webui) supports ExLlamaV2 through the exllamav2 binding.
 
 ## Installation
 
