@@ -27,7 +27,7 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
 
         self.sequence_str = ""
         self.sequence_str_cmp = ""
-        self.prefix = prefix_str
+        self.prefix = prefix_str if prefix_str is not None else ""
         self.offset = 0
 
 
