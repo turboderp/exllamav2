@@ -67,8 +67,6 @@ class ExLlamaV2TokenizerHF(ExLlamaV2TokenizerBase):
             prefix_len = len(prefix_piece)
 
             for i in range(self.vocab_size()):
-                if i == 561:
-                    xx = 0
                 dt = self.hf_tokenizer.decode([prefix_id, i])
                 d = dt[prefix_len:]
                 self.vocab.append(d)
