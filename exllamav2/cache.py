@@ -16,6 +16,8 @@ class ExLlamaV2CacheBase:
     head_dim: int
 
     dtype = None
+    weights_per_element = 1
+    has_scales = False
 
 
     def __init__(self, model, batch_size, max_seq_len):
@@ -27,6 +29,8 @@ class ExLlamaV2CacheBase:
 
         self.key_states = []
         self.value_states = []
+        self.key_scales = []
+        self.value_scales = []
 
         self.num_key_value_heads = self.model.config.num_key_value_heads
         self.num_hidden_layers = self.model.config.num_hidden_layers
@@ -45,14 +49,23 @@ class ExLlamaV2CacheBase:
             for i in range(self.num_hidden_layers):
 
                 if copy_from is None:
-                    p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = self.model.cache_map[i]).contiguous()
-                    p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = self.model.cache_map[i]).contiguous()
+                    p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element, dtype = self.dtype, device = self.model.cache_map[i]).contiguous()
+                    p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element, dtype = self.dtype, device = self.model.cache_map[i]).contiguous()
+                    if self.has_scales:
+                        p_key_scales = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32, dtype = torch.float16, device = self.model.cache_map[i]).contiguous()
+                        p_value_scales = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32, dtype = torch.float16, device = self.model.cache_map[i]).contiguous()
                 else:
                     p_key_states = copy_from.key_states[i].clone()
                     p_value_states = copy_from.value_states[i].clone()
+                    if self.has_scales:
+                        p_key_scales = copy_from.key_scales[i].clone()
+                        p_value_scales = copy_from.value_scales[i].clone()
 
                 self.key_states.append(p_key_states)
                 self.value_states.append(p_value_states)
+                if self.has_scales:
+                    self.key_scales.append(p_key_scales)
+                    self.value_scales.append(p_value_scales)
 
         else:
 
@@ -60,6 +73,9 @@ class ExLlamaV2CacheBase:
 
                 self.key_states.append(None)
                 self.value_states.append(None)
+                if self.has_scales:
+                    self.key_scales.append(None)
+                    self.value_scales.append(None)
 
 
     def update_cache_tensors(self):
@@ -74,10 +90,15 @@ class ExLlamaV2CacheBase:
                 self.key_states[k] = None
                 self.value_states[k] = None
 
-            p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = v).contiguous()
-            p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = self.dtype, device = v).contiguous()
+            p_key_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element, dtype = self.dtype, device = v).contiguous()
+            p_value_states = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element, dtype = self.dtype, device = v).contiguous()
             self.key_states[k] = p_key_states
             self.value_states[k] = p_value_states
+            if self.has_scales:
+                p_key_scales = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32, dtype = torch.float16, device = v).contiguous()
+                p_value_scales = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32, dtype = torch.float16, device = v).contiguous()
+                self.key_scales[k] = p_key_scales
+                self.value_scales[k] = p_value_scales
 
 
     def roll_left(self):
@@ -164,6 +185,7 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
         super().__init__(model, batch_size, max_seq_len)
 
         self.dtype = torch.uint8
+        self.weights_per_element = 1
         self.create_state_tensors(copy_from, lazy)
 
         # Create temp FP16 tensors for accessing FP8 layers
@@ -213,5 +235,69 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
 
     def clone(self):
         new = ExLlamaV2Cache_8bit(self.model, batch_size = self.batch_size, max_seq_len = self.max_seq_len, copy_from = self)
+        return new
+
+
+class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
+
+    def __init__(self, model, batch_size = 1, max_seq_len = -1, copy_from = None, lazy = False):
+        super().__init__(model, batch_size, max_seq_len)
+
+        self.dtype = torch.uint8
+        self.weights_per_element = 2
+        self.has_scales = True
+        self.create_state_tensors(copy_from, lazy)
+
+        # Create temp FP16 tensors for accessing Q4 layers
+
+        self.temp_tensors = {}
+
+        if not lazy:
+            for device in self.model.get_cache_devices(): self.touch_device(device)
+
+
+    def touch_device(self, device):
+
+        if device in self.temp_tensors: return
+        k = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = torch.float16, device = device).contiguous()
+        v = torch.zeros(self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim, dtype = torch.float16, device = device).contiguous()
+        self.temp_tensors[device] = (k, v)
+
+
+    def get_kv_state(self, layer_idx: int, batch_size: int, offset: int, width: int) -> (torch.Tensor, torch.Tensor):
+
+        device = self.model.cache_map[layer_idx]
+        temp_key_state, temp_value_state = self.temp_tensors[device]
+        if width > 0: ext_c.q4_to_fp16(self.key_states[layer_idx], self.key_scales[layer_idx], temp_key_state, batch_size, offset, width)
+        if width > 0: ext_c.q4_to_fp16(self.value_states[layer_idx], self.value_scales[layer_idx], temp_value_state, batch_size, offset, width)
+        return temp_key_state, temp_value_state
+
+
+    def store_kv_state(self, layer_idx: int, batch_size: int, offset: int, width: int):
+
+        device = self.model.cache_map[layer_idx]
+        temp_key_state, temp_value_state = self.temp_tensors[device]
+        if width > 0: ext_c.fp16_to_q4(temp_key_state, self.key_states[layer_idx], self.key_scales[layer_idx], batch_size, offset, width)
+        if width > 0: ext_c.fp16_to_q4(temp_value_state, self.value_states[layer_idx], self.value_scales[layer_idx], batch_size, offset, width)
+
+
+    def footprint(self):
+        fp = []
+        for layer in self.key_states + self.value_states:
+            dev = layer.device.index
+            while len(fp) <= dev: fp.append(0)
+            fp[dev] += layer.numel() * 1
+        for layer in self.key_scales + self.value_scales:
+            dev = layer.device.index
+            while len(fp) <= dev: fp.append(0)
+            fp[dev] += layer.numel() * 2
+        for temp_k, temp_v in self.temp_tensors.values():
+            fp[temp_k.device.index] += temp_k.numel() * 2
+            fp[temp_v.device.index] += temp_v.numel() * 2
+        return fp
+
+
+    def clone(self):
+        new = ExLlamaV2Cache_Q4(self.model, batch_size = self.batch_size, max_seq_len = self.max_seq_len, copy_from = self)
         return new
 

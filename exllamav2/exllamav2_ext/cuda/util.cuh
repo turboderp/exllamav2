@@ -25,6 +25,8 @@
 
 #define DBGIH(__x, __y) printf("%s, %s: %i, %f\n", #__x, #__y, __x, __half2float(__y))
 #define DBGIH2(__x, __y, __z) printf("%s, %s, %s: %i, %f, %f\n", #__x, #__y, #__z, __x, __half2float(__y), __half2float(__z))
+#define DBGI2H2(__x, __y, __z, __w) printf("%s, %s, %s, %s: %i, %i, %f, %f\n", #__x, #__y, #__z, #__w, __x, __y, __half2float(__z), __half2float(__w))
+#define DBGIH3(__x, __y, __z, __w) printf("%s, %s, %s, %s: %i, %f, %f, %f\n", #__x, #__y, #__z, #__w, __x, __half2float(__y), __half2float(__z), __half2float(__w))
 
 __forceinline__ __device__ half dq_scale_(const int qs, const half max_scale)
 {
@@ -50,5 +52,36 @@ inline void gpu_assert(cudaError_t code, const char *file, int line, bool abort=
 }
 
 void print_global_mem(const half* ptr, int rows, int columns, int stride);
+
+__forceinline__ __device__ void print_smem(const uint8_t* ptr, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        printf("%4d ", *ptr++);
+    }
+    printf("\n");
+}
+
+__forceinline__ __device__ void print_smem(const half* ptr, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        printf("%6.3f", __half2float(*ptr++));
+    }
+    printf("\n");
+}
+
+//inline __device__ half2 ___hmax2(half2 a, half2 b)
+//{
+//    half a_low = __low2half(a);
+//    half a_high = __high2half(a);
+//    half b_low = __low2half(b);
+//    half b_high = __high2half(b);
+//
+//    half max_low = __hgt(a_low, b_low) ? a_low : b_low;
+//    half max_high = __hgt(a_high, b_high) ? a_high : b_high;
+//
+//    return __halves2half2(max_low, max_high);
+//}
 
 #endif

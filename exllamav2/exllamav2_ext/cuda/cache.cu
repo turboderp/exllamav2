@@ -1,13 +1,11 @@
 #include "cache.cuh"
 
-// #if defined(CUDART_VERSION) && CUDART_VERSION >= 11080
-//
-// #include <cuda_fp8.h>
-
 #include "quant/qdq_util.cuh"
 #include "util.cuh"
 
 #define THREADS 32
+#define BLOCKSIZE_Q 256
+#define THREADS_Q (BLOCKSIZE_Q / 2)
 
 // The upper 8 bits of FP16 are equivalent to FP8 E5M2.
 //
@@ -30,7 +28,7 @@ __device__ inline uint32_t decompress(uint32_t v)
     return vh | vl;
 }
 
-__global__ void nv_fp16_to_fp8
+__global__ void fp16_to_fp8_kernel
 (
     const half* __restrict__ pIn,
     unsigned char* __restrict__ pOut,
@@ -56,7 +54,7 @@ __global__ void nv_fp16_to_fp8
     *out_ptr = out;
 }
 
-__global__ void nv_fp8_to_fp16
+__global__ void fp8_to_fp16_kernel
 (
     const unsigned char* __restrict__ pIn,
     half* __restrict__ pOut,
@@ -118,7 +116,7 @@ void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int stride, in
     gridDim.x = DIVIDE((max - min) / 8, THREADS);
     gridDim.y = height;
 
-    nv_fp16_to_fp8<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
+    fp16_to_fp8_kernel<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
     // cuda_check( cudaPeekAtLastError() );
 }
 
@@ -134,8 +132,141 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
     gridDim.x = DIVIDE((max - min) / 8, THREADS);
     gridDim.y = height;
 
-    nv_fp8_to_fp16<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
+    fp8_to_fp16_kernel<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
     // cuda_check( cudaPeekAtLastError() );
+}
+
+// Q4
+
+__global__ void fp16_to_q4_kernel
+(
+    const half* __restrict__ pIn,
+    unsigned char* __restrict__ pOut,
+    half* __restrict__ scales,
+    int offset,
+    int stride
+)
+{
+    int t = threadIdx.x;
+
+    int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
+    const half2* in = (const half2*) (pIn + block_offset);
+    __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
+    __shared__ half s_buffer[BLOCKSIZE_Q / 32];
+
+    half2 w2 = in[t];
+    half2 o = w2;
+    half2 absmax2 = __habs2(w2);
+
+    // Max abs value for lane_id 0..15, 16..31
+
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 8, 32));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 4, 32));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 2, 32));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 1, 32));
+    half absmax = __hmax(__low2half(absmax2), __high2half(absmax2));
+    absmax2 = __half2half2(absmax);
+
+    // Normalize
+
+    half2 c_8 = __half2half2(__int2half_rn(8));
+    half c_i = __float2half_rn(1.0f / 8.0f);
+
+    w2 = __h2div(w2, absmax2);
+    w2 = __hfma2(w2, c_8, c_8);
+
+    // Quantize & pack
+
+    int q0 = clamp(__half2int_rn(__low2half(w2)), 0, 15);
+    int q1 = clamp(__half2int_rn(__high2half(w2)), 0, 15);
+    uint32_t q = q0 | (q1 << 4);
+
+    q |= (__shfl_down_sync(0x55555555, q, 1, 32) << 8);
+    q |= (__shfl_down_sync(0x11111111, q, 2, 32) << 16);
+    if (t % 4 == 0) q_buffer[t / 4] = q;
+    if (t % 16 == 0) s_buffer[t / 16] = __hmul(absmax, c_i);
+    __syncthreads();
+
+    // Store
+
+    int4* pq = (int4*) q_buffer;
+    int4* ps = (int4*) s_buffer;
+    int4* out_q = (int4*) (pOut + block_offset / 2);
+    int4* out_s = (int4*) (scales + block_offset / 32);
+
+    if (t < BLOCKSIZE_Q / 32) out_q[t] = pq[t];
+    if (t < BLOCKSIZE_Q / 256) out_s[t] = ps[t];
+}
+
+__global__ void q4_to_fp16_kernel
+(
+    const unsigned char* __restrict__ pIn,
+    const half* __restrict__ scales,
+    half* __restrict__ pOut,
+    int offset,
+    int stride
+)
+{
+    int t = threadIdx.x;
+
+    int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
+    const uint32_t* in = (const uint32_t*) (pIn + block_offset / 2);
+    __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
+    __shared__ half s_buffer[BLOCKSIZE_Q / 32];
+
+    // Fetch
+
+    int4* in_q = (int4*) (pIn + block_offset / 2);
+    int4* in_s = (int4*) (scales + block_offset / 32);
+    int4* pq = (int4*) q_buffer;
+    int4* ps = (int4*) s_buffer;
+
+    if (t < BLOCKSIZE_Q / 32) pq[t] = in_q[t];
+    if (t < BLOCKSIZE_Q / 256) ps[t] = in_s[t];
+    __syncthreads();
+
+    // Get scale
+
+    half scale = s_buffer[t / 16];
+    half2 scale2 = __half2half2(scale);
+
+    // Dequantize
+
+    int shift0 = (t % 4) * 8;
+    int shift1 = shift0 + 4;
+    uint32_t q = q_buffer[t / 4];
+    int q0 = ((int) ((q >> shift0) & 0x0f)) - 8;
+    int q1 = ((int) ((q >> shift1) & 0x0f)) - 8;
+
+    half w0 = __int2half_rn(q0);
+    half w1 = __int2half_rn(q1);
+    half2 w2 = __halves2half2(w0, w1);
+    w2 = __hmul2(w2, scale2);
+
+    // Store
+
+    half2* out = (half2*) (pOut + block_offset);
+    out[t] = w2;
+}
+
+void array_fp16_to_q4_cuda(const half* pIn, unsigned char* pOut, half* scales, int stride, int height, int offset, int width)
+{
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_Q;
+    gridDim.x = width / BLOCKSIZE_Q;
+    gridDim.y = height;
+
+    fp16_to_q4_kernel<<<gridDim, blockDim>>>(pIn, pOut, scales, offset, stride);
+}
+
+void array_q4_to_fp16_cuda(const unsigned char* pIn, const half* scales, half* pOut, int stride, int height, int offset, int width)
+{
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_Q;
+    gridDim.x = width / BLOCKSIZE_Q;
+    gridDim.y = height;
+
+    q4_to_fp16_kernel<<<gridDim, blockDim>>>(pIn, scales, pOut, offset, stride);
 }
 
 // void array_fp16_to_fp8_ref_cuda(const half* pIn, unsigned char *pOut, int size)
@@ -151,11 +282,3 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
 //     int blocks = DIVIDE(size / 1, threads);
 //     nv_fp8_to_fp16_ref<<<blocks, threads>>>(pIn, pOut, size);
 // }
-
-// #else
-//
-// void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int size) { }
-//
-// void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int size) { }
-//
-// #endif
