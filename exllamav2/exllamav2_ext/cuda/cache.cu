@@ -2,6 +2,7 @@
 
 #include "quant/qdq_util.cuh"
 #include "util.cuh"
+#include "compat.cuh"
 
 #define THREADS 32
 #define BLOCKSIZE_Q 256
@@ -160,10 +161,10 @@ __global__ void fp16_to_q4_kernel
 
     // Max abs value for lane_id 0..15, 16..31
 
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 8, 32));
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 4, 32));
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 2, 32));
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 1, 32));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 8));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 4));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 2));
+    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 1));
     half absmax = __hmax(__low2half(absmax2), __high2half(absmax2));
     absmax2 = __half2half2(absmax);
 
@@ -181,8 +182,8 @@ __global__ void fp16_to_q4_kernel
     int q1 = clamp(__half2int_rn(__high2half(w2)), 0, 15);
     uint32_t q = q0 | (q1 << 4);
 
-    q |= (__shfl_down_sync(0x55555555, q, 1, 32) << 8);
-    q |= (__shfl_down_sync(0x11111111, q, 2, 32) << 16);
+    q |= (__shfl_down_sync(0x55555555, q, 1) << 8);
+    q |= (__shfl_down_sync(0x11111111, q, 2) << 16);
     if (t % 4 == 0) q_buffer[t / 4] = q;
     if (t % 16 == 0) s_buffer[t / 16] = __hmul(absmax, c_i);
     __syncthreads();

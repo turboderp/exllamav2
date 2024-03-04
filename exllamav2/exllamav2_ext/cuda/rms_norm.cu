@@ -1,8 +1,8 @@
 #include "rms_norm.cuh"
 #include "util.cuh"
+#include "compat.cuh"
 
 #if defined(USE_ROCM)
-#define __shfl_xor_sync(mask, var, laneMask) __shfl_xor(var, laneMask)
 #define NUM_WARPS (1024 / warpSize)
 #define WARP_SIZE (warpSize)
 #else

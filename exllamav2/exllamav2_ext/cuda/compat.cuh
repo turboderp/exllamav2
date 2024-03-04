@@ -53,4 +53,33 @@ __device__ __forceinline__ void atomicAdd(half2* address, half2 val) { atomicAdd
 #endif
 #endif
 
+// ROCm redefinitions
+
+#if defined(USE_ROCM)
+
+#define __shfl_xor_sync(mask, var, laneMask) __shfl_xor(var, laneMask)
+#define __shfl_down_sync(mask, var, laneMask) __shfl_down(var, laneMask)
+
+__device__ __forceinline__ __half2 __compat_h2rcp(__half2 x)
+{
+    return __halves2half2
+    (
+         hrcp(__low2half(x)),
+         hrcp(__high2half(x))
+    );
+}
+#define h2rcp __compat_h2rcp
+
+__device__ __forceinline__ __half2 __compat_hmax2(__half2 x, __half2 y)
+{
+    return __halves2half2
+    (
+        __hmax(__low2half(x), __low2half(y)),
+        __hmax(__high2half(x), __high2half(y))
+    );
+}
+#define __hmax2 __compat_hmax2
+
+#endif
+
 #endif
