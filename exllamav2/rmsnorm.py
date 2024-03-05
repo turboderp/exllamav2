@@ -34,7 +34,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         assert self.bias is None, "RMSNorm does not support bias"
         # or isinstance(self.bias, nn.Parameter)
 
-        self.variance_epsilon = self.model.config.rms_norm_eps
+        self.variance_epsilon = self.model.config.norm_eps
 
         # Gemma adds 1 to the norm tensor for some reason
         if self.model.config.architecture == "Gemma":

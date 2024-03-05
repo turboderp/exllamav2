@@ -158,7 +158,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         hidden_size = self.model.config.hidden_size
 
-        if self.model.config.architecture == "Orion":
+        if self.model.config.architecture in ["Orion", "StarCoder2"]:
             self.input_layernorm = ExLlamaV2LayerNorm(model, key + ".input_layernorm")
         else:
             self.input_layernorm = ExLlamaV2RMSNorm(model, key + ".input_layernorm")

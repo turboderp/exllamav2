@@ -18,9 +18,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     layer_idx: int
     post_attention_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm
-    gate_proj: ExLlamaV2Linear
-    up_proj: ExLlamaV2Linear
-    down_proj: ExLlamaV2Linear
+    gate_proj: ExLlamaV2Linear or None
+    up_proj: ExLlamaV2Linear or None
+    down_proj: ExLlamaV2Linear or None
 
     name: str = "MLP"
     submodules: list
@@ -37,24 +37,31 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         hidden_size = self.model.config.hidden_size
         intermediate_size = self.model.config.intermediate_size
 
-        if self.model.config.architecture == "Orion":
+        if self.model.config.architecture in ["Orion", "StarCoder2"]:
             self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + ".post_attention_layernorm")
         else:
             self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + ".post_attention_layernorm")
 
-        self.gate_proj = ExLlamaV2Linear(model, key + ".mlp.gate_proj", hidden_size, intermediate_size, False)
-        self.up_proj = ExLlamaV2Linear(model, key + ".mlp.up_proj", hidden_size, intermediate_size, False)
-        self.down_proj = ExLlamaV2Linear(model, key + ".mlp.down_proj", intermediate_size, hidden_size, False)
-
-        self.submodules = [self.post_attention_layernorm,
-                           self.gate_proj,
-                           self.up_proj,
-                           self.down_proj]
+        if self.model.config.architecture in ["StarCoder2"]:
+            self.gate_proj = None
+            self.up_proj = ExLlamaV2Linear(model, key + ".mlp.c_fc", hidden_size, intermediate_size, self.model.config.mlp_bias)
+            self.down_proj = ExLlamaV2Linear(model, key + ".mlp.c_proj", intermediate_size, hidden_size, self.model.config.mlp_bias)
+            self.submodules = [self.post_attention_layernorm,
+                               self.up_proj,
+                               self.down_proj]
+        else:
+            self.gate_proj = ExLlamaV2Linear(model, key + ".mlp.gate_proj", hidden_size, intermediate_size, self.model.config.mlp_bias)
+            self.up_proj = ExLlamaV2Linear(model, key + ".mlp.up_proj", hidden_size, intermediate_size, self.model.config.mlp_bias)
+            self.down_proj = ExLlamaV2Linear(model, key + ".mlp.down_proj", intermediate_size, hidden_size, self.model.config.mlp_bias)
+            self.submodules = [self.post_attention_layernorm,
+                               self.gate_proj,
+                               self.up_proj,
+                               self.down_proj]
 
 
     def numel(self):
 
-        return self.gate_proj.numel() + \
+        return (self.gate_proj.numel() if self.model.config.architecture not in "StarCoder2" else 0) + \
                self.up_proj.numel() + \
                self.down_proj.numel()
 
@@ -64,27 +71,28 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.post_attention_layernorm.load()
 
         if self.model.config.checkpoint_fused_mlp:
-            w12 = self.load_weight(self.key + ".mlp.swiglu.w12")
+            w12 = self.load_weight(self.key + self.model.config.fused_mlp_key_12)
             w1 = nn.Parameter(w12[:self.model.config.intermediate_size, :].contiguous())
             w2 = nn.Parameter(w12[self.model.config.intermediate_size:, :].contiguous())
-            w3 = self.load_weight(self.key + ".mlp.swiglu.w3")
+            w3 = self.load_weight(self.key + self.model.config.fused_mlp_key_3)
             self.gate_proj.load(w1)
             self.up_proj.load(w2)
             self.down_proj.load(w3)
         else:
-            self.gate_proj.load()
+            if self.gate_proj is not None: self.gate_proj.load()
             self.up_proj.load()
             self.down_proj.load()
 
-        if self.gate_proj.is_quant():
-            assert self.up_proj.is_quant() and self.down_proj.is_quant(), "Partially quantized MLP layer"
+        if self.up_proj.is_quant():
+            assert self.gate_proj is None or self.gate_proj.is_quant()
+            assert self.up_proj.is_quant(), "Partially quantized MLP layer"
             device_tensors = self.model.get_device_tensors(self.device_idx)
             device_tensors.begin_scratch_alloc()
             self.q_handle = ext_c.make_q_mlp(self.post_attention_layernorm.weight,
                                              self.post_attention_layernorm.bias if self.post_attention_layernorm.bias is not None else ext.none_tensor,
                                              isinstance(self.post_attention_layernorm, ExLlamaV2RMSNorm),
                                              self.post_attention_layernorm.variance_epsilon,
-                                             self.gate_proj.q_handle,
+                                             0 if self.gate_proj is None else self.gate_proj.q_handle,
                                              self.up_proj.q_handle,
                                              self.down_proj.q_handle,
                                              device_tensors.get_scratch_slice(self.temp_state_size()),
@@ -92,7 +100,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              device_tensors.get_scratch_slice(self.temp_b_size()),
                                              device_tensors.get_scratch_slice(self.temp_dq_size()),
                                              self.model.config.max_input_len * self.model.config.max_batch_size,
-                                             self.model.config.architecture == "Gemma")
+                                             self.model.config.architecture in ["Gemma", "StarCoder2"])
 
 
     def unload(self):
@@ -101,7 +109,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.q_handle = None
 
         self.post_attention_layernorm.unload()
-        self.gate_proj.unload()
+        if self.gate_proj is not None: self.gate_proj.unload()
         self.up_proj.unload()
         self.down_proj.unload()
 
@@ -113,7 +121,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                    3 * self.model.config.intermediate_size * self.model.config.hidden_size * 2
         else:
             return self.post_attention_layernorm.weight_footprint() + \
-                   self.gate_proj.weight_footprint() + \
+                   (0 if self.gate_proj is None else self.gate_proj.weight_footprint()) + \
                    self.up_proj.weight_footprint() + \
                    self.down_proj.weight_footprint()
 
@@ -152,7 +160,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def temp_dq_size(self):
 
-        return max(self.gate_proj.temp_dq_size(),
+        return max(0 if self.gate_proj is None else self.gate_proj.temp_dq_size(),
                    self.up_proj.temp_dq_size(),
                    self.down_proj.temp_dq_size())
 
@@ -161,7 +169,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         super().set_device_idx(idx)
 
         self.post_attention_layernorm.set_device_idx(idx)
-        self.gate_proj.set_device_idx(idx)
+        if self.gate_proj is not None: self.gate_proj.set_device_idx(idx)
         self.up_proj.set_device_idx(idx)
         self.down_proj.set_device_idx(idx)
 
@@ -195,11 +203,15 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         residual = hidden_states
         post_norm = self.post_attention_layernorm.forward(hidden_states)
 
-        gate = self.gate_proj.forward(post_norm, loras = loras)
-        y = F.gelu(gate) if self.model.config.architecture == "Gemma" else F.silu(gate)
-        up = self.up_proj.forward(post_norm, loras = loras)
-        y *= up
-        y.clamp_(min = -65504.0, max = 65504.0)
+        if self.gate_proj is not None:
+            gate = self.gate_proj.forward(post_norm, loras = loras)
+            y = F.gelu(gate) if self.model.config.architecture in ["Gemma", "StarCoder2"] else F.silu(gate)
+            up = self.up_proj.forward(post_norm, loras = loras)
+            y *= up
+            y.clamp_(min = -65504.0, max = 65504.0)
+        else:
+            up = self.up_proj.forward(post_norm, loras = loras)
+            y = F.gelu(up) if self.model.config.architecture in ["Gemma", "StarCoder2"] else F.silu(up)
 
         down = self.down_proj.forward(y, loras = loras)
         hidden_states = down + residual
@@ -219,8 +231,13 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         if self.q_handle is None: return
 
-        gate_proj_lora_a = { id(k): v for k, v in self.gate_proj.lora_a_tensors.items() }
-        gate_proj_lora_b = { id(k): v for k, v in self.gate_proj.lora_b_tensors.items() }
+        if self.gate_proj is None:
+            gate_proj_lora_a = {}
+            gate_proj_lora_b = {}
+        else:
+            gate_proj_lora_a = { id(k): v for k, v in self.gate_proj.lora_a_tensors.items() }
+            gate_proj_lora_b = { id(k): v for k, v in self.gate_proj.lora_b_tensors.items() }
+
         up_proj_lora_a = { id(k): v for k, v in self.up_proj.lora_a_tensors.items() }
         up_proj_lora_b = { id(k): v for k, v in self.up_proj.lora_b_tensors.items() }
         down_proj_lora_a = { id(k): v for k, v in self.down_proj.lora_a_tensors.items() }
@@ -243,9 +260,6 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def rank_reduce(self, k):
 
-        self.gate_proj.rank_reduce(k)
+        if self.gate_proj is not None: self.gate_proj.rank_reduce(k)
         self.up_proj.rank_reduce(k)
         self.down_proj.rank_reduce(k)
-
-
-

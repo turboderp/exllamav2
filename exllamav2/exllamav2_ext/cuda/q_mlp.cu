@@ -9,137 +9,13 @@
 #include "../config.h"
 #include "compat.cuh"
 
-#include "q_mlp_softmax.cuh"
-
 const int THREADS_X = 32;
 const int THREADS_Y = 4;
+
+#include "q_mlp_softmax.cuh"
+#include "q_mlp_activation.cuh"
+
 // const int MAX_DIMENSION = 8192;
-
-__device__ __forceinline__ half silu(half x)
-{
-    half one = __float2half(1.0f);
-    half neg_x = __hneg(x);
-    half e = hexp(neg_x);
-    half sum = __hadd(one, e);
-    half r = hrcp(sum);
-    half result = __hmul(x, r);
-    return result;
-}
-
-__device__ __forceinline__ half2 silu(half2 x)
-{
-    half2 one = __float2half2_rn(1.0f);
-    half2 neg_x = __hneg2(x);
-    half2 e = h2exp(neg_x);
-    half2 sum = __hadd2(one, e);
-    half2 r = h2rcp(sum);
-    half2 result = __hmul2(x, r);
-    return result;
-}
-
-__device__ __forceinline__ half gelu(half x)
-{
-    float xf = __half2float(x);
-    const float c = 0.797884560803f;  // sqrt(2/Pi)
-    float tanh_arg = c * (xf + 0.044715f * pow(xf, 3));
-    xf = 0.5f * xf * (1.0 + tanh(tanh_arg));
-    return __float2half_rn(xf);
-}
-
-__device__ __forceinline__ half2 gelu(half2 x)
-{
-    return __halves2half2(gelu(__low2half(x)), gelu(__high2half(x)));
-}
-
-typedef void (*fp_silu_mul_kernel)
-(
-    half*,
-    const half*,
-    const int,
-    const int,
-    const half*,
-    const int
-);
-
-template <bool use_half2, bool use_r_weights, bool act_fn_gelu>
-__global__ void silu_mul_kernel
-(
-    half* __restrict__ x,
-    const half* __restrict__ y,
-    const int height,
-    const int width,
-    const half* r_weights,
-    const int r_weights_stride
-)
-{
-    MatrixView_half_rw x_(x, height, width);
-    MatrixView_half y_(y, height, width);
-
-    int column = (THREADS_X * blockIdx.x + threadIdx.x); if constexpr (use_half2) column *= 2;
-    int row = THREADS_Y * blockIdx.y + threadIdx.y;
-    if (row >= height) return;
-
-    if constexpr (use_r_weights)
-    {
-        half_uint16 weight(r_weights[row * r_weights_stride]);
-        if (!weight.as_uint16)
-        {
-//             half2 ppp = __float2half2_rn(6.9f);
-//             x_.set_half2(row, column, ppp);
-            return;
-        }
-    }
-
-    // silu(x) * y
-
-    if constexpr (use_half2)
-    {
-        half2 x_item = x_.item_half2(row, column);
-        half2 y_item = y_.item_half2(row, column);
-
-        if constexpr (act_fn_gelu)
-            x_item = gelu(x_item);
-        else
-            x_item = silu(x_item);
-
-        x_item = __hmul2(x_item, y_item);
-
-        x_.set_half2(row, column, x_item);
-    }
-    else
-    {
-        half x_item = x_.item(row, column);
-        half y_item = y_.item(row, column);
-
-        if constexpr (act_fn_gelu)
-            x_item = gelu(x_item);
-        else
-            x_item = silu(x_item);
-
-        x_item = __hmul(x_item, y_item);
-
-        x_.set(row, column, x_item);
-    }
-}
-
-fp_silu_mul_kernel pick_silu_mul_kernel(bool use_half2, bool mul_r_weights, bool act_fn_gelu)
-{
-    if (act_fn_gelu)
-    {
-        if ( use_half2 && !mul_r_weights) return silu_mul_kernel< true, false,  true>;
-        if ( use_half2 &&  mul_r_weights) return silu_mul_kernel< true,  true,  true>;
-        if (!use_half2 && !mul_r_weights) return silu_mul_kernel<false, false,  true>;
-        if (!use_half2 &&  mul_r_weights) return silu_mul_kernel<false,  true,  true>;
-    }
-    else
-    {
-        if ( use_half2 && !mul_r_weights) return silu_mul_kernel< true, false, false>;
-        if ( use_half2 &&  mul_r_weights) return silu_mul_kernel< true,  true, false>;
-        if (!use_half2 && !mul_r_weights) return silu_mul_kernel<false, false, false>;
-        if (!use_half2 &&  mul_r_weights) return silu_mul_kernel<false,  true, false>;
-    }
-    return NULL;
-};
 
 QMLP::QMLP
 (
@@ -187,18 +63,9 @@ void QMLP::forward_
 )
 {
     bool use_half2 = true;
-    int intermediate_size = gate->width;
+    int intermediate_size = up->width;
 
-    if (layernorm_is_rms)
-        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
-    else
-        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
-
-    gemm_half_q_half_cuda(cublas_handle, temp_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
-    gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
-
-    apply_loras_cuda(cublas_handle, gate_proj_lora, loras, gate, temp_state, temp_a, lora_temp, rows);
-    apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_b, lora_temp, rows);
+    // Activation kernel dims
 
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_X;
@@ -206,8 +73,40 @@ void QMLP::forward_
     gridDim.x = DIVIDE(up->width, THREADS_X) / (use_half2 ? 2 : 1);
     gridDim.y = DIVIDE(rows, THREADS_Y);
 
-    fp_silu_mul_kernel kernel = pick_silu_mul_kernel(use_half2, false, act_gelu);
-    kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
+    // Layernorm
+
+    if (layernorm_is_rms)
+        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+    else
+        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+
+    // Up proj with gate
+
+    if (gate)
+    {
+        gemm_half_q_half_cuda(cublas_handle, temp_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
+
+        apply_loras_cuda(cublas_handle, gate_proj_lora, loras, gate, temp_state, temp_a, lora_temp, rows);
+        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_b, lora_temp, rows);
+
+        fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
+        kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
+    }
+
+    // Up proj without gate
+
+    else
+    {
+        gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq);
+
+        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_a, lora_temp, rows);
+
+        fp_act_kernel kernel = pick_act_kernel(use_half2, false, act_gelu);
+        kernel<<<gridDim, blockDim>>>(temp_a, rows, intermediate_size, NULL, 0);
+    }
+
+    // Down proj
 
     gemm_half_q_half_cuda(cublas_handle, temp_a, down, x, rows, columns, intermediate_size, false, temp_dq);
 
@@ -328,7 +227,7 @@ void QMoEMLP::forward_
     if (rows <= MAX_Q_GEMM_WEIGHTS)
     {
         int intermediate_size = w1[0]->width;
-        fp_silu_mul_kernel kernel = pick_silu_mul_kernel(use_half2, true, act_gelu);
+        fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, true, act_gelu);
 
         for (int i = 0; i < num_experts; i++)
         {

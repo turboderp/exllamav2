@@ -129,11 +129,15 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, cache, att
 
 def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
 
-    quantizers["gate_proj"].prepare()
-    quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+    has_mlp = module.model.config.architecture not in ["StarCoder2"]
 
-    quant_linear(job, module.gate_proj, quantizers["gate_proj"], strat["gate_proj"])
-    del quantizers[f"gate_proj"]
+    quantizers["up_proj"].prepare()
+
+    if has_mlp:
+        quantizers["gate_proj"].reuse_h(quantizers["up_proj"])
+        quant_linear(job, module.gate_proj, quantizers["gate_proj"], strat["gate_proj"])
+        del quantizers[f"gate_proj"]
+
     quant_linear(job, module.up_proj, quantizers["up_proj"], strat["up_proj"])
     del quantizers[f"up_proj"]
 
@@ -254,8 +258,9 @@ def quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
+            has_mlp = model.config.architecture not in ["StarCoder2"]
             # testc(module, hidden_states, hidden_i_states, module.post_attention_layernorm, [module.gate_proj, module.up_proj])
-            quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
+            if has_mlp: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
 
@@ -295,7 +300,7 @@ def quant(job, save_fn, model):
                 quantizers["o_proj"].add_batch(outputs["attn_output"])
 
             if mode == "mlp":
-                quantizers["gate_proj"].add_batch(outputs["post_norm"])  # Reuse H for up_proj
+                quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
 
             if mode == "block_sparse_moe":

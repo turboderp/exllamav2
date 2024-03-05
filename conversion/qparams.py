@@ -346,7 +346,7 @@ qparams_headoptions = \
     # 16: None
 }
 
-def get_qparams_reduced(options):
+def get_qparams_reduced(options, ignore_gate = False):
 
     num_options = len(options)
     dim = len(options[0])
@@ -359,6 +359,7 @@ def get_qparams_reduced(options):
     for o in options:
         m = []
         for idx, qp in enumerate(o):
+            if ignore_gate and idx == 0: continue
             desc = qp.get_desc()
             if desc not in desc_to_idx[idx]:
                 j = len(idx_to_qp[idx])

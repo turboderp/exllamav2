@@ -40,7 +40,7 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
             self.layernorm.bias = bias
             self.bias = bias
 
-        self.variance_epsilon = self.model.config.rms_norm_eps
+        self.variance_epsilon = self.model.config.norm_eps
 
 
     def unload(self):

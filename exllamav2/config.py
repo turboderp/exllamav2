@@ -38,7 +38,7 @@ class ExLlamaV2Config:
     num_key_value_heads: int
     num_key_value_groups: int
     num_hidden_layers: int
-    rms_norm_eps: float
+    norm_eps: float
     vocab_size: int
     rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
     head_dim: int = 128                         # Constant for all Llama models, except 3b
@@ -46,8 +46,11 @@ class ExLlamaV2Config:
     num_experts_per_token: int = None
     attention_bias_qkv: bool = False
     attention_bias_o: bool = False
+    mlp_bias: bool = False
 
     checkpoint_fused_mlp: bool = False
+    fused_mlp_key_12: str = None
+    fused_mlp_key_3: str = None
 
     fasttensors: bool = False   # Experimental, Linux only
 
@@ -94,12 +97,15 @@ class ExLlamaV2Config:
                                     ["mlp.up_proj"]]
             layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
                                            ["mlp.swiglu.w3"]]
+            layer_keys_starcoder2_mlp = [["mlp.c_fc"],
+                                         ["mlp.c_proj"]]
             expect_keys_llama = [["lm_head"],
                                  ["model.norm"],
                                  ["model.embed_tokens"]]
             expect_keys_gemma = [["model.norm"],
                                  ["model.embed_tokens"]]
-
+            expect_keys_starcoder2 = [["model.norm"],
+                                      ["model.embed_tokens"]]
 
             if "LlamaForCausalLM" in read_config["architectures"]:
                 self.architecture = "Llama"
@@ -109,6 +115,7 @@ class ExLlamaV2Config:
                     layer_keys_llama_mlp
                 expect_keys += \
                     expect_keys_llama
+                norm_eps_key = "rms_norm_eps"
 
             elif "MistralForCausalLM" in read_config["architectures"]:
                 self.architecture = "Llama"
@@ -118,6 +125,7 @@ class ExLlamaV2Config:
                     layer_keys_llama_mlp
                 expect_keys += \
                     expect_keys_llama
+                norm_eps_key = "rms_norm_eps"
 
             elif "YiForCausalLM" in read_config["architectures"]:
                 self.architecture = "Yi"
@@ -127,6 +135,7 @@ class ExLlamaV2Config:
                     layer_keys_llama_mlp
                 expect_keys += \
                     expect_keys_llama
+                norm_eps_key = "rms_norm_eps"
 
             elif "MixtralForCausalLM" in read_config["architectures"]:
                 self.architecture = "Mixtral"
@@ -139,6 +148,7 @@ class ExLlamaV2Config:
                     [["block_sparse_moe.gate"]]
                 expect_keys += \
                     expect_keys_llama
+                norm_eps_key = "rms_norm_eps"
 
             elif "OrionForCausalLM" in read_config["architectures"]:
                 self.architecture = "Orion"
@@ -148,6 +158,7 @@ class ExLlamaV2Config:
                     layer_keys_llama_mlp
                 expect_keys += \
                     expect_keys_llama
+                norm_eps_key = "rms_norm_eps"
 
             elif "Qwen2ForCausalLM" in read_config["architectures"]:
                 self.architecture = "Qwen2"
@@ -159,6 +170,7 @@ class ExLlamaV2Config:
                     expect_keys_llama
                 self.attention_bias_qkv = True
                 self.attention_bias_o = False
+                norm_eps_key = "rms_norm_eps"
 
             elif "GemmaForCausalLM" in read_config["architectures"]:
                 self.architecture = "Gemma"
@@ -168,6 +180,20 @@ class ExLlamaV2Config:
                     layer_keys_llama_mlp
                 expect_keys += \
                     expect_keys_gemma
+                norm_eps_key = "rms_norm_eps"
+
+            elif "Starcoder2ForCausalLM" in read_config["architectures"]:
+                self.architecture = "StarCoder2"
+                layer_keys += \
+                    layer_keys_llama_norms + \
+                    layer_keys_llama_attn + \
+                    layer_keys_starcoder2_mlp
+                expect_keys += \
+                    expect_keys_starcoder2
+                norm_eps_key = "norm_epsilon"
+                self.attention_bias_qkv = True
+                self.attention_bias_o = True
+                self.mlp_bias = True
 
             else:
                 print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
@@ -189,7 +215,7 @@ class ExLlamaV2Config:
             self.intermediate_size = read_config["intermediate_size"]
             self.num_attention_heads = read_config["num_attention_heads"]
             self.num_hidden_layers = read_config["num_hidden_layers"]
-            self.rms_norm_eps = read_config["rms_norm_eps"]
+            self.norm_eps = read_config[norm_eps_key]
             self.vocab_size = read_config["vocab_size"]
             if read_config.get("attention_bias", False):
                 self.attention_bias_qkv = True
@@ -242,12 +268,15 @@ class ExLlamaV2Config:
 
         # For loading checkpoints with fused MLP layers
 
-        if self.architecture == "Llama" or self.architecture == "Yi":
-            if "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
-                "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
-                for x in layer_keys_llama_mlp: layer_keys.remove(x)
-                layer_keys += layer_keys_llama_mlp_swiglu
-                self.checkpoint_fused_mlp = True
+        if self.architecture in ["Llama", "Yi"] and \
+            "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
+            "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
+
+            for x in layer_keys_llama_mlp: layer_keys.remove(x)
+            layer_keys += layer_keys_llama_mlp_swiglu
+            self.checkpoint_fused_mlp = True
+            self.fused_mlp_key_12 = ".mlp.swiglu.w12"
+            self.fused_mlp_key_3 = ".mlp.swiglu.w3"
 
         # Make sure we found all the layers we need
 

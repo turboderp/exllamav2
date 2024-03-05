@@ -4,6 +4,17 @@ import itertools
 
 def optimize(job, save_fn, model):
 
+    if model.config.architecture in ["StarCoder2"]:
+        mlp_gate_key = None
+        mlp_up_key = ".mlp.c_fc"
+        mlp_down_key = ".mlp.c_proj"
+        has_gate = False
+    else:
+        mlp_gate_key = ".mlp.gate_proj"
+        mlp_up_key = ".mlp.up_proj"
+        mlp_down_key = ".mlp.down_proj"
+        has_gate = True
+
     error_norm = 2.4
     max_step_size = 2
 
@@ -13,10 +24,10 @@ def optimize(job, save_fn, model):
     key_v = key + ".self_attn.v_proj"
     key_o = key + ".self_attn.o_proj"
 
-    if key + ".mlp.gate_proj" in model.modules_dict:
-        key_g = key + ".mlp.gate_proj"
-        key_u = key + ".mlp.up_proj"
-        key_d = key + ".mlp.down_proj"
+    if key + mlp_up_key in model.modules_dict:
+        if has_gate: key_g = key + mlp_gate_key
+        key_u = key + mlp_up_key
+        key_d = key + mlp_down_key
         mlp_mode = "mlp"
     elif key + ".block_sparse_moe.experts.0.w1" in model.modules_dict:
         key_g = key + ".block_sparse_moe.experts.0.w1"
@@ -31,14 +42,14 @@ def optimize(job, save_fn, model):
     shape_k = model.modules_dict[key_k].matrix_shape()
     shape_v = model.modules_dict[key_v].matrix_shape()
     shape_o = model.modules_dict[key_o].matrix_shape()
-    shape_g = model.modules_dict[key_g].matrix_shape()
+    shape_g = model.modules_dict[key_g].matrix_shape() if has_gate else None
     shape_u = model.modules_dict[key_u].matrix_shape()
     shape_d = model.modules_dict[key_d].matrix_shape()
     numel_q = shape_q[0] * shape_q[1]
     numel_k = shape_k[0] * shape_k[1]
     numel_v = shape_v[0] * shape_v[1]
     numel_o = shape_o[0] * shape_o[1]
-    numel_g = shape_g[0] * shape_g[1] * num_experts
+    numel_g = shape_g[0] * shape_g[1] * num_experts if has_gate else 0
     numel_u = shape_u[0] * shape_u[1] * num_experts
     numel_d = shape_d[0] * shape_d[1] * num_experts
     numel_attn = numel_q + numel_k + numel_v + numel_o

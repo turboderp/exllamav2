@@ -37,7 +37,7 @@ uintptr_t make_q_mlp
     QMatrix* qm_down = reinterpret_cast<QMatrix*> (q_down);
 
     TORCH_CHECK_DTYPE(layernorm, kHalf);
-    TORCH_CHECK(qm_gate->height == layernorm.size(0), "gate_proj is wrong shape")
+    if (qm_gate) TORCH_CHECK(qm_gate->height == layernorm.size(0), "gate_proj is wrong shape")
     TORCH_CHECK(qm_up->height == layernorm.size(0), "up_proj is wrong shape")
 
     QMLP* mlp = new QMLP
@@ -82,7 +82,7 @@ void q_mlp_forward_
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
 
-    TORCH_CHECK(x.size(1) == mlp->gate->height, "x is wrong shape");
+    TORCH_CHECK(x.size(1) == mlp->up->height, "x is wrong shape");
     TORCH_CHECK(x.size(0) <= mlp->max_rows, "Too many rows in x");
 
     mlp->forward_

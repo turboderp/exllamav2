@@ -185,45 +185,74 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
 
 def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params):
 
-    qjobs, qmaps = get_qparams_reduced(qparams_mlp)
+    has_gate = module.model.config.architecture not in ["StarCoder2"]
+
+    qjobs, qmaps = get_qparams_reduced(qparams_mlp, not has_gate)
     results = []
 
-    quantizers["gate_proj"].prepare()
-    quantizers["up_proj"].reuse_h(quantizers["gate_proj"])
+    quantizers["up_proj"].prepare()
+    if has_gate: quantizers["gate_proj"].reuse_h(quantizers["up_proj"])
     quantizers["down_proj"].prepare()
 
-    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"gate_proj"], qjobs[0])
+    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"gate_proj"], qjobs[0]) if has_gate else None, None
     options_u, bits_u = test_quant(module.up_proj, quantizers[f"up_proj"], qjobs[1])
     options_d, bits_d = test_quant(module.down_proj, quantizers[f"down_proj"], qjobs[2])
 
-    total_numel = module.gate_proj.numel()
+    total_numel = module.gate_proj.numel() if has_gate else 0
     total_numel += module.up_proj.numel()
     total_numel += module.down_proj.numel()
 
-    (g_, u_, d_) = (-1, -1, -1)
-    for (g, u, d) in qmaps:
+    if has_gate:
 
-        if g != g_: module.gate_proj.linear.weight = nn.Parameter(options_g[g].weight.cuda())
-        if u != u_: module.up_proj.linear.weight = nn.Parameter(options_u[u].weight.cuda())
-        if d != d_: module.down_proj.linear.weight = nn.Parameter(options_d[d].weight.cuda())
-        (g_, u_, d_) = (g, u, d)
+        (g_, u_, d_) = (-1, -1, -1)
+        for (g, u, d) in qmaps:
 
-        total_bits = bits_g[g]
-        total_bits += bits_u[u]
-        total_bits += bits_d[d]
-        total_bpw = total_bits / total_numel
+            if g != g_: module.gate_proj.linear.weight = nn.Parameter(options_g[g].weight.cuda())
+            if u != u_: module.up_proj.linear.weight = nn.Parameter(options_u[u].weight.cuda())
+            if d != d_: module.down_proj.linear.weight = nn.Parameter(options_d[d].weight.cuda())
+            (g_, u_, d_) = (g, u, d)
 
-        accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
-        print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
+            total_bits = bits_g[g]
+            total_bits += bits_u[u]
+            total_bits += bits_d[d]
+            total_bpw = total_bits / total_numel
 
-        torch.cuda.empty_cache()
+            accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
+            print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
 
-        r = { "accuracy": accuracy,
-              "total_bits": total_bits,
-              "gate_proj": qjobs[0][g].get_dict(),
-              "up_proj": qjobs[1][u].get_dict(),
-              "down_proj": qjobs[2][d].get_dict() }
-        results.append(r)
+            torch.cuda.empty_cache()
+
+            r = { "accuracy": accuracy,
+                  "total_bits": total_bits,
+                  "gate_proj": qjobs[0][g].get_dict(),
+                  "up_proj": qjobs[1][u].get_dict(),
+                  "down_proj": qjobs[2][d].get_dict() }
+            results.append(r)
+
+    else:
+
+        (u_, d_) = (-1, -1)
+        for (u , d) in qmaps:
+
+            if u != u_: module.up_proj.linear.weight = nn.Parameter(options_u[u].weight.cuda())
+            if d != d_: module.down_proj.linear.weight = nn.Parameter(options_d[d].weight.cuda())
+            (u_, d_) = (u, d)
+
+            total_bits = bits_u[u]
+            total_bits += bits_d[d]
+            total_bpw = total_bits / total_numel
+
+            accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
+            print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
+
+            torch.cuda.empty_cache()
+
+            r = { "accuracy": accuracy,
+                  "total_bits": total_bits,
+                  "up_proj": qjobs[1][u].get_dict(),
+                  "down_proj": qjobs[2][d].get_dict() }
+            results.append(r)
+
 
     return results
 
@@ -391,7 +420,8 @@ def measure_quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
-            quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
+            if model.config.architecture not in ["StarCoder2"]:
+                quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
 
@@ -430,7 +460,7 @@ def measure_quant(job, save_fn, model):
                 quantizers["o_proj"].add_batch(outputs["attn_output"])
 
             if mode == "mlp":
-                quantizers["gate_proj"].add_batch(outputs["post_norm"])  # Reuse H for up_proj
+                quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
 
             if mode == "block_sparse_moe":

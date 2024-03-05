@@ -157,7 +157,7 @@ class ExLlamaV2:
                 self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
 
-        if self.config.architecture == "Orion":
+        if self.config.architecture in ["Orion", "StarCoder2"]:
             self.modules.append(ExLlamaV2LayerNorm(self, "model.norm"))
         else:
             self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
@@ -167,7 +167,7 @@ class ExLlamaV2:
 
         self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
-        if self.config.architecture == "Gemma":
+        if self.config.architecture in ["Gemma", "StarCoder2"]:
             self.modules[-1].alt_key = "model.embed_tokens"
 
     # Find last layer that affects k/v cache

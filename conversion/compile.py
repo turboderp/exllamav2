@@ -76,8 +76,9 @@ def compile_model(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2MLP):
 
+            has_mlp = model.config.architecture not in ["StarCoder2"]
             d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.gate_proj); out_dict.update(d); current_size += _dsize(d)
+            if has_mlp: d = get_q_module(job, module.gate_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.up_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.down_proj); out_dict.update(d); current_size += _dsize(d)
 
