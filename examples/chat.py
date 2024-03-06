@@ -132,6 +132,8 @@ if args.draft_model_dir:
 
 if args.cache_8bit:
     cache = ExLlamaV2Cache_8bit(model, lazy = not model.loaded)
+elif args.cache_q4:
+    cache = ExLlamaV2Cache_Q4(model, lazy = not model.loaded)
 else:
     cache = ExLlamaV2Cache(model, lazy = not model.loaded)
 
