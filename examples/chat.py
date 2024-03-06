@@ -260,7 +260,7 @@ while True:
     # Send tokenized context to generator
 
     active_context = get_tokenized_context(model.config.max_seq_len - min_space_in_context)
-    generator.begin_stream(active_context, settings)
+    generator.begin_stream_ex(active_context, settings)
 
     # Stream response
 
@@ -280,7 +280,11 @@ while True:
 
         # Get response stream
 
-        chunk, eos, tokens = generator.stream()
+        res = generator.stream_ex()
+        chunk = res["chunk"]
+        eos = res["eos"]
+        tokens = res["chunk_token_ids"]
+
         if len(response_text) == 0: chunk = chunk.lstrip()
         response_text += chunk
         responses_ids[-1] = torch.cat([responses_ids[-1], tokens], dim = -1)

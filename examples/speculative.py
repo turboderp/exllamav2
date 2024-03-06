@@ -20,9 +20,8 @@ import time, torch
 
 torch.set_num_threads(1)
 
-# model_directory = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
-model_directory = "/mnt/str/models/_gptq/TheBloke_Phine-CodeLlama-34B-v2-GPTQ/"
-draft_directory = "/mnt/str/models/tinyllama-1b-ckpt503-exl2/3.5bpw"
+model_directory = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
+draft_directory = "/mnt/str/models/tinyllama-1b-32k-exl2/3.5bpw"
 
 model_config = ExLlamaV2Config()
 model_config.model_dir = model_directory
@@ -69,7 +68,7 @@ def test_gen(generator, prompt, settings, max_new_tokens):
     sys.stdout.flush()
 
     generator.set_stop_conditions([])
-    generator.begin_stream(input_ids, settings)
+    generator.begin_stream_ex(input_ids, settings)
 
     # Streaming loop. Note that repeated calls to sys.stdout.flush() adds some latency, but some
     # consoles won't update partial lines without it.
@@ -78,7 +77,10 @@ def test_gen(generator, prompt, settings, max_new_tokens):
     generated_tokens = 0
 
     while True:
-        chunk, eos, _ = generator.stream()
+        res = generator.stream_ex()
+        chunk = res["chunk"]
+        eos = res["eos"]
+
         generated_tokens += 1
         print (chunk, end = "")
         sys.stdout.flush()

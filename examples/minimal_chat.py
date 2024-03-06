@@ -28,12 +28,12 @@ while True:
     context_ids = instruction_ids if generator.sequence_ids is None \
         else torch.cat([generator.sequence_ids, instruction_ids], dim = -1)
 
-    generator.begin_stream(context_ids, gen_settings)
+    generator.begin_stream_ex(context_ids, gen_settings)
 
     while True:
-        chunk, eos, _ = generator.stream()
-        if eos: break
-        print(chunk, end = "")
+        res = generator.stream_ex()
+        if res["eos"]: break
+        print(res["chunk"], end = "")
         sys.stdout.flush()
 
     print()

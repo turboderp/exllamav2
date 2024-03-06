@@ -70,7 +70,7 @@ def completion(prompt, filters = None, max_new_tokens = 200, eos_bias = False):
     time_begin_prompt = time.time()
 
     generator.set_stop_conditions([tokenizer.eos_token_id])
-    generator.begin_stream(input_ids, settings)
+    generator.begin_stream_ex(input_ids, settings)
 
     # Streaming loop
 
@@ -83,12 +83,12 @@ def completion(prompt, filters = None, max_new_tokens = 200, eos_bias = False):
 
     result = ""
     while True:
-        chunk, eos, _ = generator.stream()
-        result += chunk
+        res = generator.stream_ex()
+        result += res["chunk"]
         generated_tokens += 1
-        print(chunk, end = "")
+        print(res["chunk"], end = "")
         sys.stdout.flush()
-        if eos or generated_tokens == max_new_tokens: break
+        if res["eos"] or generated_tokens == max_new_tokens: break
 
     time_end = time.time()
 
