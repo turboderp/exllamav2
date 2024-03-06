@@ -35,15 +35,20 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         self.num_experts = self.model.config.num_experts
         self.num_experts_per_token = self.model.config.num_experts_per_token
 
-        if self.model.config.architecture == "Orion":
-            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + ".post_attention_layernorm")
-        else:
-            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + ".post_attention_layernorm")
+        if self.model.config.arch.norm == "layernorm":
+            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_2)
+        elif self.model.config.arch.norm == "rmsnorm":
+            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_2)
 
-        self.w1 = [ExLlamaV2Linear(model, key + f".block_sparse_moe.experts.{e}.w1", hidden_size, intermediate_size, False) for e in range(self.num_experts)]
-        self.w2 = [ExLlamaV2Linear(model, key + f".block_sparse_moe.experts.{e}.w2", intermediate_size, hidden_size, False) for e in range(self.num_experts)]
-        self.w3 = [ExLlamaV2Linear(model, key + f".block_sparse_moe.experts.{e}.w3", hidden_size, intermediate_size, False) for e in range(self.num_experts)]
-        self.gate = ExLlamaV2Linear(model, key + ".block_sparse_moe.gate", hidden_size, self.num_experts, False, pad32 = False)
+        w1_key = self.model.config.arch.mlp_key_gate
+        w2_key = self.model.config.arch.mlp_key_down
+        w3_key = self.model.config.arch.mlp_key_up
+        gate_key = self.model.config.arch.mlp_key_expert_gate
+
+        self.w1 = [ExLlamaV2Linear(model, key + w1_key.replace("*", str(e)), hidden_size, intermediate_size, self.model.config.arch.mlp_bias) for e in range(self.num_experts)]
+        self.w2 = [ExLlamaV2Linear(model, key + w2_key.replace("*", str(e)), intermediate_size, hidden_size, self.model.config.arch.mlp_bias) for e in range(self.num_experts)]
+        self.w3 = [ExLlamaV2Linear(model, key + w3_key.replace("*", str(e)), hidden_size, intermediate_size, self.model.config.arch.mlp_bias) for e in range(self.num_experts)]
+        self.gate = ExLlamaV2Linear(model, key + gate_key, hidden_size, self.num_experts, False, pad32 = False)
 
         self.submodules = [self.post_attention_layernorm,
                            self.gate] + \
@@ -85,7 +90,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                                                  device_tensors.get_scratch_slice(self.temp_logit_size()),
                                                  device_tensors.get_scratch_slice(self.temp_dq_size()),
                                                  self.model.config.max_input_len * self.model.config.max_batch_size,
-                                                 self.model.config.architecture == "Gemma")
+                                                 self.model.config.arch.mlp_act_func == "gelu")
 
 
     def unload(self):
@@ -238,7 +243,11 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             gate = self.w1[expert_idx].forward(current_state, loras = loras)
             up = self.w3[expert_idx].forward(current_state, loras = loras)
 
-            current_hidden_states = (F.gelu(gate) if self.model.config.architecture == "Gemma" else F.silu(gate)) * up
+            if self.model.config.arch.mlp_act_func == "silu":
+                current_hidden_states = F.silu(gate)
+            elif self.model.config.arch.mlp_act_func == "gelu":
+                current_hidden_states = F.gelu(gate)
+            current_hidden_states *= up
             if intermediates: result[f"pre_down.{expert_idx}"] = current_hidden_states
 
             current_hidden_states = self.w2[expert_idx].forward(current_hidden_states, loras = loras)

@@ -13,9 +13,6 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
 
     def __init__(self, model, key):
-        if model.config.architecture == "Yi":
-            key = key.replace(".input_layernorm", ".ln1")
-            key = key.replace(".post_attention_layernorm", ".ln2")
         super().__init__(model, key)
 
 
@@ -37,8 +34,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         self.variance_epsilon = self.model.config.norm_eps
 
         # Gemma adds 1 to the norm tensor for some reason
-        if self.model.config.architecture == "Gemma":
-            self.weight += 1
+        if self.model.config.arch.norm_constant_bias != 0:
+            self.weight += self.model.config.arch.norm_constant_bias
 
 
     def unload(self):
@@ -55,8 +52,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     def get_weight(self):
 
         # Make sure to return the original weight tensor for Gemma
-        if self.model.config.architecture == "Gemma":
-            return self.weight.data - 1
+        if self.model.config.arch.norm_constant_bias != 0:
+            return self.weight.data - self.model.config.arch.norm_constant_bias
 
         return self.weight.data
 

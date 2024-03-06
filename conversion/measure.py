@@ -185,7 +185,7 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
 
 def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params):
 
-    has_gate = module.model.config.architecture not in ["StarCoder2"]
+    has_gate = module.model.config.arch.mlp_gate
 
     qjobs, qmaps = get_qparams_reduced(qparams_mlp, not has_gate)
     results = []
@@ -194,7 +194,7 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_pa
     if has_gate: quantizers["gate_proj"].reuse_h(quantizers["up_proj"])
     quantizers["down_proj"].prepare()
 
-    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"gate_proj"], qjobs[0]) if has_gate else None, None
+    options_g, bits_g = test_quant(module.gate_proj, quantizers[f"gate_proj"], qjobs[0]) if has_gate else (None, None)
     options_u, bits_u = test_quant(module.up_proj, quantizers[f"up_proj"], qjobs[1])
     options_d, bits_d = test_quant(module.down_proj, quantizers[f"down_proj"], qjobs[2])
 
@@ -420,8 +420,8 @@ def measure_quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
-            if model.config.architecture not in ["StarCoder2"]:
-                quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
+            has_gate = module.model.config.arch.mlp_gate
+            if has_gate: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
 

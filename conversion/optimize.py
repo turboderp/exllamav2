@@ -4,16 +4,10 @@ import itertools
 
 def optimize(job, save_fn, model):
 
-    if model.config.architecture in ["StarCoder2"]:
-        mlp_gate_key = None
-        mlp_up_key = ".mlp.c_fc"
-        mlp_down_key = ".mlp.c_proj"
-        has_gate = False
-    else:
-        mlp_gate_key = ".mlp.gate_proj"
-        mlp_up_key = ".mlp.up_proj"
-        mlp_down_key = ".mlp.down_proj"
-        has_gate = True
+    has_gate = model.config.arch.mlp_gate
+    if has_gate: mlp_key_gate = model.config.arch.mlp_key_gate
+    mlp_key_up = model.config.arch.mlp_key_up
+    mlp_key_down = model.config.arch.mlp_key_down
 
     error_norm = 2.4
     max_step_size = 2
@@ -24,18 +18,16 @@ def optimize(job, save_fn, model):
     key_v = key + ".self_attn.v_proj"
     key_o = key + ".self_attn.o_proj"
 
-    if key + mlp_up_key in model.modules_dict:
-        if has_gate: key_g = key + mlp_gate_key
-        key_u = key + mlp_up_key
-        key_d = key + mlp_down_key
+    if not model.config.arch.is_moe:
+        if has_gate: key_g = key + mlp_key_gate
+        key_u = key + mlp_key_up
+        key_d = key + mlp_key_down
         mlp_mode = "mlp"
-    elif key + ".block_sparse_moe.experts.0.w1" in model.modules_dict:
-        key_g = key + ".block_sparse_moe.experts.0.w1"
-        key_u = key + ".block_sparse_moe.experts.0.w3"
-        key_d = key + ".block_sparse_moe.experts.0.w2"
-        mlp_mode = "block_sparse_moe"
     else:
-        raise ValueError(" ## Can't find MLP keys in model")
+        if has_gate: key_g = key + mlp_key_gate.replace("*", "0")
+        key_u = key + mlp_key_up.replace("*", "0")
+        key_d = key + mlp_key_down.replace("*", "0")
+        mlp_mode = "block_sparse_moe"
 
     num_experts = model.config.num_experts if model.config.num_experts is not None else 1
     shape_q = model.modules_dict[key_q].matrix_shape()
@@ -161,19 +153,17 @@ def optimize(job, save_fn, model):
 
         return best_idx, best_add_w, best_add_v
 
-
-    # #
-    # # while True:
-    # #     b_idx, b_add_w, b_add_v = improve(f_solution, weight)
-    # #     if b_idx == -1:
-    # #         break
-    # #
-    # #     f_solution[b_idx] += 1
-    # #     weight += b_add_w
-    # #     value += b_add_v
-    # #
-    # # bpw = weight / numel
-    # # print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
+    # while True:
+    #     b_idx, b_add_w, b_add_v = improve(f_solution, weight)
+    #     if b_idx == -1:
+    #         break
+    #
+    #     f_solution[b_idx] += 1
+    #     weight += b_add_w
+    #     value += b_add_v
+    #
+    # bpw = weight / numel
+    # print(f" -- Score: {math.exp(value):.8f}  bpw: {bpw:.4f}")
 
     best_value = value
     prev_best_value = value

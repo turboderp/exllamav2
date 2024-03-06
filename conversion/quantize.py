@@ -129,7 +129,7 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, cache, att
 
 def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
 
-    has_mlp = module.model.config.architecture not in ["StarCoder2"]
+    has_mlp = module.model.config.arch.mlp_gate
 
     quantizers["up_proj"].prepare()
 
@@ -258,7 +258,7 @@ def quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
-            has_mlp = model.config.architecture not in ["StarCoder2"]
+            has_mlp = model.config.arch.mlp_gate
             # testc(module, hidden_states, hidden_i_states, module.post_attention_layernorm, [module.gate_proj, module.up_proj])
             if has_mlp: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)

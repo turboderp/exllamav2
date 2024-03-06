@@ -158,15 +158,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         hidden_size = self.model.config.hidden_size
 
-        if self.model.config.architecture in ["Orion", "StarCoder2"]:
-            self.input_layernorm = ExLlamaV2LayerNorm(model, key + ".input_layernorm")
-        else:
-            self.input_layernorm = ExLlamaV2RMSNorm(model, key + ".input_layernorm")
+        if self.model.config.arch.norm == "layernorm":
+            self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
+        elif self.model.config.arch.norm == "rmsnorm":
+            self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_1)
 
-        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, self.model.config.attention_bias_qkv)
-        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.attention_bias_qkv)
-        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.attention_bias_qkv)
-        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", self.model.config.num_attention_heads * self.model.config.head_dim, hidden_size, self.model.config.attention_bias_o)
+        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
+        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
+        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
+        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", self.model.config.num_attention_heads * self.model.config.head_dim, hidden_size, self.model.config.arch.attention_bias_o)
 
         self.submodules = [self.input_layernorm,
                            self.q_proj,

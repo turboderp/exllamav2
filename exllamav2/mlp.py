@@ -37,33 +37,32 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         hidden_size = self.model.config.hidden_size
         intermediate_size = self.model.config.intermediate_size
 
-        if self.model.config.architecture in ["Orion", "StarCoder2"]:
-            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + ".post_attention_layernorm")
-        else:
-            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + ".post_attention_layernorm")
+        if self.model.config.arch.norm == "layernorm":
+            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_2)
+        elif self.model.config.arch.norm == "rmsnorm":
+            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_2)
 
-        if self.model.config.architecture in ["StarCoder2"]:
-            self.gate_proj = None
-            self.up_proj = ExLlamaV2Linear(model, key + ".mlp.c_fc", hidden_size, intermediate_size, self.model.config.mlp_bias)
-            self.down_proj = ExLlamaV2Linear(model, key + ".mlp.c_proj", intermediate_size, hidden_size, self.model.config.mlp_bias)
-            self.submodules = [self.post_attention_layernorm,
-                               self.up_proj,
-                               self.down_proj]
+        self.up_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_up, hidden_size, intermediate_size, self.model.config.arch.mlp_bias)
+        self.down_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_down, intermediate_size, hidden_size, self.model.config.arch.mlp_bias)
+        self.submodules = [self.post_attention_layernorm,
+                           self.up_proj,
+                           self.down_proj]
+        if self.model.config.arch.mlp_gate:
+            self.gate_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_gate, hidden_size, intermediate_size, self.model.config.arch.mlp_bias)
+            self.submodules += [self.gate_proj]
         else:
-            self.gate_proj = ExLlamaV2Linear(model, key + ".mlp.gate_proj", hidden_size, intermediate_size, self.model.config.mlp_bias)
-            self.up_proj = ExLlamaV2Linear(model, key + ".mlp.up_proj", hidden_size, intermediate_size, self.model.config.mlp_bias)
-            self.down_proj = ExLlamaV2Linear(model, key + ".mlp.down_proj", intermediate_size, hidden_size, self.model.config.mlp_bias)
-            self.submodules = [self.post_attention_layernorm,
-                               self.gate_proj,
-                               self.up_proj,
-                               self.down_proj]
+            self.gate_proj = None
 
 
     def numel(self):
 
-        return (self.gate_proj.numel() if self.model.config.architecture not in "StarCoder2" else 0) + \
-               self.up_proj.numel() + \
-               self.down_proj.numel()
+        if self.model.config.arch.mlp_gate:
+            return self.gate_proj.numel() + \
+                   self.up_proj.numel() + \
+                   self.down_proj.numel()
+        else:
+            return self.up_proj.numel() + \
+                   self.down_proj.numel()
 
 
     def load(self):
@@ -100,7 +99,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              device_tensors.get_scratch_slice(self.temp_b_size()),
                                              device_tensors.get_scratch_slice(self.temp_dq_size()),
                                              self.model.config.max_input_len * self.model.config.max_batch_size,
-                                             self.model.config.architecture in ["Gemma", "StarCoder2"])
+                                             self.model.config.arch.mlp_act_func == "gelu")
 
 
     def unload(self):
@@ -205,13 +204,19 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         if self.gate_proj is not None:
             gate = self.gate_proj.forward(post_norm, loras = loras)
-            y = F.gelu(gate) if self.model.config.architecture in ["Gemma", "StarCoder2"] else F.silu(gate)
+            if self.model.config.arch.mlp_act_func == "silu":
+                y = F.silu(gate)
+            elif self.model.config.arch.mlp_act_func == "gelu":
+                y = F.gelu(gate)
             up = self.up_proj.forward(post_norm, loras = loras)
             y *= up
             y.clamp_(min = -65504.0, max = 65504.0)
         else:
             up = self.up_proj.forward(post_norm, loras = loras)
-            y = F.gelu(up) if self.model.config.architecture in ["Gemma", "StarCoder2"] else F.silu(up)
+            if self.model.config.arch.mlp_act_func == "silu":
+                y = F.silu(up)
+            elif self.model.config.arch.mlp_act_func == "gelu":
+                y = F.gelu(up)
 
         down = self.down_proj.forward(y, loras = loras)
         hidden_states = down + residual

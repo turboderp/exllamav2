@@ -151,24 +151,25 @@ class ExLlamaV2:
 
             self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
-            if self.config.architecture == "Mixtral":
+            if self.config.arch.is_moe:
                 self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_idx}", layer_idx))
             else:
                 self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
             for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
 
-        if self.config.architecture in ["Orion", "StarCoder2"]:
+        if self.config.arch.norm == "layernorm":
             self.modules.append(ExLlamaV2LayerNorm(self, "model.norm"))
-        else:
+        elif self.config.arch.norm == "rmsnorm":
             self.modules.append(ExLlamaV2RMSNorm(self, "model.norm"))
+        else: raise ValueError("unknown norm type")
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
 
         self.head_layer_idx = len(self.modules)
 
         self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
-        if self.config.architecture in ["Gemma", "StarCoder2"]:
-            self.modules[-1].alt_key = "model.embed_tokens"
+        if self.config.arch.lm_head_key != "lm_head":
+            self.modules[-1].alt_key = self.config.arch.lm_head_key
 
     # Find last layer that affects k/v cache
 

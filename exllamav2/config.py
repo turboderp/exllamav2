@@ -1,5 +1,6 @@
 import torch
 from exllamav2.fasttensors import STFile
+from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
 
 class ExLlamaV2Config:
@@ -16,10 +17,12 @@ class ExLlamaV2Config:
     scale_alpha_value: float = 1.0              # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model
 
     no_flash_attn: bool = False                 # Implementation will automatically use flash-attn-2 when available
+    fasttensors: bool = False                   # Experimental, Linux only
 
     # Loaded/set by .prepare():
 
     architecture: str
+    arch: ExLlamaV2ArchParams = None
 
     model_config: str
     tensor_file_map: dict
@@ -44,15 +47,8 @@ class ExLlamaV2Config:
     head_dim: int = 128                         # Constant for all Llama models, except 3b
     num_experts: int = None
     num_experts_per_token: int = None
-    attention_bias_qkv: bool = False
-    attention_bias_o: bool = False
-    mlp_bias: bool = False
 
     checkpoint_fused_mlp: bool = False
-    fused_mlp_key_12: str = None
-    fused_mlp_key_3: str = None
-
-    fasttensors: bool = False   # Experimental, Linux only
 
 
     def __init__(self):
@@ -82,172 +78,65 @@ class ExLlamaV2Config:
         with open(self.model_config, encoding = "utf8") as f:
             read_config = json.load(f)
 
-            layer_keys = []
-            expect_keys = []
-            layer_keys_llama_norms = [["input_layernorm"],
-                                      ["post_attention_layernorm"]]
-            layer_keys_yi_norms = [["ln1", "input_layernorm"],
-                                   ["ln2", "post_attention_layernorm"]]
-            layer_keys_llama_attn = [["self_attn.q_proj"],
-                                     ["self_attn.k_proj"],
-                                     ["self_attn.v_proj"],
-                                     ["self_attn.o_proj"]]
-            layer_keys_llama_mlp = [["mlp.down_proj"],
-                                    ["mlp.gate_proj"],
-                                    ["mlp.up_proj"]]
-            layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
-                                           ["mlp.swiglu.w3"]]
-            layer_keys_starcoder2_mlp = [["mlp.c_fc"],
-                                         ["mlp.c_proj"]]
-            expect_keys_llama = [["lm_head"],
-                                 ["model.norm"],
-                                 ["model.embed_tokens"]]
-            expect_keys_gemma = [["model.norm"],
-                                 ["model.embed_tokens"]]
-            expect_keys_starcoder2 = [["model.norm"],
-                                      ["model.embed_tokens"]]
+        # Model architecture
 
-            if "LlamaForCausalLM" in read_config["architectures"]:
-                self.architecture = "Llama"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_llama
-                norm_eps_key = "rms_norm_eps"
+        assert len(read_config["architectures"]) == 1, "Multiple architectures defined in config.json"
+        arch_string = read_config["architectures"][0]
+        self.arch = ExLlamaV2ArchParams(arch_string, read_config)
 
-            elif "MistralForCausalLM" in read_config["architectures"]:
-                self.architecture = "Llama"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_llama
-                norm_eps_key = "rms_norm_eps"
+        # Vocab params
 
-            elif "YiForCausalLM" in read_config["architectures"]:
-                self.architecture = "Yi"
-                layer_keys += \
-                    layer_keys_yi_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_llama
-                norm_eps_key = "rms_norm_eps"
+        self.bos_token_id = read_config.get("bos_token_id", 1)
+        self.eos_token_id = read_config.get("eos_token_id", 2)
+        self.pad_token_id = read_config.get("pad_token_id", 0)
+        self.vocab_size = read_config["vocab_size"]
 
-            elif "MixtralForCausalLM" in read_config["architectures"]:
-                self.architecture = "Mixtral"
-                self.num_experts = read_config["num_local_experts"]
-                self.num_experts_per_token = read_config["num_experts_per_tok"]
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    [[f"block_sparse_moe.experts.{e}.w{w}" for e in range(8) for w in range(3)]] + \
-                    [["block_sparse_moe.gate"]]
-                expect_keys += \
-                    expect_keys_llama
-                norm_eps_key = "rms_norm_eps"
+        # Standard params
 
-            elif "OrionForCausalLM" in read_config["architectures"]:
-                self.architecture = "Orion"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_llama
-                norm_eps_key = "rms_norm_eps"
+        self.initializer_range = read_config["initializer_range"]
+        self.num_hidden_layers = read_config["num_hidden_layers"]
 
-            elif "Qwen2ForCausalLM" in read_config["architectures"]:
-                self.architecture = "Qwen2"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_llama
-                self.attention_bias_qkv = True
-                self.attention_bias_o = False
-                norm_eps_key = "rms_norm_eps"
+        # Norm params
 
-            elif "GemmaForCausalLM" in read_config["architectures"]:
-                self.architecture = "Gemma"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_gemma
-                norm_eps_key = "rms_norm_eps"
+        self.norm_eps = read_config[self.arch.norm_eps_key]
 
-            elif "Starcoder2ForCausalLM" in read_config["architectures"]:
-                self.architecture = "StarCoder2"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_starcoder2_mlp
-                expect_keys += \
-                    expect_keys_starcoder2
-                norm_eps_key = "norm_epsilon"
-                self.attention_bias_qkv = True
-                self.attention_bias_o = True
-                self.mlp_bias = True
+        # Attn params
 
-            else:
-                print(f" !! Warning, unknown architecture: {repr(read_config['architectures'])}")
-                print(f" !! Loading as LlamaForCausalLM")
-                self.architecture = "Llama"
-                layer_keys += \
-                    layer_keys_llama_norms + \
-                    layer_keys_llama_attn + \
-                    layer_keys_llama_mlp
-                expect_keys += \
-                    expect_keys_llama
+        self.num_attention_heads = read_config["num_attention_heads"]
 
-            self.bos_token_id = read_config["bos_token_id"] if "bos_token_id" in read_config else 1
-            self.eos_token_id = read_config["eos_token_id"] if "eos_token_id" in read_config else 2
-            self.pad_token_id = read_config["pad_token_id"] if "pad_token_id" in read_config else 0
+        if "num_key_value_heads" in read_config:
+            self.num_key_value_heads = read_config["num_key_value_heads"]
+            self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
+        else:
+            self.num_key_value_heads = self.num_attention_heads
+            self.num_key_value_groups = 1
 
-            self.hidden_size = read_config["hidden_size"]
-            self.initializer_range = read_config["initializer_range"]
-            self.intermediate_size = read_config["intermediate_size"]
-            self.num_attention_heads = read_config["num_attention_heads"]
-            self.num_hidden_layers = read_config["num_hidden_layers"]
-            self.norm_eps = read_config[norm_eps_key]
-            self.vocab_size = read_config["vocab_size"]
-            if read_config.get("attention_bias", False):
-                self.attention_bias_qkv = True
-                self.attention_bias_o = True
+        # MLP params
 
-            self.rotary_embedding_base = read_config["rope_theta"] if "rope_theta" in read_config else 10000.0
+        self.intermediate_size = read_config["intermediate_size"]
+        self.num_experts = read_config.get("num_local_experts", None)
+        self.num_experts_per_token = read_config.get("num_experts_per_tok", None)
 
-            if "num_key_value_heads" in read_config:
-                self.num_key_value_heads = read_config["num_key_value_heads"]
-                self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
-            else:
-                self.num_key_value_heads = self.num_attention_heads
-                self.num_key_value_groups = 1
+        # Positional embeddings
 
-            if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
-            elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
+        self.rotary_embedding_base = read_config["rope_theta"] if "rope_theta" in read_config else 10000.0
 
-            rs = read_config.get("rope_scaling", None)
-            if rs and "factor" in rs:
-                factor = rs["factor"]
-                scaling_type = rs.get("type", None)
-                if scaling_type == "linear":
-                    self.scale_pos_emb = factor
-                # elif scaling_type == "yarn":
-                #     self.scale_alpha_value = factor
+        if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
+        elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
+
+        rs = read_config.get("rope_scaling", None)
+        if rs and "factor" in rs:
+            factor = rs["factor"]
+            scaling_type = rs.get("type", None)
+            if scaling_type == "linear":
+                self.scale_pos_emb = factor
+            # elif scaling_type == "yarn":
+            #     self.scale_alpha_value = factor
 
         # Model dimensions
 
-        if "head_dim" in read_config:
-            self.head_dim = read_config["head_dim"]
-        else:
-            self.head_dim = self.hidden_size // self.num_attention_heads
+        self.hidden_size = read_config["hidden_size"]
+        self.head_dim = read_config.get("head_dim", self.hidden_size // self.num_attention_heads)
 
         # Create map of model tensors
 
@@ -268,20 +157,17 @@ class ExLlamaV2Config:
 
         # For loading checkpoints with fused MLP layers
 
-        if self.architecture in ["Llama", "Yi"] and \
-            "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
+        if "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
             "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
-
-            for x in layer_keys_llama_mlp: layer_keys.remove(x)
-            layer_keys += layer_keys_llama_mlp_swiglu
             self.checkpoint_fused_mlp = True
-            self.fused_mlp_key_12 = ".mlp.swiglu.w12"
-            self.fused_mlp_key_3 = ".mlp.swiglu.w3"
+            self.arch.make_fused_mlp()
 
         # Make sure we found all the layers we need
 
+        expect_keys = self.arch.expect_keys.copy()
+
         for layer_idx in range(self.num_hidden_layers):
-            for ks in layer_keys:
+            for ks in self.arch.layer_keys:
                 prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
                 expect_keys.append(prefixes)
 
