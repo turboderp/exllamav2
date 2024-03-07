@@ -64,7 +64,12 @@ def check_args(args):
             sys.exit()
 
 
-def init(args, quiet = False, allow_auto_split = False, skip_load = False, benchmark = False):
+def init(args,
+         quiet = False,
+         allow_auto_split = False,
+         skip_load = False,
+         benchmark = False,
+         max_batch_size = None):
 
     # Create config
 
@@ -80,6 +85,8 @@ def init(args, quiet = False, allow_auto_split = False, skip_load = False, bench
     if args.rope_alpha: config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
     if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
+
+    if max_batch_size: config.max_batch_size = max_batch_size
 
     # Set low-mem options
 

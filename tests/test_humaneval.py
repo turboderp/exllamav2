@@ -1,4 +1,4 @@
-import sys, os, gc
+import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from human_eval.data import write_jsonl, read_problems
@@ -7,7 +7,10 @@ from exllamav2 import(
     ExLlamaV2,
     ExLlamaV2Config,
     ExLlamaV2Cache,
+    ExLlamaV2Cache_Q4,
+    ExLlamaV2Cache_8bit,
     ExLlamaV2Tokenizer,
+    model_init
 )
 
 from exllamav2.generator import(
@@ -15,91 +18,86 @@ from exllamav2.generator import(
     ExLlamaV2Sampler
 )
 
-import torch
+import torch, argparse
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 
-# Models to test
+# Args
 
-# model_base = "/mnt/str/models/"
-# variants = ["mistral-7b-instruct"]
-# model_base = "/mnt/str/models/mistral-7b-instruct-exl3"
-# variants = ["8.0bpw"]
-model_base = "/mnt/str/models/mixtral-8x7b-instruct-exl2/"
-variants = ["4.0bpw"]
+parser = argparse.ArgumentParser(description = "Run HumanEval evaluation on EXL2 model")
+parser.add_argument("-o", "--output", type = str, help = "Output .jsonl filename", required = True)
+parser.add_argument("-bs", "--batch_size", type = int, default = 10)
+parser.add_argument("-spt", "--samples_per_task", type = int, default = 200)
+parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit (FP8) cache")
+parser.add_argument("-cq4", "--cache_q4", action = "store_true", help = "Use Q4 cache")
+parser.add_argument("--max_tokens", type = int, default = 768)
+model_init.add_args(parser)
+args = parser.parse_args()
 
-# model_base = "/mnt/str/models/tiefighter-13b-exl4/"
+# Validate args
 
-# variants = [v for v in os.listdir(model_base) if os.path.isdir(os.path.join(model_base, v))]
+directory = os.path.dirname(args.output)
+if directory and not os.path.isdir(directory):
+    print(f" ## Directory for output file {args.output} does not exist.")
+    sys.exit()
+if os.path.exists(args.output):
+    print(f" !! Warning: Output file exists and will be overwritten.")
 
-# variants = \
-# [
-#     "2.4bpw",
-#     "2.5bpw",
-#     "2.7bpw",
-#     "3.0bpw",
-#     "4.0bpw",
-#     "6.0bpw",
-#     "8.0bpw",
-# ]
+# Init model
 
-gpu_split = (16, 16, 24)
+model_init.check_args(args)
+model_init.print_options(args)
+model, tokenizer = model_init.init(args, allow_auto_split = True, max_batch_size = args.batch_size)
+
+# Create cache
+
+if args.cache_8bit: cache_type = ExLlamaV2Cache_8bit
+elif args.cache_q4: cache_type = ExLlamaV2Cache_Q4
+else: cache_type = ExLlamaV2Cache
+cache = cache_type(model, lazy = not model.loaded, batch_size = args.batch_size)
 
 # Load model
 
-def get_model(base, variant_, gpu_split_, batch_size_):
+if not model.loaded:
 
-    model_dir = os.path.join(base, variant_)
+    print(" -- Loading model...")
+    model.load_autosplit(cache)
 
-    config = ExLlamaV2Config()
-    config.model_dir = model_dir
-    config.prepare()
-    config.max_seq_len = 2048
-    config.max_batch_size = batch_size_
+# Generator
 
-    model_ = ExLlamaV2(config)
-    print(" -- Loading model: " + model_dir)
+gen = ExLlamaV2BaseGenerator(model, cache, tokenizer)
+gen_settings = ExLlamaV2Sampler.Settings()
+gen_settings.token_repetition_penalty = 1.0
+gen_settings.temperature = 0.8
+gen_settings.top_k = 100
+gen_settings.top_p = 0.8
 
-    model_.load(gpu_split_)
-
-    tokenizer_ = ExLlamaV2Tokenizer(config)
-
-    cache_ = ExLlamaV2Cache(model_, batch_size = batch_size)
-    # cache_ = None
-
-    return model_, cache_, tokenizer_
-
+# Get problems
 
 problems = read_problems()
+num_samples_per_task = args.samples_per_task
+samples = []
+sub_progress = num_samples_per_task > args.batch_size
 
-for variant in variants:
+with Progress(
+    TextColumn("[bold blue]{task.fields[name]}", justify = "left"),
+    BarColumn(bar_width = None),
+    "[progress.percentage]{task.percentage:>3.0f}%",
+    TextColumn("{task.completed: 4} of {task.total: 4}", justify = "right"),
+    TimeRemainingColumn(),
+) as progress:
 
-    # Model
-
-    model = None
-    cache = None
-    tokenizer = None
-
-    gc.collect()
-    torch.cuda.empty_cache()
-    gc.collect()
-
-    batch_size = 10
-    num_samples_per_task = 1
-    samples = []
-
-    model, cache, tokenizer = get_model(model_base, variant, gpu_split, batch_size)
-
-    gen = ExLlamaV2BaseGenerator(model, cache, tokenizer)
-    gen_settings = ExLlamaV2Sampler.Settings()
-    # gen_settings.top_k = 1
-
+    task1 = progress.add_task("[red]Problem", total = len(problems), name = "Problems")
     for task_id in problems:
-        print(task_id)
-        for _ in range(num_samples_per_task):
+
+        rem_samples = num_samples_per_task
+        if sub_progress: task2 = progress.add_task("[red]Sample", total = num_samples_per_task, name = "Samples", parent = task1)
+        while rem_samples:
+            bs = min(args.batch_size, rem_samples)
 
             # Get problem and batch of completions
 
-            problem = [problems[task_id]["prompt"]] * batch_size
-            responses = gen.generate_simple(problem, gen_settings, 500, stop_token = tokenizer.eos_token_id)
+            problem = [problems[task_id]["prompt"]] * bs
+            responses = gen.generate_simple(problem, gen_settings, args.max_tokens, stop_token = tokenizer.eos_token_id)
 
             for response in responses:
 
@@ -121,6 +119,13 @@ for variant in variants:
 
                 samples.append(dict(task_id = task_id, completion = r))
 
+            rem_samples -= bs
+            if sub_progress: progress.advance(task2, bs)
+
+        if sub_progress: progress.remove_task(task2)
+        progress.update(task1, advance = 1)
+
     # Save output
 
-    write_jsonl(f"samples-{variant}.jsonl", samples)
+    print(f" -- Saving: {args.output}")
+    write_jsonl(args.output, samples)
