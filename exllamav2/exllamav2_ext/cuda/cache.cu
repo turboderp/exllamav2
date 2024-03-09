@@ -139,23 +139,29 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
 
 // Q4
 
-__global__ void fp16_to_q4_kernel
+__global__ void fp16_to_q4_kv_kernel
 (
-    const half* __restrict__ pIn,
-    unsigned char* __restrict__ pOut,
-    half* __restrict__ scales,
+    const half* __restrict__ k_in,
+    unsigned char* __restrict__ k_out,
+    half* __restrict__ k_scales,
+    const half* __restrict__ v_in,
+    unsigned char* __restrict__ v_out,
+    half* __restrict__ v_scales,
     int offset,
     int stride
 )
 {
     int t = threadIdx.x;
+    const half* in = blockIdx.z ? v_in : k_in;
+    unsigned char* out = blockIdx.z ? v_out : k_out;
+    half* scales = blockIdx.z ? v_scales : k_scales;
 
     int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
-    const half2* in = (const half2*) (pIn + block_offset);
+    const half2* in2 = (const half2*) (in + block_offset);
     __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
     __shared__ half s_buffer[BLOCKSIZE_Q / 32];
 
-    half2 w2 = in[t];
+    half2 w2 = in2[t];
     half2 o = w2;
     half2 absmax2 = __habs2(w2);
 
@@ -192,32 +198,37 @@ __global__ void fp16_to_q4_kernel
 
     int4* pq = (int4*) q_buffer;
     int4* ps = (int4*) s_buffer;
-    int4* out_q = (int4*) (pOut + block_offset / 2);
+    int4* out_q = (int4*) (out + block_offset / 2);
     int4* out_s = (int4*) (scales + block_offset / 32);
 
     if (t < BLOCKSIZE_Q / 32) out_q[t] = pq[t];
     if (t < BLOCKSIZE_Q / 256) out_s[t] = ps[t];
 }
 
-__global__ void q4_to_fp16_kernel
+__global__ void q4_to_fp16_kv_kernel
 (
-    const unsigned char* __restrict__ pIn,
-    const half* __restrict__ scales,
-    half* __restrict__ pOut,
+    const unsigned char* __restrict__ k_in,
+    const half* __restrict__ k_scales,
+    half* __restrict__ k_out,
+    const unsigned char* __restrict__ v_in,
+    const half* __restrict__ v_scales,
+    half* __restrict__ v_out,
     int offset,
     int stride
 )
 {
     int t = threadIdx.x;
+    const unsigned char* in = blockIdx.z ? v_in : k_in;
+    const half* scales = blockIdx.z ? v_scales : k_scales;
+    half* out = blockIdx.z ? v_out : k_out;
 
     int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
-    const uint32_t* in = (const uint32_t*) (pIn + block_offset / 2);
     __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
     __shared__ half s_buffer[BLOCKSIZE_Q / 32];
 
     // Fetch
 
-    int4* in_q = (int4*) (pIn + block_offset / 2);
+    int4* in_q = (int4*) (in + block_offset / 2);
     int4* in_s = (int4*) (scales + block_offset / 32);
     int4* pq = (int4*) q_buffer;
     int4* ps = (int4*) s_buffer;
@@ -246,28 +257,54 @@ __global__ void q4_to_fp16_kernel
 
     // Store
 
-    half2* out = (half2*) (pOut + block_offset);
-    out[t] = w2;
+    half2* out2 = (half2*) (out + block_offset);
+    out2[t] = w2;
 }
 
-void array_fp16_to_q4_cuda(const half* pIn, unsigned char* pOut, half* scales, int stride, int height, int offset, int width)
+void array_fp16_to_q4_kv_cuda
+(
+    const half* k_in,
+    unsigned char* k_out,
+    half* k_scales,
+    const half* v_in,
+    unsigned char* v_out,
+    half* v_scales,
+    int stride,
+    int height,
+    int offset,
+    int width
+)
 {
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_Q;
     gridDim.x = width / BLOCKSIZE_Q;
     gridDim.y = height;
+    gridDim.z = 2;
 
-    fp16_to_q4_kernel<<<gridDim, blockDim>>>(pIn, pOut, scales, offset, stride);
+    fp16_to_q4_kv_kernel<<<gridDim, blockDim>>>(k_in, k_out, k_scales, v_in, v_out, v_scales, offset, stride);
 }
 
-void array_q4_to_fp16_cuda(const unsigned char* pIn, const half* scales, half* pOut, int stride, int height, int offset, int width)
+void array_q4_to_fp16_kv_cuda
+(
+    const unsigned char* k_in,
+    const half* k_scales,
+    half* k_out,
+    const unsigned char* v_in,
+    const half* v_scales,
+    half* v_out,
+    int stride,
+    int height,
+    int offset,
+    int width
+)
 {
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_Q;
     gridDim.x = width / BLOCKSIZE_Q;
     gridDim.y = height;
+    gridDim.z = 2;
 
-    q4_to_fp16_kernel<<<gridDim, blockDim>>>(pIn, scales, pOut, offset, stride);
+    q4_to_fp16_kv_kernel<<<gridDim, blockDim>>>(k_in, k_scales, k_out, v_in, v_scales, v_out, offset, stride);
 }
 
 // void array_fp16_to_fp8_ref_cuda(const half* pIn, unsigned char *pOut, int size)

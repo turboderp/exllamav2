@@ -268,8 +268,15 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
-        if width > 0: ext_c.q4_to_fp16(self.key_states[layer_idx], self.key_scales[layer_idx], temp_key_state, batch_size, offset, width)
-        if width > 0: ext_c.q4_to_fp16(self.value_states[layer_idx], self.value_scales[layer_idx], temp_value_state, batch_size, offset, width)
+        if width > 0: ext_c.q4_to_fp16_kv(self.key_states[layer_idx],
+                                          temp_key_state,
+                                          self.key_scales[layer_idx],
+                                          self.value_states[layer_idx],
+                                          temp_value_state,
+                                          self.value_scales[layer_idx],
+                                          batch_size,
+                                          offset,
+                                          width)
         return temp_key_state, temp_value_state
 
 
@@ -277,8 +284,15 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
-        if width > 0: ext_c.fp16_to_q4(temp_key_state, self.key_states[layer_idx], self.key_scales[layer_idx], batch_size, offset, width)
-        if width > 0: ext_c.fp16_to_q4(temp_value_state, self.value_states[layer_idx], self.value_scales[layer_idx], batch_size, offset, width)
+        if width > 0: ext_c.fp16_to_q4_kv(temp_key_state,
+                                          self.key_states[layer_idx],
+                                          self.key_scales[layer_idx],
+                                          temp_value_state,
+                                          self.value_states[layer_idx],
+                                          self.value_scales[layer_idx],
+                                          batch_size,
+                                          offset,
+                                          width)
 
 
     def footprint(self):

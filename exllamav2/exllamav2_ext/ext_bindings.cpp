@@ -76,8 +76,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
     m.def("fp16_to_fp8", &fp16_to_fp8, "fp16_to_fp8");
     m.def("fp8_to_fp16", &fp8_to_fp16, "fp8_to_fp16");
-    m.def("fp16_to_q4", &fp16_to_q4, "fp16_to_q4");
-    m.def("q4_to_fp16", &q4_to_fp16, "q4_to_fp16");
+    m.def("fp16_to_q4_kv", &fp16_to_q4_kv, "fp16_to_q4_kv");
+    m.def("q4_to_fp16_kv", &q4_to_fp16_kv, "q4_to_fp16_kv");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
 
