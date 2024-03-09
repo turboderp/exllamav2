@@ -97,7 +97,7 @@ with Progress(
             # Get problem and batch of completions
 
             problem = [problems[task_id]["prompt"]] * bs
-            responses = gen.generate_simple(problem, gen_settings, args.max_tokens, stop_token = tokenizer.eos_token_id)
+            responses = gen.generate_simple(problem, gen_settings, args.max_tokens, stop_token = tokenizer.eos_token_id, add_bos = True)
 
             for response in responses:
 
