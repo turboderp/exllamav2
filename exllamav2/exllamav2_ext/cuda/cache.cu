@@ -163,15 +163,15 @@ __global__ void fp16_to_q4_kv_kernel
 
     half2 w2 = in2[t];
     half2 o = w2;
-    half2 absmax2 = __habs2(w2);
 
     // Max abs value for lane_id 0..15, 16..31
 
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 8));
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 4));
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 2));
-    absmax2 = __hmax2(absmax2, __shfl_xor_sync(0xffffffff, absmax2, 1));
+    half2 absmax2 = __habs2(w2);
     half absmax = __hmax(__low2half(absmax2), __high2half(absmax2));
+    absmax = __hmax(absmax, __shfl_xor_sync(0xffffffff, absmax, 8));
+    absmax = __hmax(absmax, __shfl_xor_sync(0xffffffff, absmax, 4));
+    absmax = __hmax(absmax, __shfl_xor_sync(0xffffffff, absmax, 2));
+    absmax = __hmax(absmax, __shfl_xor_sync(0xffffffff, absmax, 1));
     absmax2 = __half2half2(absmax);
 
     // Normalize
