@@ -15,19 +15,19 @@ ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs
 Some quick tests to compare performance with V1. There may be more performance optimizations in the future, and
 speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
 
-| Model      | Mode         | Size  | grpsz | act | 3090Ti   | 4090        |
-|------------|--------------|-------|-------|-----|----------|-------------|
-| Llama      | GPTQ         | 7B    | 128   | no  | 175 t/s  | **195** t/s |
-| Llama      | GPTQ         | 13B   | 128   | no  | 105 t/s  | **110** t/s |
-| Llama      | GPTQ         | 33B   | 128   | yes | 45 t/s   | **48** t/s  |
-| OpenLlama  | GPTQ         | 3B    | 128   | yes | 295 t/s  | **321** t/s |
-| CodeLlama  | EXL2 4.0 bpw | 34B   | -     | -   | 42 t/s   | **48** t/s  |
-| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 195 t/s  | **224** t/s |
-| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 164 t/s  | **197** t/s |
-| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 144 t/s  | **160** t/s |
-| Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | 30 t/s   | **35** t/s  |
-| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 536 t/s  | **635** t/s |
-| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 509 t/s  | **590** t/s |
+| Model      | Mode         | Size  | grpsz | act | 3090Ti  | 4090        |
+|------------|--------------|-------|-------|-----|---------|-------------|
+| Llama      | GPTQ         | 7B    | 128   | no  | 177 t/s | **198** t/s |
+| Llama      | GPTQ         | 13B   | 128   | no  | 109 t/s | **111** t/s |
+| Llama      | GPTQ         | 33B   | 128   | yes | 44 t/s  | **48** t/s  |
+| OpenLlama  | GPTQ         | 3B    | 128   | yes | 252 t/s | **283** t/s |
+| CodeLlama  | EXL2 4.0 bpw | 34B   | -     | -   | 43 t/s  | **49** t/s  |
+| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 195 t/s | **224** t/s |
+| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 171 t/s | **200** t/s |
+| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 149 t/s | **170** t/s |
+| Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | 33 t/s  | **37** t/s  |
+| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 592 t/s | **690** t/s |
+| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 541 t/s | **625** t/s |
 
 
 ## How to
