@@ -43,10 +43,12 @@ __global__ void layer_norm_kernel
     int warp_id = threadIdx.x / WARP_SIZE;
     int lane_id = threadIdx.x % WARP_SIZE;
     int row = blockIdx.x;
-    const half* x_row = x + row * dim;
-    half* y_row = y + row * dim;
+    const half2* x_row = (const half2*) (x + row * dim);
+    half2* y_row = (half2*) (y + row * dim);
+    const half2* w2 = (const half2*) w;
+    const half2* b2 = (const half2*) b;
 
-    float itemf[blocks_per_warp];
+    float itemf[blocks_per_warp][2];
 
     // Compute sum for each block
 
@@ -56,12 +58,15 @@ __global__ void layer_norm_kernel
     for (int i = 0; i < blocks_per_warp; i++)
     {
         int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
-        if (column >= dim) break;
+        if (column >= dim / 2) break;
 
-        float f = __half2float(x_row[column]);
-        f = fmaxf(-65504.0f, fminf(f, 65504.0f));
-        itemf[i] = f;
-        sum += f;
+        half2 x2 = x_row[column];
+        float f0 = __half2float(__low2half(x2));
+        float f1 = __half2float(__high2half(x2));
+        itemf[i][0] = f0;
+        itemf[i][1] = f1;
+        sum += f0;
+        sum += f1;
     }
 
     // Shuffle to sum across lanes
@@ -89,13 +94,16 @@ __global__ void layer_norm_kernel
     for (int i = 0; i < blocks_per_warp; i++)
     {
         int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
-        if (column >= dim) break;
+        if (column >= dim / 2) break;
 
-        float f = itemf[i];
-        f = fmaxf(-65504.0f, fminf(f, 65504.0f));
-        f -= mean;
-        itemf[i] = f;
-        sum = fma(f, f, sum);
+        float f0 = itemf[i][0];
+        float f1 = itemf[i][1];
+        f0 -= mean;
+        f1 -= mean;
+        itemf[i][0] = f0;
+        itemf[i][1] = f1;
+        sum = fma(f0, f0, sum);
+        sum = fma(f1, f1, sum);
     }
 
     // Shuffle to sum across lanes
@@ -119,14 +127,17 @@ __global__ void layer_norm_kernel
     for (int i = 0; i < blocks_per_warp; i++)
     {
         int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
-        if (column >= dim) return;
+        if (column >= dim / 2) return;
+        half2 w2_ = w2[column];
 
-        float x_itemf = itemf[i];
-        float w_itemf = __half2float(w[column]);
-        float n = x_itemf * w_itemf * rsvar;
-
-        half nh = __float2half_rn(n);
-        if (b) nh = __hadd(nh, b[column]);  // Optional bias
+        float x_itemf0 = itemf[i][0];
+        float x_itemf1 = itemf[i][1];
+        float w_itemf0 = __half2float(__low2half(w2_));
+        float w_itemf1 = __half2float(__high2half(w2_));
+        float n0 = x_itemf0 * w_itemf0 * rsvar;
+        float n1 = x_itemf1 * w_itemf1 * rsvar;
+        half2 nh = __halves2half2(__float2half_rn(n0), __float2half_rn(n1));
+        if (b) nh = __hadd2(nh, b2[column]);  // Optional bias
 
         y_row[column] = nh;
     }
@@ -144,7 +155,6 @@ fp_layer_norm_kernel pick_layer_norm_kernel(const int blocks_per_warp)
     if (blocks_per_warp == 8) return layer_norm_kernel<8>;
 	return NULL;
 }
-
 
 void layer_norm_cuda
 (
