@@ -23,10 +23,14 @@ __device__ __forceinline__ half2 silu(half2 x)
 
 __device__ __forceinline__ half gelu(half x)
 {
+//    float xf = __half2float(x);
+//    const float cdf = 0.5f * (1.0f + tanh_opt((0.7978845608028654f * (xf + 0.044715f * xf * xf * xf))));
+//    return __float2half_rn(xf * cdf);
+//
     float xf = __half2float(x);
     const float c = 0.797884560803f;  // sqrt(2/Pi)
-    float tanh_arg = c * (xf + 0.044715f * pow(xf, 3));
-    xf = 0.5f * xf * (1.0 + tanh(tanh_arg));
+    float tanh_arg = c * (xf + 0.044715f * xf * xf * xf);
+    xf = 0.5f * xf * (1.0 + tanh_opt(tanh_arg));
     return __float2half_rn(xf);
 }
 
