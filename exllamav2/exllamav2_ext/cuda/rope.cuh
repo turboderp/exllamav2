@@ -19,4 +19,20 @@ void rope_cuda
     const int32_t* past_lens
 );
 
+void rope_cuda_qk
+(
+    half* x_q,
+    half* x_k,
+    const half* sin,
+    const half* cos,
+    const int batch_size,
+    const int rows_per_batch_q,
+    const int rows_per_batch_k,
+    const int head_dim,
+    const int num_heads_q,
+    const int num_heads_k,
+    const int past_len,
+    const int32_t* past_lens
+);
+
 #endif

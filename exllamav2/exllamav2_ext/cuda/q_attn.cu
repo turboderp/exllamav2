@@ -146,8 +146,23 @@ void QAttn::forward_cuda_1
     apply_loras_cuda(cublas_handle, k_proj_lora, loras, k_proj, temp_state, temp_k, lora_temp, q_len * batch_size);
     apply_loras_cuda(cublas_handle, v_proj_lora, loras, v_proj, temp_state, temp_v, lora_temp, q_len * batch_size);
 
-    rope_cuda(temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
-    rope_cuda(temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
+//    rope_cuda(temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
+//    rope_cuda(temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
+    rope_cuda_qk
+    (
+        temp_q,
+        temp_k,
+        sin,
+        cos,
+        batch_size,
+        q_len * num_heads,
+        q_len * num_kv_heads,
+        head_dim,
+        num_heads,
+        num_kv_heads,
+        past_len,
+        past_lens
+    );
 }
 
 void QAttn::forward_cuda_2
