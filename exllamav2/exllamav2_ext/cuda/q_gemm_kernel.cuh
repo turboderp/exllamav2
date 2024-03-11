@@ -8,9 +8,10 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
-#define EXL2_BLOCK_KN_SIZE 64
 #define EXL2_BLOCK_M_SIZE_MAX MAX_Q_GEMM_ROWS_KERNEL
-#define EXL2_MAX_GROUPS_IN_BLOCK (EXL2_BLOCK_KN_SIZE / 32)
+
+//#define EXL2_BLOCK_KN_SIZE 32
+//#define EXL2_MAX_GROUPS_IN_BLOCK (EXL2_BLOCK_KN_SIZE / 32)
 
 __forceinline__ __device__ half2 dot22_8(half2(&dq)[4], const half* a_ptr, const half2 g_result, const half qs_h)
 {
@@ -136,7 +137,7 @@ typedef void (*fp_gemm_half_q_half_kernel)
     const int
 );
 
-template <int m_count, int kernel_p, bool use_r_weights, bool mul_r_weights>
+template <int m_count, int kernel_p, bool use_r_weights, bool mul_r_weights, int block_kn_size>
 __global__ void gemm_half_q_half_kernel
 (
     const half*      __restrict__ a,
@@ -171,15 +172,15 @@ __global__ void gemm_half_q_half_kernel
 
 //    const int m_count = EXL2_BLOCK_M_SIZE_MAX;
 
-    int offset_n = blockIdx.x * EXL2_BLOCK_KN_SIZE * 4;
+    int offset_n = blockIdx.x * block_kn_size * 4;
     int offset_m = blockIdx.y * m_count;
-    int offset_k = blockIdx.z * EXL2_BLOCK_KN_SIZE;
+    int offset_k = blockIdx.z * block_kn_size;
 
     int m_count_min = min(size_m - offset_m, m_count);
 
-    int end_n = min(offset_n + EXL2_BLOCK_KN_SIZE * 4, size_n);
+    int end_n = min(offset_n + block_kn_size * 4, size_n);
     int end_m = min(offset_m + m_count_min, size_m);
-    int end_k = min(offset_k + EXL2_BLOCK_KN_SIZE, size_k);
+    int end_k = min(offset_k + block_kn_size, size_k);
     int n = offset_n + t * 4;
 
     // Read weights
@@ -200,7 +201,7 @@ __global__ void gemm_half_q_half_kernel
 
     // Preload block_a
 
-    __shared__ half block_a[m_count][EXL2_BLOCK_KN_SIZE];
+    __shared__ half block_a[m_count][block_kn_size];
 
     if (offset_k + t < end_k)
     {
@@ -236,7 +237,7 @@ __global__ void gemm_half_q_half_kernel
 
     // Preload scales
 
-    half scales[EXL2_MAX_GROUPS_IN_BLOCK][4];
+    half scales[block_kn_size / 32][4];
 
     //int groups_in_block = DIVIDE((end_k - offset_k), groupsize);
     int temp_k = offset_k;
@@ -274,7 +275,7 @@ __global__ void gemm_half_q_half_kernel
 
     const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
     const half* a_ptr = &block_a[0][0];
-    int a_stride = EXL2_BLOCK_KN_SIZE;
+    int a_stride = block_kn_size;
 
     // Initial group
 

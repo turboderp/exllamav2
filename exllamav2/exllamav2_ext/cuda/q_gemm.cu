@@ -5,6 +5,7 @@
 #define CLEAR_N_SIZE 256
 
 #include "comp_units/kernel_select.cuh"
+#include "q_gemm_autotune.cuh"
 #include "h_add.cuh"
 
 void gemm_half_q_half_cuda_part
@@ -24,18 +25,84 @@ void gemm_half_q_half_cuda_part
 {
     if (!b->is_gptq)
     {
+        int block_kn_size;
+        bool measure;
+        AT_Result* atr;
+        cudaEvent_t start, stop;
+
+        bool use_autotune = false;
+
+        if (!use_autotune)
+        {
+            block_kn_size = at_get_fallback_blocksize(b->device, size_m, size_n, size_k);
+        }
+        else
+        {
+            // Only autotune up to EXL2_BLOCK_M_SIZE_MAX
+
+            if (size_m > EXL2_BLOCK_M_SIZE_MAX)
+            {
+                atr = at_get_top(b->device, size_k, size_n);
+                if (atr && atr->best) block_kn_size = atr->best;
+                else block_kn_size = at_get_fallback_blocksize(b->device, size_m, size_n, size_k);
+                measure = false;
+            }
+
+            // Use autotuned size or prepare measurement
+
+            else
+            {
+                atr = at_get(b->device, size_m, size_k, size_n);
+                if (atr->best)
+                {
+                    block_kn_size = atr->best;
+                    measure = false;
+                }
+                else
+                {
+                    measure = true;
+                    int c32 = atr->timings_32.size();
+                    int c64 = atr->timings_64.size();
+                    if (c32 + c64 == AT_NUM_MEASURE)
+                    {
+                        at_select(atr);
+                        block_kn_size = atr->best;
+                        measure = false;
+                    }
+                    else
+                    {
+                        block_kn_size = c32 < c64 ? 32 : 64;
+                        measure = true;
+                    }
+                }
+            }
+        }
+
+        // Prepare kernel
+
         dim3 blockDim, gridDim;
-        blockDim.x = EXL2_BLOCK_KN_SIZE;
+        blockDim.x = block_kn_size;
         blockDim.y = 1;
         blockDim.z = 1;
-        gridDim.x = DIVIDE(size_n, EXL2_BLOCK_KN_SIZE * 4);
+        gridDim.x = DIVIDE(size_n, block_kn_size * 4);
         gridDim.y = DIVIDE(size_m, m_count);
-        gridDim.z = DIVIDE(size_k, EXL2_BLOCK_KN_SIZE);
+        gridDim.z = DIVIDE(size_k, block_kn_size);
 
         int max_m = min(EXL2_BLOCK_M_SIZE_MAX, size_m);
 
-        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(max_m, b->kernel_p, r_weights != NULL, mul_r_weights);
+        fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(max_m, b->kernel_p, r_weights != NULL, mul_r_weights, block_kn_size);
         if (!kernel) return;
+
+        // Measurement events
+
+        if (measure)
+        {
+            cudaEventCreate(&start);
+            cudaEventCreate(&stop);
+            cudaEventRecord(start);
+        }
+
+        // Launch kernel
 
         kernel<<<gridDim, blockDim>>>
         (
@@ -60,7 +127,24 @@ void gemm_half_q_half_cuda_part
             r_weights,
             r_weights_stride
         );
+
+        // Finish measurement
+
+        if (measure)
+        {
+            cudaEventRecord(stop);
+            cudaEventSynchronize(stop);
+            float timing = 0.0f;
+            cudaEventElapsedTime(&timing, start, stop);
+            cudaEventDestroy(start);
+            cudaEventDestroy(stop);
+            if (block_kn_size == 32) atr->timings_32.push_back(timing);
+            if (block_kn_size == 64) atr->timings_64.push_back(timing);
+        }
     }
+
+    // GPTQ kernel
+
     else
     {
         dim3 blockDim, gridDim;

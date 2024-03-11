@@ -13,6 +13,7 @@
 #define DBGI(__x) printf("%s: %i\n", #__x, __x)
 #define DBGI2(__x, __y) printf("%s, %s: %i, %i\n", #__x, #__y, __x, __y)
 #define DBGI3(__x, __y, __z) printf("%s, %s, %s: %i, %i, %i\n", #__x, #__y, #__z, __x, __y, __z)
+#define DBGI4(__x, __y, __z, __w) printf("%s, %s, %s, %s: %i, %i, %i, %i\n", #__x, #__y, #__z, #__w, __x, __y, __z, __w)
 #define DBGX(__x) printf("%s: %x\n", #__x, __x)
 #define DBGX2(__x, __y) printf("%s, %s: %x, %x\n", #__x, #__y, __x, __y)
 #define DBGX3(__x, __y, __z) printf("%s, %s, %s: %x, %x, %x\n", #__x, #__y, #__z, __x, __y, __z)
