@@ -120,7 +120,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         def build_single_attn_mask(self, batch_size, seq_len, past_len, device, input_mask):
 
             attn_mask = torch.zeros((batch_size, 1, seq_len, past_len + seq_len), dtype = torch.float16, device = device)
-            attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), float("-inf")))
+            attn_mask_triu = torch.triu(torch.full((seq_len - 1, seq_len - 1), -65504.0))
             attn_mask[:, :, : seq_len - 1, past_len + 1: past_len + seq_len] = attn_mask_triu
 
             if input_mask is not None:
