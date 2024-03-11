@@ -63,6 +63,8 @@ __global__ void layer_norm_kernel
         half2 x2 = x_row[column];
         float f0 = __half2float(__low2half(x2));
         float f1 = __half2float(__high2half(x2));
+        f0 = fmaxf(-65504.0f, fminf(f0, 65504.0f));
+        f1 = fmaxf(-65504.0f, fminf(f1, 65504.0f));
         itemf[i][0] = f0;
         itemf[i][1] = f1;
         sum += f0;
