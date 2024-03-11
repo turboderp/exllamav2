@@ -30,16 +30,16 @@ prompts = \
     "What's the most populous nation on Earth?",
     "What's the most populous nation on Mars?",
     "What do the Mole People actually want and how can we best appease them?",
-    "Why is the sky blue?",
-    "Where is Waldo?",
-    "Who is Waldo?",
-    "Why is Waldo?",
-    "Is it legal to base jump off the Eiffel Tower?",
-    "Is it legal to base jump into a volcano?",
-    "Why are cats better than dogs?",
-    "Why is the Hulk so angry all the time?",
-    "How do I build a time machine?",
-    "Is it legal to grow your own catnip?"
+    # "Why is the sky blue?",
+    # "Where is Waldo?",
+    # "Who is Waldo?",
+    # "Why is Waldo?",
+    # "Is it legal to base jump off the Eiffel Tower?",
+    # "Is it legal to base jump into a volcano?",
+    # "Why are cats better than dogs?",
+    # "Why is the Hulk so angry all the time?",
+    # "How do I build a time machine?",
+    # "Is it legal to grow your own catnip?"
 ]
 
 # Sort by length to minimize padding

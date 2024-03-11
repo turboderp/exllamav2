@@ -30,7 +30,7 @@ void gemm_half_q_half_cuda_part
         AT_Result* atr;
         cudaEvent_t start, stop;
 
-        bool use_autotune = false;
+        bool use_autotune = true;
 
         if (!use_autotune)
         {
