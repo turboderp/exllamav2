@@ -147,6 +147,11 @@ will fit alongside a desktop environment. For now.
 A script is provided to quantize models. Converting large models can be somewhat slow, so be warned. The conversion
 script and its options are explained in [detail here](doc/convert.md)
 
+### Community
+
+A test community is provided at https://discord.gg/NSFwVuCjRq 
+Quanting service free of charge is provided at #bot test. The computation is generiously provided by the Bloke powered by Lambda labs. 
+
 ### HuggingFace repos
 
 - I've uploaded a few EXL2-quantized models to Hugging Face to play around with, [here](https://huggingface.co/turboderp).
