@@ -54,6 +54,8 @@ parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help 
 parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit (FP8) cache")
 parser.add_argument("-cq4", "--cache_q4", action = "store_true", help = "Use Q4 cache")
 
+parser.add_argument("-ngram", "--ngram_decoding", action = "store_true", help = "Use n-gram speculative decoding")
+
 parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
 parser.add_argument("-amnesia", "--amnesia", action = "store_true", help = "Forget context after every response")
 
@@ -194,6 +196,7 @@ def get_tokenized_context(max_len):
 # Generator
 
 generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer, draft_model, draft_cache)
+generator.speculative_ngram = args.ngram_decoding
 
 settings = ExLlamaV2Sampler.Settings()
 settings.temperature = args.temperature
