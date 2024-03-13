@@ -14,9 +14,11 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
-import time, torch
+import time, torch, glob
 
 # Initialize model and draft model
+
+print("Loading models...")
 
 torch.set_num_threads(1)
 
@@ -45,15 +47,35 @@ tokenizer = ExLlamaV2Tokenizer(model_config)
 # Initialize generators
 
 normal_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer)
+
 speculative_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer, draft, draft_cache, num_speculative_tokens = 5)
+
+ngram_generator = ExLlamaV2StreamingGenerator(model, model_cache, tokenizer)
+ngram_generator.speculative_ngram = True
+
+# Data for ngram preload
+
+def load_files(folder_path, patterns):
+    file_patterns = [os.path.join(folder_path, p) for p in patterns]
+    content = ""
+    for pattern in file_patterns:
+        for file_path in glob.glob(pattern):
+            with open(file_path, 'r') as file:
+                content += file.read()
+    return content
+
+content_dir = os.path.join(os.path.dirname(__file__), "../exllamav2/exllamav2_ext/cpp")
+preload_content = load_files(content_dir, ["*.cpp", "*.h"])
+preload_ids = tokenizer.encode(preload_content)
 
 # Make sure CUDA is initialized so we can measure performance
 
 normal_generator.warmup()
 
-
 def test_gen(generator, prompt, settings, max_new_tokens):
     global tokenizer
+
+    generator.reset_sd_stats()
 
     # Prompt
 
@@ -96,6 +118,13 @@ def test_gen(generator, prompt, settings, max_new_tokens):
     print(f"Prompt processed in {time_prompt:.2f} seconds, {prompt_tokens} tokens, {prompt_tokens / time_prompt:.2f} tokens/second")
     print(f"Response generated in {time_tokens:.2f} seconds, {generated_tokens} tokens, {generated_tokens / time_tokens:.2f} tokens/second")
 
+    efficiency, accuracy, total_tokens, total_draft_tokens, accepted_draft_tokens = generator.get_sd_stats()
+    print("- SD efficiency:", efficiency)
+    print("- SD accuracy:", accuracy)
+    print("- SD total_tokens:", total_tokens)
+    print("- SD total_draft_tokens:", total_draft_tokens)
+    print("- SD accepted_draft_tokens:", accepted_draft_tokens)
+
 
 # Settings
 
@@ -125,10 +154,19 @@ print()
 
 test_gen(speculative_generator, gen_prompt, gen_settings, gen_max_tokens)
 
-efficiency, accuracy, total_tokens, total_draft_tokens, accepted_draft_tokens = speculative_generator.get_sd_stats()
+print()
+print("---------------------------------------------------------------------------------")
+print("N-gram decoding:")
+print()
 
-print("efficiency:", efficiency)
-print("accuracy:", accuracy)
-print("total_tokens:", total_tokens)
-print("total_draft_tokens:", total_draft_tokens)
-print("accepted_draft_tokens:", accepted_draft_tokens)
+test_gen(ngram_generator, gen_prompt, gen_settings, gen_max_tokens)
+
+print()
+print("---------------------------------------------------------------------------------")
+print("N-gram decoding (preloaded):")
+print()
+
+ngram_generator.ngram_preload(preload_ids)
+ngram_generator.speculative_ngram_min = 2
+test_gen(ngram_generator, gen_prompt, gen_settings, gen_max_tokens)
+

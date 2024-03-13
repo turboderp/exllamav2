@@ -11,6 +11,8 @@ from exllamav2.generator import (
     ExLlamaV2BaseGenerator
 )
 
+from exllamav2.generator.ngram import NgramCache
+
 import torch
 import random
 
@@ -61,6 +63,14 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     active_loras = []
     position_offsets = None
     input_mask = None
+
+    speculative_ngram = False
+    speculative_ngram_min = 1
+    speculative_ngram_max = 5
+    speculative_ngram_max_inf = 5
+    speculative_ngram_threshold = 1
+    ngram = None
+    ngram_preloaded = None
 
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
@@ -157,6 +167,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self._gen_begin_reuse(input_ids, gen_settings)
 
         self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
+
+        if self.speculative_ngram:
+            self.ngram = NgramCache(self.speculative_ngram_min, self.speculative_ngram_max, self.ngram_preloaded)
+            self.ngram.update(self.sequence_ids[0].tolist())
 
 
     # Get the next chunk of text in the stream
@@ -447,7 +461,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
-        if self.draft_model is None:
+        if self.speculative_ngram:
+
+            token, ptokens, pprobs, prob, eos, logits = self._gen_single_token_ngram(gen_settings, prefix_token)
+
+        elif self.draft_model is None:
 
             logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
             token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids[:1, :], random.random(), self.tokenizer, prefix_token, self.return_top_tokens)
@@ -526,6 +544,52 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return token, ptokens, pprobs, prob, eos, logits
 
 
+    def _gen_single_token_ngram(self, gen_settings, prefix_token = None):
+
+        if self.future_tokens is None:
+
+            inf_ids = self.sequence_ids[0, -1:].tolist()
+            pred_ids = self.sequence_ids[0, -self.speculative_ngram_max:].tolist()
+
+            threshold = self.speculative_ngram_threshold
+            while len(inf_ids) < self.speculative_ngram_max_inf:
+                t = self.ngram.predict_next(pred_ids, threshold, self.ngram_preloaded)
+                if t is None: break
+                pred_ids = pred_ids[1:] + [t]
+                inf_ids += [t]
+                threshold += 1
+
+            self.future_tokens = torch.tensor([inf_ids], dtype = torch.long)
+            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
+
+            self.cache.current_seq_len -= len(inf_ids)
+            self.total_draft_tokens += len(inf_ids) - 1
+
+        # Sample the first future logits
+
+        logits = self.future_logits[:, :1, :]
+        token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids[:1, :], random.random(), self.tokenizer, prefix_token, self.return_top_tokens)
+        self.future_logits = self.future_logits[:, 1:, :]
+        self.future_tokens = self.future_tokens[:, 1:]
+        self.cache.current_seq_len += 1
+
+        # Update predictor
+
+        tail_ids = self.sequence_ids[0, -(self.speculative_ngram_max - 1):].tolist() + [token.item()]
+        self.ngram.update_single(tail_ids)
+
+        # If sampled token doesn't match future token or no more future tokens
+
+        if self.future_tokens.shape[-1] == 0 or self.future_tokens[0, 0] != token[0, 0]:
+            self.future_tokens = None
+            self.future_logits = None
+        else:
+            self.accepted_draft_tokens += 1
+        self.total_tokens += 1
+
+        return token, ptokens, pprobs, prob, eos, logits
+
+
     def reset_sd_stats(self):
 
         self.total_tokens = 0
@@ -535,6 +599,17 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     def get_sd_stats(self):
 
-        efficiency = self.accepted_draft_tokens / self.total_tokens
-        accuracy = self.accepted_draft_tokens / self.total_draft_tokens
+        efficiency = self.accepted_draft_tokens / self.total_tokens if self.total_tokens else 0
+        accuracy = self.accepted_draft_tokens / self.total_draft_tokens if self.total_draft_tokens else 0
         return efficiency, accuracy, self.total_tokens, self.total_draft_tokens, self.accepted_draft_tokens
+
+
+    def ngram_preload(self, input_ids):
+
+        if isinstance(input_ids, torch.Tensor):
+            input_ids = input_ids[0].tolist()
+
+        self.ngram_preloaded = NgramCache(self.speculative_ngram_min, self.speculative_ngram_max, None)
+        self.ngram_preloaded.update(input_ids)
+
+
