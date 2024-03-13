@@ -373,7 +373,7 @@ while True:
         time_end_stream = time.time()
         speed = response_tokens / (time_end_stream - time_begin_stream)
 
-        if draft_model is not None:
+        if draft_model is not None or args.ngram_decoding:
             eff, acc, _, _, _ = generator.get_sd_stats()
             sd_stats = f", SD eff. {eff*100:.2f}%, SD acc. {acc*100:.2f}%"
         else:

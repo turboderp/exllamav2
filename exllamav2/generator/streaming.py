@@ -67,7 +67,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     speculative_ngram = False
     speculative_ngram_min = 1
     speculative_ngram_max = 5
-    speculative_ngram_max_inf = 5
+    speculative_ngram_max_inf = 3
     speculative_ngram_threshold = 1
     ngram = None
     ngram_preloaded = None
@@ -559,8 +559,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 inf_ids += [t]
                 threshold += 1
 
+            if len(inf_ids) + self.cache.current_seq_len >= self.cache.max_seq_len:
+                inf_ids = inf_ids[:-(self.cache.max_seq_len - self.cache.current_seq_len)]
+
             self.future_tokens = torch.tensor([inf_ids], dtype = torch.long)
-            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
+            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
+            self.future_logits = self.future_logits.float().cpu()
 
             self.cache.current_seq_len -= len(inf_ids)
             self.total_draft_tokens += len(inf_ids) - 1
