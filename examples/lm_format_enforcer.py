@@ -44,6 +44,7 @@ tokenizer = ExLlamaV2Tokenizer(config)
 # Initialize generator
 
 generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
+generator.speculative_ngram = True
 generator.warmup()  # for more accurate timing
 
 # Generate with or without filter
