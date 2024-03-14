@@ -27,8 +27,11 @@ class ExLlamaV2TokenizerSPM(ExLlamaV2TokenizerBase):
         self.vocab = []
         for i in range(self.vocab_size()):
             p = self.spm.id_to_piece(i)
-            d = self.spm.decode(i)
-            if p.startswith(self.space_char()) and not d.startswith(" "): d = " " + d
+            if all(c == self.space_char() for c in p):
+                d = " " * len(p)
+            else:
+                d = self.spm.decode(i)
+                if p.startswith(self.space_char()) and not d.startswith(" "): d = " " + d
             self.vocab.append(d)
         return enumerate(self.vocab)
 
