@@ -411,6 +411,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.future_logits = None
             self.future_tokens = None
 
+        if self.speculative_ngram:
+            self.future_logits = None
+            self.future_tokens = None
+
         self.first_token = True
 
 
@@ -435,7 +439,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings)
 
-        if self.draft_model is not None:
+        if self.speculative_ngram or self.draft_model is not None:
             self.future_logits = None
             self.future_tokens = None
 
