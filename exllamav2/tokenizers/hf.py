@@ -32,7 +32,7 @@ class ExLlamaV2TokenizerHF(ExLlamaV2TokenizerBase):
         global has_tokenizers_library
         return has_tokenizers_library
 
-    def unk_id(self) -> int or None: return self.piece_to_id(self.unk_token())
+    def unk_id(self) -> int or None: return None if self.unk_token() is None else self.piece_to_id(self.unk_token())
     def pad_id(self) -> int or None: return None
     def bos_id(self) -> int or None: return None
     def eos_id(self) -> int or None: return None
