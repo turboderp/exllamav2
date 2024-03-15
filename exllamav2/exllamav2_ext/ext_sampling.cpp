@@ -7,7 +7,13 @@
 #include <cstdio>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+
+#ifdef __linux__
 #include <mm_malloc.h>
+#else
+#define _mm_malloc(a, b) _aligned_malloc(a, b)
+#define _mm_free(a) _aligned_free(a)
+#endif
 
 #include "config.h"
 #include "ext_sampling.h"

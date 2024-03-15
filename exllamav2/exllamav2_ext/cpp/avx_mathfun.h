@@ -32,8 +32,15 @@
 #include <immintrin.h>
 
 /* yes I know, the top of this file is quite ugly */
-# define ALIGN32_BEG
-# define ALIGN32_END __attribute__((aligned(32)))
+
+// Fix for MSVC++
+#ifdef __linux__
+#define ALIGN32_BEG
+#define ALIGN32_END __attribute__((aligned(32)))
+#else
+#define ALIGN32_BEG __declspec(align(32))
+#define ALIGN32_END
+#endif
 
 /* __m128 is ugly to write */
 typedef __m256  v8sf; // vector of 8 float (avx)
