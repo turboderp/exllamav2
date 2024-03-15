@@ -5,6 +5,69 @@
 #include <vector>
 #include <queue>
 #include <utility>
+#include <chrono>
+#include <map>
+#include <string>
+
+// #define PROFILING 1
+
+struct ProfileItem
+{
+    uint64_t min;
+    uint64_t max;
+    uint64_t total;
+    uint64_t count;
+};
+
+std::map<std::string, ProfileItem> all_stages = {};
+std::string current_stage = "";
+std::chrono::time_point<std::chrono::high_resolution_clock> stage_start;
+
+inline void profile_start(std::string stage)
+{
+#ifdef PROFILING
+    current_stage = stage;
+    stage_start = std::chrono::high_resolution_clock::now();
+#endif
+}
+
+inline void profile_stop()
+{
+#ifdef PROFILING
+    auto stage_stop = std::chrono::high_resolution_clock::now();
+    uint64_t duration = std::chrono::duration_cast<std::chrono::microseconds>(stage_stop - stage_start).count();
+    auto r = all_stages.find(current_stage);
+    if (r == all_stages.end())
+    {
+        ProfileItem item;
+        item.min = duration;
+        item.max = duration;
+        item.total = duration;
+        item.count = 1;
+        all_stages[current_stage] = item;
+    }
+    else
+    {
+        ProfileItem* item = &(r->second);
+        item->total += duration;
+        item->min = std::min(item->min, duration);
+        item->max = std::max(item->max, duration);
+        item->count++;
+    }
+#endif
+}
+
+void profile_results()
+{
+#ifdef PROFILING
+    printf("stage                               total             min             max            mean\n");
+    printf("-----------------------------------------------------------------------------------------\n");
+    for (const auto& entry : all_stages)
+    {
+        printf("%26s %11llu us  %11llu us  %11llu us  %11llu us\n", entry.first.c_str(), entry.second.total, entry.second.min, entry.second.max, entry.second.total / entry.second.count);
+    }
+#endif
+}
 
 const int top_k_heap_threshold = 500;
 
@@ -24,6 +87,8 @@ void apply_rep_penalty_cpu
     float* logits
 )
 {
+    profile_start("apply_rep_penalty_cpu");
+
     // Map of which logits have already had penalties applied
 
     if (vocab_size > g_vocab_size)
@@ -93,6 +158,8 @@ void apply_rep_penalty_cpu
             pres_p += d_pres_p;
         }
     }
+
+    profile_stop();
 }
 
 void softmax_cpu
@@ -105,6 +172,8 @@ void softmax_cpu
     float* output
 )
 {
+    profile_start("softmax_cpu");
+
     float esum = 0.0f;
     float itemp = 1.0f / temperature;
     float maxl = -1e38;
@@ -136,6 +205,8 @@ void softmax_cpu
         else output[i] = 0.0f;
     }
 
+    profile_stop();
+
 //    printf("Softmax:");
 //    float summ = 0.0f;
 //    for (int i = 0; i < vocab_size; i++)
@@ -161,6 +232,8 @@ int post_softmax_temperature
     float temp_exponent = 1.0f
 )
 {
+    profile_start("post_softmax_temperature");
+
     if (max_temp > min_temp)
     {
         // Calculate entropy of the softmax probabilities
@@ -213,6 +286,7 @@ int post_softmax_temperature
 //        DBGIF(i, temp_probs[i]);
 //    printf("\n");
 
+    profile_stop();
     return num_candidates;
 }
 
@@ -222,12 +296,16 @@ void normalize_cpu
     float* probs
 )
 {
+    profile_start("normalize_cpu");
+
     float sum = 0.0f;
     #pragma unroll(32)
     for (int i = 0; i < num_candidates; i++) sum += probs[i];
     float isum = 1.0f / sum;
     #pragma unroll(32)
     for (int i = 0; i < num_candidates; i++) probs[i] *= isum;
+
+    profile_stop();
 }
 
 template <typename T>
@@ -394,7 +472,7 @@ int top_k_cpu
     int top_k
 )
 {
-    //TIME_START;
+    profile_start("top_k_cpu");
 
     // Special case greedy sampling
 
@@ -450,8 +528,7 @@ int top_k_cpu
         sort_descending(num_candidates, temp_probs, temp_indices, top_k);
     }
 
-    //TIME_STOP;
-
+    profile_stop();
     return top_k;
 }
 
@@ -463,9 +540,9 @@ int top_p_cpu
     float top_p
 )
 {
-    std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> min_heap;
+    profile_start("top_p_cpu");
 
-    //TIME_START;
+    std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<std::pair<float, int>>> min_heap;
 
     float min_p = 1e-6;
 
@@ -495,8 +572,7 @@ int top_p_cpu
         min_heap.pop();
     }
 
-    //TIME_STOP;
-
+    profile_stop();
     return k;
 }
 
@@ -533,6 +609,8 @@ int top_a_cpu
     float top_a
 )
 {
+    profile_start("top_a_cpu");
+
     // Find top probability
     float top_prob = temp_probs[0];
     for (int i = 1; i < num_candidates; i++)
@@ -544,6 +622,7 @@ int top_a_cpu
     // Use the keep_threshold function to keep only probabilities above the threshold
     int n = keep_threshold(num_candidates, temp_probs, temp_indices, threshold);
 
+    profile_stop();
     return n;
 }
 
@@ -555,7 +634,7 @@ int min_p_cpu
     float min_p
 )
 {
-    //TIME_START;
+    profile_start("min_p_cpu");
 
     float top_prob = temp_probs[0];
     for (int i = 1; i < num_candidates; i++)
@@ -564,8 +643,7 @@ int min_p_cpu
     float threshold = top_prob * min_p;
     int n = keep_threshold(num_candidates, temp_probs, temp_indices, threshold);
 
-    //TIME_STOP;
-
+    profile_stop();
     return n;
 }
 
@@ -577,7 +655,7 @@ int tfs_cpu
     float tfs
 )
 {
-    //TIME_START;
+    profile_start("tfs_cpu");
 
     if (num_candidates < 3) return num_candidates;  // Discrete 2nd derivative undefined
 
@@ -613,6 +691,7 @@ int tfs_cpu
     //TIME_STOP;
 
     free(derivative);
+    profile_stop();
     return k;
 }
 
@@ -626,7 +705,7 @@ int mirostat_pre_cpu
     float mirostat_eta
 )
 {
-    //TIME_START;
+    profile_start("mirostat_pre_cpu");
 
     // If mu not yet initialized, initialize here
 
@@ -642,8 +721,7 @@ int mirostat_pre_cpu
     for (; k < nc; k++)
         if (temp_probs[k] < target_prob) break;
 
-    //TIME_STOP;
-
+    profile_stop();
     return k;
 }
 
@@ -657,6 +735,8 @@ float mirostat_post_cpu
     float mirostat_eta
 )
 {
+    profile_start("mirostat_post_cpu");
+
     // If mu not yet initializer, initialize here
 
     float mu = mirostat_mu;
@@ -667,6 +747,7 @@ float mirostat_post_cpu
     float observed_surprise = -log2(temp_probs[0]);
     mu += mirostat_eta * (mirostat_tau - observed_surprise);
 
+    profile_stop();
     return mu;
 }
 
@@ -678,7 +759,7 @@ int typical_cpu
     float typical
 )
 {
-    //TIME_START;
+    profile_start("typical_cpu");
 
     const float epsilon = 1e-10;
 
@@ -728,9 +809,9 @@ int typical_cpu
     free(entropy_dev_order);
     free(temp_indices_2);
 
-    //TIME_STOP;
-
     if (num == 0) num = 1;
+
+    profile_stop();
     return num;
 }
 
@@ -752,6 +833,8 @@ int multinomial_cpu
 //    }
 //    printf("-----------------\n");
 
+    profile_start("multinomial_cpu");
+
     int idx = 0;
     float accum = temp_probs[idx];
 
@@ -766,6 +849,7 @@ int multinomial_cpu
     swap<float>(temp_probs[0], temp_probs[idx]);
     swap<int>(temp_indices[0], temp_indices[idx]);
 
+    profile_stop();
     return 1;
 }
 

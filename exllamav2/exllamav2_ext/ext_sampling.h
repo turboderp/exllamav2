@@ -49,3 +49,5 @@ void fast_fill_cpu_ones_bool(torch::Tensor tensor);
 void fast_fadd_cpu(torch::Tensor a, torch::Tensor b);
 
 void fast_copy_cpu(torch::Tensor a, torch::Tensor b);
+
+void dump_profile_results();

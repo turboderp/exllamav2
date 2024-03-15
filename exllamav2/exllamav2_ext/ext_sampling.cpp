@@ -314,3 +314,8 @@ void fast_copy_cpu(torch::Tensor a, torch::Tensor b)
     TORCH_CHECK(size_a == size_b, "a and b are not the same size");
     memcpy(a.data_ptr(), b.data_ptr(), size_a);
 }
+
+void dump_profile_results()
+{
+    profile_results();
+}

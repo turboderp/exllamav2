@@ -37,6 +37,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("fast_fill_cpu_ones_bool", &fast_fill_cpu_ones_bool, "fast_fill_cpu_ones_bool");
     m.def("fast_fadd_cpu", &fast_fadd_cpu, "fast_fadd_cpu");
     m.def("fast_copy_cpu", &fast_copy_cpu, "fast_copy_cpu");
+    m.def("dump_profile_results", &dump_profile_results, "dump_profile_results");
 
     // safetensors
 

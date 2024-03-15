@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstdio>
 
+void profile_results();
+
 void apply_rep_penalty_cpu
 (
     const int vocab_size,
