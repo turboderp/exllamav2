@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <mm_malloc.h>
 
 #include "config.h"
 #include "ext_sampling.h"
@@ -91,8 +92,8 @@ std::vector<float> sample_basic
     int vocab_size = logits.size(-1);
     int bsz = logits.size(0);
 
-    float* temp_probs = (float*) malloc(vocab_size * sizeof(float));
-    int* temp_indices = (int*) malloc(vocab_size * sizeof(int));
+    float* temp_probs = (float*) _mm_malloc(vocab_size * sizeof(float), 32);
+    int* temp_indices = (int*) _mm_malloc(vocab_size * sizeof(int), 32);
     float* logits_ptr = (float*) logits.data_ptr();
 
     int num_probs = 0;
@@ -240,8 +241,8 @@ std::vector<float> sample_basic
         }
     }
 
-    free(temp_probs);
-    free(temp_indices);
+    _mm_free(temp_probs);
+    _mm_free(temp_indices);
 
     return mirostat_mu;
 }

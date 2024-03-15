@@ -75,7 +75,7 @@ if build_jit:
 
     # gcc / cl.exe flags
 
-    extra_cflags = ["/Ox"] if windows else ["-O3"]
+    extra_cflags = ["/Ox", "/arch:AVX2"] if windows else ["-O3", "-mavx2"]
 
     if ext_debug:
         extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
