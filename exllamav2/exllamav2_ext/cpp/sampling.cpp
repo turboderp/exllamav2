@@ -9,7 +9,7 @@
 #include <map>
 #include <string>
 
-//#define USE_AVX2
+#define USE_AVX2
 //#define PROFILING
 
 #ifdef USE_AVX2
