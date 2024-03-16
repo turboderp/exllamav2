@@ -12,6 +12,7 @@ class ExLlamaV2Config:
     max_batch_size: int = 1                     # Maximum size of batches to process
     max_input_len: int = 2048                   # Maximum length of input IDs in a single forward pass. Sequences longer than this will be processed in multiple steps
     max_attention_size: int = 2048 ** 2         # Sequences will be processed in chunks to keep the size of the attention weights matrix <= this
+    max_output_len: int = None                  # Maximum number of output tokens per forward pass
 
     scale_pos_emb: float = 1.0                  # Factor by which to scale positional embeddings, e.g. for 4096-token sequence use a scaling factor of 2.0, requires finetuned model or LoRA
     scale_alpha_value: float = 1.0              # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model

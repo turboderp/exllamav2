@@ -14,8 +14,6 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
-import time
-
 # Input prompts
 
 batch_size = 5
@@ -65,6 +63,7 @@ model_directory =  "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
 config = ExLlamaV2Config()
 config.model_dir = model_directory
 config.prepare()
+config.max_output_len = 1  # We're only generating one token at a time, so no need to allocate VRAM for bsz*max_seq_len*vocab_size logits
 
 config.max_batch_size = batch_size  # Model instance needs to allocate temp buffers to fit the max batch size
 
@@ -99,7 +98,7 @@ for b, batch in enumerate(batches):
 
     print(f"Batch {b + 1} of {len(batches)}...")
 
-    outputs = generator.generate_simple(batch, settings, max_new_tokens, seed = 1234)
+    outputs = generator.generate_simple(batch, settings, max_new_tokens, seed = 1234, add_bos = True)
 
     trimmed_outputs = [o[len(p):] for p, o in zip(batch, outputs)]
     collected_outputs += trimmed_outputs
@@ -109,6 +108,6 @@ for b, batch in enumerate(batches):
 for q, a in zip(s_prompts, collected_outputs):
     print("---------------------------------------")
     print("Q: " + q)
-    print("A: " + a)
+    print("A: " + a.strip())
 
 # print(f"Response generated in {time_total:.2f} seconds, {max_new_tokens} tokens, {max_new_tokens / time_total:.2f} tokens/second")

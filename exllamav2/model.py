@@ -166,7 +166,7 @@ class ExLlamaV2:
 
         self.head_layer_idx = len(self.modules)
 
-        self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False))
+        self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False, max_out_len = self.config.max_output_len))
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
         if self.config.arch.lm_head_key != "lm_head":
             self.modules[-1].alt_key = self.config.arch.lm_head_key
@@ -312,7 +312,7 @@ class ExLlamaV2:
         num_devices = torch.torch.cuda.device_count()
         loras = None  # TODO:
 
-        with torch.inference_mode():
+        with (torch.inference_mode()):
 
             self.device_tensors = []
 
@@ -333,9 +333,7 @@ class ExLlamaV2:
 
             # Size of fixed scratch space
 
-            scratch_fixed = 0
-            for module in self.modules:
-                scratch_fixed = max(scratch_fixed, module.scratch_space_fixed())
+            scratch_fixed = max(module.scratch_space_fixed() for module in self.modules)
 
             # Load modules and create cache tensors sequentially
 
@@ -623,6 +621,12 @@ class ExLlamaV2:
                 past_len = cache.current_seq_len
             else:
                 past_len = [c.current_seq_len for c in cache]
+
+        assert self.config.max_output_len is None or \
+            preprocess_only or \
+            last_id_only or \
+            seq_len <= self.config.max_output_len, \
+            "seq_len exceeds max_output_len"
 
         # assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
 

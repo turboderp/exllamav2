@@ -69,7 +69,8 @@ def init(args,
          allow_auto_split = False,
          skip_load = False,
          benchmark = False,
-         max_batch_size = None):
+         max_batch_size = None,
+         max_output_len = None):
 
     # Create config
 
@@ -87,6 +88,7 @@ def init(args,
     if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
 
     if max_batch_size: config.max_batch_size = max_batch_size
+    config.max_output_len = max_output_len
 
     # Set low-mem options
 

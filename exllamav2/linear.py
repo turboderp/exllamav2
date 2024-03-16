@@ -21,11 +21,12 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     temp_dq: torch.tensor
     padding: int = 0
+    max_out_len: int
 
     lora_a_tensors: dict
     lora_b_tensors: dict
 
-    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True):
+    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True, max_out_len = None):
         super().__init__(model, key)
 
         if pad32: self.padding = -out_features % 32
@@ -35,6 +36,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.has_bias = has_bias
         self.temp_dq = None
         self.footprint = -1
+        self.max_out_len = max_out_len
 
         self.lora_a_tensors = {}
         self.lora_b_tensors = {}
@@ -123,7 +125,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def temp_fwd_size(self):
 
-        return self.out_features * self.model.config.max_input_len * self.model.config.max_batch_size * 4 + 128
+        max_len = self.model.config.max_input_len if self.max_out_len is None else \
+            min(self.max_out_len, self.model.config.max_input_len)
+        return self.out_features * max_len * self.model.config.max_batch_size * 4 + 128
 
 
     def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, force_recons = False, force_cuda = False):

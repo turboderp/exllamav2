@@ -89,7 +89,7 @@ if system_prompt is None: system_prompt = prompt_format.default_system_prompt()
 
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args, allow_auto_split = True)
+model, tokenizer = model_init.init(args, allow_auto_split = True, max_output_len = 16)
 
 # Initialize draft model if provided, assume it always fits on first device
 
@@ -279,7 +279,7 @@ while True:
 
     if print_timings:
         time_begin_stream = time.time()
-        if draft_model is not None: generator.reset_sd_stats()
+        if args.ngram_decoding or draft_model is not None: generator.reset_sd_stats()
 
     while True:
 
