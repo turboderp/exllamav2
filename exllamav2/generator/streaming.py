@@ -563,8 +563,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 inf_ids += [t]
                 threshold += 1
 
-            if len(inf_ids) + self.cache.current_seq_len >= self.cache.max_seq_len:
-                inf_ids = inf_ids[:-(self.cache.max_seq_len - self.cache.current_seq_len)]
+            if len(inf_ids) + self.cache.current_seq_len > self.cache.max_seq_len:
+                inf_ids = inf_ids[:-(len(inf_ids) + self.cache.current_seq_len - self.cache.max_seq_len)]
 
             self.future_tokens = torch.tensor([inf_ids], dtype = torch.long)
             self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
