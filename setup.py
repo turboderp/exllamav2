@@ -11,7 +11,7 @@ precompile = 'EXLLAMA_NOCOMPILE' not in os.environ
 
 windows = (os.name == "nt")
 
-extra_cflags = ["/Ox"] if windows else ["-O3"]
+extra_cflags = ["/Ox", "/arch:AVX2"] if windows else ["-O3", "-mavx2"]
 
 if ext_debug:
     extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
@@ -104,12 +104,13 @@ setup(
         "pandas",
         "ninja",
         "fastparquet",
-        "torch>=2.0.1",
+        "torch>=2.2.0",
         "safetensors>=0.3.2",
         "sentencepiece>=0.1.97",
         "pygments",
         "websockets",
-        "regex"
+        "regex",
+        "numpy"
     ],
     include_package_data = True,
     verbose = verbose,
