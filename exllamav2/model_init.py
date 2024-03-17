@@ -17,6 +17,7 @@ def add_args(parser):
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
+    parser.add_argument("-lq4", "--load_q4", action = "store_true", help = "Load weights in Q4 mode")
     if os.name != "nt":
         parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Optimized safetensors loading with direct I/O (experimental!)")
 
@@ -34,6 +35,7 @@ def print_options(args):
     if args.low_mem: print_opts += ["low_mem"]
     if hasattr(args, "fast_safetensors") and args.fast_safetensors: print_opts += ["fast_safetensors"]
     if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
+    if args.load_q4: print_opts += ["load_q4"]
     print(f" -- Options: {print_opts}")
 
 
@@ -93,6 +95,7 @@ def init(args,
     # Set low-mem options
 
     if args.low_mem: config.set_low_mem()
+    if args.load_q4: config.load_in_q4 = True
 
     # Load model
     # If --gpu_split auto, return unloaded model. Model must be loaded with model.load_autosplit() supplying cache

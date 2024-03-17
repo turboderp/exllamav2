@@ -76,4 +76,34 @@ private:
 
 };
 
+void matrix_q4_to_fp16_cuda
+(
+    const uint8_t* in_ptr,
+    const half* scales_ptr,
+    half* out_ptr,
+    int numel
+);
+
+void matrix_fp16_to_q4_cuda
+(
+    const half* in_ptr,
+    uint8_t* out_ptr,
+    half* scales_ptr,
+    int numel
+);
+
+void matrix_fp8_to_fp16_cuda
+(
+    const uint8_t* in_ptr,
+    half* out_ptr,
+    int numel
+);
+
+void matrix_fp16_to_fp8_cuda
+(
+    const half* in_ptr,
+    uint8_t* out_ptr,
+    int numel
+);
+
 #endif

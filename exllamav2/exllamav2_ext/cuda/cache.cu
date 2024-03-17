@@ -279,7 +279,7 @@ void array_fp16_to_q4_kv_cuda
     blockDim.x = THREADS_Q;
     gridDim.x = width / BLOCKSIZE_Q;
     gridDim.y = height;
-    gridDim.z = 2;
+    gridDim.z = v_in ? 2 : 1;
 
     fp16_to_q4_kv_kernel<<<gridDim, blockDim>>>(k_in, k_out, k_scales, v_in, v_out, v_scales, offset, stride);
 }
@@ -302,7 +302,7 @@ void array_q4_to_fp16_kv_cuda
     blockDim.x = THREADS_Q;
     gridDim.x = width / BLOCKSIZE_Q;
     gridDim.y = height;
-    gridDim.z = 2;
+    gridDim.z = v_in ? 2 : 1;
 
     q4_to_fp16_kv_kernel<<<gridDim, blockDim>>>(k_in, k_scales, k_out, v_in, v_scales, v_out, offset, stride);
 }

@@ -156,3 +156,49 @@ void gemm_half_q_half
         force_cuda
     );
 }
+
+// Convert tensors
+
+void matrix_q4_to_fp16
+(
+    torch::Tensor in,
+    torch::Tensor scales,
+    torch::Tensor out
+)
+{
+    TORCH_CHECK(in.numel() * 2 == out.numel(), "matrix_q4_to_fp16: tensor size mismatch");
+    TORCH_CHECK_DTYPE(in, kByte);
+    TORCH_CHECK_DTYPE(out, kHalf);
+    int numel = out.numel();
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(in));
+
+    matrix_q4_to_fp16_cuda
+    (
+        (const uint8_t*) in.data_ptr(),
+        (const half*) scales.data_ptr(),
+        (half*) out.data_ptr(),
+        numel
+    );
+}
+
+void matrix_fp16_to_q4
+(
+    torch::Tensor in,
+    torch::Tensor out,
+    torch::Tensor scales
+)
+{
+    TORCH_CHECK(in.numel() == out.numel() * 2, "matrix_fp16_to_q4: tensor size mismatch");
+    TORCH_CHECK_DTYPE(in, kHalf);
+    TORCH_CHECK_DTYPE(out, kByte);
+    int numel = in.numel();
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(in));
+
+    matrix_fp16_to_q4_cuda
+    (
+        (const half*) in.data_ptr(),
+        (uint8_t*) out.data_ptr(),
+        (half*) scales.data_ptr(),
+        numel
+    );
+}

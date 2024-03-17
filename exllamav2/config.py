@@ -19,6 +19,7 @@ class ExLlamaV2Config:
 
     no_flash_attn: bool = False                 # Implementation will automatically use flash-attn-2 when available
     fasttensors: bool = False                   # Experimental, Linux only
+    load_in_q4: bool = False                    # Load float linear layers in Q4 format (for test/dev purposes, not performant)
 
     # Loaded/set by .prepare():
 

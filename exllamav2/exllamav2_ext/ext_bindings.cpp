@@ -53,6 +53,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("free_q_matrix", &free_q_matrix, "free_q_matrix");
     m.def("reconstruct", &reconstruct, "reconstruct");
     m.def("gemm_half_q_half", &gemm_half_q_half, "gemm_half_q_half");
+    m.def("matrix_fp16_to_q4", &matrix_fp16_to_q4, "matrix_fp16_to_q4");
+    m.def("matrix_q4_to_fp16", &matrix_q4_to_fp16, "matrix_q4_to_fp16");
 
     // qattn
 

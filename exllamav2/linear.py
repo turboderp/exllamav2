@@ -17,6 +17,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     q_handle: int or None = None
     q_tensors: dict or None = None
 
+    q4_weight: torch.tensor or None = None
+    q4_scales: torch.tensor or None = None
+    fp16_bias: torch.tensor or None = None
+
     name: str = "Linear"
 
     temp_dq: torch.tensor
@@ -46,6 +50,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         if w is None: w = self.load_weight()
         if isinstance(w, dict):
+            assert not self.model.config.load_in_q4, "Can't load quantized layer in Q4 mode"
             if self.has_bias:
                 assert "bias" in w, self.key + " has no bias but bias expected"
             else:
@@ -59,8 +64,13 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         elif isinstance(w, nn.Parameter):
             assert not self.has_bias, self.key + " has no bias tensor but bias is expected"
             if self.padding > 0: w = nn.Parameter(F.pad(w.data, (0, 0, 0, self.padding)).contiguous())
-            self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
-            self.linear.weight = w
+            if not self.model.config.load_in_q4 or not ".layers." in self.key:
+                self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
+                self.linear.weight = w
+            else:
+                self.q4_weight = torch.empty((self.out_features * self.in_features // 2,), device = self.device(), dtype = torch.uint8)
+                self.q4_scales = torch.empty((self.out_features * self.in_features // 32,), device = self.device(), dtype = torch.half)
+                ext_c.matrix_fp16_to_q4(w.contiguous(), self.q4_weight, self.q4_scales)
 
         elif isinstance(w, tuple):
             assert self.has_bias, self.key + " has bias tensor but bias is not expected"
@@ -69,9 +79,15 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             if self.padding > 0:
                 ww = nn.Parameter(F.pad(ww.data, (0, 0, 0, self.padding)).contiguous())
                 wb = nn.Parameter(F.pad(wb.data, (0, 0, 0, self.padding)).contiguous())
-            self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
-            self.linear.weight = ww
-            self.linear.bias = wb
+            if not self.model.config.load_in_q4 or not ".layers." in self.key:
+                self.q4_weight = torch.empty((self.out_features * self.in_features // 2,), device = self.device(), dtype = torch.uint8)
+                self.q4_scales = torch.empty((self.out_features * self.in_features // 32,), device = self.device(), dtype = torch.half)
+                ext_c.matrix_fp16_to_q4(ww.contiguous(), self.q4_weight, self.q4_scales)
+                self.fp16_bias = wb
+            else:
+                self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
+                self.linear.weight = ww
+                self.linear.bias = wb
 
 
     def matrix_shape(self):
@@ -97,6 +113,18 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         if self.q_tensors is not None:
             for k, v in self.q_tensors.items(): del v
             self.q_tensors = None
+
+        if self.q4_weight is not None:
+            del self.q4_weight
+            self.q4_weight = None
+
+        if self.q4_scales is not None:
+            del self.q4_scales
+            self.q4_scales = None
+
+        if self.fp16_bias is not None:
+            del self.fp16_bias
+            self.fp16_bias = None
 
         self.temp_dq = None
 
@@ -170,42 +198,6 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             return hidden_states_out
 
 
-    # def dump_group_info(self):
-    #
-    #     if "q_groups" in self.q_tensors:
-    #
-    #         groups = self.q_tensors["q_groups"].cpu()
-    #
-    #         if "q_invperm" in self.q_tensors:
-    #             height = self.q_tensors["q_invperm"].shape[0]
-    #         else:
-    #             height = self.q_tensors["q_weight"].shape[0] * 8
-    #
-    #         groupsize = 1
-    #         while groupsize * groups.shape[0] / 2 < height:
-    #             groupsize *= 2
-    #
-    #         gis = f"gs: {groupsize}, "
-    #         i = 0
-    #         pg = 0
-    #         gc = 0
-    #         while i <= groups.shape[0]:
-    #             g = groups[i].item() if i < groups.shape[0] else -1
-    #             if g != pg:
-    #                 if pg != 0:
-    #                     gis += f"{pg}: {gc}, "
-    #                     gc = 0
-    #                 pg = g
-    #             gc += 1
-    #             i += 2
-    #
-    #         return gis
-    #
-    #     else:
-    #
-    #         return "GPTQ"
-
-
     def get_weight_tensor_dq(self):
 
         if self.linear is not None:
@@ -217,6 +209,11 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             return tensor
             # ext_c.reconstruct(self.q_handle, self.temp_dq)
             # return self.temp_dq
+
+        elif self.q4_weight is not None:
+            tensor = torch.empty((self.out_features, self.in_features), dtype = torch.half, device = self.device())
+            ext_c.matrix_q4_to_fp16(self.q4_weight, self.q4_scales, tensor)
+            return tensor.T
 
         else:
             raise ValueError(f"Layer {self.key} has no data")
@@ -230,8 +227,12 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         elif self.q_handle is not None:
             return self.q_tensors["bias"]
 
+        elif self.fp16_bias is not None:
+            return self.fp16_bias
+
         else:
             raise ValueError(f"Layer {self.key} has no data")
+
 
     def is_quant(self):
 

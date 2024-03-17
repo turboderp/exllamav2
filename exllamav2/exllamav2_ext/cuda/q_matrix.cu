@@ -9,6 +9,8 @@
 #include "quant/qdq_6.cuh"
 #include "quant/qdq_8.cuh"
 
+#include "cache.cuh"
+
 #define BLOCK_KN_SIZE 128
 
 #define THREADS_X 32
@@ -650,3 +652,128 @@ bool QMatrix::make_sequential(const uint32_t* cpu_g_idx)
 
     return true;
 }
+
+// FP8/FP16 convert funcs
+
+#define BLOCKSIZE_F 8
+#define THREADS_F 32
+
+__global__ void matrix_fp8_to_fp16_kernel
+(
+    const uint8_t* __restrict__ in,
+    half* __restrict__ out
+)
+{
+    int block_offset = (blockIdx.x * BLOCKSIZE_F * THREADS_F + threadIdx.x * BLOCKSIZE_F);
+
+    const uint2* in2 = (const uint2*) (in + block_offset);
+    uint2 a = *in2;
+
+    uint4 b;
+    b.x = a.x & 0xff00ff00;
+    b.y = (a.x & 0x00ff00ff) << 8;
+    b.z = a.y & 0xff00ff00;
+    b.w = (a.y & 0x00ff00ff) << 8;
+
+    uint4* out4 = (uint4*) (out + block_offset);
+    *out4 = b;
+}
+
+__global__ void matrix_fp16_to_fp8_kernel
+(
+    const half* __restrict__ in,
+    uint8_t* __restrict__ out
+)
+{
+    int block_offset = (blockIdx.x * BLOCKSIZE_F * THREADS_F + threadIdx.x * BLOCKSIZE_F);
+
+    const uint4* in4 = (const uint4*) (in + block_offset);
+    uint4 a = *in4;
+
+    uint2* out2 = (uint2*) (out + block_offset);
+    uint2 b;
+    b.x = (a.x & 0xff00ff00) | ((a.y & 0xff00ff00) >> 8);
+    b.y = (a.z & 0xff00ff00) | ((a.w & 0xff00ff00) >> 8);
+    *out2 = b;
+}
+
+void matrix_fp8_to_fp16_cuda
+(
+    const uint8_t* in_ptr,
+    half* out_ptr,
+    int numel
+)
+{
+    if (numel % (BLOCKSIZE_F * THREADS_F))
+        printf(" ## matrix_fp8_to_fp16_cuda: numel() must be multiple of %d\n", BLOCKSIZE_F * THREADS_F);
+
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_F;
+    gridDim.x = numel / (BLOCKSIZE_F * THREADS_F);
+    matrix_fp8_to_fp16_kernel<<<gridDim, blockDim>>>(in_ptr, out_ptr);
+}
+
+void matrix_fp16_to_fp8_cuda
+(
+    const half* in_ptr,
+    uint8_t* out_ptr,
+    int numel
+)
+{
+    if (numel % (BLOCKSIZE_F * THREADS_F))
+        printf(" ## matrix_fp16_to_fp8_cuda: numel() must be multiple of %d\n", BLOCKSIZE_F * THREADS_F);
+
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_F;
+    gridDim.x = numel / (BLOCKSIZE_F * THREADS_F);
+    matrix_fp16_to_fp8_kernel<<<gridDim, blockDim>>>(in_ptr, out_ptr);
+}
+
+// Q4/FP16 convert funcs
+
+void matrix_q4_to_fp16_cuda
+(
+    const uint8_t* in_ptr,
+    const half* scales_ptr,
+    half* out_ptr,
+    int numel
+)
+{
+    array_q4_to_fp16_kv_cuda
+    (
+        in_ptr,
+        scales_ptr,
+        out_ptr,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        1,
+        0,
+        numel
+    );
+}
+
+void matrix_fp16_to_q4_cuda
+(
+    const half* in_ptr,
+    uint8_t* out_ptr,
+    half* scales_ptr,
+    int numel
+)
+{
+    array_fp16_to_q4_kv_cuda
+    (
+        in_ptr,
+        out_ptr,
+        scales_ptr,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        1,
+        0,
+        numel
+    );
+}
+

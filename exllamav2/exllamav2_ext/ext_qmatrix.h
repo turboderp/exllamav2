@@ -34,4 +34,18 @@ void gemm_half_q_half
     bool force_cuda
 );
 
+void matrix_q4_to_fp16
+(
+    torch::Tensor in,
+    torch::Tensor scales,
+    torch::Tensor out
+);
+
+void matrix_fp16_to_q4
+(
+    torch::Tensor in,
+    torch::Tensor out,
+    torch::Tensor scales
+);
+
 
