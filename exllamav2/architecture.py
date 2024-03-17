@@ -228,6 +228,36 @@ class ExLlamaV2ArchParams:
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
 
+        # GemMoE
+
+        if arch_string == "GemmoeForCausalLM":
+            arch_recognized = True
+            print(f" !! Warning, Gemmoe support is experimental and has not been fully tested")
+            self.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_llama_attn + \
+                [[f"block_sparse_moe.experts.{e}.w{w}" for e in range(8) for w in range(3)]] + \
+                [["block_sparse_moe.gate"]]
+            self.expect_keys += \
+                expect_keys_gemma
+            self.norm_eps_key = "rms_norm_eps"
+            self.attention_bias_qkv = False
+            self.attention_bias_o = False
+            self.mlp_bias = False
+            self.mlp_gate = True
+            self.mlp_key_gate = ".block_sparse_moe.experts.*.w1"
+            self.mlp_key_up = ".block_sparse_moe.experts.*.w3"
+            self.mlp_key_down = ".block_sparse_moe.experts.*.w2"
+            self.mlp_key_expert_gate = ".block_sparse_moe.gate"
+            self.mlp_act_func = "gelu"
+            self.is_moe = True
+            self.norm = "rmsnorm"
+            self.lm_head_key = "model.embed_tokens"
+            self.normalize_embeddings = True
+            self.norm_key_1 = ".input_layernorm"
+            self.norm_key_2 = ".post_attention_layernorm"
+            self.norm_constant_bias = 1
+
         # Llama (default + fallback)
 
         if arch_string != "LlamaForCausalLM" and not arch_recognized:
