@@ -25,11 +25,11 @@ from chat_prompts import prompt_formats
 prompt_formats_list = list(prompt_formats.keys())
 
 # Options
+# (!!!) NOTE: These go on top of the engine arguments that can be found in `model_init.py` (!!!)
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
 parser.add_argument("-dm", "--draft_model_dir", type = str, default = None, help = "Path to draft model directory")
 parser.add_argument("-nds", "--no_draft_scale", action = "store_true", help = "If draft model has smaller context size than model, don't apply alpha (NTK) scaling to extend it")
-parser.add_argument("-gs", "--gpu_split", type = str, help = "Split the model between multiple GPUs. Use `--gpu_split auto` for automatic handling or `--gpu_split x,y` to manually assign the VRAM on each device")
 
 parser.add_argument("-modes", "--modes", action = "store_true", help = "List available modes and exit.")
 parser.add_argument("-mode", "--mode", choices = prompt_formats_list, help = "Chat mode. Use llama for Llama 1/2 chat finetunes.")
