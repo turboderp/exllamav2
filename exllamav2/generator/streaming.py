@@ -15,6 +15,7 @@ from exllamav2.generator.ngram import NgramCache
 
 import torch
 import random
+import threading
 
 class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
@@ -113,7 +114,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                        position_offsets = None,
                        return_probabilities = False,
                        return_top_tokens = 0,
-                       return_logits = False):
+                       return_logits = False,
+                       abort_event: threading.Event = None):
 
         self.return_probabilities = return_probabilities
         self.return_top_tokens = return_top_tokens
@@ -124,7 +126,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                           token_healing,
                           loras,
                           input_mask,
-                          position_offsets)
+                          position_offsets,
+                          abort_event)
 
 
     # Legacy function
@@ -135,7 +138,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                      token_healing = False,
                      loras = None,
                      input_mask = None,
-                     position_offsets = None):
+                     position_offsets = None,
+                     abort_event: threading.Event = None):
 
         assert input_ids.shape[0] <= 2, "Streaming generator does not support batch size > 1"
         if input_ids.shape[0] == 2:
@@ -164,7 +168,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.held_pprobs = self.no_pprobs
         self.held_logits = self.no_logits
         self.settings = gen_settings
-        self._gen_begin_reuse(input_ids, gen_settings)
+        self._gen_begin_reuse(input_ids, gen_settings, abort_event)
 
         self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
 
@@ -399,11 +403,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             return self.no_tokens, ""
 
 
-    def _gen_begin(self, in_tokens, gen_settings):
+    def _gen_begin(self, in_tokens, gen_settings, abort_event: threading.Event = None):
 
         self.sequence_ids = in_tokens.clone()
         self.cache.current_seq_len = 0
-        self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
+        self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets, abort_event = abort_event)
 
         if self.draft_model is not None:
             self.draft_cache.current_seq_len = 0
@@ -418,10 +422,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.first_token = True
 
 
-    def _gen_begin_reuse(self, in_tokens, gen_settings):
+    def _gen_begin_reuse(self, in_tokens, gen_settings, abort_event: threading.Event = None):
 
         if self.sequence_ids is None or self.cache.current_seq_len == 0:
-            self._gen_begin(in_tokens, gen_settings)
+            self._gen_begin(in_tokens, gen_settings, abort_event)
             return
 
         reuse = 0
@@ -429,7 +433,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             reuse += 1
 
         if reuse < 2:
-            self._gen_begin(in_tokens, gen_settings)
+            self._gen_begin(in_tokens, gen_settings, abort_event)
             return
 
         self.cache.current_seq_len = reuse - 1
@@ -437,7 +441,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.draft_cache.current_seq_len = reuse - 1
         self.sequence_ids = in_tokens[:, :reuse]
 
-        if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings)
+        if reuse < in_tokens.shape[-1]: self._gen_feed_tokens(in_tokens[:, reuse:], gen_settings, abort_event)
 
         if self.speculative_ngram or self.draft_model is not None:
             self.future_logits = None
@@ -446,16 +450,16 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.first_token = True
 
 
-    def _gen_feed_tokens(self, in_tokens, gen_settings):
+    def _gen_feed_tokens(self, in_tokens, gen_settings, abort_event: threading.Event = None):
 
         if self.sequence_ids is None:
-            self._gen_begin(in_tokens, gen_settings)
+            self._gen_begin(in_tokens, gen_settings, abort_event)
             return
 
         start = self.cache.current_seq_len
         self.sequence_ids = torch.cat((self.sequence_ids, in_tokens), dim = 1)
 
-        self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
+        self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets, abort_event = abort_event)
 
         if self.draft_model is not None:
             self.draft_model.forward(self.sequence_ids[:, start: -1], self.draft_cache, preprocess_only = True)

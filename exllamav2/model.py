@@ -1,5 +1,5 @@
 
-import os, sys
+import os, sys, threading
 min_version = (3, 8)
 if sys.version_info < min_version:
     print("")
@@ -513,7 +513,8 @@ class ExLlamaV2:
                 last_id_only = False,
                 loras = None,
                 return_last_state = False,
-                position_offsets = None):
+                position_offsets = None,
+                abort_event: threading.Event = None):
 
         q_len = input_ids.shape[-1]
         remaining_q_len = q_len
@@ -557,6 +558,10 @@ class ExLlamaV2:
 
         chunk_begin = 0
         while chunk_begin < q_len:
+            # Abort if the signal is set
+
+            if abort_event and abort_event.is_set():
+                break
 
             # Limit chunk_size to max_input_len
 
