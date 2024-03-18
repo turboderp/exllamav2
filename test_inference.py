@@ -36,6 +36,7 @@ torch.set_printoptions(precision = 10)
 # torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
 # torch.set_float32_matmul_precision("medium")
 
+# (!!!) NOTE: These go on top of the engine arguments that can be found in `model_init.py` (!!!)
 parser = argparse.ArgumentParser(description = "Test inference on ExLlamaV2 model")
 parser.add_argument("-ed", "--eval_dataset", type = str, help = "Perplexity evaluation dataset (.parquet file)")
 parser.add_argument("-er", "--eval_rows", type = int, default = 128, help = "Number of rows to apply from dataset")
@@ -54,7 +55,6 @@ parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip w
 parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Load model layer by layer (perplexity evaluation only)")
 parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512 (experimental)")
 parser.add_argument("-rr", "--rank_reduce", type = str, help = "Rank-reduction for MLP layers of model, in reverse order (for experimentation)")
-parser.add_argument("-gs", "--gpu_split", type = str, help = "Split the model between multiple GPUs. Use `--gpu_split auto` for automatic handling or `--gpu_split x,y` to manually assign the VRAM on each device")
 
 # Initialize model and tokenizer
 
