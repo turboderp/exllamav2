@@ -46,9 +46,10 @@ def list_live_tensors():
 
 def quant_linear(job: dict,
                  source: ExLlamaV2Linear,
-                 lq: AdaptiveGPTQ,
+                 lq: AdaptiveGPTQ or None,
                  qparams: dict,
-                 drop = False):
+                 drop = False,
+                 rtn = False):
 
     qp = QParams.from_dict(qparams)
     print(f" -- Linear: {source.key} -> {qp.get_desc()}, {qp.bpw(source.linear.weight.T.shape):.2f} bpw")
@@ -56,7 +57,10 @@ def quant_linear(job: dict,
     # Quantize
 
     lq.configure(qp.group_size, qp.bits, qp.bits_prop, qp.scale_bits)
-    lq.quantize(keep_qweight = True, apply = True)
+    if rtn:
+        lq.quantize_rtn_inplace(keep_qweight = True, apply = True)
+    else:
+        lq.quantize(keep_qweight = True, apply = True)
 
     # Pack and save quantized layer
 
@@ -67,6 +71,10 @@ def quant_linear(job: dict,
     # Drop buffers from quantizer to free VRAM
 
     if drop: lq.drop_buffers()
+
+    # Don't reconstruct RTN layers
+
+    if rtn: return
 
     # Reconstruct from packed layer
 
@@ -85,13 +93,15 @@ def quant_linear(job: dict,
     quant_w = source.linear.weight.T
     recons_w = recons_linear.get_weight_tensor_dq()
 
-    ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
-    recons_w2 = recons_linear.forward(ident, force_cuda = True)
-
-    recons_w2.sub_(quant_w)
-    if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
-    recons_w2.abs_()
-    diff2 = torch.max(recons_w2)
+    if quant_w.numel() <= 1e9:
+        ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
+        recons_w2 = recons_linear.forward(ident, force_cuda = True)
+        recons_w2.sub_(quant_w)
+        if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
+        recons_w2.abs_()
+        diff2 = torch.max(recons_w2)
+    else:
+        diff2 = 0
 
     quant_w.sub_(recons_w)
     quant_w.abs_()
@@ -162,7 +172,7 @@ def quant_mlp(job, module, hidden_states, target_states, quantizers, attn_params
     del quantizers[f"down_proj"]
 
 
-def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
+def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat):
 
     num_experts = module.model.config.num_experts
 
@@ -181,12 +191,13 @@ def quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, 
         del quantizers[f"w2.{i}"]
 
 
-def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params):
-
-    quantizers["lm_head"].prepare()
+def quant_lm_head(job, module, hidden_states, quantizers, attn_params, rtn = False):
 
     qp = qparams_headoptions[job["head_bits"]]
-    quant_linear(job, module, quantizers["lm_head"], qp.get_dict(), drop = True)
+    q = quantizers["lm_head"]
+
+    q.prepare(no_h_inv = rtn)
+    quant_linear(job, module, q, qp.get_dict(), drop = True, rtn = rtn)
 
 
 def quant_parallel_decoder(job, module, hidden_states, target_states, quantizers, attn_params, strat_attn, strat_mlp):
@@ -261,6 +272,14 @@ def quant(job, save_fn, model):
         # Prepare module
 
         module = model.modules[index]
+
+        rtn = False
+        if module.key == "lm_head" and module.numel() > 1e9:  # every part of the buffalo
+            model.free_device_tensors()
+            gc.collect()
+            torch.cuda.empty_cache()
+            rtn = True
+
         module.load()
 
         print(f" -- Layer: {module.key} ({module.name})")
@@ -386,7 +405,7 @@ def quant(job, save_fn, model):
             model.drop_device_tensors()
             gc.collect()  # shruge
             torch.cuda.empty_cache()
-            quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params)
+            quant_lm_head(job, module, hidden_states, quantizers, attn_params, rtn)
 
         if mode == "parallel_decoder":
             strat_attn = strategy[module.key + ".self_attn"]
