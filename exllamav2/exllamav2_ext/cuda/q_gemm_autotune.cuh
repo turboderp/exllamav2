@@ -40,6 +40,7 @@ AT_Result* at_get_top(int device, int size_k, int size_n)
 
 float iqm(std::vector<float>& v)
 {
+    std::sort(v.begin(), v.end());
     int p0 = v.size() * 1 / 4;
     int p1 = v.size() * 3 / 4;
     float sum = 0.0f;
@@ -49,8 +50,6 @@ float iqm(std::vector<float>& v)
 
 void at_select(AT_Result* atr)
 {
-    std::sort(atr->timings_32.begin(), atr->timings_32.end());
-    std::sort(atr->timings_64.begin(), atr->timings_64.end());
     float iqm_32 = iqm(atr->timings_32);
     float iqm_64 = iqm(atr->timings_64);
     atr->best = iqm_32 < iqm_64 ? 32 : 64;
