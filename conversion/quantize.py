@@ -358,14 +358,15 @@ def quant(job, save_fn, model):
             if mode != "linear":
                 target_states.append(outputs["hidden_states"].to("cpu"))
 
-        # For MoE layers, warn if any layer received less than 10% of a calibration batch
             outputs = None
+
+        # For MoE layers, warn if any expert received less than 20% of a calibration batch
 
         if mode == "block_sparse_moe":
             for j in range(model.config.num_experts):
                 ue = uncalibrated_experts[j]
-                if ue > len(hidden_states) * 0.10:
-                    print(f" !! Warning: w2.{j} has less than 10% calibration for {ue}/{len(hidden_states)} rows")
+                if ue > len(hidden_states) * 0.20:
+                    print(f" !! Warning: w2.{j} has less than 20% calibration for {ue}/{len(hidden_states)} rows")
 
         # Conversion
 
