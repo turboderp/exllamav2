@@ -84,6 +84,12 @@ class ExLlamaV2DeviceTensors:
         self.ready = False
 
 
+    def free(self):
+
+        self.drop()
+        self.scratch_bytes = 1
+
+
     def begin_scratch_alloc(self):
 
         self.scratch_idx = 0
@@ -489,6 +495,12 @@ class ExLlamaV2:
 
         for dt in self.device_tensors:
             dt.drop()
+
+
+    def free_device_tensors(self):
+
+        for dt in self.device_tensors:
+            dt.free()
 
 
     def get_device_tensors(self, device_idx, scratch = True):

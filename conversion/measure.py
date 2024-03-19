@@ -559,6 +559,7 @@ def measure_quant(job, save_fn, model):
         # Unload module
 
         module.unload()
+        gc.collect()
         torch.cuda.empty_cache()
 
         # Advance

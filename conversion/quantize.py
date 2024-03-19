@@ -124,9 +124,14 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, cache, att
 
     quant_linear(job, module.q_proj, quantizers["q_proj"], strat["q_proj"])
     quant_linear(job, module.k_proj, quantizers["k_proj"], strat["k_proj"])
+    del quantizers[f"k_proj"]
     quant_linear(job, module.v_proj, quantizers["v_proj"], strat["v_proj"])
+    del quantizers[f"v_proj"]
     quant_linear(job, module.o_proj, quantizers["o_proj"], strat["o_proj"])
+    del quantizers[f"o_proj"]
 
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 def quant_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat, reuse_h_up_proj = None):
@@ -144,8 +149,14 @@ def quant_mlp(job, module, hidden_states, target_states, quantizers, attn_params
         quant_linear(job, module.gate_proj, quantizers["gate_proj"], strat["gate_proj"])
         del quantizers[f"gate_proj"]
 
+    gc.collect()
+    torch.cuda.empty_cache()
+
     quant_linear(job, module.up_proj, quantizers["up_proj"], strat["up_proj"])
     del quantizers[f"up_proj"]
+
+    gc.collect()
+    torch.cuda.empty_cache()
 
     quantizers["down_proj"].prepare()
 
@@ -350,6 +361,7 @@ def quant(job, save_fn, model):
                 target_states.append(outputs["hidden_states"].to("cpu"))
 
         # For MoE layers, warn if any layer received less than 10% of a calibration batch
+            outputs = None
 
         if mode == "block_sparse_moe":
             for j in range(model.config.num_experts):
