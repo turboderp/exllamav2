@@ -3,6 +3,7 @@
 
 layer_keys_llama_norms = [["input_layernorm"],
                           ["post_attention_layernorm"]]
+layer_keys_cohere_norms = [["input_layernorm"]]
 layer_keys_yi_norms = [["ln1", "input_layernorm"],
                        ["ln2", "post_attention_layernorm"]]
 layer_keys_llama_attn = [["self_attn.q_proj"],
@@ -23,7 +24,6 @@ expect_keys_gemma = [["model.norm"],
                      ["model.embed_tokens"]]
 expect_keys_starcoder2 = [["model.norm"],
                           ["model.embed_tokens"]]
-
 
 class ExLlamaV2ArchParams:
 
@@ -281,6 +281,36 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = True
             self.rope_neox_style = True
+
+        # Cohere
+
+        if arch_string == "CohereForCausalLM":
+            arch_recognized = True
+            self.layer_keys += \
+                layer_keys_cohere_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.expect_keys += \
+                expect_keys_gemma
+            self.norm_eps_key = "layer_norm_eps"
+            self.attention_bias_qkv = False
+            self.attention_bias_o = False
+            self.mlp_bias = False
+            self.mlp_gate = True
+            self.mlp_key_gate = ".mlp.gate_proj"
+            self.mlp_key_up = ".mlp.up_proj"
+            self.mlp_key_down = ".mlp.down_proj"
+            self.mlp_act_func = "silu"
+            self.is_moe = False
+            self.norm = "layernorm"
+            self.lm_head_key = "model.embed_tokens"
+            self.normalize_embeddings = False
+            self.norm_key_1 = ".input_layernorm"
+            self.norm_key_2 = None
+            self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = True
+            self.requires_bos = True
+            self.rope_neox_style = False
 
         # Llama (default + fallback)
 
