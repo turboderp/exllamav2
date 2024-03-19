@@ -194,13 +194,13 @@ def make_group_map(q_groups, num_qrows):
 
 # Create Q matrix
 
-def make_q_matrix(w: dict, temp_dq, key: str = None):
+def make_q_matrix(w: dict, temp_dq, key: str = None, prescale: float = 1):
 
     # EXL2
 
     if "q_weight" in w:
 
-        w["q_scale_max"] /= 256
+        w["q_scale_max"] *= prescale / 256
         w["q_perm"] = w["q_perm"].short()
         w["q_invperm"] = w["q_invperm"].short()
 
@@ -224,6 +224,7 @@ def make_q_matrix(w: dict, temp_dq, key: str = None):
 
     elif "qweight" in w:
 
+        if prescale != 1: w["scales"] *= prescale
         if w["scales"].dtype == torch.float: w["scales"] = w["scales"].half()
 
         # GPTQ with g_idx (act_order)

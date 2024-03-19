@@ -12,6 +12,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     in_features: int
     out_features: int
     has_bias: bool
+    prescale: float = 1
 
     linear: nn.Linear or None = None
     q_handle: int or None = None
@@ -30,7 +31,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     lora_a_tensors: dict
     lora_b_tensors: dict
 
-    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True, max_out_len = None):
+    def __init__(self, model, key, in_features, out_features, has_bias, pad32 = True, max_out_len = None, prescale = 1):
         super().__init__(model, key)
 
         if pad32: self.padding = -out_features % 32
@@ -41,6 +42,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.temp_dq = None
         self.footprint = -1
         self.max_out_len = max_out_len
+        self.prescale = prescale
+        self.prev_prescale = None
 
         self.lora_a_tensors = {}
         self.lora_b_tensors = {}
@@ -59,7 +62,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             device_tensors.begin_scratch_alloc()
             self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
             self.q_tensors = w
-            self.q_handle = ext.make_q_matrix(w, self.temp_dq)
+            self.q_handle = ext.make_q_matrix(w, self.temp_dq, prescale = self.prescale)
+            self.prev_prescale = self.prescale
+            self.prescale = 1
+
 
         elif isinstance(w, nn.Parameter):
             assert not self.has_bias, self.key + " has no bias tensor but bias is expected"
@@ -127,6 +133,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.fp16_bias = None
 
         self.temp_dq = None
+        if self.prev_prescale is not None:
+            self.prescale = self.prev_prescale
+            self.prev_prescale = None
 
 
     def get_weight(self):
@@ -176,10 +185,13 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
             matrix = self.get_weight_tensor_dq()
             hidden_states_out = torch.matmul(hidden_states, matrix)
-
             if self.has_bias:
                 bias = self.get_bias_tensor()
                 hidden_states_out += bias
+
+            if self.prescale != 1:
+                hidden_states_out.mul_(self.prescale)
+
 
         # Evaluate LoRAs
 
