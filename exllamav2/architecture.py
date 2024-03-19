@@ -64,6 +64,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 
@@ -95,6 +96,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 
@@ -124,6 +126,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".ln1"
             self.norm_key_2 = ".ln2"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 
@@ -153,6 +156,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 
@@ -182,6 +186,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 
@@ -211,6 +216,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 1
+            self.parallel_decoder_blocks = False
             self.requires_bos = True
             self.rope_neox_style = True
 
@@ -239,6 +245,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 
@@ -271,6 +278,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 1
+            self.parallel_decoder_blocks = False
             self.requires_bos = True
             self.rope_neox_style = True
 
@@ -303,6 +311,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
 

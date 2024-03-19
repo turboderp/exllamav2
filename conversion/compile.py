@@ -4,6 +4,7 @@ from exllamav2.model import \
     ExLlamaV2Attention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
+    ExLlamaV2ParallelDecoder,
     ExLlamaV2Linear,
     ExLlamaV2RMSNorm,
     ExLlamaV2LayerNorm
@@ -92,6 +93,18 @@ def compile_model(job, save_fn, model):
                 d = get_q_module(job, module.w1[i]); out_dict.update(d); current_size += _dsize(d)
                 d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
                 d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
+
+        if isinstance(module, ExLlamaV2ParallelDecoder):
+
+            has_gate = model.config.arch.mlp_gate
+            d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.attn.q_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.attn.k_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.attn.v_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.attn.o_proj); out_dict.update(d); current_size += _dsize(d)
+            if has_gate: d = get_q_module(job, module.mlp.gate_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.mlp.up_proj); out_dict.update(d); current_size += _dsize(d)
+            d = get_q_module(job, module.mlp.down_proj); out_dict.update(d); current_size += _dsize(d)
 
         if isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
 

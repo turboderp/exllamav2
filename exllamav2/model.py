@@ -30,6 +30,7 @@ from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.moe_mlp import ExLlamaV2MoEMLP
+from exllamav2.parallel_decoder import ExLlamaV2ParallelDecoder
 from exllamav2.embedding import ExLlamaV2Embedding
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.compat import safe_move_tensor
@@ -152,13 +153,17 @@ class ExLlamaV2:
 
         for layer_idx in range(self.config.num_hidden_layers):
 
-            self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_idx}", layer_idx))
-            for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
-            if self.config.arch.is_moe:
-                self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_idx}", layer_idx))
+            if self.config.arch.parallel_decoder_blocks:
+                self.modules.append(ExLlamaV2ParallelDecoder(self, f"model.layers.{layer_idx}", layer_idx))
+                for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
             else:
-                self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
-            for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
+                self.modules.append(ExLlamaV2Attention(self, f"model.layers.{layer_idx}", layer_idx))
+                for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
+                if self.config.arch.is_moe:
+                    self.modules.append(ExLlamaV2MoEMLP(self, f"model.layers.{layer_idx}", layer_idx))
+                else:
+                    self.modules.append(ExLlamaV2MLP(self, f"model.layers.{layer_idx}", layer_idx))
+                for m in self.modules[-1].submodules: self.modules_dict[m.key] = m
 
         if self.config.arch.norm == "layernorm":
             self.modules.append(ExLlamaV2LayerNorm(self, "model.norm"))
@@ -185,7 +190,8 @@ class ExLlamaV2:
         layer_idx = len(self.modules)
         while True:
             layer_idx -= 1
-            if isinstance(self.modules[layer_idx], ExLlamaV2Attention):
+            if isinstance(self.modules[layer_idx], ExLlamaV2Attention) or \
+               isinstance(self.modules[layer_idx], ExLlamaV2ParallelDecoder):
                 break
 
         self.last_kv_layer_idx = layer_idx
@@ -387,7 +393,8 @@ class ExLlamaV2:
                     hidden_state_backup = safe_move_tensor(hidden_state, "cpu").clone()
 
                     try:
-                        if isinstance(module, ExLlamaV2Attention):
+                        if isinstance(module, ExLlamaV2Attention) or \
+                           isinstance(module, ExLlamaV2ParallelDecoder):
                             self.cache_map[module.layer_idx] = module.device()
                             cache.update_cache_tensors()
 

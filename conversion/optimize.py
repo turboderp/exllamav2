@@ -67,8 +67,12 @@ def optimize(job, save_fn, model):
     values = []
     params = []
     for i in range(num_layers):
-        m1 = measurement["model.layers." + str(i) + ".self_attn"]
-        m2 = measurement["model.layers." + str(i) + "." + mlp_mode]
+        if model.config.arch.parallel_decoder_blocks:
+            m1 = measurement["model.layers." + str(i) + ".parallel_decoder"]["attn"]
+            m2 = measurement["model.layers." + str(i) + ".parallel_decoder"]["mlp"]
+        else:
+            m1 = measurement["model.layers." + str(i) + ".self_attn"]
+            m2 = measurement["model.layers." + str(i) + "." + mlp_mode]
         for m in [m1, m2]:
             v = [fn(e["accuracy"]) for e in m]
             w = [e["total_bits"] for e in m]

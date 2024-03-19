@@ -4,6 +4,7 @@ from exllamav2.model import \
     ExLlamaV2Attention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
+    ExLlamaV2ParallelDecoder,
     ExLlamaV2Linear,
     ExLlamaV2RMSNorm,
     ExLlamaV2LayerNorm
@@ -127,11 +128,16 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, cache, att
     quant_linear(job, module.o_proj, quantizers["o_proj"], strat["o_proj"])
 
 
-def quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
+
+def quant_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat, reuse_h_up_proj = None):
 
     has_mlp = module.model.config.arch.mlp_gate
 
-    quantizers["up_proj"].prepare()
+    if reuse_h_up_proj is not None:
+        quantizers["up_proj"].reuse_h(quantizers[reuse_h_up_proj])
+        del quantizers[reuse_h_up_proj]
+    else:
+        quantizers["up_proj"].prepare()
 
     if has_mlp:
         quantizers["gate_proj"].reuse_h(quantizers["up_proj"])
@@ -172,6 +178,14 @@ def quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params):
 
     qp = qparams_headoptions[job["head_bits"]]
     quant_linear(job, module, quantizers["lm_head"], qp.get_dict(), drop = True)
+
+
+def quant_parallel_decoder(job, module, hidden_states, target_states, quantizers, attn_params, strat_attn, strat_mlp):
+
+    print(f" -- Sublayer: {module.key}.self_attn")
+    quant_attn(job, module.attn, hidden_states, target_states, quantizers, attn_params, strat_attn)
+    print(f" -- Sublayer: {module.key}.mlp")
+    quant_mlp(job, module.mlp, hidden_states, target_states, quantizers, attn_params, strat_mlp, "q_proj")
 
 
 # def testc(module, states, target_states, norm, layers):
@@ -228,8 +242,6 @@ def quant(job, save_fn, model):
         for k in sorted(f.keys()):
             if k.startswith("row"):
                 hidden_states.append(f.get_tensor(k))
-            # elif k.startswith("i_row"):
-            #     hidden_i_states.append(f.get_tensor(k))
 
     index = job["q_last_module_idx"]
     while True:
@@ -279,12 +291,25 @@ def quant(job, save_fn, model):
         elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
             mode = "norm"
 
+        elif isinstance(module, ExLlamaV2ParallelDecoder):
+            mode = "parallel_decoder"
+            quantizers["q_proj"] = AdaptiveGPTQ(module.attn.q_proj.linear)
+            quantizers["k_proj"] = AdaptiveGPTQ(module.attn.k_proj.linear)
+            quantizers["v_proj"] = AdaptiveGPTQ(module.attn.v_proj.linear)
+            quantizers["o_proj"] = AdaptiveGPTQ(module.attn.o_proj.linear)
+            has_gate = module.model.config.arch.mlp_gate
+            if has_gate: quantizers["gate_proj"] = AdaptiveGPTQ(module.mlp.gate_proj.linear)
+            quantizers["up_proj"] = AdaptiveGPTQ(module.mlp.up_proj.linear)
+            quantizers["down_proj"] = AdaptiveGPTQ(module.mlp.down_proj.linear)
+
         # Reference forward pass
 
         cache = None
-        attn_params = ExLlamaV2Attention.Params(1, hidden_states[0].shape[1], 0, None, None) if mode == "self_attn" else None
+        attn_params = ExLlamaV2Attention.Params(1, hidden_states[0].shape[1], 0, None, None) \
+            if mode in ["self_attn", "parallel_decoder"] else None
 
         target_states = []
+
         if mode == "block_sparse_moe":
             uncalibrated_experts = [0 for _ in range(model.config.num_experts)]
 
@@ -312,6 +337,11 @@ def quant(job, save_fn, model):
                             uncalibrated_experts[j] += 1
                     else:
                         uncalibrated_experts[j] += 1
+
+            if mode == "parallel_decoder":
+                quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K, V, up_proj and gate_proj
+                quantizers["o_proj"].add_batch(outputs["attn_output"])
+                quantizers["down_proj"].add_batch(outputs["pre_down"])
 
             if mode == "linear":
                 quantizers["lm_head"].add_batch(x)
@@ -347,6 +377,11 @@ def quant(job, save_fn, model):
             gc.collect()  # shruge
             torch.cuda.empty_cache()
             quant_lm_head(job, module, hidden_states, quantizers, cache, attn_params)
+
+        if mode == "parallel_decoder":
+            strat_attn = strategy[module.key + ".self_attn"]
+            strat_mlp = strategy[module.key + ".mlp"]
+            quant_parallel_decoder(job, module, hidden_states, target_states, quantizers, attn_params, strat_attn, strat_mlp)
 
         quantizers.clear()
         gc.collect()
