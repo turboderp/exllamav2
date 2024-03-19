@@ -223,6 +223,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                               self.model.config.num_key_value_heads,
                                               self.model.config.head_dim,
                                               self.model.config.max_seq_len)
+                                              self.model.config.max_seq_len,
+                                              self.model.config.arch.rope_neox_style)
 
 
     def unload(self):
@@ -238,6 +240,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         self.temp_state = None
         self.temp_dq = None
+
 
     def weight_footprint(self):
 
@@ -622,8 +625,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
             position_offsets = ext.none_tensor
 
-        ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets)
-        ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets)
+        ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
+        ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
 
         # Add keys and values to cache
 

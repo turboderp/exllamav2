@@ -89,6 +89,8 @@ QAttn::QAttn
     int _num_kv_heads,
     int _head_dim,
     int _max_seq_len
+    int _max_seq_len,
+    bool _neox_style
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -109,6 +111,8 @@ QAttn::QAttn
     num_kv_heads(_num_kv_heads),
     head_dim(_head_dim),
     max_seq_len(_max_seq_len)
+    max_seq_len(_max_seq_len),
+    neox_style(_neox_style)
 {
 }
 
@@ -161,7 +165,8 @@ void QAttn::forward_cuda_1
         num_heads,
         num_kv_heads,
         past_len,
-        past_lens
+        past_lens,
+        neox_style
     );
 }
 

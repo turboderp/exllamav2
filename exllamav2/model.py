@@ -115,7 +115,10 @@ class ExLlamaV2DeviceTensors:
         if scale != 1.0: t /= scale
 
         freqs = torch.einsum("i,j->ij", t, inv_freq)
-        emb = torch.cat((freqs, freqs), dim=-1)
+        if self.model.config.arch.rope_neox_style:
+            emb = torch.cat((freqs, freqs), dim=-1)
+        else:
+            emb = torch.repeat_interleave(freqs, 2, dim=-1)
 
         self.sin = emb.sin()[None, None, :, :].half()
         self.cos = emb.cos()[None, None, :, :].half()

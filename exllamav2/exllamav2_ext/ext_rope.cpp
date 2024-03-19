@@ -25,7 +25,8 @@ void rope_
     int past_len,
     int num_heads,
     int head_dim,
-    torch::Tensor offsets
+    torch::Tensor offsets,
+    bool neox_style
 )
 {
     TORCH_CHECK_DTYPE(x, kHalf);
@@ -50,6 +51,7 @@ void rope_
         head_dim,
         num_heads,
         past_len,
-        offsets.device().is_meta() ? NULL : (int32_t*) offsets.data_ptr()
+        offsets.device().is_meta() ? NULL : (int32_t*) offsets.data_ptr(),
+        neox_style
     );
 }

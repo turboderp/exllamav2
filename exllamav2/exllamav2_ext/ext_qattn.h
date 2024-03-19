@@ -20,6 +20,8 @@ uintptr_t make_q_attn
     int num_kv_heads,
     int head_dim,
     int max_seq_len
+    int max_seq_len,
+    bool neox_style
 );
 
 void free_q_attn

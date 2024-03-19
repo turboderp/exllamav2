@@ -42,6 +42,9 @@ public:
     std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> v_proj_lora;
     std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> o_proj_lora;
 
+    bool has_residual;
+    bool neox_style;
+
     QAttn
     (
         half* _layernorm,
@@ -62,7 +65,9 @@ public:
         int _num_heads,
         int _num_kv_heads,
         int _head_dim,
-        int _max_seq_len
+        int _max_seq_len,
+        bool _has_residual,
+        bool _neox_style
     );
 
     ~QAttn();

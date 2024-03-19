@@ -16,7 +16,8 @@ void rope_cuda
     const int head_dim,
     const int num_heads,
     const int past_len,
-    const int32_t* past_lens
+    const int32_t* past_lens,
+    const bool neox_style
 );
 
 void rope_cuda_qk
@@ -32,7 +33,8 @@ void rope_cuda_qk
     const int num_heads_q,
     const int num_heads_k,
     const int past_len,
-    const int32_t* past_lens
+    const int32_t* past_lens,
+    const bool neox_style
 );
 
 #endif

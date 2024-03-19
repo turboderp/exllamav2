@@ -64,6 +64,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # Mixtral
 
@@ -93,6 +94,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # Yi
 
@@ -120,6 +122,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".ln1"
             self.norm_key_2 = ".ln2"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # Orion
 
@@ -147,6 +150,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # Qwen2 (1.5)
 
@@ -174,6 +178,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # Gemma
 
@@ -201,6 +206,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 1
+            self.rope_neox_style = True
 
         # StarCoder2
 
@@ -227,6 +233,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # GemMoE
 
@@ -257,6 +264,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 1
+            self.rope_neox_style = True
 
         # Llama (default + fallback)
 
@@ -287,6 +295,7 @@ class ExLlamaV2ArchParams:
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
             self.norm_constant_bias = 0
+            self.rope_neox_style = True
 
         # Arch overrides
 

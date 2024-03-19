@@ -36,6 +36,8 @@ uintptr_t make_q_attn
     int num_kv_heads,
     int head_dim,
     int max_seq_len
+    int max_seq_len,
+    bool neox_style
 )
 {
     QMatrix* qm_q_proj = reinterpret_cast<QMatrix*> (q_q_proj);
@@ -71,6 +73,8 @@ uintptr_t make_q_attn
         num_kv_heads,
         head_dim,
         max_seq_len
+        max_seq_len,
+        neox_style
     );
 
     return reinterpret_cast<uintptr_t> (attn);
