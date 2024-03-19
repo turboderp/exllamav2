@@ -43,7 +43,7 @@ parser.add_argument("-el", "--eval_length", type = int, default = 2048, help = "
 parser.add_argument("-et", "--eval_token", action = "store_true", help = "Evaluate perplexity on token-by-token inference using cache")
 parser.add_argument("-e8", "--eval_token_8bit", action = "store_true", help = "Evaluate perplexity on token-by-token inference using 8-bit (FP8) cache")
 parser.add_argument("-eq4", "--eval_token_q4", action = "store_true", help = "Evaluate perplexity on token-by-token inference using Q4 cache")
-parser.add_argument("-eb", "--eval_bos", action = "store_true", help = "Add BOS token to every row in perplexity test (required by Gemma and maybe other models.)")
+# parser.add_argument("-eb", "--eval_bos", action = "store_true", help = "Add BOS token to every row in perplexity test (required by Gemma and maybe other models.)")
 parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt (basic sampling settings)")
 parser.add_argument("-pnb", "--prompt_no_bos", action = "store_true", help = "Don't add BOS token to prompt")
 parser.add_argument("-t", "--tokens", type = int, default = 128, help = "Max no. tokens")
@@ -260,7 +260,8 @@ if args.eval_dataset or args.standard_perplexity:
             eval_tokens = get_tokens(eval_rows, eval_length, eval_dataset, tokenizer)
             eval_len = [eval_tokens.shape[1]] * eval_tokens.shape[0]
 
-            if args.eval_bos:
+            # if args.eval_bos:
+            if model.config.arch.requires_bos:
                 boss = torch.full((eval_tokens.shape[0], 1), tokenizer.bos_token_id, dtype = torch.long)
                 eval_tokens = torch.cat((boss, eval_tokens[:, :-1]), dim = 1)
 
