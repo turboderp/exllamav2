@@ -218,7 +218,7 @@ class AdaptiveGPTQ:
             self.hessian += inputs.matmul(inputs.T)
 
 
-    def prepare(self):
+    def prepare(self, no_h_inv = False):
 
         with torch.inference_mode():
 
@@ -237,7 +237,14 @@ class AdaptiveGPTQ:
 
             self.perm = torch.argsort(diagonal, descending = True)
             self.perm_cpu = self.perm.cpu()
-            self.weights = self.weights[self.perm, :]
+
+            if self.weights.numel() > 1e9:
+                self.weights = self.weights.to("cpu")
+                self.weights = self.weights[self.perm_cpu, :]
+                self.weights = self.weights.to("cuda:0")
+            else:
+                self.weights = self.weights[self.perm, :]
+
             hessian = self.hessian[self.perm][:, self.perm]
             self.hessian = None
 
@@ -256,7 +263,7 @@ class AdaptiveGPTQ:
             # Inverse of H
 
             attempts = 0
-            while True:
+            while not no_h_inv:
 
                 try:
 
@@ -311,7 +318,7 @@ class AdaptiveGPTQ:
                     if attempts == 10:
                         raise ValueError("Hessian is not invertible")
 
-            self.hessian_inv = hessian_inv
+            self.hessian_inv = None if no_h_inv else hessian_inv
             self.hessian = None
 
     def reuse_h(self, other):
@@ -384,7 +391,6 @@ class AdaptiveGPTQ:
 
                     group_idx_list += [group_idx] * (b - a)
                     group_idx += 1
-
 
             # Create g_idx to store inverse activation order
 
