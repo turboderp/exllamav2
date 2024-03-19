@@ -331,6 +331,86 @@ class AdaptiveGPTQ:
             self.perm_cpu = other.perm_cpu
             self.weights = self.weights[self.perm, :]
 
+    def quantize_rtn_inplace(self, keep_qweight = False, apply = False):
+        assert apply and keep_qweight
+
+        with torch.inference_mode():
+
+            self.qweight = torch.zeros_like(self.weights, dtype = torch.short)
+
+            num_groups = 0
+            for bits_idx in range(len(self.bits)):
+                num_groups += self.bits_groups[bits_idx]
+
+            scale = []
+            qscale = []
+            qscale_max = torch.empty((num_groups,), dtype = torch.float, device = self.weights.device)
+            qgroups = []
+
+            group_idx = 0
+            group_idx_list = []
+
+            b = 0
+            for bits_idx, bits in enumerate(self.bits):
+                quantizer = AdaptiveQuantizer(bits = bits, scale_bits = self.scale_bits)
+
+                for group in range(self.bits_groups[bits_idx]):
+                    a = b
+                    b = min(a + self.group_size[bits], self.rows)
+
+                    qgroups.append(bits)
+                    qgroups.append(0)
+
+                    quantizer.find_params(self.weights[a : b, :])
+                    scale.append(quantizer.scale)
+                    qscale.append(quantizer.qscale)
+                    qscale_max[group_idx] = quantizer.qscale_max
+
+                    ext_c.quantize_range_inplace(self.weights,
+                                                 quantizer.scale,
+                                                 self.qweight,
+                                                 quantizer.qzero,
+                                                 quantizer.maxq,
+                                                 a,
+                                                 b)
+
+                    group_idx_list += [group_idx] * (b - a)
+                    group_idx += 1
+
+            # Create g_idx to store inverse activation order
+
+            self.invperm = torch.argsort(self.perm)
+
+            # Store scales
+
+            self.scale = torch.stack(scale, dim = 0)
+            self.qscale = torch.stack(qscale, dim = 0)
+            self.qscale_max = qscale_max.to(torch.float16)
+            self.qgroups = torch.tensor(qgroups, dtype = torch.short)
+
+            # I love Python
+
+            scale = None
+            qscale = None
+            qscale_max = None
+            qgroups = None
+            group_idx_list = None
+
+            qc = self.weights.cpu()
+            qc = qc.to(torch.half)
+            invperm = self.invperm.cpu()
+            q = qc[invperm, :].T
+            q = q.reshape(self.weights.T.shape)
+
+            dev = self.weights.device
+            self.weights = None
+            gc.collect()
+            torch.cuda.empty_cache()
+
+            q = q.to(dev)
+            self.layer.weight.data = q
+            self.weights = q.T
+
 
     def quantize(self, keep_qweight = False, apply = False):
 

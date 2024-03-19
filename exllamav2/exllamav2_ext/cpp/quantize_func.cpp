@@ -50,3 +50,34 @@ void quantize_range
     torch::Tensor y = error.slice(0, a, b);
     weights.slice(0, b).addmm_(x, y, 1.0f, -1.0f);
 }
+
+void quantize_range_inplace
+(
+    torch::Tensor weights,
+    torch::Tensor scale,
+    torch::Tensor out_q,
+    float qzero,
+    float maxq,
+    int a,
+    int b
+)
+{
+    int columns = weights.size(1);
+    int rows = weights.size(0);
+
+    for (int c = a; c < b; c++)
+    {
+        quantize_rtn_cuda
+        (
+            (float*) weights.data_ptr(),
+            (const float*) scale.data_ptr(),
+            out_q.device().is_meta() ? NULL : (uint16_t*) out_q.data_ptr(),
+            c,          // row
+            rows,       // rows
+            columns,
+            qzero,
+            maxq
+        );
+    }
+}
+

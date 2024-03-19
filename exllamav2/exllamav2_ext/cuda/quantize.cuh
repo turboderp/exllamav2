@@ -44,6 +44,18 @@ void fused_quantize_adjust_cuda
     float maxq
 );
 
+void quantize_rtn_cuda
+(
+    float*          weights,
+    const float*    scale,
+    uint16_t*       out_q,
+    int row,
+    int rows,
+    int columns,
+    float qzero,
+    float maxq
+);
+
 void quantize_err_cuda
 (
     const float* input,

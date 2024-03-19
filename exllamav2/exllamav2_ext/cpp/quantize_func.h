@@ -22,4 +22,15 @@ void quantize_range
     int b
 );
 
+void quantize_range_inplace
+(
+    torch::Tensor weights,
+    torch::Tensor scale,
+    torch::Tensor out_q,
+    float qzero,
+    float maxq,
+    int a,
+    int b
+);
+
 #endif

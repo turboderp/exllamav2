@@ -7,6 +7,78 @@
 #define BLOCKSIZE_Y 32
 #define MAX_P_GRID 64
 
+__global__ void quantize_rtn_kernel
+(
+    float*       __restrict__ weights,          // input  weights           [rows, columns]
+    const float* __restrict__ scale,            // input  scales            [1, columns]
+    uint16_t*    __restrict__ out_q,            // output qweights          [rows, columns]
+    int row,                                    // row index to quantize
+    int rows,                                   // num rows
+    int columns,                                // num columns
+    float qzero,                                // 2^(bits - 1)
+    float maxq                                  // (2^bits) - 1
+)
+{
+    int column = blockIdx.x * blockDim.x + threadIdx.x;
+    if (column >= columns) return;
+
+    int idx = row * columns + column;
+
+    // Quantize
+
+    float x = weights[idx];
+    float s = scale[column];
+    x /= s;
+    x = rintf(x);
+    x += qzero;
+    x = clamp(x, 0.0f, maxq);
+
+    // Optionally save quant
+
+    if (out_q) out_q[idx] = static_cast<uint16_t>(x);
+
+    // Downcast while quantizing
+
+    half h_s = __float2half_rn(s);
+    half h_x = __float2half_rn(x);
+    half h_qzero = __float2half_rn(qzero);
+
+    // Dequantize
+
+    h_x = __hsub(h_x, h_qzero);
+    h_x = __hmul(h_x, h_s);
+    float q = __half2float(h_x);
+    weights[idx] = q;
+}
+
+void quantize_rtn_cuda
+(
+    float*          weights,
+    const float*    scale,
+    uint16_t*       out_q,
+    int row,
+    int rows,
+    int columns,
+    float qzero,
+    float maxq
+)
+{
+    dim3 threads(BLOCKSIZE_X, 1);
+    dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
+
+    quantize_rtn_kernel<<<blocks, threads>>>
+    (
+        weights,
+        scale,
+        out_q,
+        row,
+        rows,
+        columns,
+        qzero,
+        maxq
+    );
+}
+
 __global__ void fused_quantize_adjust_kernel
 (
     const float* __restrict__ weights,          // input  weights           [rows, columns]

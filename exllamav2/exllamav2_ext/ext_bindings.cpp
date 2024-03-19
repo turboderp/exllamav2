@@ -28,6 +28,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("quantize", &quantize, "quantize");
     m.def("quantize_err", &quantize_err, "quantize_err");
     m.def("quantize_range", &quantize_range, "quantize_range");
+    m.def("quantize_range_inplace", &quantize_range_inplace, "quantize_range_inplace");
 
     // sampling
 
