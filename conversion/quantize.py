@@ -98,8 +98,6 @@ def quant_linear(job: dict,
     diff1 = torch.max(quant_w)
     quant_w = None
 
-    # TODO: Investigate why this might fail for the first QKV projections of certain models
-
     if diff1 > 0.05 or diff2 > 0.05:
         print(" ## Quantization error (2)")
         os._exit(0)
@@ -115,7 +113,7 @@ def quant_linear(job: dict,
     source.linear.weight.data = recons_w.T
 
 
-def quant_attn(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat):
+def quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat):
 
     quantizers["q_proj"].prepare()
     quantizers["k_proj"].reuse_h(quantizers["q_proj"])
@@ -373,18 +371,17 @@ def quant(job, save_fn, model):
 
         if mode == "self_attn":
             strat = strategy[module.key + "." + mode]
-            quant_attn(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
+            quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
         if mode == "mlp":
             strat = strategy[module.key + "." + mode]
-            quant_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
+            quant_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
         if mode == "block_sparse_moe":
             strat = strategy[module.key + "." + mode]
-            quant_moe_mlp(job, module, hidden_states, target_states, quantizers, cache, attn_params, strat)
+            quant_moe_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
         if mode == "linear":
-
             model.drop_device_tensors()
             gc.collect()  # shruge
             torch.cuda.empty_cache()
