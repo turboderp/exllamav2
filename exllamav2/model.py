@@ -169,7 +169,13 @@ class ExLlamaV2:
 
         self.head_layer_idx = len(self.modules)
 
-        self.modules.append(ExLlamaV2Linear(self, "lm_head", self.config.hidden_size, self.config.vocab_size, False, max_out_len = self.config.max_output_len))
+        self.modules.append(ExLlamaV2Linear(self, "lm_head",
+                                            self.config.hidden_size,
+                                            self.config.vocab_size,
+                                            False,
+                                            max_out_len = self.config.max_output_len,
+                                            prescale = self.config.logit_scale))
+
         self.modules_dict[self.modules[-1].key] = self.modules[-1]
         if self.config.arch.lm_head_key != "lm_head":
             self.modules[-1].alt_key = self.config.arch.lm_head_key
@@ -666,6 +672,11 @@ class ExLlamaV2:
                 for c in cache: c.current_seq_len += seq_len
             else:
                 cache.current_seq_len += seq_len
+
+        # Apply logit scale
+
+        # if x is not None and self.config.logit_scale != 1:
+        #     x.mul_(self.config.logit_scale)
 
         # Set padding logits to -inf
 

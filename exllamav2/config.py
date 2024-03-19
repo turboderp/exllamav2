@@ -49,6 +49,7 @@ class ExLlamaV2Config:
     head_dim: int = 128                         # Constant for all Llama models, except 3b
     num_experts: int = None
     num_experts_per_token: int = None
+    logit_scale: float = 1
 
     checkpoint_fused_mlp: bool = False
 
@@ -118,6 +119,10 @@ class ExLlamaV2Config:
         self.intermediate_size = read_config["intermediate_size"]
         self.num_experts = read_config.get("num_local_experts", None)
         self.num_experts_per_token = read_config.get("num_experts_per_tok", None)
+
+        # Logit scale
+
+        self.logit_scale = read_config.get("logit_scale", 1)
 
         # Positional embeddings
 

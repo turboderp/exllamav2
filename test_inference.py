@@ -334,6 +334,9 @@ if args.eval_dataset or args.standard_perplexity:
                         input_ids = eval_tokens[a:b, :]
                         logits = x[:, :-1, :]
 
+                        # if model.config.logit_scale != 1:
+                        #     logits.mul_(model.config.logit_scale)
+
                         logprob_sum__, logprob_count__ = ppl(input_ids, logits, eval_len[a:b])
                         logprob_sum += logprob_sum__
                         logprob_count += logprob_count__
