@@ -9,7 +9,7 @@ from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.embedding import ExLlamaV2Embedding
 import math
 from exllamav2 import ext
-from exllamav2.ext import exllamav2_ext as ext_c
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.compat import safe_move_tensor
@@ -31,11 +31,11 @@ except ModuleNotFoundError:
 class ExLlamaV2Attention(ExLlamaV2Module):
 
     layer_idx: int
-    input_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm or None
-    q_proj: ExLlamaV2Linear or None
-    k_proj: ExLlamaV2Linear or None
-    v_proj: ExLlamaV2Linear or None
-    o_proj: ExLlamaV2Linear
+    input_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm or None = None
+    q_proj: ExLlamaV2Linear or None = None
+    k_proj: ExLlamaV2Linear or None = None
+    v_proj: ExLlamaV2Linear or None = None
+    o_proj: ExLlamaV2Linear or None = None
 
     name: str = "Attention"
     submodules: list
@@ -51,6 +51,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     # temp_kv: torch.tensor
 
     temp_lora_size: int = 0
+
+    has_norm: bool
+    has_residual: bool
 
 
     class Params:
@@ -151,28 +154,32 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             return attn_masks
 
 
-    def __init__(self, model, key, layer_idx):
+    def __init__(self, model, key, layer_idx, has_norm = True, has_residual = True):
         super().__init__(model, key)
 
         self.layer_idx = layer_idx
+        self.has_norm = has_norm
+        self.has_residual = has_residual
 
         hidden_size = self.model.config.hidden_size
 
-        if self.model.config.arch.norm == "layernorm":
-            self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
-        elif self.model.config.arch.norm == "rmsnorm":
-            self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_1)
+        if self.has_norm:
+            if self.model.config.arch.norm == "layernorm":
+                self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
+            elif self.model.config.arch.norm == "rmsnorm":
+                self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_1)
 
         self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
         self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
         self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
         self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", self.model.config.num_attention_heads * self.model.config.head_dim, hidden_size, self.model.config.arch.attention_bias_o)
 
-        self.submodules = [self.input_layernorm,
-                           self.q_proj,
+        self.submodules = [self.q_proj,
                            self.k_proj,
                            self.v_proj,
                            self.o_proj]
+        if self.has_norm:
+            self.submodules += [self.input_layernorm]
 
 
     def numel(self):
@@ -185,7 +192,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def load(self):
 
-        self.input_layernorm.load()
+        if self.input_layernorm is not None:
+            self.input_layernorm.load()
         self.q_proj.load()
         self.k_proj.load()
         self.v_proj.load()
@@ -204,10 +212,21 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
             # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if self.model.config.num_attention_heads != self.model.config.num_key_value_heads else None
 
-            self.q_handle = ext_c.make_q_attn(self.input_layernorm.weight,
-                                              self.input_layernorm.bias if self.input_layernorm.bias is not None else ext.none_tensor,
-                                              isinstance(self.input_layernorm, ExLlamaV2RMSNorm),
-                                              self.input_layernorm.variance_epsilon,
+            if self.has_norm:
+                norm_weight = self.input_layernorm.weight if self.input_layernorm.weight is not None else none_tensor
+                norm_bias = self.input_layernorm.bias if self.input_layernorm.bias is not None else none_tensor
+                is_rms = isinstance(self.input_layernorm, ExLlamaV2RMSNorm)
+                eps = self.input_layernorm.variance_epsilon
+            else:
+                norm_weight = none_tensor
+                norm_bias = none_tensor
+                is_rms = False
+                eps = 0
+
+            self.q_handle = ext_c.make_q_attn(norm_weight,
+                                              norm_bias,
+                                              is_rms,
+                                              eps,
                                               self.q_proj.q_handle,
                                               self.k_proj.q_handle,
                                               self.v_proj.q_handle,
@@ -222,8 +241,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                               self.model.config.num_attention_heads,
                                               self.model.config.num_key_value_heads,
                                               self.model.config.head_dim,
-                                              self.model.config.max_seq_len)
                                               self.model.config.max_seq_len,
+                                              self.has_residual,
                                               self.model.config.arch.rope_neox_style)
 
 
@@ -244,11 +263,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def weight_footprint(self):
 
-        return self.input_layernorm.weight_footprint() + \
-               self.q_proj.weight_footprint() + \
-               self.k_proj.weight_footprint() + \
-               self.v_proj.weight_footprint() + \
-               self.o_proj.weight_footprint()
+        fp = self.q_proj.weight_footprint() + \
+             self.k_proj.weight_footprint() + \
+             self.v_proj.weight_footprint() + \
+             self.o_proj.weight_footprint()
+        if self.input_layernorm is not None:
+            fp += self.input_layernorm.weight_footprint()
+        return fp
 
 
     def scratch_space_fixed(self):
@@ -317,7 +338,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def set_device_idx(self, idx):
         super().set_device_idx(idx)
 
-        self.input_layernorm.set_device_idx(idx)
+        if self.input_layernorm is not None:
+            self.input_layernorm.set_device_idx(idx)
+
         self.q_proj.set_device_idx(idx)
         self.k_proj.set_device_idx(idx)
         self.v_proj.set_device_idx(idx)
@@ -382,7 +405,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if loras is None or self.temp_lora_size == 0:
             pass_loras = []
-            pass_lora_temp = ext.none_tensor
+            pass_lora_temp = none_tensor
         else:
             pass_loras = [id(x) for x in loras]
             pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
@@ -395,7 +418,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_past_len_2 = attn_params.get_position_offsets(hidden_states.device)
         else:
             pass_past_len_1 = past_len
-            pass_past_len_2 = ext.none_tensor
+            pass_past_len_2 = none_tensor
 
         ext_c.q_attn_forward_1(self.q_handle,
                                hidden_states,
@@ -594,7 +617,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Project q, k, v
 
         residual = hidden_states
-        post_norm = self.input_layernorm.forward(hidden_states)
+        post_norm = self.input_layernorm.forward(hidden_states) if self.has_norm else hidden_states
 
         query_states_im = self.q_proj.forward(post_norm, loras = loras)
         key_states_im = self.k_proj.forward(post_norm, loras = loras)
@@ -623,7 +646,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if attn_params.position_offsets is not None:
             position_offsets = attn_params.get_position_offsets(hidden_states.device)
         else:
-            position_offsets = ext.none_tensor
+            position_offsets = none_tensor
 
         ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
         ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
@@ -684,7 +707,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Add residual connection
 
-        hidden_states = attn_proj + residual
+        hidden_states = (attn_proj + residual) if self.has_residual else attn_proj
 
         if intermediates:
             return {"post_norm": post_norm,

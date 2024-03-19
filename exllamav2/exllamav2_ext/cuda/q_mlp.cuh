@@ -35,6 +35,7 @@ public:
     std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> down_proj_lora;
 
     bool act_gelu;
+    bool has_residual;
 
     QMLP
     (
@@ -50,7 +51,8 @@ public:
         half* _temp_b,
         half* _temp_dq,
         int _max_rows,
-        bool _act_gelu
+        bool _act_gelu,
+        bool _has_residual
     );
 
     ~QMLP();

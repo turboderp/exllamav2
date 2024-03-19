@@ -35,8 +35,8 @@ uintptr_t make_q_attn
     int num_heads,
     int num_kv_heads,
     int head_dim,
-    int max_seq_len
     int max_seq_len,
+    bool has_residual,
     bool neox_style
 )
 {
@@ -72,8 +72,8 @@ uintptr_t make_q_attn
         num_heads,
         num_kv_heads,
         head_dim,
-        max_seq_len
         max_seq_len,
+        has_residual,
         neox_style
     );
 

@@ -13,7 +13,8 @@ uintptr_t make_q_mlp
     torch::Tensor temp_b,
     torch::Tensor temp_dq,
     int max_rows,
-    bool act_gelu
+    bool act_gelu,
+    bool has_residual
 );
 
 void free_q_mlp

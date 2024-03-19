@@ -31,7 +31,8 @@ QMLP::QMLP
     half* _temp_b,
     half* _temp_dq,
     int _max_rows,
-    bool _act_gelu
+    bool _act_gelu,
+    bool _has_residual
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -45,7 +46,8 @@ QMLP::QMLP
     temp_b(_temp_b),
     temp_dq(_temp_dq),
     max_rows(_max_rows),
-    act_gelu(_act_gelu)
+    act_gelu(_act_gelu),
+    has_residual(_has_residual)
 {
 }
 
@@ -75,20 +77,26 @@ void QMLP::forward_
 
     // Layernorm
 
-    if (layernorm_is_rms)
-        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
-    else
-        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+    half* norm_state = x;
+
+    if (layernorm)
+    {
+        if (layernorm_is_rms)
+            rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+        else
+            layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+        norm_state = temp_state;
+    }
 
     // Up proj with gate
 
     if (gate)
     {
-        gemm_half_q_half_cuda(cublas_handle, temp_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
-        gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(cublas_handle, norm_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(cublas_handle, norm_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
 
-        apply_loras_cuda(cublas_handle, gate_proj_lora, loras, gate, temp_state, temp_a, lora_temp, rows);
-        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_b, lora_temp, rows);
+        apply_loras_cuda(cublas_handle, gate_proj_lora, loras, gate, norm_state, temp_a, lora_temp, rows);
+        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_b, lora_temp, rows);
 
         fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
         kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
@@ -98,9 +106,9 @@ void QMLP::forward_
 
     else
     {
-        gemm_half_q_half_cuda(cublas_handle, temp_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(cublas_handle, norm_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq);
 
-        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   temp_state, temp_a, lora_temp, rows);
+        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_a, lora_temp, rows);
 
         fp_act_kernel kernel = pick_act_kernel(use_half2, false, act_gelu);
         kernel<<<gridDim, blockDim>>>(temp_a, rows, intermediate_size, NULL, 0);
@@ -108,7 +116,7 @@ void QMLP::forward_
 
     // Down proj
 
-    gemm_half_q_half_cuda(cublas_handle, temp_a, down, x, rows, columns, intermediate_size, false, temp_dq);
+    gemm_half_q_half_cuda(cublas_handle, temp_a, down, x, rows, columns, intermediate_size, !has_residual, temp_dq);
 
     apply_loras_cuda(cublas_handle, down_proj_lora, loras, down, temp_a, x, lora_temp, rows);
 }

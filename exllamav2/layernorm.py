@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
-from exllamav2.ext import exllamav2_ext as ext_c
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 class ExLlamaV2LayerNorm(ExLlamaV2Module):
 
@@ -80,7 +80,7 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         norm = torch.empty_like(hidden_states)
         ext_c.layer_norm(hidden_states,
                          self.weight.data,
-                         self.bias.data if self.bias is not None else ext_c.none_tensor,
+                         self.bias.data if self.bias is not None else none_tensor,
                          norm,
                          self.variance_epsilon)
 

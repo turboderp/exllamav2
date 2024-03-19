@@ -81,7 +81,7 @@ void layer_norm
     TORCH_CHECK_SHAPES(x, 1, w, 0, 1);
     TORCH_CHECK_SHAPES(x, 0, y, 0, 1);
     TORCH_CHECK_SHAPES(x, 1, y, 1, 1);
-    TORCH_CHECK_SHAPES_OPT(w, 0, b, 0, 1);
+    TORCH_CHECK_SHAPES_OPT(b, 0, w, 0, 1);
 
     int rows = x.size(0);
     int dim = x.size(1);
