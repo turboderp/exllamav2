@@ -15,24 +15,14 @@ from exllamav2.generator import (
 )
 
 import time
-import torch
 
 # Initialize model and cache
 
-# model_directory = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
-# model_directory = "/mnt/str/models/mistral-7b-instruct"
-# model_directory = "/mnt/str/models/starcoder2-7b"
-model_directory = "/mnt/str/models/command-r-exl2/6.0bpw"
-# model_directory = "/mnt/str/models/command-r"
-
-torch.set_printoptions(precision = 5, sci_mode = False)
+model_directory = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory
 config.prepare()
-# config.load_in_q4 = True
-config.max_seq_len = 300
-config.no_flash_attn = True
 
 model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
@@ -49,25 +39,25 @@ generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
 # Settings
 
 settings = ExLlamaV2Sampler.Settings()
-settings.temperature = 1.0
-settings.top_k = 0
+settings.temperature = 0.85
+settings.top_k = 50
 settings.top_p = 0.8
 settings.top_a = 0.0
-settings.token_repetition_penalty = 1.02
+settings.token_repetition_penalty = 1.05
 settings.disallow_tokens(tokenizer, [tokenizer.eos_token_id])
 
 max_new_tokens = 250
 
 # Prompt
 
-prompt = "Once upon a time,"
+prompt = "Our story begins in the Scottish town of Auchtermuchty, where once"
 
 input_ids = tokenizer.encode(prompt, add_bos = True)
 prompt_tokens = input_ids.shape[-1]
 
 # Make sure CUDA is initialized so we can measure performance
 
-# generator.warmup()
+generator.warmup()
 
 # Send prompt to generator to begin stream
 
