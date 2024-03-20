@@ -37,6 +37,7 @@ torch.set_printoptions(precision = 10)
 # torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
 # torch.set_float32_matmul_precision("medium")
 
+# (!!!) NOTE: These go on top of the engine arguments that can be found in `model_init.py` (!!!)
 parser = argparse.ArgumentParser(description = "Test inference on ExLlamaV2 model")
 parser.add_argument("-ed", "--eval_dataset", type = str, help = "Perplexity evaluation dataset (.parquet file)")
 parser.add_argument("-er", "--eval_rows", type = int, default = 128, help = "Number of rows to apply from dataset")

@@ -39,15 +39,19 @@ then run:
 ```
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
+# Optionally, create and activate a new conda environment
+pip install -r requirements.txt
 pip install .
 
 python test_inference.py -m <path_to_model> -p "Once upon a time,"
+# Append the '--gpu_split auto' flag for multi-GPU inference
 ```
 
 A simple console chatbot is included. Run it with:
 
 ```
 python examples/chat.py -m <path_to_model> -mode llama
+# Append the '--gpu_split auto' flag for multi-GPU inference
 ```
 
 
@@ -79,6 +83,7 @@ To install the current dev version, clone the repo and run the setup script:
 ```
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
+pip install -r requirements.txt
 pip install .
 ```
 
