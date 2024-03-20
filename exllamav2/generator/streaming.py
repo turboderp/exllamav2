@@ -10,11 +10,10 @@ from exllamav2.generator import (
     ExLlamaV2Sampler,
     ExLlamaV2BaseGenerator
 )
-
 from exllamav2.generator.ngram import NgramCache
-
 import torch
 import random
+import threading
 
 class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
@@ -113,7 +112,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                        position_offsets = None,
                        return_probabilities = False,
                        return_top_tokens = 0,
-                       return_logits = False):
+                       return_logits = False,
+                       abort_event: threading.Event = None):
 
         self.return_probabilities = return_probabilities
         self.return_top_tokens = return_top_tokens
@@ -124,7 +124,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                           token_healing,
                           loras,
                           input_mask,
-                          position_offsets)
+                          position_offsets,
+                          abort_event)
 
 
     # Legacy function
@@ -135,7 +136,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                      token_healing = False,
                      loras = None,
                      input_mask = None,
-                     position_offsets = None):
+                     position_offsets = None,
+                     abort_event: threading.Event = None):
+
+        self.abort_event = abort_event
 
         assert input_ids.shape[0] <= 2, "Streaming generator does not support batch size > 1"
         if input_ids.shape[0] == 2:
@@ -399,15 +403,38 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             return self.no_tokens, ""
 
 
+    def _truncate_seq_to_cache(self):
+        cachelen = self.cache.current_seq_len
+        if self.draft_cache: cachelen = min(cachelen, self.draft_cache.current_seq_len)
+        self.sequence_ids = self.sequence_ids[:, :cachelen + 1]
+
+
     def _gen_begin(self, in_tokens, gen_settings):
 
         self.sequence_ids = in_tokens.clone()
         self.cache.current_seq_len = 0
-        self.model.forward(self.sequence_ids[:, :-1], self.cache, preprocess_only = True, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
+        self.model.forward(self.sequence_ids[:, :-1],
+                           self.cache,
+                           preprocess_only = True,
+                           loras = self.active_loras,
+                           input_mask = self.input_mask,
+                           position_offsets = self.position_offsets,
+                           abort_event = self.abort_event)
+        if self.abort_event and self.abort_event.is_set():
+            self._truncate_seq_to_cache()
+            return
 
         if self.draft_model is not None:
             self.draft_cache.current_seq_len = 0
-            self.draft_model.forward(self.sequence_ids[:1, :-1], self.draft_cache, preprocess_only = True)
+            self.draft_model.forward(self.sequence_ids[:1, :-1],
+                                     self.draft_cache,
+                                     input_mask = self.input_mask,
+                                     position_offsets = self.position_offsets,
+                                     preprocess_only = True,
+                                     abort_event = self.abort_event)
+            if self.abort_event and self.abort_event.is_set():
+                self._truncate_seq_to_cache()
+                return
             self.future_logits = None
             self.future_tokens = None
 
@@ -455,10 +482,27 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         start = self.cache.current_seq_len
         self.sequence_ids = torch.cat((self.sequence_ids, in_tokens), dim = 1)
 
-        self.model.forward(self.sequence_ids[:, start : -1], self.cache, preprocess_only = True, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
+        self.model.forward(self.sequence_ids[:, start : -1],
+                           self.cache,
+                           preprocess_only = True,
+                           loras = self.active_loras,
+                           input_mask = self.input_mask,
+                           position_offsets = self.position_offsets,
+                           abort_event = self.abort_event)
+        if self.abort_event and self.abort_event.is_set():
+            self._truncate_seq_to_cache()
+            return
 
         if self.draft_model is not None:
-            self.draft_model.forward(self.sequence_ids[:, start: -1], self.draft_cache, preprocess_only = True)
+            self.draft_model.forward(self.sequence_ids[:, start: -1],
+                                     self.draft_cache,
+                                     preprocess_only = True,
+                                     input_mask = self.input_mask,
+                                     position_offsets = self.position_offsets,
+                                     abort_event = self.abort_event)
+            if self.abort_event and self.abort_event.is_set():
+                self._truncate_seq_to_cache()
+                return
             self.future_logits = None
             self.future_tokens = None
 
@@ -471,12 +515,25 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         elif self.draft_model is None:
 
-            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
-            token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids[:1, :], random.random(), self.tokenizer, prefix_token, self.return_top_tokens)
+            logits = self.model.forward(self.sequence_ids[:, -1:],
+                                        self.cache,
+                                        loras = self.active_loras,
+                                        input_mask = self.input_mask,
+                                        position_offsets = self.position_offsets).float().cpu()
+
+            token, ptokens, pprobs, prob, eos = \
+                ExLlamaV2Sampler.sample(logits,
+                                        gen_settings,
+                                        self.sequence_ids[:1, :],
+                                        random.random(),
+                                        self.tokenizer,
+                                        prefix_token,
+                                        self.return_top_tokens)
 
         else:
 
-            token, ptokens, pprobs, prob, eos, logits = self._gen_single_token_speculative(gen_settings, prefix_token)
+            token, ptokens, pprobs, prob, eos, logits = \
+                self._gen_single_token_speculative(gen_settings, prefix_token)
 
         if self.sequence_ids.shape[0] > 1 and token.shape[0] == 1:
             self.sequence_ids = torch.cat([self.sequence_ids, token.repeat(self.sequence_ids.shape[0], 1)], dim = 1)
@@ -499,7 +556,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             for k in range(self.num_speculative_tokens):
 
-                logits = self.draft_model.forward(draft_sequence_ids[:, -1:], self.draft_cache).float().cpu()
+                logits = self.draft_model.forward(draft_sequence_ids[:, -1:],
+                                                  self.draft_cache,
+                                                  input_mask = self.input_mask,
+                                                  position_offsets = self.position_offsets).float().cpu()
                 token, _, _, prob, _ = ExLlamaV2Sampler.sample(logits, draft_gen_settings, draft_sequence_ids, random.random(), self.tokenizer, prefix_token if k == 0 else None)
 
                 if prob < self.speculative_prob_threshold:
@@ -521,7 +581,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 self.future_tokens = draft_sequence_ids[:, -1 - num_drafted_tokens:].repeat(self.sequence_ids.shape[0], 1)
             else:
                 self.future_tokens = draft_sequence_ids[:, -1 - num_drafted_tokens:]
-            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets).float().cpu()
+            self.future_logits = self.model.forward(self.future_tokens,
+                                                    self.cache,
+                                                    loras = self.active_loras,
+                                                    input_mask = self.input_mask,
+                                                    position_offsets = self.position_offsets).float().cpu()
 
             # Rewind model cache
 
@@ -567,7 +631,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 inf_ids = inf_ids[:-(len(inf_ids) + self.cache.current_seq_len - self.cache.max_seq_len)]
 
             self.future_tokens = torch.tensor([inf_ids], dtype = torch.long)
-            self.future_logits = self.model.forward(self.future_tokens, self.cache, loras = self.active_loras, input_mask = self.input_mask, position_offsets = self.position_offsets)
+            self.future_logits = self.model.forward(self.future_tokens,
+                                                    self.cache,
+                                                    loras = self.active_loras,
+                                                    input_mask = self.input_mask,
+                                                    position_offsets = self.position_offsets)
             self.future_logits = self.future_logits.float().cpu()
 
             self.cache.current_seq_len -= len(inf_ids)

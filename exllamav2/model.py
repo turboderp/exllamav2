@@ -36,6 +36,7 @@ from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
 import gc
+import threading
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -541,7 +542,8 @@ class ExLlamaV2:
                 last_id_only = False,
                 loras = None,
                 return_last_state = False,
-                position_offsets = None):
+                position_offsets = None,
+                abort_event: threading.Event = None):
 
         q_len = input_ids.shape[-1]
         remaining_q_len = q_len
@@ -566,7 +568,10 @@ class ExLlamaV2:
                                                last_id_only = last_id_only,
                                                loras = loras,
                                                return_last_state = return_last_state,
-                                               position_offsets = position_offsets)
+                                               position_offsets = position_offsets,
+                                               abort_event = abort_event)
+
+            if abort_event and abort_event.is_set(): return
 
             if last_state is None:
                 return result
@@ -615,7 +620,10 @@ class ExLlamaV2:
                                   last_id_only = _last_id_only,
                                   loras = loras,
                                   return_last_state = return_last_state and remaining_q_len <= chunk_size,
-                                  position_offsets = position_offsets)
+                                  position_offsets = position_offsets,
+                                  abort_event = abort_event)
+
+            if abort_event and abort_event.is_set(): return
 
             if not _preprocess_only:
                 result = r if result is None else torch.cat((result, r), dim = 1)
@@ -640,7 +648,8 @@ class ExLlamaV2:
                  last_id_only = False,
                  loras = None,
                  return_last_state = False,
-                 position_offsets = None):
+                 position_offsets = None,
+                 abort_event: threading.Event = None):
 
         batch_size, seq_len = input_ids.shape
         past_len = 0
@@ -664,9 +673,13 @@ class ExLlamaV2:
 
         for idx, module in enumerate(self.modules):
 
-            device = _torch_device(module.device_idx)
+            # Respect abort signal
+
+            if abort_event and abort_event.is_set(): return None, None
 
             # Onward
+
+            device = _torch_device(module.device_idx)
 
             if idx == self.head_layer_idx:
                 if last_id_only and return_last_state:

@@ -9,8 +9,8 @@ from exllamav2.generator import (
 )
 import torch
 import random
-
 import torch.nn.functional as F
+import threading
 
 class ExLlamaV2BaseGenerator:
 
@@ -21,6 +21,8 @@ class ExLlamaV2BaseGenerator:
     tokenizer: ExLlamaV2Tokenizer
 
     sequence_ids: torch.tensor = None
+
+    abort_event: threading.Event = None
 
     def __init__(self, model, cache, tokenizer):
 
@@ -51,7 +53,11 @@ class ExLlamaV2BaseGenerator:
                         decode_special_tokens = False,
                         loras = None,
                         stop_token = -1,
-                        add_bos = False):
+                        add_bos = False,
+                        abort_event: threading.Event = None):
+
+        self.abort_event = abort_event
+        if self.abort_event: self.abort_event.clear()
 
         # Default stop token
 
@@ -68,7 +74,10 @@ class ExLlamaV2BaseGenerator:
         # Tokenize input and produce padding mask if needed
 
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
-        ids, position_offsets = self.tokenizer.encode(prompt, encode_special_tokens = encode_special_tokens, return_offsets = True, add_bos = add_bos)
+        ids, position_offsets = self.tokenizer.encode(prompt,
+                                                      encode_special_tokens = encode_special_tokens,
+                                                      return_offsets = True,
+                                                      add_bos = add_bos)
         if batch_size == 1: position_offsets = None
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
@@ -87,6 +96,9 @@ class ExLlamaV2BaseGenerator:
         # Process prompt and begin gen
 
         self._gen_begin_base(ids, mask, loras, position_offsets = position_offsets)
+        if self.abort_event and self.abort_event.is_set():
+            if isinstance(prompt, str): return ""
+            else: return [""] * len(prompt)
 
         # Begin filters
 
@@ -104,7 +116,14 @@ class ExLlamaV2BaseGenerator:
 
         for i in range(num_tokens):
 
-            logits = self.model.forward(self.sequence_ids[:, -1:], self.cache, input_mask = mask, loras = loras, position_offsets = position_offsets).float().cpu()
+            if self.abort_event and self.abort_event.is_set():
+                break
+
+            logits = self.model.forward(self.sequence_ids[:, -1:],
+                                        self.cache,
+                                        input_mask = mask,
+                                        loras = loras,
+                                        position_offsets = position_offsets).float().cpu()
             token, _, _, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
 
             if stop_token is not None:
@@ -132,7 +151,14 @@ class ExLlamaV2BaseGenerator:
     def _gen_begin_base(self, input_ids, mask = None, loras = None, position_offsets = None):
 
         self.cache.current_seq_len = 0
-        self.model.forward(input_ids[:, :-1], self.cache, input_mask = mask, preprocess_only = True, loras = loras, position_offsets = position_offsets)
 
         self.sequence_ids = input_ids
+        self.model.forward(input_ids[:, :-1],
+                           self.cache,
+                           input_mask = mask,
+                           preprocess_only = True,
+                           loras = loras,
+                           position_offsets = position_offsets,
+                           abort_event = self.abort_event)
+
 
