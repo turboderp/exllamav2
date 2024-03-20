@@ -476,7 +476,9 @@ class ExLlamaV2:
     def set_cache_map(self):
 
         for module in self.modules:
-            if isinstance(module, ExLlamaV2Attention): self.cache_map[module.layer_idx] = module.device()
+            if isinstance(module, ExLlamaV2Attention) or \
+               isinstance(module, ExLlamaV2ParallelDecoder):
+                self.cache_map[module.layer_idx] = module.device()
 
 
     def get_cache_devices(self):
