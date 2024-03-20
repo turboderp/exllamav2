@@ -25,6 +25,7 @@ from chat_prompts import prompt_formats
 prompt_formats_list = list(prompt_formats.keys())
 
 # Options
+# (!!!) NOTE: These go on top of the engine arguments that can be found in `model_init.py` (!!!)
 
 parser = argparse.ArgumentParser(description = "Simple Llama2 chat example for ExLlamaV2")
 parser.add_argument("-dm", "--draft_model_dir", type = str, default = None, help = "Path to draft model directory")
