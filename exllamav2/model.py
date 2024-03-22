@@ -334,7 +334,7 @@ class ExLlamaV2:
         num_devices = torch.torch.cuda.device_count()
         loras = None  # TODO:
 
-        with (torch.inference_mode()):
+        with torch.inference_mode():
 
             self.device_tensors = []
 
