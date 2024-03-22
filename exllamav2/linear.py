@@ -86,14 +86,14 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 ww = nn.Parameter(F.pad(ww.data, (0, 0, 0, self.padding)).contiguous())
                 wb = nn.Parameter(F.pad(wb.data, (0, 0, 0, self.padding)).contiguous())
             if not self.model.config.load_in_q4 or not ".layers." in self.key:
+                self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
+                self.linear.weight = ww
+                self.linear.bias = wb
+            else:
                 self.q4_weight = torch.empty((self.out_features * self.in_features // 2,), device = self.device(), dtype = torch.uint8)
                 self.q4_scales = torch.empty((self.out_features * self.in_features // 32,), device = self.device(), dtype = torch.half)
                 ext_c.matrix_fp16_to_q4(ww.contiguous(), self.q4_weight, self.q4_scales)
                 self.fp16_bias = wb
-            else:
-                self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
-                self.linear.weight = ww
-                self.linear.bias = wb
 
 
     def matrix_shape(self):
