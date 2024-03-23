@@ -60,9 +60,7 @@ batches = [f_prompts[i:i + batch_size] for i in range(0, len(prompts), batch_siz
 
 model_directory =  "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw/"
 
-config = ExLlamaV2Config()
-config.model_dir = model_directory
-config.prepare()
+config = ExLlamaV2Config(model_directory)
 config.max_output_len = 1  # We're only generating one token at a time, so no need to allocate VRAM for bsz*max_seq_len*vocab_size logits
 
 config.max_batch_size = batch_size  # Model instance needs to allocate temp buffers to fit the max batch size

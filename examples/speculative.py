@@ -25,14 +25,10 @@ torch.set_num_threads(1)
 model_directory = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
 draft_directory = "/mnt/str/models/tinyllama-1b-32k-exl2/3.5bpw"
 
-model_config = ExLlamaV2Config()
-model_config.model_dir = model_directory
-model_config.prepare()
+model_config = ExLlamaV2Config(model_directory)
 model_config.max_seq_len = 2048
 
-draft_config = ExLlamaV2Config()
-draft_config.model_dir = draft_directory
-draft_config.prepare()
+draft_config = ExLlamaV2Config(draft_directory)
 draft_config.max_seq_len = 2048
 
 draft = ExLlamaV2(draft_config)

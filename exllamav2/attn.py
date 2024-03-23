@@ -1,18 +1,22 @@
+from __future__ import annotations
 import torch
 from torch import nn
-import torch.nn.functional as F
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.cache import ExLlamaV2CacheBase
-from exllamav2.embedding import ExLlamaV2Embedding
-import math
-from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.compat import safe_move_tensor
+from exllamav2.lora import ExLlamaV2Lora
+import math
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
-from exllamav2.compat import safe_move_tensor
+# import torch.nn.functional as F
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from exllamav2.model import ExLlamaV2
 
 # Detect flash-attn
 
@@ -28,19 +32,19 @@ try:
 except ModuleNotFoundError:
     pass
 
+
 class ExLlamaV2Attention(ExLlamaV2Module):
 
-    layer_idx: int
-    input_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm or None = None
-    q_proj: ExLlamaV2Linear or None = None
-    k_proj: ExLlamaV2Linear or None = None
-    v_proj: ExLlamaV2Linear or None = None
-    o_proj: ExLlamaV2Linear or None = None
-
     name: str = "Attention"
-    submodules: list
 
-    q_handle: int or None = None
+    layer_idx: int
+    input_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    q_proj: ExLlamaV2Linear | None
+    k_proj: ExLlamaV2Linear | None
+    v_proj: ExLlamaV2Linear | None
+    o_proj: ExLlamaV2Linear | None
+
+    q_handle: int | None
 
     temp_state: torch.tensor
     temp_q: torch.tensor
@@ -50,7 +54,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     temp_dq: torch.tensor
     # temp_kv: torch.tensor
 
-    temp_lora_size: int = 0
+    temp_lora_size: int
 
     has_norm: bool
     has_residual: bool
@@ -58,7 +62,23 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     class Params:
 
-        def __init__(self, batch_size, seq_len, past_len, input_mask, position_offsets):
+        batch_size: int
+        seq_len: int
+        past_len: int | None
+        past_lens: list[int] | None
+        input_mask: torch.Tensor | None
+        multi_cache: bool
+        attn_mask: torch.Tensor | None
+        attn_masks: torch.Tensor | None
+        position_offsets: torch.Tensor | None
+        past_lens_tensor: torch.Tensor | None
+
+        def __init__(self,
+                     batch_size: int,
+                     seq_len: int,
+                     past_len: int | list[int],
+                     input_mask: torch.Tensor,
+                     position_offsets: torch.Tensor):
 
             self.batch_size = batch_size
             self.seq_len = seq_len
@@ -79,12 +99,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.past_lens_tensor = None
 
 
-        def is_causal(self):
+        def is_causal(self) -> bool:
 
             return self.input_mask is None
 
 
-        def get_position_offsets(self, device):
+        def get_position_offsets(self, device) -> torch.Tensor | None:
 
             assert self.position_offsets is not None
             if self.position_offsets.device != device:
@@ -92,7 +112,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             return self.position_offsets
 
 
-        def get_past_lens(self, device):
+        def get_past_lens(self, device) -> torch.Tensor | None:
 
             assert self.past_lens is not None
             if self.past_lens_tensor is None:
@@ -102,7 +122,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             return self.past_lens_tensor
 
 
-        def get_attn_mask(self, device):
+        def get_attn_mask(self, device) -> torch.Tensor | None:
 
             if self.attn_mask is None:
                 self.attn_mask = self.build_attn_mask(device)
@@ -111,7 +131,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             return self.attn_mask
 
 
-        def get_attn_masks(self, device):
+        def get_attn_masks(self, device) -> torch.Tensor | None:
 
             if self.attn_masks is None:
                 self.attn_masks = self.build_attn_masks(device)
@@ -135,14 +155,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             return attn_mask
 
 
-        def build_attn_mask(self, device):
+        def build_attn_mask(self, device) -> torch.Tensor | None:
             assert not self.multi_cache, "Building single mask for multiple caches"
 
             if self.input_mask is None and self.seq_len == 1: return None
             return self.build_single_attn_mask(self.batch_size, self.seq_len, self.past_len, device, self.input_mask)
 
 
-        def build_attn_masks(self, device):
+        def build_attn_masks(self, device) -> torch.Tensor | None:
             assert self.multi_cache, "Building multiple masks for single cache"
 
             attn_masks = []
@@ -154,12 +174,21 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             return attn_masks
 
 
-    def __init__(self, model, key, layer_idx, has_norm = True, has_residual = True):
+    def __init__(self,
+                 model: ExLlamaV2,
+                 key: str,
+                 layer_idx: int,
+                 has_norm: bool = True,
+                 has_residual: bool = True):
+
         super().__init__(model, key)
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
         self.has_residual = has_residual
+
+        self.q_handle = None
+        self.temp_lora_size = 0
 
         hidden_size = self.model.config.hidden_size
 
@@ -168,6 +197,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
             elif self.model.config.arch.norm == "rmsnorm":
                 self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_1)
+        else:
+            self.input_layernorm = None
 
         self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
         self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
@@ -182,7 +213,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.submodules += [self.input_layernorm]
 
 
-    def numel(self):
+    def numel(self) -> int:
 
         return self.q_proj.numel() + \
                self.k_proj.numel() + \
@@ -357,7 +388,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None):
+    def forward(self,
+                hidden_states: torch.Tensor,
+                cache: ExLlamaV2CacheBase | None = None,
+                attn_params: ExLlamaV2Attention.Params | None = None,
+                past_len: int | None = None,
+                intermediates: bool = False,
+                loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
+
         global has_flash_attn
 
         if self.q_handle is None or intermediates:
@@ -519,7 +557,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # attn_output = attn_output.transpose(1, 2)
             # attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
 
-            # Update 8-bit cache
+            # Update 8-bit/Q4 cache
 
             if cache is not None:
                 cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
@@ -602,7 +640,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None):
+    def forward_torch(self,
+                      hidden_states: torch.Tensor,
+                      cache: ExLlamaV2CacheBase | None = None,
+                      attn_params: ExLlamaV2Attention.Params | None = None,
+                      past_len: int | None = None,
+                      intermediates: bool = False,
+                      loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict:
 
         num_attention_heads = self.model.config.num_attention_heads
         num_key_value_heads = self.model.config.num_key_value_heads
@@ -696,7 +740,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
             attn_output = attn_output.reshape((batch_size, q_len, self.model.config.num_attention_heads * self.model.config.head_dim))
 
-        # Update 8-bit cache
+        # Update 8-bit/Q4 cache
 
         if cache is not None:
             cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
@@ -711,11 +755,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if intermediates:
             return {"post_norm": post_norm,
-                    # "query_states": query_states_im,
-                    # "key_states": key_states_im,
-                    # "value_states": value_states_im,
                     "attn_output": attn_output,
-                    # "attn_proj": attn_proj,
                     "hidden_states": hidden_states}
         else:
             return hidden_states

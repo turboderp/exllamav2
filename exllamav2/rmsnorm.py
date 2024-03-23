@@ -1,22 +1,32 @@
+from __future__ import annotations
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.ext import exllamav2_ext as ext_c
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from exllamav2.model import ExLlamaV2
+
 class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
-    weight: nn.Parameter or None = None
-    bias: nn.Parameter or None = None
-    variance_epsilon: float
-
     name: str = "RMSNorm"
+
+    weight: nn.Parameter | None
+    bias: nn.Parameter | None
+    variance_epsilon: float
 
 
     def __init__(self, model, key):
         super().__init__(model, key)
 
+        self.weight = None
+        self.bias = None
+        self.variance_epsilon = 1e-6
+
 
     def load(self):
+
 
         w = self.load_weight()
 
@@ -49,7 +59,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             self.bias = None
 
 
-    def get_weight(self):
+    def get_weight(self) -> torch.Tensor:
 
         # Make sure to return the original weight tensor for Gemma
         if self.model.config.arch.norm_constant_bias != 0:
@@ -58,23 +68,29 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         return self.weight.data
 
 
-    def weight_footprint(self):
+    def weight_footprint(self) -> int:
 
         hidden_size = self.model.config.hidden_size
         return hidden_size * 2
 
 
-    def scratch_space_fixed(self):
+    def scratch_space_fixed(self) -> int:
 
         return 0
 
 
-    def scratch_space(self):
+    def scratch_space(self) -> int:
 
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+    def forward(self,
+                hidden_states: torch.Tensor,
+                cache = None,
+                attn_params = None,
+                past_len = None,
+                intermediates: bool = False,
+                loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -88,7 +104,13 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+    def forward_torch(self,
+                      hidden_states: torch.Tensor,
+                      cache = None,
+                      attn_params = None,
+                      past_len = None,
+                      intermediates: bool = False,
+                      loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         hidden_states[hidden_states == -float('inf')] = -65504.0
         hidden_states[hidden_states == float('inf')] = 65504.0

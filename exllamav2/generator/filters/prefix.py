@@ -10,19 +10,36 @@ class ExLlamaV2PrefixFilter(ExLlamaV2Filter):
     offset: int
     prefix_string: str
 
-    def __init__(self, model, tokenizer, prefix_string):
+    def __init__(self,
+                 model: ExLlamaV2,
+                 tokenizer: ExLlamaV2Tokenizer,
+                 prefix_string: str):
+        """
+        :param prefix_string:
+            Force generation to start with the specified string.
+        """
+
         super().__init__(model, tokenizer)
 
         self.prefix_string = prefix_string
         self.offset = 0
 
 
-    def begin(self, prefix_str = ""):
+    def clone(self, c = None):
+        if c is None:
+            c = ExLlamaV2PrefixFilter.__new__(ExLlamaV2PrefixFilter)
+        super().clone(c)
+        c.offset = self.offset
+        c.prefix_string = self.prefix_string
+        return c
+
+
+    def begin(self, prefix_str: str = ""):
 
         self.offset = 0
 
 
-    def feed(self, token):
+    def feed(self, token: int):
 
         id_to_piece = self.tokenizer.get_id_to_piece_list()
         piece = id_to_piece[token]

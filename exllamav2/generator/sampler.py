@@ -1,81 +1,57 @@
+from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 from exllamav2 import ExLlamaV2Tokenizer
+from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from copy import copy
 
 class ExLlamaV2Sampler:
 
+    @dataclass
     class Settings:
 
-        token_repetition_penalty = 1.05
-        token_repetition_range = -1
-        token_repetition_decay = 0
+        token_repetition_penalty: float = 1.05
+        token_repetition_range: int = -1
+        token_repetition_decay: int  = 0
 
-        token_frequency_penalty = 0.0
-        token_presence_penalty = 0.0
+        token_frequency_penalty: float = 0.0
+        token_presence_penalty: float = 0.0
 
-        temperature = 0.8
-        smoothing_factor = 0.0
-        min_temp = 0
-        max_temp = 0.0
-        temp_exponent = 1.0
-        top_k = 50
-        top_p = 0.8
-        top_a = 0.0
-        min_p = 0
-        tfs = 0
-        typical = 0
-        skew = 0
+        temperature: float = 0.8
+        smoothing_factor: float = 0.0
+        min_temp: float = 0
+        max_temp: float = 0.0
+        temp_exponent: float = 1.0
+        top_k: int = 50
+        top_p: float = 0.8
+        top_a: float = 0.0
+        min_p: float = 0
+        tfs: float = 0
+        typical: float = 0
+        skew: float = 0
 
-        temperature_last = False
+        temperature_last: bool = False
 
-        mirostat = False
-        mirostat_tau = 1.5
-        mirostat_eta = 0.1
-        mirostat_mu = None  # (re)initialized from mirostat_tau on first sample
+        mirostat: bool = False
+        mirostat_tau: float = 1.5
+        mirostat_eta: float = 0.1
+        mirostat_mu: float | None = None  # (re)initialized from mirostat_tau on first sample
 
-        token_bias = None
-        cfg_scale = None
+        token_bias: torch.Tensor | None = None
+        cfg_scale: float | None = None
 
-        filters = []
+        filters: list[ExLlamaV2Filter] = field(default_factory = list)
         filter_prefer_eos = False
 
+
         def clone(self):
-
-            c = ExLlamaV2Sampler.Settings()
-
-            c.token_repetition_penalty = self.token_repetition_penalty
-            c.token_repetition_range = self.token_repetition_range
-            c.token_repetition_decay = self.token_repetition_decay
-
-            c.token_frequency_penalty = self.token_frequency_penalty
-            c.token_presence_penalty = self.token_presence_penalty
-
-            c.temperature = self.temperature
-            c.smoothing_factor = self.smoothing_factor
-            c.min_temp = self.min_temp
-            c.max_temp = self.max_temp
-            c.temp_exponent = self.temp_exponent
-            c.top_k = self.top_k
-            c.top_p = self.top_p
-            c.top_a = self.top_a
-            c.min_p = self.min_p
-            c.tfs = self.tfs
-            c.typical = self.typical
-
-            c.mirostat = self.mirostat
-            c.mirostat_tau = self.mirostat_tau
-            c.mirostat_eta = self.mirostat_eta
-            c.mirostat_mu = None if self.mirostat_mu is None else self.mirostat_mu.copy()
-
-            c.token_bias = self.token_bias
+            c = copy(self)
             c.filters = [f.clone() for f in self.filters]
-
             return c
 
 
         def greedy_clone(self):
-
             c = ExLlamaV2Sampler.Settings()
             c.top_k = 1
             c.top_p = 0
@@ -89,7 +65,9 @@ class ExLlamaV2Sampler:
             return c
 
 
-        def disallow_tokens(self, tokenizer, tokens):
+        def disallow_tokens(self,
+                            tokenizer: ExLlamaV2Tokenizer,
+                            tokens: list[int]):
 
             if self.token_bias is None:
                 padding = -tokenizer.config.vocab_size % 32
@@ -114,8 +92,41 @@ class ExLlamaV2Sampler:
                sequence_ids: torch.tensor,
                random: float,
                tokenizer: ExLlamaV2Tokenizer,
-               prefix_token = None,
-               return_top_tokens = 0):
+               prefix_token: torch.Tensor | None = None,
+               return_top_tokens: int = 0):
+        """
+        Sample tokens from (batched) logits tensor
+
+        :param logits:
+            Input logits, float tensor of shape (batch_size, 1, vocab_size)
+
+        :param settings:
+            ExLlamaV2Sampler.Settings
+
+        :param sequence_ids:
+            Past token IDs to consider for repetition penalty etc., shape (batch_size, seq_len)
+
+        :param random:
+            Float between 0 and 1, determining sampling point in the final normalized distribution.
+
+        :param tokenizer:
+            ExLlamaV2Tokenizer
+
+        :param prefix_token:
+            Tensor of shape (batch_size, 1). If provided, sampling will be restricted to token pieces that begin with
+            this token. Used for token healing.
+
+        :param return_top_tokens:
+            Number of top tokens to return
+
+        :return:
+            Tuple of:
+            - Sampled tokens, tensor of shape (batch_size, 1)
+            - Top candidates per token (batch_size, 1, return_top_tokens), or meta tensor if return_top_tokens = 0
+            - Top probs per token (batch_size, 1, return_top_tokens), or meta tensor if return_top_tokens = 0
+            - Probabilities per token, shape (batch_size, 1)
+            - True if the current filter has reached a stop condition
+        """
 
         batch_size, _, vocab_size = logits.shape
 
@@ -189,10 +200,6 @@ class ExLlamaV2Sampler:
                 valid_token_lists.append(prefix_id_to_ids[prefix_token[i, 0].item()])
 
             ext_c.logit_filter_exclusive(logit_filter, valid_token_lists)
-
-        # for i in range(logit_filter.shape[-1]):
-        #     if logit_filter[0, i].item():
-        #         print(i)
 
         # Begin Mirostat
 

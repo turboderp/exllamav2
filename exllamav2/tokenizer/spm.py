@@ -1,13 +1,17 @@
+from __future__ import annotations
 from typing import List, Union
 from sentencepiece import SentencePieceProcessor
-from exllamav2.tokenizers.base import ExLlamaV2TokenizerBase
+from exllamav2.tokenizer.base import ExLlamaV2TokenizerBase
+
+# Wrapper for SentencePiece
 
 class ExLlamaV2TokenizerSPM(ExLlamaV2TokenizerBase):
 
-    vocab = None
+    vocab: list[str] | None
 
     def __init__(self, tokenizer_model: str):
         super().__init__()
+        self.vocab = None
         self.spm = SentencePieceProcessor(model_file = tokenizer_model)
 
     def unk_id(self) -> int or None: return self.spm.unk_id()

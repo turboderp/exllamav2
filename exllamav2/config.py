@@ -1,3 +1,4 @@
+from __future__ import annotations
 import torch
 from exllamav2.fasttensors import STFile
 from exllamav2.architecture import ExLlamaV2ArchParams
@@ -5,26 +6,25 @@ import os, glob, json
 
 class ExLlamaV2Config:
 
-    debug_mode = False
-    model_dir: str = None                       # Directory containing model files
+    model_dir: str | None                       # Directory containing model files
 
-    max_seq_len: int = 2048                     # Maximum sequence length. Sequences longer than this will throw an exception
-    max_batch_size: int = 1                     # Maximum size of batches to process
-    max_input_len: int = 2048                   # Maximum length of input IDs in a single forward pass. Sequences longer than this will be processed in multiple steps
-    max_attention_size: int = 2048 ** 2         # Sequences will be processed in chunks to keep the size of the attention weights matrix <= this
-    max_output_len: int = None                  # Maximum number of output tokens per forward pass
+    max_seq_len: int                            # Maximum sequence length. Sequences longer than this will throw an exception
+    max_batch_size: int                         # Maximum size of batches to process
+    max_input_len: int                          # Maximum length of input IDs in a single forward pass. Sequences longer than this will be processed in multiple steps
+    max_attention_size: int                     # Sequences will be processed in chunks to keep the size of the attention weights matrix <= this
+    max_output_len: int | None                  # Maximum number of output tokens per forward pass
 
-    scale_pos_emb: float = 1.0                  # Factor by which to scale positional embeddings, e.g. for 4096-token sequence use a scaling factor of 2.0, requires finetuned model or LoRA
-    scale_alpha_value: float = 1.0              # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model
+    scale_pos_emb: float                        # Factor by which to scale positional embeddings, e.g. for 4096-token sequence use a scaling factor of 2.0, requires finetuned model or LoRA
+    scale_alpha_value: float                    # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model
 
-    no_flash_attn: bool = False                 # Implementation will automatically use flash-attn-2 when available
-    fasttensors: bool = False                   # Experimental, Linux only
-    load_in_q4: bool = False                    # Load float linear layers in Q4 format (for test/dev purposes, not performant)
+    no_flash_attn: bool                         # Implementation will automatically use flash-attn-2 when available
+    fasttensors: bool                           # Experimental, Linux only
+    load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
 
     # Loaded/set by .prepare():
 
     architecture: str
-    arch: ExLlamaV2ArchParams = None
+    arch: ExLlamaV2ArchParams
 
     model_config: str
     tensor_file_map: dict
@@ -45,17 +45,38 @@ class ExLlamaV2Config:
     num_hidden_layers: int
     norm_eps: float
     vocab_size: int
-    rotary_embedding_base: float = 10000.0      # Constant for all Llama models, nodified by .prepare() if scale_alpha_value != 1.0
-    head_dim: int = 128                         # Constant for all Llama models, except 3b
-    num_experts: int = None
-    num_experts_per_token: int = None
-    logit_scale: float = 1
+    rotary_embedding_base: float
+    head_dim: int
+    num_experts: int | None
+    num_experts_per_token: int | None
+    logit_scale: float
 
-    checkpoint_fused_mlp: bool = False
+    checkpoint_fused_mlp: bool
 
 
-    def __init__(self):
-        pass
+    def __init__(self,
+                 model_dir: str | None = None):
+        """
+        :param model_dir:
+            If specified, initialize ExLlamaV2Config with values read from model config.
+        """
+
+        self.max_batch_size = 1
+        self.max_input_len = 2048
+        self.max_attention_size = 2048**2
+        self.max_output_len = None
+        self.scale_pos_emb = 1.0
+        self.scale_alpha_value = 1.0
+
+        self.no_flash_attn = False
+        self.fasttensors = False
+        self.load_in_q4 = False
+
+        if model_dir is not None:
+            self.model_dir = model_dir
+            self.prepare()
+        else:
+            self.model_dir = None
 
 
     # Set low-mem options
@@ -64,11 +85,12 @@ class ExLlamaV2Config:
 
         self.max_input_len = 1024
         self.max_attention_size = 1024 ** 2
+        self.max_output_len = 1024
 
 
     # Populate config with required files from model_dir
 
-    def prepare(self, no_tensors = False):
+    def prepare(self, no_tensors: bool = False):
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
         assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
@@ -84,8 +106,8 @@ class ExLlamaV2Config:
         # Model architecture
 
         assert len(read_config["architectures"]) == 1, "Multiple architectures defined in config.json"
-        arch_string = read_config["architectures"][0]
-        self.arch = ExLlamaV2ArchParams(arch_string, read_config)
+        self.architecture = read_config["architectures"][0]
+        self.arch = ExLlamaV2ArchParams(self.architecture, read_config)
 
         # Vocab params
 
@@ -103,9 +125,14 @@ class ExLlamaV2Config:
 
         self.norm_eps = read_config[self.arch.norm_eps_key]
 
+        # Model dimensions
+
+        self.hidden_size = read_config["hidden_size"]
+
         # Attn params
 
         self.num_attention_heads = read_config["num_attention_heads"]
+        self.head_dim = read_config.get("head_dim", self.hidden_size // self.num_attention_heads)
 
         if "num_key_value_heads" in read_config:
             self.num_key_value_heads = read_config["num_key_value_heads"]
@@ -126,10 +153,11 @@ class ExLlamaV2Config:
 
         # Positional embeddings
 
-        self.rotary_embedding_base = read_config["rope_theta"] if "rope_theta" in read_config else 10000.0
+        self.rotary_embedding_base = read_config.get("rope_theta", 10000.0)
 
-        if "max_sequence_length" in read_config: self.max_seq_len = read_config["max_sequence_length"]
-        elif "max_position_embeddings" in read_config: self.max_seq_len = read_config["max_position_embeddings"]
+        self.max_seq_len = read_config.get("max_sequence_length",
+                           read_config.get("max_position_embeddings",
+                           2048))
 
         rs = read_config.get("rope_scaling", None)
         if rs and "factor" in rs:
@@ -139,11 +167,6 @@ class ExLlamaV2Config:
                 self.scale_pos_emb = factor
             # elif scaling_type == "yarn":
             #     self.scale_alpha_value = factor
-
-        # Model dimensions
-
-        self.hidden_size = read_config["hidden_size"]
-        self.head_dim = read_config.get("head_dim", self.hidden_size // self.num_attention_heads)
 
         # Create map of model tensors
 
@@ -168,6 +191,8 @@ class ExLlamaV2Config:
             "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
             self.checkpoint_fused_mlp = True
             self.arch.make_fused_mlp()
+        else:
+            self.checkpoint_fused_mlp = False
 
         # Make sure we found all the layers we need
 

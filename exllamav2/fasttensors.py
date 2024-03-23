@@ -1,3 +1,4 @@
+from __future__ import annotations
 import torch
 from safetensors import safe_open
 import numpy as np
@@ -6,6 +7,13 @@ from exllamav2.ext import exllamav2_ext as ext_c
 import os
 
 def convert_dtype(dt: str):
+    """
+    :param dt:
+        Datatype string as used by safetensors
+
+    :return:
+        Torch type, element size in bytes
+    """
     if dt == "I32": return torch.int, 4
     elif dt == "I16": return torch.short, 2
     elif dt == "F16": return torch.float16, 2
@@ -35,15 +43,20 @@ class STFile:
     filename: str
     header: dict
     header_size: int
-    metadata: object = None
-    handle: int = 0
+    metadata: object
+    handle: int
     fast: bool
     st_context = None
 
-    def __init__(self, filename: str, fast = True):
+    def __init__(self,
+                 filename: str,
+                 fast: bool = True):
         global global_stfiles
 
+        self.metadata = None
+        self.handle = 0
         self.filename = filename
+
         self.read_dict()
 
         if fast and os.name == "nt":
@@ -58,7 +71,21 @@ class STFile:
 
 
     @staticmethod
-    def open(filename, fast = True):
+    def open(filename,
+             fast = True) -> STFile:
+        """
+        Open safetensors file, scan header and retain handle.
+
+        :param filename:
+            Filename
+
+        :param fast:
+            Use fast (direct I/O) codepath
+
+        :return:
+            STFile object
+        """
+
         global global_stfiles
         for f in global_stfiles:
             if f.filename == filename: return f
@@ -66,8 +93,10 @@ class STFile:
 
 
     def close(self):
-        if not self.fast: return
-        ext_c.safetensors_close(self.handle)
+        """
+        Close file handle (if necessary)
+        """
+        if self.fast: ext_c.safetensors_close(self.handle)
 
 
     def read_dict(self):
@@ -81,15 +110,22 @@ class STFile:
                 del self.header["__metadata__"]
 
 
-    def get_dict(self):
+    def get_dict(self) -> dict:
         return self.header
 
 
-    def get_metadata(self):
+    def get_metadata(self) -> object:
         return self.metadata
 
 
     def measure(self, key):
+        """
+        :param key:
+            Tensor key
+
+        :return:
+            Byte size of tensor
+        """
         v = self.header[key]
         data_offsets = v["data_offsets"]
         length = data_offsets[1] - data_offsets[0]
@@ -110,7 +146,10 @@ class STFile:
         return f
 
 
-    def get_tensor(self, key, device, not_fast = False):
+    def get_tensor(self,
+                   key: str,
+                   device,
+                   not_fast: bool = False) -> torch.Tensor:
 
         if not_fast or not self.fast:
             f = self.get_cm(device)

@@ -8,3 +8,4 @@ pygments
 websockets
 regex
 numpy
+tokenizers

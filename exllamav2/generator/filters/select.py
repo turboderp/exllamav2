@@ -7,13 +7,25 @@ from exllamav2.generator.filters.base import ExLlamaV2Filter
 
 class ExLlamaV2SelectFilter(ExLlamaV2Filter):
 
-    options: list
+    options: list[str]
     offset: int
     prefix: str
     case_insensitive: bool
     sequence_str_cmp: str
 
-    def __init__(self, model, tokenizer, options, case_insensitive = False):
+    def __init__(self,
+                 model: ExLlamaV2,
+                 tokenizer: ExLlamaV2Tokenizer,
+                 options: list[str],
+                 case_insensitive: bool = False):
+        """
+        :param options:
+            List of possible strings that may be generated.
+
+        :param case_insensitive:
+            Ignore case.
+        """
+        
         super().__init__(model, tokenizer)
 
         self.options = options if not case_insensitive else [o.lower() for o in options]
@@ -23,7 +35,19 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
         self.sequence_str_cmp = ""
 
 
-    def begin(self, prefix_str = ""):
+    def clone(self, c = None):
+        if c is None:
+            c = ExLlamaV2SelectFilter.__new__(ExLlamaV2SelectFilter)
+        super().clone(c)
+        c.options = self.options
+        c.offset = self.offset
+        c.prefix = self.prefix
+        c.case_insensitive = self.case_insensitive
+        c.sequence_str_cmp = self.sequence_str_cmp
+        return c
+
+
+    def begin(self, prefix_str: str = ""):
 
         self.sequence_str = ""
         self.sequence_str_cmp = ""
@@ -31,7 +55,7 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
         self.offset = 0
 
 
-    def feed(self, token):
+    def feed(self, token: int):
 
         id_to_piece = self.tokenizer.get_id_to_piece_list()
         piece = id_to_piece[token]
@@ -45,8 +69,6 @@ class ExLlamaV2SelectFilter(ExLlamaV2Filter):
             self.sequence_str_cmp += piece
         self.offset += len(piece)
 
-
-    # TODO: Evaluate overhead and maybe move to extension
 
     def next(self):
 

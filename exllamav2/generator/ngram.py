@@ -1,6 +1,10 @@
+from __future__ import annotations
 
 class NgramCacheNode:
-    def __init__(self, preload = None):
+
+    def __init__(self,
+                 preload: NgramCacheNode | None = None):
+
         if preload is None:
             self.transitions = {}
         else:
@@ -20,7 +24,17 @@ class NgramCacheNode:
 
 
 class NgramCache:
-    def __init__(self, min_len, max_len, preload):
+
+    ngrams: dict[str: NgramCacheNode]
+    min_len: int
+    max_len: int
+    preload: NgramCache | None
+
+    def __init__(self,
+                 min_len: int,
+                 max_len: int,
+                 preload: NgramCache | None = None):
+
         self.ngrams = {}
         self.min_len = min_len
         self.max_len = max_len

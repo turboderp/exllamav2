@@ -1,20 +1,32 @@
+from __future__ import annotations
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
-class ExLlamaV2LayerNorm(ExLlamaV2Module):
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from exllamav2.model import ExLlamaV2
 
-    layernorm: nn.LayerNorm or None = None
-    weight: nn.Parameter or None = None
-    bias: nn.Parameter or None = None
-    variance_epsilon: float
+class ExLlamaV2LayerNorm(ExLlamaV2Module):
 
     name: str = "LayerNorm"
 
+    layernorm: nn.LayerNorm | None
+    weight: nn.Parameter | None
+    bias: nn.Parameter | None
+    variance_epsilon: float
 
-    def __init__(self, model, key):
+
+    def __init__(self,
+                 model: ExLlamaV2,
+                 key: str):
         super().__init__(model, key)
+
+        self.layernorm = None
+        self.weight = None
+        self.bias = None
+        self.variance_epsilon = 1e-6
 
 
     def load(self):
@@ -31,7 +43,9 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         assert isinstance(weight, nn.Parameter)
         assert bias is None or isinstance(bias, nn.Parameter)
 
-        self.layernorm = nn.LayerNorm(self.model.config.hidden_size, elementwise_affine = True, bias = bias is not None)
+        self.layernorm = nn.LayerNorm(self.model.config.hidden_size,
+                                      elementwise_affine = True,
+                                      bias = bias is not None)
 
         self.layernorm.weight = weight
         self.weight = weight
@@ -45,35 +59,40 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
 
     def unload(self):
 
-        if self.layernorm is not None:
-            self.layernorm = None
+        self.layernorm = None
         self.weight = None
         self.bias = None
 
 
-    def get_weight(self):
+    def get_weight(self) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         if self.bias is not None: return self.weight, self.bias
         return self.weight
 
 
-    def weight_footprint(self):
+    def weight_footprint(self) -> int:
 
         hidden_size = self.model.config.hidden_size
         return hidden_size * 2
 
 
-    def scratch_space_fixed(self):
+    def scratch_space_fixed(self) -> int:
 
         return 0
 
 
-    def scratch_space(self):
+    def scratch_space(self) -> int:
 
         return 0
 
 
-    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+    def forward(self,
+                hidden_states: torch.Tensor,
+                cache = None,
+                attn_params = None,
+                past_len = None,
+                intermediates: bool = False,
+                loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -92,15 +111,13 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
-
-        # output_shape = hidden_states.shape
-        # hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        # mean = torch.mean(hidden_states, dim = -1, keepdim = True)
-        # var = torch.square(hidden_states - mean).mean(dim = -1, keepdim = True)
-        # hidden_states = (hidden_states - mean) / torch.sqrt(var + self.variance_epsilon)
-        # hidden_states *= self.weight
-        # hidden_states += self.bias
+    def forward_torch(self,
+                      hidden_states: torch.Tensor,
+                      cache = None,
+                      attn_params = None,
+                      past_len = None,
+                      intermediates: bool = False,
+                      loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         hidden_states = self.layernorm(hidden_states)
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from ast import Tuple
 from typing import Union, Tuple
 from exllamav2 import (
@@ -17,66 +19,110 @@ import threading
 
 class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
+    # Constants
+
     tail_decode_tokens: int = 2
-
-    settings: ExLlamaV2Sampler.Settings = None
-    stop_strings: set = set()
-    stop_tokens: set = set()
-    draft_model: ExLlamaV2 or None = None
-    draft_cache: ExLlamaV2Cache or None = None
-
-    remaining_tokens: int = 0
-    held_utf8_tokens: torch.tensor = None
-    held_fallback_tokens: torch.tensor = None
     max_fallback_tokens: int = 4
-    expect_utf8: int = 0
 
-    no_tokens: torch.Tensor = None
-    no_ptokens: torch.Tensor = None
-    no_probs: torch.Tensor = None
-    no_pprobs: torch.Tensor = None
-    no_logits: torch.Tensor = None
+    no_tokens: torch.Tensor
+    no_ptokens: torch.Tensor
+    no_probs: torch.Tensor
+    no_pprobs: torch.Tensor
+    no_logits: torch.Tensor
 
-    held_text: str = ""
-    held_tokens: torch.Tensor or None = None
-    held_ptokens: torch.Tensor or None = None
-    held_probs: torch.Tensor or None = None
-    held_pprobs: torch.Tensor or None = None
-    held_logits: torch.Tensor or None = None
+    # Generation settings
 
-    first_token = False
-    heal_next_token = False
+    settings: ExLlamaV2Sampler.Settings
 
-    future_logits: torch.tensor or None = None
-    future_tokens: torch.tensor or None = None
+    return_probabilities: bool
+    return_top_tokens: int
+    return_logits: bool
+
+    position_offsets: torch.Tensor | None
+    input_mask: torch.Tensor | None
+
+    # Stop conditions
+
+    stop_strings: set
+    stop_tokens: set
+    remaining_tokens: int
+
+    # Speculative decoding
+
+    future_logits: torch.Tensor | None
+    future_tokens: torch.Tensor | None
+
+    total_draft_tokens: int
+    total_tokens: int
+    accepted_draft_tokens: int
+
+    # Draft model
+
+    draft_model: ExLlamaV2 | None
+    draft_cache: ExLlamaV2Cache | None
     num_speculative_tokens: int
-    speculative_prob_threshold: float = 0.25
-    total_draft_tokens: int = 0
-    total_tokens: int = 0
-    accepted_draft_tokens: int = 0
+    speculative_prob_threshold: float
 
-    return_probabilities: bool = False
-    return_top_tokens: int = 0
-    return_logits: bool = False
+    # N-gram decoding
 
-    active_loras = []
-    position_offsets = None
-    input_mask = None
+    speculative_ngram: bool
+    speculative_ngram_min: int
+    speculative_ngram_max: int
+    speculative_ngram_max_inf: int
+    speculative_ngram_threshold: int
+    ngram: NgramCache | None
+    ngram_preloaded: NgramCache | None
 
-    speculative_ngram = False
-    speculative_ngram_min = 1
-    speculative_ngram_max = 5
-    speculative_ngram_max_inf = 3
-    speculative_ngram_threshold = 1
-    ngram = None
-    ngram_preloaded = None
+    # UTF-8 decoding
+
+    held_utf8_tokens: torch.Tensor | None
+    held_fallback_tokens: torch.Tensor | None
+    expect_utf8: int
+
+    # Output buffers
+
+    held_text: str
+    held_tokens: torch.Tensor | None
+    held_ptokens: torch.Tensor | None
+    held_probs: torch.Tensor | None
+    held_pprobs: torch.Tensor | None
+    held_logits: torch.Tensor | None
+
+    # Token healing
+
+    first_token: bool
+    heal_next_token: bool
+
+    # LoRAs
+
+    active_loras: list[ExLlamaV2Lora]
 
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
         super().__init__(model, cache, tokenizer)
 
+        # Stop conditions
+
         self.stop_strings = set()
         self.stop_tokens = {tokenizer.eos_token_id,}
+        self.remaining_tokens = 0
+
+        # Generation settings
+
+        self.return_probabilities = False
+        self.return_top_tokens = 0
+        self.return_logits = False
+
+        # Speculative decoding
+
+        self.future_logits = None
+        self.future_tokens = None
+
+        self.total_draft_tokens = 0
+        self.total_tokens = 0
+        self.accepted_draft_tokens = 0
+
+        # Draft model
 
         if draft_model:
             self.draft_model = draft_model
@@ -87,11 +133,43 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 self.draft_cache = ExLlamaV2Cache(draft_model,
                                                   batch_size = cache.batch_size,
                                                   max_seq_len = cache.max_seq_len)
+        else:
+            self.draft_model = None
+            self.draft_cache = None
+
+        self.speculative_prob_threshold = 0.25
+
+        # N-gram decoding
+
+        self.speculative_ngram = False
+        self.speculative_ngram_min = 1
+        self.speculative_ngram_max = 5
+        self.speculative_ngram_max_inf = 3
+        self.speculative_ngram_threshold = 1
+        self.ngram = None
+        self.ngram_preloaded = None
+
+        # UTF-8 decoding
+
+        self.held_utf8_tokens = None
+        self.held_fallback_tokens = None
+        self.expect_utf8: int = 0
+
+        # Token healing
+
+        self.active_loras = []
 
 
-    def set_stop_conditions(self, stop_conditions):
+    def set_stop_conditions(self,
+                            stop_conditions: list | tuple | set):
+        """
+        :param stop_conditions:
+            List of either token IDs or strings that will cause stream_ex to emit the EOS signal. String values do not
+            have to match whole tokens and can span multiple tokens.
 
-        assert isinstance(stop_conditions, (list, tuple, set))
+        Example:
+            generator.set_stop_conditions(tokenizer.eos_token_id, "\nUser:", "###")
+        """
 
         self.stop_strings = set()
         self.stop_tokens = set()
@@ -101,43 +179,84 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             else: raise ValueError("Unsupported type in stop_conditions")
 
 
-    # Begin stream
-
-    def begin_stream_ex(self,
-                       input_ids: torch.Tensor,
-                       gen_settings: ExLlamaV2Sampler.Settings,
-                       token_healing = False,
-                       loras = None,
-                       input_mask = None,
-                       position_offsets = None,
-                       return_probabilities = False,
-                       return_top_tokens = 0,
-                       return_logits = False,
-                       abort_event: threading.Event = None):
-
-        self.return_probabilities = return_probabilities
-        self.return_top_tokens = return_top_tokens
-        self.return_logits = return_logits
-
-        self.begin_stream(input_ids,
-                          gen_settings,
-                          token_healing,
-                          loras,
-                          input_mask,
-                          position_offsets,
-                          abort_event)
-
-
     # Legacy function
 
     def begin_stream(self,
                      input_ids: torch.Tensor,
                      gen_settings: ExLlamaV2Sampler.Settings,
-                     token_healing = False,
-                     loras = None,
-                     input_mask = None,
-                     position_offsets = None,
+                     token_healing: bool = False,
+                     loras: ExLlamaV2Lora | list[ExLlamaV2Lora] = None,
+                     input_mask: torch.Tensor | None = None,
+                     position_offsets: torch.Tensor | None = None,
                      abort_event: threading.Event = None):
+        """
+        See ExLlamaV2StreamingGenerator.begin_stream_ex
+        """
+
+        self.begin_stream_ex(input_ids,
+                             gen_settings,
+                             token_healing,
+                             loras,
+                             input_mask,
+                             position_offsets,
+                             abort_event = abort_event)
+
+
+    # Begin stream
+
+    def begin_stream_ex(self,
+                        input_ids: torch.Tensor,
+                        gen_settings: ExLlamaV2Sampler.Settings,
+                        token_healing: bool = False,
+                        loras: ExLlamaV2Lora | list[ExLlamaV2Lora] = None,
+                        input_mask: torch.Tensor | None = None,
+                        position_offsets: torch.Tensor | None = None,
+                        return_probabilities: bool = False,
+                        return_top_tokens: int = 0,
+                        return_logits: bool = False,
+                        abort_event: threading.Event = None):
+        """
+        Resets the generator and starts a new completion of the supplied input_ids. Reuses the existing
+        cache for any token IDs matching the previous sequence.
+
+        :param input_ids:
+            Input token ID sequence, as produced by ExLlamaV2Tokenizer. Streaming generator does not
+            currently support batch size > 1 except when performing CFG, in which case batch size
+            must be 2.
+
+        :param gen_settings:
+            Sampling settings, including filters
+
+        :param token_healing:
+            Apply token healing by regenerating the last token of the input sequence with prefix
+            constraint.
+
+        :param loras:
+            (List of) ExLlamaV2Lora objects to apply during generation
+
+        :param input_mask:
+            Optional attention mask for the input
+
+        :param position_offsets:
+            Optional position offsets
+
+        :param return_probabilities:
+            Return tensor of post-sampler probabilities for each selected token
+
+        :param return_top_tokens:
+            Number of top candidate tokens to return for each selected token, along with their final
+            probabilities.
+
+        :param return_logits:
+            Return the raw logits output by the model for each streamed token
+
+        :param abort_event:
+            Forwarded to the model during generation. Will abort prefill/context ingestion if triggered.
+        """
+
+        self.return_probabilities = return_probabilities
+        self.return_top_tokens = return_top_tokens
+        self.return_logits = return_logits
 
         self.abort_event = abort_event
 
@@ -148,17 +267,21 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.position_offsets = position_offsets
         self.input_mask = input_mask
 
-        # Accept LoRA or list of LoRAs
         if loras is not None and isinstance(loras, ExLlamaV2Lora): loras = [loras]
         self.active_loras = loras
 
-        self.no_logits = torch.empty((0, ((self.model.config.vocab_size + 31) // 32) * 32), dtype=torch.float)
-        self.no_tokens = torch.empty((1, 0), dtype=torch.long)
-        self.no_probs = torch.empty((1, 0), dtype=torch.float)
-        self.no_ptokens = torch.empty((1, 0, self.return_top_tokens), dtype=torch.long)
-        self.no_pprobs = torch.empty((1, 0, self.return_top_tokens), dtype=torch.float)
+        # Decluttering
+
+        self.no_logits = torch.empty((0, ((self.model.config.vocab_size + 31) // 32) * 32), dtype = torch.float)
+        self.no_tokens = torch.empty((1, 0), dtype = torch.long)
+        self.no_probs = torch.empty((1, 0), dtype = torch.float)
+        self.no_ptokens = torch.empty((1, 0, self.return_top_tokens), dtype = torch.long)
+        self.no_pprobs = torch.empty((1, 0, self.return_top_tokens), dtype = torch.float)
+
+        # Initialize state
 
         self.held_text = ""
+
         self.held_utf8_tokens = self.no_tokens
         self.held_fallback_tokens = self.no_tokens
         self.expect_utf8 = 0
@@ -172,30 +295,67 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
 
+        # Initialize n-gram cache
+
         if self.speculative_ngram:
-            self.ngram = NgramCache(self.speculative_ngram_min, self.speculative_ngram_max, self.ngram_preloaded)
+            self.ngram = NgramCache(self.speculative_ngram_min,
+                                    self.speculative_ngram_max,
+                                    self.ngram_preloaded)
             self.ngram.update(self.sequence_ids[0].tolist())
 
 
     # Get the next chunk of text in the stream
 
     def stream_ex(self):
+        """
+        Perform one streaming iteration, returning one chunk of text. Returns a dict with the following
+        entries:
+
+            chunk:
+                Decoded output text. May be an empty string if the generator holds text to resolve a
+                stop condition.
+
+            eos:
+                Boolean EOS signal. True if one of the specified stop conditions has been met
+
+            chunk_token_ids:
+                Tensor of tokens corresponding to the output text, of shape (1, n). n may be zero if
+                tokens are being held due to a partially met stop condition. Held tokens will be emitted
+                on subsequent calls to stream_ex() when the stop condition is resolved.
+
+                In the case of token healing, this does not include the last token of the input even
+                though its value may have changed.
+
+                If a string stop condition matches a partial token, the ID for the full token is included.
+
+            probs: (if return_probabilities == True)
+                Tensor of probabilities (1, n) corresponding to the chunk_token_ids
+
+            top_tokens, top_probs: (if return_top_tokens > 0)
+                Top-K token IDs with corresponding probabilities, shape (1, n, k). Sorted in descending
+                order. Probabilities may sum to less than 1 if more than k tokens were candidates at the
+                final sampling stage. If less than k tokens were candidates, the list will be padded with
+                zero-probability tokens whose order is undefined.
+
+            return_logits: (if return_logits == True)
+                Raw output logits for the model, shape (1, n, vocab_size)
+        """
 
         chunk, eos, chunk_token_ids, probs, ptokens, pprobs, logits = self._stream()
 
-        ret = { "chunk": chunk,                         # output text
-                "eos": eos,                             # True if stop condition met
-                "chunk_token_ids": chunk_token_ids }    # token(s) corresponding to output text: [1, n] (torch.long)
+        ret = { "chunk": chunk,
+                "eos": eos,
+                "chunk_token_ids": chunk_token_ids }
 
         if self.return_probabilities:
-            ret["probs"] = probs                        # Probability of selected token(s): [1, n] (torch.float)
+            ret["probs"] = probs
 
         if self.return_top_tokens > 0:
-            ret["top_probs"] = pprobs                   # Top k probs: [1, n, k] (torch.float)
-            ret["top_tokens"] = ptokens                 # Top k tokens: [1, n, k] (torch.long)
+            ret["top_probs"] = pprobs
+            ret["top_tokens"] = ptokens
 
         if self.return_logits:
-            ret["logits"] = logits.unsqueeze(0)         # Raw output logits: [1, n, vocab_size] (torch.float)
+            ret["logits"] = logits.unsqueeze(0)
 
         return ret
 
@@ -205,6 +365,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     def stream(self) -> Union[Tuple[str, bool, torch.Tensor],
                               Tuple[str, bool, torch.Tensor, torch.Tensor],
                               Tuple[str, bool, torch.Tensor, torch.Tensor, torch.Tensor]]:
+        """
+        Legacy functions that returns a tuple rather than a dict. See ExLlamaV2StreamingGenerator.stream_ex
+        """
 
         assert self.return_top_tokens == 0, "Use stream_ex() to return top K probs"
 
@@ -331,6 +494,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return stream_text, False, stream_tokens, stream_probs, stream_ptokens, stream_pprobs, stream_logits
 
 
+    # Functions for catching and holding partial UTF-8 characters
+
     def _decode_utf8(self):
 
         if self.held_utf8_tokens.shape[-1] == 0: return self.no_tokens, ""
@@ -342,8 +507,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         except ValueError or UnicodeDecodeError:
             id_to_piece = self.tokenizer.get_id_to_piece_list()
             c = "".join(id_to_piece[x] for x in self.held_utf8_tokens[0].tolist())
-        # except UnicodeDecodeError:
-        #     c = "�"
 
         pre_t = self.held_utf8_tokens
         self.held_utf8_tokens = self.no_tokens
@@ -403,11 +566,16 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             return self.no_tokens, ""
 
 
+    # Helper for limiting the sequence length to the cache length. Necessary in case the cache prefill was
+    # aborted since the incomplete cache might otherwise be reused
+
     def _truncate_seq_to_cache(self):
         cachelen = self.cache.current_seq_len
         if self.draft_cache: cachelen = min(cachelen, self.draft_cache.current_seq_len)
         self.sequence_ids = self.sequence_ids[:, :cachelen + 1]
 
+
+    # Begin a generation (prefill/ingest)
 
     def _gen_begin(self, in_tokens, gen_settings):
 
@@ -445,6 +613,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.first_token = True
 
 
+    # Begin a generation (prefill/ingest) while reusing the K/V cache for any starting tokens that are
+    # unchanged since the last generation
+
     def _gen_begin_reuse(self, in_tokens, gen_settings):
 
         if self.sequence_ids is None or self.cache.current_seq_len == 0:
@@ -472,6 +643,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.first_token = True
 
+
+    # Ingest a number of tokens, appending to the current sequence
 
     def _gen_feed_tokens(self, in_tokens, gen_settings):
 
@@ -506,6 +679,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.future_logits = None
             self.future_tokens = None
 
+
+    # Generate a single token and append to sequence
 
     def _gen_single_token(self, gen_settings, prefix_token = None):
 
@@ -543,6 +718,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         gen_settings.feed_filters(token)
         return token, ptokens, pprobs, prob, eos, logits.flatten(1)
 
+
+    # Speculative decoding with draft model
 
     def _gen_single_token_speculative(self, gen_settings, prefix_token = None):
 
@@ -612,6 +789,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return token, ptokens, pprobs, prob, eos, logits
 
 
+    # Speculative decoding with n-gram predictions
+
     def _gen_single_token_ngram(self, gen_settings, prefix_token = None):
 
         if self.future_tokens is None:
@@ -666,6 +845,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return token, ptokens, pprobs, prob, eos, logits
 
 
+    # Some metrics
+
     def reset_sd_stats(self):
 
         self.total_tokens = 0
@@ -680,7 +861,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return efficiency, accuracy, self.total_tokens, self.total_draft_tokens, self.accepted_draft_tokens
 
 
-    def ngram_preload(self, input_ids):
+    def ngram_preload(self,
+                      input_ids: torch.Tensor):
+        """
+        Preload the n-gram cache with some tokenized example text. (Every call to begin_stream_ex creates
+        a new dynamic cache based on the provided context and generated tokens.)
+        """
 
         if isinstance(input_ids, torch.Tensor):
             input_ids = input_ids[0].tolist()

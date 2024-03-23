@@ -21,16 +21,11 @@ import random
 # Initialize model
 
 model_directory =  "/mnt/str/models/llama2-7b-exl2/4.0bpw/"
-
-config = ExLlamaV2Config()
-config.model_dir = model_directory
-config.prepare()
-
-model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
 
+config = ExLlamaV2Config(model_directory)
+model = ExLlamaV2(config)
 model.load()
-
 tokenizer = ExLlamaV2Tokenizer(config)
 
 # Cache mode
@@ -110,7 +105,7 @@ while len(prompts) or len(input_ids):
     r = random.random()
     for i in range(len(input_ids)):
 
-        token, _, _ = ExLlamaV2Sampler.sample(logits[i:i+1, :, :], settings[i], input_ids[i], r, tokenizer)
+        token, _, _, _, _ = ExLlamaV2Sampler.sample(logits[i:i+1, :, :], settings[i], input_ids[i], r, tokenizer)
         input_ids[i] = torch.cat([input_ids[i], token], dim = 1)
         total_gen_tokens += 1
 

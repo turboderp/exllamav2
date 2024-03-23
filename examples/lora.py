@@ -21,16 +21,12 @@ import time
 # Initialize model and cache
 
 model_directory = "/mnt/str/models/_gptq/TheBloke_Llama-7B-GPTQ/"
-config = ExLlamaV2Config()
-config.model_dir = model_directory
-config.prepare()
-
-model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
+
+config = ExLlamaV2Config(model_directory)
+model = ExLlamaV2(config)
 model.load()
-
 tokenizer = ExLlamaV2Tokenizer(config)
-
 cache = ExLlamaV2Cache(model)
 
 # Load LoRA

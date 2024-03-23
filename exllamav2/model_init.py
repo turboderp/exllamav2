@@ -67,12 +67,12 @@ def check_args(args):
 
 
 def init(args,
-         quiet = False,
-         allow_auto_split = False,
-         skip_load = False,
-         benchmark = False,
-         max_batch_size = None,
-         max_output_len = None):
+         quiet: bool = False,
+         allow_auto_split: bool = False,
+         skip_load: bool = False,
+         benchmark: bool = False,
+         max_batch_size: int = None,
+         max_output_len: int = None):
 
     # Create config
 

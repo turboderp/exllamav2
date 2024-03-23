@@ -1,3 +1,4 @@
+from __future__ import annotations
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -6,35 +7,45 @@ from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-from exllamav2 import ext
+from exllamav2.lora import ExLlamaV2Lora
 
-# catch_key = None
-# def set_catch(key):
-#     global catch_key
-#     catch_key = key
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from exllamav2.model import ExLlamaV2
 
 
 class ExLlamaV2MLP(ExLlamaV2Module):
 
-    layer_idx: int
-    post_attention_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm or None = None
-    gate_proj: ExLlamaV2Linear or None = None
-    up_proj: ExLlamaV2Linear or None = None
-    down_proj: ExLlamaV2Linear or None = None
-
     name: str = "MLP"
-    submodules: list
 
-    q_handle: int or None = None
+    layer_idx: int
+    post_attention_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    gate_proj: ExLlamaV2Linear | None
+    up_proj: ExLlamaV2Linear | None
+    down_proj: ExLlamaV2Linear | None
 
-    temp_lora_size: int = 0
+    q_handle: int | None
 
-    def __init__(self, model, key, layer_idx, has_norm = True, has_residual = True):
+    temp_lora_size: int
+
+    has_norm: bool
+    has_residual: bool
+
+    def __init__(self,
+                 model: ExLlamaV2,
+                 key: str,
+                 layer_idx: int,
+                 has_norm: bool = True,
+                 has_residual: bool = True):
+
         super().__init__(model, key)
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
         self.has_residual = has_residual
+
+        self.q_handle = None
+        self.temp_lora_size = 0
 
         hidden_size = self.model.config.hidden_size
         intermediate_size = self.model.config.intermediate_size
@@ -44,6 +55,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_2)
             elif self.model.config.arch.norm == "rmsnorm":
                 self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_2)
+        else:
+            self.post_attention_layernorm = None
 
         self.up_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_up, hidden_size, intermediate_size, self.model.config.arch.mlp_bias)
         self.down_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_down, intermediate_size, hidden_size, self.model.config.arch.mlp_bias)
@@ -52,6 +65,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                            self.down_proj]
         if self.has_norm:
             self.submodules += [self.post_attention_layernorm]
+
         if self.model.config.arch.mlp_gate:
             self.gate_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_gate, hidden_size, intermediate_size, self.model.config.arch.mlp_bias)
             self.submodules += [self.gate_proj]
@@ -59,7 +73,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.gate_proj = None
 
 
-    def numel(self):
+    def numel(self) -> int:
 
         if self.model.config.arch.mlp_gate:
             return self.gate_proj.numel() + \
@@ -76,10 +90,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.post_attention_layernorm.load()
 
         if self.model.config.checkpoint_fused_mlp:
-            w12 = self.load_weight(self.key + self.model.config.fused_mlp_key_12)
+            w12 = self.load_weight(self.key + self.model.config.arch.fused_mlp_key_12)
             w1 = nn.Parameter(w12[:self.model.config.intermediate_size, :].contiguous())
             w2 = nn.Parameter(w12[self.model.config.intermediate_size:, :].contiguous())
-            w3 = self.load_weight(self.key + self.model.config.fused_mlp_key_3)
+            w3 = self.load_weight(self.key + self.model.config.arch.fused_mlp_key_3)
             self.gate_proj.load(w1)
             self.up_proj.load(w2)
             self.down_proj.load(w3)
@@ -122,6 +136,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
 
     def unload(self):
+
         if self.q_handle is not None:
             ext_c.free_q_mlp(self.q_handle)
             self.q_handle = None
@@ -132,7 +147,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.down_proj.unload()
 
 
-    def weight_footprint(self):
+    def weight_footprint(self) -> int:
 
         if self.model.config.checkpoint_fused_mlp:
             fp = 3 * self.model.config.intermediate_size * self.model.config.hidden_size * 2
@@ -148,7 +163,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return fp
 
 
-    def scratch_space_fixed(self):
+    def scratch_space_fixed(self) -> int:
 
         return self.temp_state_size() + \
                self.temp_a_size() + \
@@ -156,7 +171,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                self.temp_dq_size()
 
 
-    def scratch_space(self):
+    def scratch_space(self) -> int:
 
         assert self.model.config.intermediate_size >= self.model.config.hidden_size
         return self.temp_state_size() + \
@@ -165,29 +180,29 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                self.temp_dq_size()
 
 
-    def temp_state_size(self):
+    def temp_state_size(self) -> int:
 
         return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.hidden_size * 2 + 128
 
 
-    def temp_a_size(self):
+    def temp_a_size(self) -> int:
 
         return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.intermediate_size * 2 + 128
 
 
-    def temp_b_size(self):
+    def temp_b_size(self) -> int:
 
         return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.intermediate_size * 2 + 128
 
 
-    def temp_dq_size(self):
+    def temp_dq_size(self) -> int:
 
         return max(0 if self.gate_proj is None else self.gate_proj.temp_dq_size(),
                    self.up_proj.temp_dq_size(),
                    self.down_proj.temp_dq_size())
 
 
-    def set_device_idx(self, idx):
+    def set_device_idx(self, idx: int):
         super().set_device_idx(idx)
 
         if self.post_attention_layernorm is not None:
@@ -197,14 +212,16 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.down_proj.set_device_idx(idx)
 
 
-    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None):
-        # global catch_key
-        #
-        # if self.key == catch_key:
-        #     return self.forward_torch(hidden_states, cache, attn_params, intermediates, loras = loras)
+    def forward(self,
+                hidden_states: torch.Tensor,
+                cache = None,
+                attn_params = None,
+                past_len = None,
+                intermediates: bool = False,
+                loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_params, intermediates, loras = loras)
+            return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras)
 
         if loras is None or self.temp_lora_size == 0:
             pass_loras = []
@@ -221,10 +238,17 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self, hidden_states, cache = None, attn_params = None, intermediates = False, loras = None, position_offsets = None):
+    def forward_torch(self,
+                      hidden_states: torch.Tensor,
+                      cache = None,
+                      attn_params = None,
+                      past_len = None,
+                      intermediates: bool = False,
+                      loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         residual = hidden_states
-        post_norm = self.post_attention_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+        post_norm = self.post_attention_layernorm.forward(hidden_states) \
+            if self.has_norm else hidden_states
 
         if self.gate_proj is not None:
             gate = self.gate_proj.forward(post_norm, loras = loras)
@@ -247,10 +271,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         if intermediates:
             return {"post_norm": post_norm,
-                    # "gate": gate,
-                    # "up": up,
                     "pre_down": y,
-                    # "down": down,
                     "hidden_states": hidden_states}
         else:
             return hidden_states

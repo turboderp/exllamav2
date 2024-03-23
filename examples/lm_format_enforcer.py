@@ -28,17 +28,12 @@ import time, json
 # Initialize model and cache
 
 model_directory = "/mnt/str/models/llama2-13b-exl2/4.0bpw/"
-
-config = ExLlamaV2Config()
-config.model_dir = model_directory
-config.prepare()
-
-model = ExLlamaV2(config)
 print("Loading model: " + model_directory)
 
+config = ExLlamaV2Config(model_directory)
+model = ExLlamaV2(config)
 cache = ExLlamaV2Cache(model, lazy = True)
 model.load_autosplit(cache)
-
 tokenizer = ExLlamaV2Tokenizer(config)
 
 # Initialize generator

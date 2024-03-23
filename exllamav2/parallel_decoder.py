@@ -1,32 +1,36 @@
+from __future__ import annotations
 import torch
 import torch.nn.functional as F
-from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.attn import ExLlamaV2Attention
+from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
+from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-from exllamav2 import ext
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from exllamav2.model import ExLlamaV2
 
 class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
 
+    name: str = "ParallelDecoder"
+
     layer_idx: int
-    input_layernorm: ExLlamaV2RMSNorm or ExLlamaV2LayerNorm or None
+    input_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
 
     attn: ExLlamaV2Attention
     mlp: ExLlamaV2MLP
 
-    name: str = "ParallelDecoder"
-    submodules: list
-
-    def __init__(self, model, key, layer_idx):
+    def __init__(self,
+                 model: ExLlamaV2,
+                 key: str,
+                 layer_idx: int):
         super().__init__(model, key)
 
         self.layer_idx = layer_idx
-
-        hidden_size = self.model.config.hidden_size
-        intermediate_size = self.model.config.intermediate_size
 
         if self.model.config.arch.norm == "layernorm":
             self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
@@ -39,7 +43,7 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         self.submodules = self.attn.submodules + self.mlp.submodules
 
 
-    def numel(self):
+    def numel(self) -> int:
 
         return self.attn.numel() + \
                self.mlp.numel()
@@ -59,7 +63,7 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         self.mlp.unload()
 
 
-    def weight_footprint(self):
+    def weight_footprint(self) -> int:
 
         return \
             self.input_layernorm.weight_footprint() + \
@@ -67,18 +71,17 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
             self.mlp.weight_footprint()
 
 
-    def scratch_space_fixed(self):
+    def scratch_space_fixed(self) -> int:
 
         return max(self.attn.scratch_space_fixed(), self.mlp.scratch_space_fixed())
 
 
-    def scratch_space(self):
+    def scratch_space(self) -> int:
 
         return max(self.attn.scratch_space(), self.mlp.scratch_space())
 
 
-
-    def set_device_idx(self, idx):
+    def set_device_idx(self, idx: int):
         super().set_device_idx(idx)
 
         self.input_layernorm.set_device_idx(idx)
@@ -86,7 +89,13 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         self.mlp.set_device_idx(idx)
 
 
-    def forward(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None):
+    def forward(self,
+                hidden_states: torch.Tensor,
+                cache: ExLlamaV2CacheBase | None = None,
+                attn_params: ExLlamaV2Attention.Params | None = None,
+                past_len: int | None = None,
+                intermediates: bool = False,
+                loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         if intermediates:
             return self.forward_interm(hidden_states, cache, attn_params, past_len, intermediates, loras)
@@ -100,7 +109,13 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_interm(self, hidden_states, cache = None, attn_params = None, past_len = None, intermediates = False, loras = None, position_offsets = None):
+    def forward_interm(self,
+                       hidden_states: torch.Tensor,
+                       cache: ExLlamaV2CacheBase | None = None,
+                       attn_params: ExLlamaV2Attention.Params | None = None,
+                       past_len: int | None = None,
+                       intermediates: bool = False,
+                       loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
 
         a = self.input_layernorm.forward(hidden_states)
         b = a.clone()
@@ -127,11 +142,11 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         self.mlp.update_loras()
 
 
-    def is_quant(self):
+    def is_quant(self) -> bool:
         return self.attn.is_quant() and self.mlp.is_quant()
 
 
-    def rank_reduce(self, k):
+    def rank_reduce(self, k: float):
 
         self.attn.rank_reduce(k)
         self.mlp.rank_reduce(k)
