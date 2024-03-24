@@ -564,7 +564,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Multiple caches
 
-        else:
+        elif isinstance(cache, list):
 
             assert attn_params.multi_cache
             attn_masks = attn_params.get_attn_masks(hidden_states.device)
