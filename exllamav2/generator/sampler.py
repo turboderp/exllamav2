@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from exllamav2 import ExLlamaV2Tokenizer
 from exllamav2.generator.filters import ExLlamaV2Filter
+from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from copy import copy
 
@@ -43,6 +44,7 @@ class ExLlamaV2Sampler:
         cfg_scale: float | None = None
 
         filters: list[ExLlamaV2Filter] = field(default_factory = list)
+        post_sampling_hooks: list[ExLlamaV2PostSamplingHook] = field(default_factory = list)
         filter_prefer_eos = False
 
 

@@ -16,6 +16,7 @@ from exllamav2.generator.ngram import NgramCache
 import torch
 import random
 import threading
+from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook, ExLlamaV2PostSamplingResult
 
 class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
@@ -715,7 +716,25 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         else:
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
 
-        gen_settings.feed_filters(token)
+        # Post sampling hook
+
+        if gen_settings.post_sampling_hooks:
+            p = ExLlamaV2PostSamplingResult(
+                sampled_token = token,
+                sampled_prob = prob,
+                logits = logits,
+                candidate_tokens = None if ptokens.is_meta else ptokens,
+                candidate_probs = None if pprobs.is_meta else pprobs
+            )
+            for h in gen_settings.post_sampling_hooks:
+                h(p)
+            token = p.sampled_token
+            if p.feed_filters:
+                gen_settings.feed_filters(token)
+
+        else:
+            gen_settings.feed_filters(token)
+
         return token, ptokens, pprobs, prob, eos, logits.flatten(1)
 
 

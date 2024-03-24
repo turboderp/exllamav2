@@ -12,6 +12,7 @@ from exllamav2.generator import (
 import torch
 import random
 import threading
+from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook, ExLlamaV2PostSamplingResult
 
 class ExLlamaV2BaseGenerator:
 
@@ -178,7 +179,7 @@ class ExLlamaV2BaseGenerator:
                                         input_mask = mask,
                                         loras = loras,
                                         position_offsets = position_offsets).float().cpu()
-            token, _, _, _, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
+            token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
 
             if stop_token is not None:
                 for b in range(batch_size):
@@ -188,8 +189,26 @@ class ExLlamaV2BaseGenerator:
                     if batch_eos[b]:
                         token[b, 0] = self.tokenizer.pad_token_id
 
+            # Post sampling hook
+
+            if gen_settings.post_sampling_hooks:
+                p = ExLlamaV2PostSamplingResult(
+                    sampled_token = token,
+                    sampled_prob = prob,
+                    logits = logits,
+                    candidate_tokens = None if ptokens.is_meta else ptokens,
+                    candidate_probs = None if pprobs.is_meta else pprobs
+                )
+                for h in gen_settings.post_sampling_hooks:
+                    h(p)
+                token = p.sampled_token
+                if p.feed_filters:
+                    gen_settings.feed_filters(token)
+
+            else:
+                gen_settings.feed_filters(token)
+
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
-            gen_settings.feed_filters(token)
 
             unhealed_token = None
             if eos: break
