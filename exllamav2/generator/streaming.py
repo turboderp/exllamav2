@@ -711,11 +711,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             token, ptokens, pprobs, prob, eos, logits = \
                 self._gen_single_token_speculative(gen_settings, prefix_token)
 
-        if self.sequence_ids.shape[0] > 1 and token.shape[0] == 1:
-            self.sequence_ids = torch.cat([self.sequence_ids, token.repeat(self.sequence_ids.shape[0], 1)], dim = 1)
-        else:
-            self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
-
         # Post sampling hook
 
         if gen_settings.post_sampling_hooks:
@@ -735,6 +730,13 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         else:
             gen_settings.feed_filters(token)
 
+        # Accept token
+        
+        if self.sequence_ids.shape[0] > 1 and token.shape[0] == 1:
+            self.sequence_ids = torch.cat([self.sequence_ids, token.repeat(self.sequence_ids.shape[0], 1)], dim = 1)
+        else:
+            self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
+        
         return token, ptokens, pprobs, prob, eos, logits.flatten(1)
 
 
