@@ -167,9 +167,7 @@ void apply_rep_penalty_cpu
     profile_stop();
 }
 
-#ifdef USE_AVX2
-
-void softmax_cpu
+void softmax_cpu_avx2
 (
     const int vocab_size,
     const float temperature,
@@ -283,9 +281,7 @@ void softmax_cpu
 //    printf("sum: %f\n\n", summ);
 }
 
-#else
-
-void softmax_cpu
+void softmax_cpu_nonavx2
 (
     const int vocab_size,
     const float temperature,
@@ -344,7 +340,23 @@ void softmax_cpu
 //    printf("sum: %f\n\n", summ);
 }
 
+void softmax_cpu
+(
+    const int vocab_size,
+    const float temperature,
+    const float* logits,
+    const bool* logits_filter,
+    const float exponent,
+    float* output
+)
+{
+#ifdef USE_AVX2
+    if (is_avx2_supported())
+        return softmax_cpu_avx2(vocab_size, temperature, logits, logits_filter, exponent, output);
 #endif
+
+    return softmax_cpu_nonavx2(vocab_size, temperature, logits, logits_filter, exponent, output);
+}
 
 int post_softmax_temperature
 (
