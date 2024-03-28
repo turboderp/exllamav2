@@ -183,6 +183,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         super().__init__(model, key)
 
+        cfg = self.model.config
+
         self.layer_idx = layer_idx
         self.has_norm = has_norm
         self.has_residual = has_residual
@@ -190,20 +192,26 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         self.q_handle = None
         self.temp_lora_size = 0
 
-        hidden_size = self.model.config.hidden_size
+        hidden_size = cfg.hidden_size
 
         if self.has_norm:
-            if self.model.config.arch.norm == "layernorm":
-                self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
-            elif self.model.config.arch.norm == "rmsnorm":
-                self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_1)
+            if cfg.arch.norm == "layernorm":
+                self.input_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1)
+            elif cfg.arch.norm == "rmsnorm":
+                self.input_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1)
         else:
             self.input_layernorm = None
 
-        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, self.model.config.num_attention_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
-        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
-        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, self.model.config.num_key_value_heads * self.model.config.head_dim, self.model.config.arch.attention_bias_qkv)
-        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", self.model.config.num_attention_heads * self.model.config.head_dim, hidden_size, self.model.config.arch.attention_bias_o)
+        f_a = 0
+        f_b = cfg.num_attention_heads * cfg.head_dim
+        f_c = f_b + cfg.num_key_value_heads * cfg.head_dim
+        f_d = f_c + cfg.num_key_value_heads * cfg.head_dim
+        f_key = (key + ".self_attn." + cfg.arch.fused_qkv_key) if cfg.arch.fused_qkv_key else None
+
+        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b)
+        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c)
+        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d)
+        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, cfg.arch.attention_bias_o)
 
         self.submodules = [self.q_proj,
                            self.k_proj,

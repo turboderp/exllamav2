@@ -181,7 +181,7 @@ class ExLlamaV2Config:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
         for st_file in self.tensor_files:
-            f = STFile.open(st_file, fast = self.fasttensors)
+            f = STFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
             for key in f.get_dict():
                 self.tensor_file_map[key] = st_file
 

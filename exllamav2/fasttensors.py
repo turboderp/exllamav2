@@ -23,6 +23,8 @@ def convert_dtype(dt: str):
 
 global_stfiles = []
 global_cm = {}
+global_tensorcache = []
+num_cached_tensors = 4
 
 def cleanup_stfiles():
     global global_stfiles, global_cm
@@ -47,17 +49,33 @@ class STFile:
     handle: int
     fast: bool
     st_context = None
+    tensor_remap: dict | None
 
     def __init__(self,
                  filename: str,
-                 fast: bool = True):
+                 fast: bool = True,
+                 keymap: list[tuple[str, str]] = None):
+
         global global_stfiles
 
         self.metadata = None
         self.handle = 0
         self.filename = filename
+        self.st_context = None
+        self.tensor_remap = None
 
         self.read_dict()
+
+        if keymap:
+            self.tensor_remap = {}
+            nheader = {}
+            for key in self.header.keys():
+                nkey = key
+                for z in keymap:
+                    nkey = nkey.replace(z[0], z[1])
+                nheader[nkey] = self.header[key]
+                self.tensor_remap[nkey] = key
+            self.header = nheader
 
         if fast and os.name == "nt":
             print(" !! Warning, fasttensors disabled on Windows")
@@ -72,7 +90,8 @@ class STFile:
 
     @staticmethod
     def open(filename,
-             fast = True) -> STFile:
+             fast = True,
+             keymap: list[tuple[str, str]] = None) -> STFile:
         """
         Open safetensors file, scan header and retain handle.
 
@@ -82,6 +101,9 @@ class STFile:
         :param fast:
             Use fast (direct I/O) codepath
 
+        :param keymap:
+            List of (a, b) tuples for string replacements in key index
+
         :return:
             STFile object
         """
@@ -89,7 +111,7 @@ class STFile:
         global global_stfiles
         for f in global_stfiles:
             if f.filename == filename: return f
-        return STFile(filename, fast)
+        return STFile(filename, fast, keymap)
 
 
     def close(self):
@@ -149,21 +171,57 @@ class STFile:
     def get_tensor(self,
                    key: str,
                    device,
-                   not_fast: bool = False) -> torch.Tensor:
+                   not_fast: bool = False,
+                   cached: bool = False,
+                   out_dtype = None) -> torch.Tensor:
+        global global_tensorcache
+
+        if self.tensor_remap:
+            key = self.tensor_remap[key]
+
+        if cached:
+            cachekey = self.filename + "::" + key + "::" + device
+            for (k, v) in global_tensorcache:
+                if k == cachekey: return v
 
         if not_fast or not self.fast:
-            f = self.get_cm(device)
+            # h = self.header[key]
+            # dtype, esize = convert_dtype(h["dtype"])
+            # beg, end = h["data_offsets"]
+            # size = end - beg
+            # numel = size // esize
+            # shape = h["shape"]
+            # with open(self.filename, "rb") as f:
+            #     f.seek(beg)
+            #     buffer = bytearray(f.read(size))
+            #     tensor = torch.frombuffer(buffer, dtype = dtype, count = numel)
+            #     tensor = tensor.reshape(shape)
+            #     tensor = tensor.contiguous()
+            #     tensor = tensor.to(device)
+
             # with safe_open(self.filename, framework = "pt", device = device) as f:
-            return f.get_tensor(key)
+            f = self.get_cm(device)
+            tensor = f.get_tensor(key)
 
-        v = self.header[key]
-        dtt, dts = convert_dtype(v["dtype"])
-        sh = v["shape"]
-        data_offsets = v["data_offsets"]
-        offset = data_offsets[0] + self.header_size
-        length = data_offsets[1] - data_offsets[0]
-        assert np.prod(sh) * dts == length, f"Tensor shape doesn't match storage size: {key}"
+        else:
 
-        tensor = torch.empty(sh, device = device, dtype = dtt)
-        ext_c.safetensors_load(self.handle, tensor, offset, length)
+            v = self.header[key]
+            dtt, dts = convert_dtype(v["dtype"])
+            sh = v["shape"]
+            data_offsets = v["data_offsets"]
+            offset = data_offsets[0] + self.header_size
+            length = data_offsets[1] - data_offsets[0]
+            assert np.prod(sh) * dts == length, f"Tensor shape doesn't match storage size: {key}"
+
+            tensor = torch.empty(sh, device = device, dtype = dtt)
+            ext_c.safetensors_load(self.handle, tensor, offset, length)
+
+        if out_dtype:
+            tensor = tensor.to(out_dtype)
+
+        if cached:
+            if len(global_tensorcache) >= num_cached_tensors:
+                global_tensorcache = global_tensorcache[1:]
+            global_tensorcache.append((cachekey, tensor))
+
         return tensor

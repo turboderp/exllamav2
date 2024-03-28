@@ -35,29 +35,50 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                  layer_idx: int):
         super().__init__(model, key)
 
+        cfg = self.model.config
+
         self.layer_idx = layer_idx
 
         self.q_handle = None
         self.temp_lora_size = 0
 
-        hidden_size = self.model.config.hidden_size
-        intermediate_size = self.model.config.intermediate_size
-        self.num_experts = self.model.config.num_experts
-        self.num_experts_per_token = self.model.config.num_experts_per_token
+        hidden_size = cfg.hidden_size
+        intermediate_size = cfg.intermediate_size
+        self.num_experts = cfg.num_experts
+        self.num_experts_per_token = cfg.num_experts_per_token
 
-        if self.model.config.arch.norm == "layernorm":
+        if cfg.arch.norm == "layernorm":
             self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_2)
-        elif self.model.config.arch.norm == "rmsnorm":
+        elif cfg.arch.norm == "rmsnorm":
             self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_2)
 
-        w1_key = self.model.config.arch.mlp_key_gate
-        w2_key = self.model.config.arch.mlp_key_down
-        w3_key = self.model.config.arch.mlp_key_up
-        gate_key = self.model.config.arch.mlp_key_expert_gate
+        w1_key = key + cfg.arch.mlp_key_gate
+        w2_key = key + cfg.arch.mlp_key_down
+        w3_key = key + cfg.arch.mlp_key_up
+        w1_f_key = w1_key.replace(".*.", ".")
+        w2_f_key = w2_key.replace(".*.", ".")
+        w3_f_key = w3_key.replace(".*.", ".")
 
-        self.w1 = [ExLlamaV2Linear(model, key + w1_key.replace("*", str(e)), hidden_size, intermediate_size, self.model.config.arch.mlp_bias) for e in range(self.num_experts)]
-        self.w2 = [ExLlamaV2Linear(model, key + w2_key.replace("*", str(e)), intermediate_size, hidden_size, self.model.config.arch.mlp_bias) for e in range(self.num_experts)]
-        self.w3 = [ExLlamaV2Linear(model, key + w3_key.replace("*", str(e)), hidden_size, intermediate_size, self.model.config.arch.mlp_bias) for e in range(self.num_experts)]
+        gate_key = cfg.arch.mlp_key_expert_gate
+
+        self.w1 = []
+        self.w2 = []
+        self.w3 = []
+
+        bu = 0
+        # bd = 0
+        for e in range(self.num_experts):
+            au = bu
+            # ad = bd
+            bu += intermediate_size
+            # bd += hidden_size
+            w1 = ExLlamaV2Linear(model, w1_key.replace("*", str(e)), hidden_size, intermediate_size, cfg.arch.mlp_bias, f_key = w1_f_key, f_beg = au, f_end = bu)
+            w2 = ExLlamaV2Linear(model, w2_key.replace("*", str(e)), intermediate_size, hidden_size, cfg.arch.mlp_bias, f_key = w2_f_key, f_beg = au, f_end = bu)
+            w3 = ExLlamaV2Linear(model, w3_key.replace("*", str(e)), hidden_size, intermediate_size, cfg.arch.mlp_bias, f_key = w3_f_key, f_beg = au, f_end = bu)
+            self.w1.append(w1)
+            self.w2.append(w2)
+            self.w3.append(w3)
+
         self.gate = ExLlamaV2Linear(model, key + gate_key, hidden_size, self.num_experts, False, pad32 = False)
 
         self.submodules = [self.post_attention_layernorm,
@@ -65,6 +86,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                            self.w1 + \
                            self.w2 + \
                            self.w3
+
 
     def numel(self) -> int:
 

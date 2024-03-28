@@ -67,6 +67,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Mixtral
 
@@ -99,6 +101,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Yi
 
@@ -129,6 +133,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Orion
 
@@ -159,6 +165,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Qwen2 (1.5)
 
@@ -189,6 +197,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Gemma
 
@@ -219,6 +229,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = True
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # StarCoder2
 
@@ -248,6 +260,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # GemMoE
 
@@ -281,6 +295,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = True
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Cohere
 
@@ -311,6 +327,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = True
             self.requires_bos = True
             self.rope_neox_style = False
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Llama (default + fallback)
 
@@ -344,6 +362,8 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = None
 
         # Arch overrides
 
@@ -358,3 +378,5 @@ class ExLlamaV2ArchParams:
         self.layer_keys += layer_keys_llama_mlp_swiglu
         self.fused_mlp_key_12 = layer_keys_llama_mlp_swiglu[0][0]
         self.fused_mlp_key_3 = layer_keys_llama_mlp_swiglu[1][0]
+
+

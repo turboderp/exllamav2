@@ -34,6 +34,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     lora_a_tensors: dict
     lora_b_tensors: dict
 
+    f_key: str | None
+    f_beg: int | None
+    f_end: int | None
+
     def __init__(self,
                  model: ExLlamaV2,
                  key: str,
@@ -42,7 +46,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                  has_bias: bool,
                  pad32: bool = True,
                  max_out_len: int | None = None,
-                 prescale: float = 1):
+                 prescale: float = 1,
+                 f_key: str = None,
+                 f_beg: int = None,
+                 f_end: int = None):
         super().__init__(model, key)
 
         if pad32:
@@ -69,10 +76,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.lora_a_tensors = {}
         self.lora_b_tensors = {}
 
+        self.f_key = f_key
+        self.f_beg = f_beg
+        self.f_end = f_end
+
+        self.assumed_footprint = in_features * (out_features + self.padding) * 2 + 128
+
 
     def load(self,
              w: dict | nn.Parameter | tuple | None = None):
 
+        if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features)
         if w is None: w = self.load_weight()
 
         # Load quantized linear layer from dictionary
