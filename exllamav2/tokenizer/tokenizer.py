@@ -492,6 +492,7 @@ class ExLlamaV2Tokenizer:
         self.id_to_ord = []
         for idx in range(self.tokenizer_model.vocab_size()):
             p = self.tokenizer_model.id_to_piece(idx)
+            if not p: p = ""
             self.id_to_ord.append(self.tokenizer_model.piece_to_ord(p))
 
         i = self.tokenizer_model.vocab_size()
