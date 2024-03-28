@@ -37,13 +37,13 @@ class ExLlamaV2Config:
     pad_token_id: int
 
     hidden_size: int
-    initializer_range: int
+    initializer_range: float
     intermediate_size: int
     num_attention_heads: int
     num_key_value_heads: int
     num_key_value_groups: int
     num_hidden_layers: int
-    norm_eps: float
+    norm_eps: float | None
     vocab_size: int
     rotary_embedding_base: float
     head_dim: int
