@@ -5,6 +5,7 @@ from typing import Union, Tuple
 from exllamav2 import (
     ExLlamaV2,
     ExLlamaV2Cache,
+    ExLlamaV2CacheBase,
     ExLlamaV2Tokenizer,
     ExLlamaV2Lora
 )
@@ -60,7 +61,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     # Draft model
 
     draft_model: ExLlamaV2 | None
-    draft_cache: ExLlamaV2Cache | None
+    draft_cache: ExLlamaV2CacheBase | None
     num_speculative_tokens: int
     speculative_prob_threshold: float
 

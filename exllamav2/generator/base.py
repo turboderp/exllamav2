@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from exllamav2 import (
     ExLlamaV2,
-    ExLlamaV2Cache,
+    ExLlamaV2CacheBase,
     ExLlamaV2Tokenizer,
     ExLlamaV2Lora,
 )
@@ -19,7 +19,7 @@ class ExLlamaV2BaseGenerator:
     # Internal state
 
     model: ExLlamaV2
-    cache: ExLlamaV2Cache
+    cache: ExLlamaV2CacheBase
     tokenizer: ExLlamaV2Tokenizer
 
     sequence_ids: torch.Tensor | None
@@ -29,7 +29,7 @@ class ExLlamaV2BaseGenerator:
 
     def __init__(self,
                  model: ExLlamaV2,
-                 cache: ExLlamaV2Cache,
+                 cache: ExLlamaV2CacheBase,
                  tokenizer: ExLlamaV2Tokenizer):
 
         self.model = model
