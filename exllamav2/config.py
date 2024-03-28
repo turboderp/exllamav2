@@ -3,6 +3,43 @@ import torch
 from exllamav2.fasttensors import STFile
 from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
+from typing import Any, Dict, List, TypeVar, Union, cast
+
+
+T = TypeVar('T')
+no_default = object()
+
+def read(input_dict: dict[str, Any], expected_type: type, keys: str | list[str], default = no_default) -> T:
+
+    if isinstance(keys, str): keys = [keys]
+
+    for key in keys:
+
+        key_split = key.split("->")
+        for subk in key_split[:-1]:
+            input_dict = input_dict.get(subk, None)
+            if not input_dict:
+                key = None
+                break
+        if key is None: continue
+        key = key_split[-1]
+
+        x = input_dict.get(key, None)
+        if x is not None:
+
+            if expected_type == float and isinstance(x, int):
+                x = float(x)
+            if expected_type == int and isinstance(x, float) and x == int(x):
+                x = int(x)
+
+            if isinstance(x, expected_type):
+                return cast(T, x)
+            else:
+                raise TypeError(f"Value for {key} is not of expected type {expected_type}")
+
+    if default != no_default: return default
+    raise ValueError(f"Missing any of the following keys: {keys}")
+
 
 class ExLlamaV2Config:
 
@@ -111,55 +148,53 @@ class ExLlamaV2Config:
 
         # Vocab params
 
-        self.bos_token_id = read_config.get("bos_token_id", 1)
-        self.eos_token_id = read_config.get("eos_token_id", 2)
-        self.pad_token_id = read_config.get("pad_token_id", 0)
-        self.vocab_size = read_config["vocab_size"]
+        self.bos_token_id = read(read_config, int, "bos_token_id", 1)
+        self.eos_token_id = read(read_config, int, "eos_token_id", 2)
+        self.pad_token_id = read(read_config, int, "pad_token_id", 0)
+        self.vocab_size = read(read_config, int, "vocab_size")
 
         # Standard params
 
-        self.initializer_range = read_config["initializer_range"]
-        self.num_hidden_layers = read_config["num_hidden_layers"]
+        self.initializer_range = read(read_config, float, ["initializer_range"])
+        self.num_hidden_layers = read(read_config, int, ["num_hidden_layers", "n_layers"])
 
         # Norm params
 
-        self.norm_eps = read_config[self.arch.norm_eps_key]
+        if self.arch.norm_eps_key:
+            self.norm_eps = read(read_config, float, self.arch.norm_eps_key)
+        else:
+            self.norm_eps = 1e-5  # Torch default
 
         # Model dimensions
 
-        self.hidden_size = read_config["hidden_size"]
+        self.hidden_size = read(read_config, int, ["hidden_size", "d_model"])
 
         # Attn params
 
-        self.num_attention_heads = read_config["num_attention_heads"]
-        self.head_dim = read_config.get("head_dim", self.hidden_size // self.num_attention_heads)
+        self.num_attention_heads = read(read_config, int, ["num_attention_heads", "n_heads"])
+        self.head_dim = read(read_config, int, "head_dim", self.hidden_size // self.num_attention_heads)
 
-        if "num_key_value_heads" in read_config:
-            self.num_key_value_heads = read_config["num_key_value_heads"]
-            self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
-        else:
-            self.num_key_value_heads = self.num_attention_heads
-            self.num_key_value_groups = 1
+        self.num_key_value_heads = read(read_config, int, ["num_key_value_heads", "attn_config->kv_n_heads"], self.num_attention_heads)
+        self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
+
 
         # MLP params
 
-        self.intermediate_size = read_config["intermediate_size"]
-        self.num_experts = read_config.get("num_local_experts", None)
-        self.num_experts_per_token = read_config.get("num_experts_per_tok", None)
+        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size"])
+        self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
+        self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
         # Logit scale
 
-        self.logit_scale = read_config.get("logit_scale", 1)
+        self.logit_scale = read(read_config, float, "logit_scale", 1)
 
         # Positional embeddings
 
-        self.rotary_embedding_base = read_config.get("rope_theta", 10000.0)
+        self.rotary_embedding_base = read(read_config, float, ["rope_theta", "attn_config->rope_theta"], 10000.0)
 
-        self.max_seq_len = read_config.get("max_sequence_length",
-                           read_config.get("max_position_embeddings",
-                           2048))
+        self.max_seq_len = read(read_config, int,["max_sequence_length", "max_position_embeddings", "max_seq_len"],2048)
 
-        rs = read_config.get("rope_scaling", None)
+        rs = read(read_config, dict, "rope_scaling", None)
         if rs and "factor" in rs:
             factor = rs["factor"]
             scaling_type = rs.get("type", None)
