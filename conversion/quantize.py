@@ -359,7 +359,7 @@ def quant(job, save_fn, model):
             if mode == "block_sparse_moe":
                 for j in range(model.config.num_experts):
                     if f"pre_down.{j}" in outputs:
-                        if i == 0: quantizers[f"w1.{j}"].add_batch(outputs["post_norm"])
+                        if j == 0: quantizers[f"w1.{j}"].add_batch(outputs["post_norm"])
                         quantizers[f"w2.{j}"].add_batch(outputs[f"pre_down.{j}"])
                         if outputs[f"pre_down.{j}"].shape[0] < outputs["post_norm"].shape[0] / 10:
                             uncalibrated_experts[j] += 1
