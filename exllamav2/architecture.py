@@ -13,6 +13,10 @@ layer_keys_llama_attn = [["self_attn.q_proj"],
 layer_keys_llama_mlp = [["mlp.down_proj"],
                         ["mlp.gate_proj"],
                         ["mlp.up_proj"]]
+layer_keys_mixtral_mlp = [["block_sparse_moe.experts.*.w1"],
+                          ["block_sparse_moe.experts.*.w2"],
+                          ["block_sparse_moe.experts.*.w3"],
+                          ["block_sparse_moe.gate"]]
 layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
                                ["mlp.swiglu.w3"]]
 layer_keys_starcoder2_mlp = [["mlp.c_fc"],
@@ -77,8 +81,7 @@ class ExLlamaV2ArchParams:
             self.layer_keys += \
                 layer_keys_llama_norms + \
                 layer_keys_llama_attn + \
-                [[f"block_sparse_moe.experts.{e}.w{w}" for e in range(8) for w in range(3)]] + \
-                [["block_sparse_moe.gate"]]
+                layer_keys_mixtral_mlp
             self.expect_keys += \
                 expect_keys_llama
             self.norm_eps_key = "rms_norm_eps"
@@ -271,8 +274,7 @@ class ExLlamaV2ArchParams:
             self.layer_keys += \
                 layer_keys_llama_norms + \
                 layer_keys_llama_attn + \
-                [[f"block_sparse_moe.experts.{e}.w{w}" for e in range(8) for w in range(3)]] + \
-                [["block_sparse_moe.gate"]]
+                layer_keys_mixtral_mlp
             self.expect_keys += \
                 expect_keys_gemma
             self.norm_eps_key = "rms_norm_eps"

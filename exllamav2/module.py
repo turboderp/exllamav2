@@ -78,7 +78,7 @@ class ExLlamaV2Module:
             submap_i[v].append(k)
 
         for v, ks in submap_i.items():
-            stfile = STFile.open(v, fast = self.model.config.fasttensors)
+            stfile = STFile.open(v, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
             for k in ks:
                 if measure:
                     size += stfile.measure(key + "." + k)
@@ -146,7 +146,7 @@ class ExLlamaV2Module:
             filename = self.model.config.tensor_file_map.get(key)
             if not filename: continue
 
-            stfile = STFile.open(filename, fast = self.model.config.fasttensors)
+            stfile = STFile.open(filename, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
             # tensor = stfile.get_tensor(key, device = self.device()).half()
             tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
             tensor = tensor[f_beg:f_end, :]

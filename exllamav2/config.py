@@ -233,15 +233,34 @@ class ExLlamaV2Config:
 
         expect_keys = self.arch.expect_keys.copy()
 
+        if not self.num_experts or self.num_experts == 1:
+            per_layer_keys = self.arch.layer_keys
+        else:
+            per_layer_keys = set()
+            for expert_idx in range(self.num_experts):
+                for k in self.arch.layer_keys:
+                    skt = [sk.replace(".*.", f".{expert_idx}.") for sk in k]
+                    per_layer_keys.add(tuple(skt))
+            per_layer_keys = list(per_layer_keys)
+
         for layer_idx in range(self.num_hidden_layers):
-            for ks in self.arch.layer_keys:
+            for ks in per_layer_keys:
                 prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
                 expect_keys.append(prefixes)
 
+        all_keys = set(self.tensor_file_map.keys())
+        suffixes = [".q_weight", ".qweight", ".weight", ""]
+
         for prefixes in expect_keys:
+            match = False
             for prefix in prefixes:
-                if any(key.startswith(prefix) for key in self.tensor_file_map):
-                    break
-            else:
+                for suffix in suffixes:
+                    if (prefix + suffix) in all_keys:
+                        match = True
+                        break
+                    if match: break
+                if match: break
+            if not match:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
+        x = 0
