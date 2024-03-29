@@ -385,7 +385,7 @@ def quant(job, save_fn, model):
             for j in range(model.config.num_experts):
                 ue = uncalibrated_experts[j]
                 if ue > len(hidden_states) * 0.20:
-                    print(f" !! Warning: w2.{j} has less than 20% calibration for {ue}/{len(hidden_states)} rows")
+                    print(f" !! Warning: w2.{j} has less than 10% calibration for {ue}/{len(hidden_states)} rows")
 
         # Conversion
 

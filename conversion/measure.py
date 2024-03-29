@@ -521,7 +521,7 @@ def measure_quant(job, save_fn, model):
         if mode == "block_sparse_moe":
             for j in range(model.config.num_experts):
                 ue = uncalibrated_experts[j]
-                if ue > 0:
+                if ue > len(hidden_states) * 0.20:
                     print(f" !! Warning: w2.{j} has less than 10% calibration for {ue}/{len(hidden_states)} rows")
 
         # Measurement
