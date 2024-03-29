@@ -204,8 +204,11 @@ class AdaptiveGPTQ:
         with torch.inference_mode():
 
             self.hessian /= self.num_batches
-
             diagonal = torch.diag(self.hessian)
+
+            # Prepare weights
+
+            self.weights = self.layer.weight.data.T.clone().float().contiguous().cpu()
 
             # Zero weights that have no impact. Disabling this since it feels a little drastic based on just the calibration
             # data. It likely never triggers, anyway.
@@ -219,12 +222,12 @@ class AdaptiveGPTQ:
             self.perm = torch.argsort(diagonal, descending = True)
             self.perm_cpu = self.perm.cpu()
 
-            if self.weights.numel() > 1e9:
-                self.weights = self.weights.to("cpu")
-                self.weights = self.weights[self.perm_cpu, :]
-                self.weights = self.weights.to("cuda:0")
-            else:
-                self.weights = self.weights[self.perm, :]
+            # if self.weights.numel() > 1e9:
+            #     self.weights = self.weights.to("cpu")
+            #     self.weights = self.weights[self.perm_cpu, :]
+            #     self.weights = self.weights.to("cuda:0")
+            # else:
+            self.weights = self.weights[self.perm_cpu, :]
 
             hessian = self.hessian[self.perm][:, self.perm]
             self.hessian = None
@@ -299,25 +302,34 @@ class AdaptiveGPTQ:
                     if attempts == 10:
                         raise ValueError("Hessian is not invertible")
 
-            self.hessian_inv = None if no_h_inv else hessian_inv
+            # Swap H to system RAM
+
+            self.hessian_inv = None if no_h_inv else hessian_inv.cpu()
             self.hessian = None
+
 
     def reuse_h(self, other):
 
         with torch.inference_mode():
 
+            # Prepare weights
+
+            self.weights = self.layer.weight.data.T.clone().float().contiguous().cpu()
+
             self.hessian_inv = other.hessian_inv
             self.hessian = None
             self.perm = other.perm
             self.perm_cpu = other.perm_cpu
-            self.weights = self.weights[self.perm, :]
+            self.weights = self.weights[self.perm_cpu, :]
+
 
     def quantize_rtn_inplace(self, keep_qweight = False, apply = False):
         assert apply and keep_qweight
 
         with torch.inference_mode():
 
-            self.qweight = torch.zeros_like(self.weights, dtype = torch.short)
+            weights = self.weights.to("cuda:0")
+            self.qweight = torch.zeros_like(self.weights, dtype = torch.short, device = "cuda:0")
 
             num_groups = 0
             for bits_idx in range(len(self.bits)):
@@ -325,7 +337,7 @@ class AdaptiveGPTQ:
 
             scale = []
             qscale = []
-            qscale_max = torch.empty((num_groups,), dtype = torch.float, device = self.weights.device)
+            qscale_max = torch.empty((num_groups,), dtype = torch.float, device = "cuda:0")
             qgroups = []
 
             group_idx = 0
@@ -377,13 +389,13 @@ class AdaptiveGPTQ:
             qgroups = None
             group_idx_list = None
 
-            qc = self.weights.cpu()
+            qc = weights.cpu()
             qc = qc.to(torch.half)
             invperm = self.invperm.cpu()
             q = qc[invperm, :].T
             q = q.reshape(self.weights.T.shape)
 
-            dev = self.weights.device
+            dev = weights.device
             self.weights = None
             gc.collect()
             torch.cuda.empty_cache()
@@ -397,13 +409,16 @@ class AdaptiveGPTQ:
 
         with torch.inference_mode():
 
-            if apply:
-                weights = self.weights
-                self.layer.weight.data = torch.zeros((1, 1), dtype = torch.float32, device = weights.device)
-            else:
-                weights = self.weights.clone()
+            hessian_inv_cuda = self.hessian_inv.to("cuda:0")
 
-            self.quant = torch.zeros_like(self.weights)
+            # if apply:
+            #     weights = self.weights
+            #     self.layer.weight.data = torch.zeros((1, 1), dtype = torch.float32, device = weights.device)
+            # else:
+            #     weights = self.weights.clone()
+            weights = self.weights.to("cuda:0")
+
+            self.quant = torch.zeros_like(self.weights, device = "cuda:0")
 
             if keep_qweight:
                 self.qweight = torch.zeros_like(weights, dtype = torch.short)
@@ -416,7 +431,7 @@ class AdaptiveGPTQ:
 
             scale = []
             qscale = []
-            qscale_max = torch.empty((num_groups,), dtype = torch.float, device = self.weights.device)
+            qscale_max = torch.empty((num_groups,), dtype = torch.float, device = "cuda:0")
             qgroups = []
 
             error = weights.clone()
@@ -444,7 +459,7 @@ class AdaptiveGPTQ:
                                          self.qweight if keep_qweight else none_tensor,
                                          quantizer.qzero,
                                          quantizer.maxq,
-                                         self.hessian_inv,
+                                         hessian_inv_cuda,
                                          weights,
                                          error,
                                          a,
