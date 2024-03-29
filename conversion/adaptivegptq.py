@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gc
 import torch
 from torch import nn
@@ -75,7 +77,7 @@ class AdaptiveGPTQ:
     layer: nn.Linear
     device: torch.device
 
-    group_size: int
+    group_size: int | dict
     bits: list
     bits_groups: list
     scale_bits: int
@@ -86,21 +88,21 @@ class AdaptiveGPTQ:
     hessian: torch.tensor
     total_groups: int
 
-    perm: torch.tensor = None
-    perm_cpu: torch.tensor = None
-    invperm: torch.tensor = None
+    perm: torch.Tensor | None
+    perm_cpu: torch.Tensor | None
+    invperm: torch.Tensor | None
 
     # g_idx: torch.tensor = None
-    scale: torch.tensor = None
-    qscale: torch.tensor = None
-    qscale_max: torch.tensor = None
-    qweight: torch.tensor = None
-    qgroups: torch.tensor = None
+    scale: torch.Tensor | None
+    qscale: torch.Tensor | None
+    qscale_max: torch.Tensor | None
+    qweight: torch.Tensor | None
+    qgroups: torch.Tensor | None
 
-    quant: torch.tensor = None
-    weights: torch.tensor = None
-    hessian: torch.tensor = None
-    hessian_inv: torch.tensor = None
+    quant: torch.Tensor | None
+    weights: torch.Tensor | None
+    hessian: torch.Tensor | None
+    hessian_inv: torch.Tensor | None
     num_samples: int = 0
     num_batches: int = 0
 
@@ -114,10 +116,21 @@ class AdaptiveGPTQ:
         self.rows = self.layer.weight.data.shape[1]
         self.columns = self.layer.weight.data.shape[0]
 
-        self.weights = self.layer.weight.data.T.clone().float().contiguous()
+        # self.weights = self.layer.weight.data.T.clone().float().contiguous()
+        self.weights = None
         self.hessian = None
         self.num_samples = 0
         self.num_batches = 0
+
+        self.perm = None
+        self.perm_cpu = None
+        self.inv_perm = None
+
+        self.scale = None
+        self.qscale = None
+        self.qscale_max = None
+        self.qweight = None
+        self.qgroups = None
 
 
     def drop_buffers(self):
@@ -169,38 +182,6 @@ class AdaptiveGPTQ:
         assert remaining_rows <= 0
 
         self.total_groups = groups
-
-        # if isinstance(bits, list):
-        #
-        #     self.bits = bits
-        #     g128 = (self.rows + 128 - 1) // 128
-        #     self.bits_groups = [max(round(g128 * p), 1) * 128 // self.group_size for p in bits_prop]
-        #     e = sum(self.bits_groups) - self.total_groups
-        #     self.bits_groups[-1] -= e
-        #
-        # else:
-        #
-        #     self.bits = [bits]
-        #     self.bits_groups = [self.total_groups]
-
-
-    # def num_bits(self, subtract_columns = 0):
-    #
-    #     gi = self.g_idx.numel() * 32
-    #     qs = self.qscale.numel() * self.scale_bits
-    #     qss = self.qscale_max.numel() * 16
-    #
-    #     w = 0
-    #     tr = self.rows
-    #     for g, b in zip(self.bits_groups, self.bits):
-    #
-    #         c = self.columns - subtract_columns
-    #         r = self.group_size * g
-    #         if r > tr: r = tr
-    #         tr -= r
-    #         w += r * c * b
-    #
-    #     return w + gi + qs + qss
 
 
     def add_batch(self, inputs):
