@@ -58,6 +58,7 @@ class ExLlamaV2Tokenizer:
 
     tokenized_str_cache: dict[str: torch.Tensor] | None
     max_cached_strings: int
+    actual_vocab_size: int
 
 
     def __init__(self, config, lazy_init = False, force_json = False):
@@ -124,7 +125,7 @@ class ExLlamaV2Tokenizer:
         added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
         if os.path.exists(added_tokens_path):
             with open(added_tokens_path, encoding = "utf8") as f:
-                self.extended_piece_to_id = json.load(f)
+                self.extended_piece_to_id.update(json.load(f))
 
         # Remove unspecial added tokens that exist in the base tokenizer already, but only if they decode correctly
         # see https://github.com/huggingface/tokenizers/issues/1392
@@ -177,6 +178,12 @@ class ExLlamaV2Tokenizer:
             self.extended_piece_to_id[self.eos_token] = self.eos_token_id
             self.extended_id_to_piece[self.eos_token_id] = self.eos_token
 
+        self.actual_vocab_size = 1 + max(
+            list(self.extended_id_to_piece.keys()) + \
+            list(self.unspecial_id_to_piece.keys()) + \
+            [self.tokenizer_model.vocab_size()]  # max([]) is illegal
+        )
+
         # Useful token IDs
 
         try: self.newline_token_id = self.tokenizer_model.encode(self.newline_token)[-1]
@@ -215,8 +222,7 @@ class ExLlamaV2Tokenizer:
             int: vocab size
         """
 
-        id_to_piece = self.get_id_to_piece_list()
-        return len(id_to_piece)
+        return self.actual_vocab_size
 
 
     # Get single token
@@ -498,9 +504,11 @@ class ExLlamaV2Tokenizer:
         i = self.tokenizer_model.vocab_size()
         while True:
             if i in self.extended_id_to_piece:
-                self.id_to_ord.append(self.tokenizer.piece_to_ord(self.extended_id_to_piece[i]))
+                self.id_to_ord.append(self.tokenizer_model.piece_to_ord(self.extended_id_to_piece[i]))
             elif i in self.unspecial_id_to_piece:
-                self.id_to_ord.append(self.tokenizer.piece_to_ord(self.unspecial_id_to_piece[i]))
+                self.id_to_ord.append(self.tokenizer_model.piece_to_ord(self.unspecial_id_to_piece[i]))
+            elif i < self.actual_vocab_size:
+                self.id_to_ord.append(-1)
             else:
                 break
             i += 1
@@ -515,20 +523,22 @@ class ExLlamaV2Tokenizer:
         if self.id_to_piece is not None: return self.id_to_piece
         id_to_ord = self.get_id_to_ord_list()
 
-        self.id_to_piece = [""] * self.tokenizer.vocab_size()
-        for idx, p in self.tokenizer.enumerate_tokens():
+        self.id_to_piece = [""] * self.tokenizer_model.vocab_size()
+        for idx, p in self.tokenizer_model.enumerate_tokens():
             # if id_to_ord[idx] != -1:
             #     self.id_to_piece[idx] = chr(id_to_ord[idx])
             # else:
             #     self.id_to_piece[idx] = self.tokenizer.clean_special_chars(p)
             self.id_to_piece[idx] = p
 
-        i = self.tokenizer.vocab_size()
+        i = self.tokenizer_model.vocab_size()
         while True:
             if i in self.extended_id_to_piece:
                 self.id_to_piece.append(self.extended_id_to_piece[i])
             elif i in self.unspecial_id_to_piece:
                 self.id_to_piece.append(self.unspecial_id_to_piece[i])
+            elif i < self.actual_vocab_size:
+                self.id_to_piece.append("��_undefined_token_��")
             else:
                 break
             i += 1
