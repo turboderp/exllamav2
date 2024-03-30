@@ -224,7 +224,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         # TODO: LoRA currently uses the Torch codepath. Needs conditional (early-exit) kernels with output scaling
         # for the LoRA matmuls in order to work with the C++ path
 
-        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8] or (loras is not None and len(loras) > 0):
+        if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8, 16] or (loras is not None and len(loras) > 0):
             return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras)
 
         # if loras is None or self.temp_lora_size == 0:

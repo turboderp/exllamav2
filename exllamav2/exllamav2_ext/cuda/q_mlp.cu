@@ -188,9 +188,9 @@ void QMoEMLP::forward_
 //    half* lora_temp
 )
 {
-    if (num_experts != 8 && num_experts != 4)
+    if (num_experts != 4 && num_experts != 8 && num_experts != 16)
     {
-        printf(" ## num_experts != 4 or 8 not implemented\n");
+        printf(" ## num_experts must be 4, 8 or 16\n");
         return;
     }
 
@@ -228,6 +228,8 @@ void QMoEMLP::forward_
         softmax4_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
     else if (num_experts == 8)
         softmax8_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+    else if (num_experts == 16)
+        softmax16_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
 
     // For small no. rows, execute all kernels but pass the routing weights. Rows with a weight of zero will skip dot
     // product accum and kernels launched with only zero-weights will exit prematurely.

@@ -32,7 +32,8 @@ import sys
 import json
 
 torch.cuda._lazy_init()
-torch.set_printoptions(precision = 10)
+torch.set_printoptions(precision = 5, sci_mode = False, linewidth = 150)
+
 # torch.backends.cuda.matmul.allow_tf32 = True
 # torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
 # torch.set_float32_matmul_precision("medium")
