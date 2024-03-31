@@ -60,6 +60,7 @@ class ExLlamaV2Tokenizer:
     max_cached_strings: int
     actual_vocab_size: int
 
+    tokenizer_config_dict: dict | None
 
     def __init__(self, config, lazy_init = False, force_json = False):
         """
@@ -120,6 +121,15 @@ class ExLlamaV2Tokenizer:
                         else:
                             self.unspecial_piece_to_id[v["content"]] = v["id"]
 
+        # Attempt to load tokenizer_config.json
+
+        tokenizer_config_json_path = os.path.join(self.config.model_dir, "tokenizer_config.json")
+        if os.path.exists(tokenizer_config_json_path):
+            with open(tokenizer_config_json_path, encoding = "utf8") as f:
+                self.tokenizer_config_dict = json.load(f)
+        else:
+            self.tokenizer_config_dict = None
+
         # Add tokens from added_tokens.json if present, assume they're all special
 
         added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
@@ -149,6 +159,22 @@ class ExLlamaV2Tokenizer:
         self.unk_token_id = self.tokenizer_model.unk_id()
         self.eos_token_id = config.eos_token_id
         self.bos_token_id = config.bos_token_id
+        self.pad_token_id = config.pad_token_id
+
+        # If model config doesn't specify BOS and EOS tokens, try to load from tokenizer config
+
+        def get_default_token_id(config_key: str, current: int | None, default: int):
+            if current is not None: return current
+            if self.tokenizer_config_dict is not None and config_key in self.tokenizer_config_dict:
+                st = self.tokenizer_config_dict[config_key]
+                if st is None: return None
+                return self.tokenizer_model.piece_to_id(st)
+            else:
+                return default
+
+        self.pad_token_id = get_default_token_id("pad_token", self.pad_token_id, 0)
+        self.bos_token_id = get_default_token_id("bos_token", self.bos_token_id, 1)
+        self.eos_token_id = get_default_token_id("eos_token", self.eos_token_id, 2)
 
         # Get control token strings
 
@@ -156,10 +182,11 @@ class ExLlamaV2Tokenizer:
         self.bos_token = (self.tokenizer_model.bos_token() or self.extended_id_to_piece.get(self.bos_token_id, None)) or self.tokenizer_model.id_to_piece(self.bos_token_id)
         self.eos_token = (self.tokenizer_model.eos_token() or self.extended_id_to_piece.get(self.eos_token_id, None)) or self.tokenizer_model.id_to_piece(self.eos_token_id)
 
-        # Some tokenizers use token ID zero for text but don't explicitly define a padding token but provide one anyway
+        # Use "<pad>" or EOS token as fallback for padding token
 
-        pad_test = self.tokenizer_model.piece_to_id("<pad>")
-        self.pad_token_id = pad_test or self.eos_token_id
+        if self.pad_token_id is None:
+            pad_test = self.tokenizer_model.piece_to_id("<pad>")
+            self.pad_token_id = pad_test or self.eos_token_id
 
         # Special case if <unk> and <pad> have the same ID
 
@@ -181,7 +208,7 @@ class ExLlamaV2Tokenizer:
         self.actual_vocab_size = 1 + max(
             list(self.extended_id_to_piece.keys()) + \
             list(self.unspecial_id_to_piece.keys()) + \
-            [self.tokenizer_model.vocab_size()]  # max([]) is illegal
+            [self.tokenizer_model.vocab_size() - 1]
         )
 
         # Useful token IDs

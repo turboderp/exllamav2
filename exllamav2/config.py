@@ -148,9 +148,9 @@ class ExLlamaV2Config:
 
         # Vocab params
 
-        self.bos_token_id = read(read_config, int, "bos_token_id", 1)
-        self.eos_token_id = read(read_config, int, "eos_token_id", 2)
-        self.pad_token_id = read(read_config, int, "pad_token_id", 0)
+        self.bos_token_id = read(read_config, int, "bos_token_id", None)  # 1
+        self.eos_token_id = read(read_config, int, "eos_token_id", None)  # 2
+        self.pad_token_id = read(read_config, int, "pad_token_id", None)  # 0
         self.vocab_size = read(read_config, int, "vocab_size")
 
         # Standard params
