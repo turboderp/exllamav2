@@ -168,7 +168,16 @@ class ExLlamaV2Tokenizer:
             if self.tokenizer_config_dict is not None and config_key in self.tokenizer_config_dict:
                 st = self.tokenizer_config_dict[config_key]
                 if st is None: return None
-                return self.tokenizer_model.piece_to_id(st)
+                if isinstance(st, dict):
+                    stc: str | None = st.get("content", None)
+                    if stc is None:
+                        return None
+                    else:
+                        return self.tokenizer_model.piece_to_id(stc)
+                elif isinstance(st, str):
+                    return self.tokenizer_model.piece_to_id(st)
+                else:
+                    return None
             else:
                 return default
 
