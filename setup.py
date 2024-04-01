@@ -69,6 +69,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
                 "exllamav2/exllamav2_ext/cpp/profiling.cpp",
                 "exllamav2/exllamav2_ext/cpp/sampling.cpp",
+                "exllamav2/exllamav2_ext/cpp/sampling_avx2.cpp",
                 "exllamav2/exllamav2_ext/cpp/safetensors.cpp"
             ],
             extra_compile_args=extra_compile_args,

@@ -21,6 +21,10 @@
 
 #else
 
+    #ifndef __linux__
+        #include <intrin.h>
+    #endif
+
     inline bool is_avx2_supported()
     {
         static bool avx2_check = false;

@@ -3,9 +3,8 @@
 
 #ifndef __linux__
 #include <intrin.h>
-#else
-#include <immintrin.h>
 #endif
+#include <immintrin.h>
 
 #include "avx2_target.h"
 
@@ -107,23 +106,47 @@ _PS256_CONST(cephes_log_q2, 0.693359375);
 
 #ifndef __AVX2__
 
-typedef union imm_xmm_union {
-  v8si imm;
-  v4si xmm[2];
-} imm_xmm_union;
+#ifdef __linux__
 
-#define COPY_IMM_TO_XMM(imm_, xmm0_, xmm1_) {    \
-    imm_xmm_union u __attribute__((aligned(32)));  \
-    u.imm = imm_;				   \
-    xmm0_ = u.xmm[0];                            \
-    xmm1_ = u.xmm[1];                            \
-}
+    typedef union imm_xmm_union {
+      v8si imm;
+      v4si xmm[2];
+    } imm_xmm_union;
 
-#define COPY_XMM_TO_IMM(xmm0_, xmm1_, imm_) {                       \
-    imm_xmm_union u __attribute__((aligned(32))); \
-    u.xmm[0]=xmm0_; u.xmm[1]=xmm1_; imm_ = u.imm; \
-  }
+    #define COPY_IMM_TO_XMM(imm_, xmm0_, xmm1_) {    \
+        imm_xmm_union u __attribute__((aligned(32)));  \
+        u.imm = imm_;				   \
+        xmm0_ = u.xmm[0];                            \
+        xmm1_ = u.xmm[1];                            \
+    }
 
+    #define COPY_XMM_TO_IMM(xmm0_, xmm1_, imm_) {                       \
+        imm_xmm_union u __attribute__((aligned(32))); \
+        u.xmm[0]=xmm0_; u.xmm[1]=xmm1_; imm_ = u.imm; \
+    }
+
+#else
+
+    typedef union imm_xmm_union {
+        __m256i imm;
+        __m128i xmm[2];
+    } imm_xmm_union;
+
+    #define COPY_IMM_TO_XMM(imm_, xmm0_, xmm1_) { \
+        imm_xmm_union u;                          \
+        u.imm = imm_;                             \
+        xmm0_ = u.xmm[0];                         \
+        xmm1_ = u.xmm[1];                         \
+    }
+
+    #define COPY_XMM_TO_IMM(xmm0_, xmm1_, imm_) { \
+        imm_xmm_union u;                          \
+        u.xmm[0] = xmm0_;                         \
+        u.xmm[1] = xmm1_;                         \
+        imm_ = u.imm;                             \
+    }
+
+#endif
 
 #define AVX2_BITOP_USING_SSE2(fn) \
 AVX2_TARGET \
