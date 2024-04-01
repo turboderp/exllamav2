@@ -5,8 +5,11 @@
 #include <cstring>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 
 void profile_results();
+void profile_start(std::string stage);
+void profile_stop();
 
 void apply_rep_penalty_cpu
 (

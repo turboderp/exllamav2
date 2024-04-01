@@ -79,7 +79,7 @@ if build_jit:
 
     # gcc / cl.exe flags
 
-    extra_cflags = ["/Ox", "/arch:AVX2"] if windows else ["-O3", "-mavx2"]
+    extra_cflags = ["/Ox"] if windows else ["-O3"]
 
     if ext_debug:
         extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
@@ -143,7 +143,9 @@ if build_jit:
         "cuda/comp_units/unit_exl2_3a.cu",
         "cuda/comp_units/unit_exl2_3b.cu",
         "cpp/quantize_func.cpp",
+        "cpp/profiling.cpp",
         "cpp/sampling.cpp",
+        "cpp/sampling_avx2.cpp",
         "cpp/safetensors.cpp"
     ]
 

@@ -11,7 +11,7 @@ precompile = 'EXLLAMA_NOCOMPILE' not in os.environ
 
 windows = (os.name == "nt")
 
-extra_cflags = ["/Ox", "/arch:AVX2"] if windows else ["-O3", "-mavx2"]
+extra_cflags = ["/Ox"] if windows else ["-O3"]
 
 if ext_debug:
     extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
@@ -67,6 +67,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3a.cu",
                 "exllamav2/exllamav2_ext/cuda/comp_units/unit_exl2_3b.cu",
                 "exllamav2/exllamav2_ext/cpp/quantize_func.cpp",
+                "exllamav2/exllamav2_ext/cpp/profiling.cpp",
                 "exllamav2/exllamav2_ext/cpp/sampling.cpp",
                 "exllamav2/exllamav2_ext/cpp/safetensors.cpp"
             ],
