@@ -218,6 +218,7 @@ if args.eval_dataset or args.standard_perplexity:
 
         if args.standard_perplexity:
 
+            eval_length = args.eval_length
             if args.eval_dataset:
                 print(f" !! Note, overriding specified --eval_dataset with {args.standard_perplexity}")
 
