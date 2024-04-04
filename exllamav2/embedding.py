@@ -2,6 +2,8 @@ from __future__ import annotations
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
+from exllamav2.attn import ExLlamaV2Attention
+from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -71,19 +73,59 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
     def forward(self,
                 hidden_states: torch.Tensor,
                 cache = None,
-                attn_params = None,
+                attn_params: ExLlamaV2Attention.Params = None,
                 past_len = None,
                 intermediates: bool = False,
-                loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                loras = None,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        hidden_states = self.embedding.forward(hidden_states)
+        # Apply indexed embeddings
 
-        # Normalize the input embeddings for Gemma
-        if self.model.config.arch.normalize_embeddings:
-            hidden_states = hidden_states * (self.model.config.hidden_size ** 0.5)
+        indexed_embeddings = kwargs.get("indexed_embeddings")
+        if indexed_embeddings:
+
+            # Create combined tensor on the target device
+
+            offset = ExLlamaV2.EMBEDDING_INDEX
+            input_ids = hidden_states
+            batch_size, seq_len = input_ids.shape
+            hidden_size = self.model.config.hidden_size
+            combined_embeddings = torch.empty(batch_size, seq_len, hidden_size,
+                                              device = indexed_embeddings.device,
+                                              dtype = indexed_embeddings.dtype)
+
+            # Extract standard embeddings, copy to target device and insert in-place
+
+            standard_mask = hidden_states < offset
+            attn_params.rope_mask = standard_mask
+            if standard_mask.any():
+                standard_ids = input_ids[standard_mask]
+                standard_embeddings = self.embedding(standard_ids)
+                standard_embeddings = safe_move_tensor(standard_embeddings, indexed_embeddings.device)
+
+                if self.model.config.arch.normalize_embeddings:
+                    standard_embeddings *= self.model.config.hidden_size ** 0.5
+
+                combined_embeddings[standard_mask] = standard_embeddings
+
+            # Extract indexed embeddings and insert in-place
+
+            indexed_mask = input_ids >= offset
+            if indexed_mask.any():
+                indexed_ids = input_ids[indexed_mask] - offset
+                combined_embeddings[indexed_mask] = indexed_embeddings[indexed_ids]
+
+            hidden_states = combined_embeddings
+
+        # Call embedding module if no indexed embeddings
+
+        else:
+            hidden_states = self.embedding.forward(hidden_states)
+
+            if self.model.config.arch.normalize_embeddings:
+                hidden_states *= self.model.config.hidden_size ** 0.5
 
         if intermediates:
             return {"hidden_states": hidden_states}
         else:
             return hidden_states
-

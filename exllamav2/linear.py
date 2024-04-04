@@ -1,15 +1,16 @@
 from __future__ import annotations
 import torch
 import torch.nn.functional as F
-from exllamav2.module import ExLlamaV2Module
 from torch import nn
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.module import ExLlamaV2Module
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.lora import ExLlamaV2Lora
     from exllamav2.model import ExLlamaV2
+
 
 class ExLlamaV2Linear(ExLlamaV2Module):
 
@@ -217,7 +218,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 intermediates: bool = False,
                 loras: list[ExLlamaV2Lora] | None = None,
                 force_recons: bool = False,
-                force_cuda: bool = False) -> torch.Tensor | dict[str: torch.Tensor]:
+                force_cuda: bool = False,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         # Linear forward
 

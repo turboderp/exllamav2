@@ -402,12 +402,19 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 attn_params: ExLlamaV2Attention.Params | None = None,
                 past_len: int | None = None,
                 intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                loras: list[ExLlamaV2Lora] | None = None,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         global has_flash_attn
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras)
+            return self.forward_torch(hidden_states,
+                                      cache,
+                                      attn_params,
+                                      past_len,
+                                      intermediates,
+                                      loras = loras,
+                                      **kwargs)
 
         batch_size = hidden_states.shape[0]
         q_len = hidden_states.shape[1]
@@ -654,7 +661,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                       attn_params: ExLlamaV2Attention.Params | None = None,
                       past_len: int | None = None,
                       intermediates: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict:
+                      loras: list[ExLlamaV2Lora] | None = None,
+                      **kwargs) -> torch.Tensor | dict:
 
         num_attention_heads = self.model.config.num_attention_heads
         num_key_value_heads = self.model.config.num_key_value_heads

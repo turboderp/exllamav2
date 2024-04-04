@@ -139,6 +139,8 @@ class ExLlamaV2DeviceTensors:
 
 class ExLlamaV2:
 
+    EMBEDDING_INDEX: int = 1e6
+
     config: ExLlamaV2Config
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
@@ -577,7 +579,8 @@ class ExLlamaV2:
                 loras: list[ExLlamaV2Lora] | None = None,
                 return_last_state: bool = False,
                 position_offsets: torch.Tensor | None = None,
-                abort_event: threading.Event | None = None) \
+                abort_event: threading.Event | None = None,
+                **kwargs) \
         -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         """
         Runs a forward pass through the model. If a cache is used, also appends keys/values to the cache
@@ -616,6 +619,10 @@ class ExLlamaV2:
         :return:
             FP16 logits tensor, shape (batch_size, q_len, vocab_size)
             (optional) state tensor, shape (batch_size, q_len, hidden_size)
+
+        :indexed_embeddings:
+            Tensor of embeddings, shape (batch_size, q_len, hidden_size), indexed by input token IDs >=
+            ExLlamaV2.EMBEDDING_INDEX
         """
 
         bsz, q_len = input_ids.shape
@@ -641,7 +648,8 @@ class ExLlamaV2:
                                                loras = loras,
                                                return_last_state = return_last_state,
                                                position_offsets = position_offsets,
-                                               abort_event = abort_event)
+                                               abort_event = abort_event,
+                                               **kwargs)
 
             if abort_event and abort_event.is_set(): return
 
@@ -721,7 +729,8 @@ class ExLlamaV2:
                  loras: list[ExLlamaV2Lora] | None = None,
                  return_last_state: bool = False,
                  position_offsets: torch.Tensor | None = None,
-                 abort_event: threading.Event | None = None) \
+                 abort_event: threading.Event | None = None,
+                 **kwargs) \
         -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         batch_size, seq_len = input_ids.shape
@@ -743,6 +752,7 @@ class ExLlamaV2:
         x = input_ids
         attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
         last_state = None
+        last_module = None
 
         for idx, module in enumerate(self.modules):
 
@@ -764,7 +774,7 @@ class ExLlamaV2:
                     last_state = x.narrow(-2, -1, 1)
 
             x = safe_move_tensor(x, device)
-            x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras)
+            x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras, **kwargs)
 
             if preprocess_only and idx == self.last_kv_layer_idx:
                 x = None

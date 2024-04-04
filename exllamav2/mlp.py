@@ -218,10 +218,11 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 attn_params = None,
                 past_len = None,
                 intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                loras: list[ExLlamaV2Lora] | None = None,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras)
+            return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras, **kwargs)
 
         if loras is None or self.temp_lora_size == 0:
             pass_loras = []
@@ -244,7 +245,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                       attn_params = None,
                       past_len = None,
                       intermediates: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                      loras: list[ExLlamaV2Lora] | None = None,
+                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         residual = hidden_states
         post_norm = self.post_attention_layernorm.forward(hidden_states) \
