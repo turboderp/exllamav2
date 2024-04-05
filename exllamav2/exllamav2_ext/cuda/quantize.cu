@@ -22,7 +22,7 @@ __global__ void quantize_rtn_kernel
     int column = blockIdx.x * blockDim.x + threadIdx.x;
     if (column >= columns) return;
 
-    int idx = row * columns + column;
+    uint64_t idx = (uint64_t)row * (uint64_t)columns + (uint64_t)column;
 
     // Quantize
 
@@ -97,7 +97,7 @@ __global__ void fused_quantize_adjust_kernel
     int column = blockIdx.x * blockDim.x + threadIdx.x;
     if (column >= columns) return;
 
-    int idx = row * columns + column;
+    uint64_t idx = (uint64_t)row * (uint64_t)columns + (uint64_t)column;
 
     // Quantize
 
