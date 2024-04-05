@@ -83,8 +83,10 @@ def quant_linear(job: dict,
     recons_dict = {}
     recons_keys = ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]
     if source.has_bias: recons_keys += ["bias"]
+    r_device = packed_dict[source.key + ".q_weight"].device
+    recons_linear.set_device_idx(r_device.index)
     for k in recons_keys:
-        recons_dict[k] = packed_dict[source.key + "." + k]
+        recons_dict[k] = packed_dict[source.key + "." + k].to(r_device)
     recons_dict["q_perm"] = torch.argsort(recons_dict["q_invperm"]).to(torch.int)
     recons_linear.load(recons_dict)
 
@@ -120,7 +122,7 @@ def quant_linear(job: dict,
 
     # Apply reconstructed matrix to source layer
 
-    source.linear.weight.data = recons_w.T
+    source.linear.weight.data = recons_w.T.to("cuda:0")
 
 
 def quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat):
@@ -421,6 +423,7 @@ def quant(job, save_fn, model):
         if mode == "linear":
             with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
                 cal_ids = f.get_tensor("input_ids")
+            module.linear.weight.data = module.linear.weight.data.to("cuda:0")
 
         rfn_sum = 0
         rfn_count = 0

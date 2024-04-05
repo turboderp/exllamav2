@@ -96,6 +96,8 @@ void quantize_err
     TORCH_CHECK_SHAPES(input, 1, scale, 0, 1);
     TORCH_CHECK(output.size(0) == p_grid + 1, "Output vector shape doesn't match grid")
 
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+
     int rows = input.size(0);
     int columns = input.size(1);
 
