@@ -44,6 +44,7 @@ class ExLlamaV2BaseGenerator:
 
         input_ids = torch.zeros((1, 2), dtype = torch.long)
         self.model.forward(input_ids, cache = None, input_mask = None, preprocess_only = True)
+        torch.cuda.synchronize()
 
 
     def full(self):
