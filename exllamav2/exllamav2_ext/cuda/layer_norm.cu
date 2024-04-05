@@ -188,7 +188,7 @@ void layer_norm_cuda
 
     float r_dim = 1.0f / (float) dim;
 
-    int blocks_per_warp = DIVIDE(dim, NUM_THREADS);
+    int blocks_per_warp = DIVIDE(dim, NUM_THREADS * 2);
     fp_layer_norm_kernel kernel = pick_layer_norm_kernel(blocks_per_warp);
     kernel<<<gridDim, blockDim>>>(x, w, b, y, epsilon, r_dim, rows, dim);
 }
