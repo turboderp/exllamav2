@@ -133,7 +133,7 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
     return max(1e-6, 1 - (rfn_sum / rfn_count))
 
 
-def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params):
+def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False):
 
     qjobs, qmaps = get_qparams_reduced(qparams_attn)
     results = []
@@ -180,6 +180,10 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
               "v_proj": qjobs[2][v].get_dict(),
               "o_proj": qjobs[3][o].get_dict() }
         results.append(r)
+
+    for x in ["k_proj", "v_proj", "o_proj"] + (["q_proj"] if not keep_q else []):
+        if x in quantizers:
+            del quantizers[x]
 
     return results
 
@@ -257,6 +261,9 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_pa
                   "down_proj": qjobs[2][d].get_dict() }
             results.append(r)
 
+    for x in ["up_proj", "down_proj", "gate_proj"]:
+        if x in quantizers:
+            del quantizers[x]
 
     return results
 
@@ -329,10 +336,22 @@ def measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, att
 
 def measure_parallel_decoder(module, hidden_states, target_states_attn, target_states_mlp, quantizers, cache, attn_params):
 
+    for i in range(len(hidden_states)):
+        hidden_states[i] = hidden_states[i].cpu()
+
     print(f" -- Sublayer: {module.key}.self_attn")
-    results_attn = measure_attn(module.attn, hidden_states, target_states_attn, quantizers, cache, attn_params)
+    results_attn = measure_attn(module.attn, hidden_states, target_states_attn, quantizers, cache, attn_params, keep_q = True)
+
+    module.attn.unload()
+    gc.collect()
+    torch.cuda.empty_cache()
+
     print(f" -- Sublayer: {module.key}.mlp")
     results_mlp = measure_mlp(module.mlp, hidden_states, target_states_mlp, quantizers, cache, attn_params, "q_proj")
+
+    for i in range(len(hidden_states)):
+        hidden_states[i] = hidden_states[i].to("cuda:0")
+
     r = { "attn": results_attn,
           "mlp": results_mlp }
     return r

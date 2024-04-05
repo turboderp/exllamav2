@@ -414,6 +414,7 @@ def quant(job, save_fn, model):
             strat_mlp = strategy[module.key + ".mlp"]
             quant_parallel_decoder(job, module, hidden_states, target_states, quantizers, attn_params, strat_attn, strat_mlp)
 
+        torch.cuda.synchronize()
         quantizers.clear()
         gc.collect()
         torch.cuda.empty_cache()
