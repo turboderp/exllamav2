@@ -95,14 +95,18 @@ def quant_linear(job: dict,
     quant_w = source.linear.weight.T
     recons_w = recons_linear.get_weight_tensor_dq()
 
-    if quant_w.numel() <= 1e9:
-        ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
-        recons_w2 = recons_linear.forward(ident, force_cuda = True)
-        recons_w2.sub_(quant_w)
-        if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
-        recons_w2.abs_()
-        diff2 = torch.max(recons_w2)
-    else:
+    try:
+        if quant_w.numel() <= 1e9:
+            ident = torch.eye(recons_linear.in_features, dtype = torch.half, device = r_device)
+            recons_w2 = recons_linear.forward(ident, force_cuda = True)
+            recons_w2.sub_(quant_w)
+            if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
+            recons_w2.abs_()
+            diff2 = torch.max(recons_w2)
+        else:
+            diff2 = 0
+    except torch.cuda.OutOfMemoryError as e:
+        print(f" !! Warning, not enough VRAM for second sanity check of {source.key}")
         diff2 = 0
 
     quant_w.sub_(recons_w)
