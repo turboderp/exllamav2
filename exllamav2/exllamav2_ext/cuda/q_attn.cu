@@ -2,6 +2,7 @@
 #include "q_gemm.cuh"
 #include "rms_norm.cuh"
 #include "layer_norm.cuh"
+#include "head_norm.cuh"
 #include "rope.cuh"
 #include "util.cuh"
 #include "lora.cuh"
@@ -90,7 +91,9 @@ QAttn::QAttn
     int _head_dim,
     int _max_seq_len,
     bool _has_residual,
-    bool _neox_style
+    bool _neox_style,
+    half* _q_norm,
+    half* _k_norm
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -112,7 +115,9 @@ QAttn::QAttn
     head_dim(_head_dim),
     max_seq_len(_max_seq_len),
     has_residual(_has_residual),
-    neox_style(_neox_style)
+    neox_style(_neox_style),
+    q_norm(_q_norm),
+    k_norm(_k_norm)
 {
 }
 
@@ -151,6 +156,12 @@ void QAttn::forward_cuda_1
     gemm_half_q_half_cuda(cublas_handle, norm_state, q_proj, temp_q, q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, norm_state, k_proj, temp_k, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);
     gemm_half_q_half_cuda(cublas_handle, norm_state, v_proj, temp_v, q_len * batch_size, v_proj->width, hidden_size, true, temp_dq);
+
+    if (q_norm)
+        head_norm_cuda(temp_q, q_norm, NULL, temp_q, norm_epsilon, q_len * batch_size, num_heads, head_dim);
+
+    if (k_norm)
+        head_norm_cuda(temp_k, k_norm, NULL, temp_k, norm_epsilon, q_len * batch_size, num_kv_heads, head_dim);
 
     apply_loras_cuda(cublas_handle, q_proj_lora, loras, q_proj, norm_state, temp_q, lora_temp, q_len * batch_size);
     apply_loras_cuda(cublas_handle, k_proj_lora, loras, k_proj, norm_state, temp_k, lora_temp, q_len * batch_size);

@@ -75,13 +75,16 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def numel(self) -> int:
 
+        numel = self.up_proj.numel() + \
+                self.down_proj.numel()
+
         if self.model.config.arch.mlp_gate:
-            return self.gate_proj.numel() + \
-                   self.up_proj.numel() + \
-                   self.down_proj.numel()
-        else:
-            return self.up_proj.numel() + \
-                   self.down_proj.numel()
+            numel += self.gate_proj.numel()
+
+        if self.post_attention_layernorm is not None:
+            return self.post_attention_layernorm.numel()
+
+        return numel
 
 
     def load(self):

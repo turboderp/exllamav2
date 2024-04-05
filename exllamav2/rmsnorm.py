@@ -59,6 +59,12 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             self.bias = None
 
 
+    def numel(self):
+
+        return 0
+        # return self.weight.numel()
+
+
     def get_weight(self) -> torch.Tensor:
 
         # Make sure to return the original weight tensor for Gemma

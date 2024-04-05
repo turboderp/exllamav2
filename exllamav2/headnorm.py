@@ -72,6 +72,12 @@ class ExLlamaV2HeadNorm(ExLlamaV2Module):
         self.bias = None
 
 
+    def numel(self):
+
+        return 0
+        # return self.layernorm.weight.data.numel()
+
+
     def get_weight(self) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         if self.bias is not None: return self.weight, self.bias

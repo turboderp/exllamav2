@@ -57,6 +57,12 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         self.variance_epsilon = self.model.config.norm_eps
 
 
+    def numel(self):
+
+        return 0
+        # return self.layernorm.weight.data.numel()
+
+
     def unload(self):
 
         self.layernorm = None
