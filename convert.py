@@ -216,6 +216,12 @@ while True:
 
     if progress == "measure_quant":
         print(f" -- Measuring quantization impact...")
+
+        model.unload()
+        config.max_output_len = 16
+        model = ExLlamaV2(config)
+        model.load(lazy = True)
+
         status = measure_quant(job, save_job, model)  # capturing the graceful exits
         if status == "interrupted":
             print("Process interrupted. Exiting gracefully.")
@@ -226,6 +232,12 @@ while True:
         else:
             job["progress"] = "finished"
         save_job()
+
+        model.unload()
+        config.max_output_len = None
+        model = ExLlamaV2(config)
+        model.load(lazy = True)
+
 
     if progress == "optimize":
 
