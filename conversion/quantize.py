@@ -88,7 +88,7 @@ def quant_linear(job: dict,
     for k in recons_keys:
         recons_dict[k] = packed_dict[source.key + "." + k].to(r_device)
     recons_dict["q_perm"] = torch.argsort(recons_dict["q_invperm"]).to(torch.int)
-    recons_linear.load(recons_dict)
+    recons_linear.load(recons_dict, device_tensors = False)
 
     # Sanity test to ensure reconstructed matrix matches unpacked matrix
 

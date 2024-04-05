@@ -85,7 +85,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
 
     def load(self,
-             w: dict | nn.Parameter | tuple | None = None):
+             w: dict | nn.Parameter | tuple | None = None,
+             device_tensors: bool = True):
 
         if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features)
         if w is None: w = self.load_weight()
@@ -98,11 +99,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 assert "bias" in w, self.key + " has no bias but bias expected"
             else:
                 assert "bias" not in w, self.key + " has bias but bias is not expected"
-            device_tensors = self.model.get_device_tensors(self.device_idx)
-            device_tensors.begin_scratch_alloc()
-            self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
+            if device_tensors:
+                device_tensors = self.model.get_device_tensors(self.device_idx)
+                device_tensors.begin_scratch_alloc()
+                self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
+            else:
+                self.temp_dq = none_tensor
             self.q_tensors = w
-            self.q_handle = ext.make_q_matrix(w, self.temp_dq, prescale = self.prescale)
+            self.q_handle = ext.make_q_matrix(w,
+                                              self.temp_dq,
+                                              prescale = self.prescale,
+                                              max_dq_rows = self.model.config.max_dq_size // self.out_features)
             self.prev_prescale = self.prescale
             self.prescale = 1
 
