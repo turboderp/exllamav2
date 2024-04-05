@@ -229,8 +229,14 @@ class AdaptiveGPTQ:
             self.perm_cpu = self.perm.cpu()
             self.weights = self.weights[self.perm_cpu, :]
 
-            hessian = self.hessian[self.perm][:, self.perm]
-            self.hessian = None
+            if self.hessian.numel() > 6e8:
+                hessian_cpu = self.hessian.cpu()
+                self.hessian = None
+                hessian = hessian_cpu[self.perm_cpu][:, self.perm_cpu]
+                hessian = hessian.to("cuda:0")
+            else:
+                hessian = self.hessian[self.perm][:, self.perm]
+                self.hessian = None
 
             # In case numerical errors have caused some asymmetry in H, assume it's close to symmetrical and force it.
             # (Doesn't seem to be needed)
