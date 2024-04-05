@@ -248,7 +248,9 @@ def quant_parallel_decoder(job, module, hidden_states, target_states, quantizers
 @torch.inference_mode()
 def quant(job, save_fn, model):
 
-    snapshot_interval = 10
+    last_snapshot_time = time.time()
+    snapshot_interval_s = 90
+
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")
     strategy = job["strategy"]
@@ -498,7 +500,10 @@ def quant(job, save_fn, model):
 
         # Checkpoint
 
-        if index % snapshot_interval == 0 or index == len(model.modules) - 1:
+        time_since_snapshot = time.time() - last_snapshot_time
+        if time_since_snapshot > snapshot_interval_s or index == len(model.modules) - 1:
+
+            print(" -- Saving checkpoint...")
 
             if mode != "linear":
                 save_dict = {f"row.{idx:05}": h for idx, h in enumerate(hidden_states)}
@@ -516,3 +521,5 @@ def quant(job, save_fn, model):
 
             del job["invalid"]
             save_fn()
+
+            time_since_snapshot = time.time()
