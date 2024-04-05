@@ -46,7 +46,8 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
     def numel(self) -> int:
 
         return self.attn.numel() + \
-               self.mlp.numel()
+               self.mlp.numel() + \
+               self.input_layernorm.numel()
 
 
     def load(self):

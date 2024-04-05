@@ -203,24 +203,49 @@ void gemm_half_q_half_cuda
     bool mul_r_weights
 )
 {
-    if (size_m > MAX_Q_GEMM_ROWS && !force_cuda)
+    // Here we force CUDA matmul for matrices that are too big to dequantize. This is necessary for the
+    // extremely large output layers of some models. Splitting along K and dequantizing/multiplying in
+    // chunks would work also except the remapping of EXL2 matrices complicates it.
+    //
+    // TODO: Finish the chunking stuff
+
+    int row_step = (b->max_dq_rows / 128) * 128;
+
+    if (size_m > MAX_Q_GEMM_ROWS && !force_cuda && size_k <= row_step)
     {
-        // Reconstruct FP16 matrix, then cuBLAS
+        int row_b = 0;
+        if (row_step == 0) row_step = size_k;
 
-        if (!temp_dq) temp_dq = b->temp_dq;
-        b->reconstruct(temp_dq);
+        while (row_b < size_k)
+        {
+            int row_a = row_b;
+            row_b += row_step;
+            row_b = min(row_b, size_k);
+            int chunk_k = row_b - row_a;
 
-        //cublasSetMathMode(cublas_handle, CUBLAS_TENSOR_OP_MATH);
+            // Reconstruct FP16 matrix, then cuBLAS
 
-        const half alpha = __float2half(1.0f);
-        const half beta = clear ? __float2half(0.0f) : __float2half(1.0f);
-        cublasHgemm(cublas_handle,
-                    CUBLAS_OP_N,
-                    CUBLAS_OP_N,
-                    size_n, size_m, size_k,
-                    &alpha, temp_dq, size_n,
-                            a,       size_k,
-                    &beta,  c,       size_n);
+            if (!temp_dq) temp_dq = b->temp_dq;
+            b->reconstruct(temp_dq, row_a, row_b);
+
+            const half alpha = __float2half(1.0f);
+            const half beta = (clear && row_a == 0) ? __float2half(0.0f) : __float2half(1.0f);
+            cublasHgemm(cublas_handle,
+                        CUBLAS_OP_N,
+                        CUBLAS_OP_N,
+                        size_n, size_m, chunk_k,
+                        &alpha, temp_dq,   size_n,
+                                a + row_a, size_k,
+                        &beta,  c,         size_n);
+
+//            cublasHgemm(cublas_handle,
+//                        CUBLAS_OP_N,
+//                        CUBLAS_OP_N,
+//                        size_n, size_m, size_k,
+//                        &alpha, temp_dq, size_n,
+//                                a,       size_k,
+//                        &beta,  c,       size_n);
+        }
 
         //const float alpha = 1.0f;
         //const float beta = clear ? 0.0f : 1.0f;

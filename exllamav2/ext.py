@@ -201,7 +201,8 @@ def make_group_map(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
 def make_q_matrix(w: dict,
                   temp_dq: torch.Tensor,
                   key: str = None,
-                  prescale: float = 1):
+                  prescale: float = 1,
+                  max_dq_rows = 0):
 
     # EXL2
 
@@ -225,7 +226,8 @@ def make_q_matrix(w: dict,
                                    none_tensor,
                                    none_tensor,
                                    w.get("bias", none_tensor),
-                                   temp_dq)
+                                   temp_dq,
+                                   max_dq_rows)
 
     # GPTQ
 
@@ -252,7 +254,8 @@ def make_q_matrix(w: dict,
                                        w["scales"],
                                        w["g_idx"].cpu(),
                                        w.get("bias", none_tensor),
-                                       temp_dq)
+                                       temp_dq,
+                                       max_dq_rows)
 
         # GPTQ without g_idx
 
@@ -269,6 +272,7 @@ def make_q_matrix(w: dict,
                                        w["scales"],
                                        none_tensor,
                                        w.get("bias", none_tensor),
-                                       temp_dq)
+                                       temp_dq,
+                                       max_dq_rows)
 
 

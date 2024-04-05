@@ -200,7 +200,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def temp_dq_size(self) -> int:
 
-        return self.in_features * self.out_features * 2 + 128
+        dq = self.in_features * self.out_features
+        dq = min(dq, self.model.config.max_dq_size)
+        dq = dq * 2 + 128
+        return dq
 
 
     def temp_fwd_size(self) -> int:
