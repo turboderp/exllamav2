@@ -82,7 +82,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             numel += self.gate_proj.numel()
 
         if self.post_attention_layernorm is not None:
-            return self.post_attention_layernorm.numel()
+            numel += self.post_attention_layernorm.numel()
 
         return numel
 
