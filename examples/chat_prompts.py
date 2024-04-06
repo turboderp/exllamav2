@@ -385,6 +385,49 @@ class PromptFormat_gemma(PromptFormat):
         return True
 
 
+class PromptFormat_cohere(PromptFormat):
+    description = "Cohere"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are a helpful AI assistant."""
+
+    def first_prompt(self):
+        return \
+            """<BOS_TOKEN>""" + \
+            """<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>""" + \
+            """<|system_prompt|>""" + \
+            """<|END_OF_TURN_TOKEN|>""" + \
+            """<|START_OF_TURN_TOKEN|><|USER_TOKEN|>""" + \
+            """<|user_prompt|>""" + \
+            """<|END_OF_TURN_TOKEN|>""" + \
+            """<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""
+
+    def subs_prompt(self):
+        return \
+            """<|END_OF_TURN_TOKEN|>""" + \
+            """<|START_OF_TURN_TOKEN|><|USER_TOKEN|>""" + \
+            """<|user_prompt|>""" + \
+            """<|END_OF_TURN_TOKEN|>""" + \
+            """<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             """<|END_OF_TURN_TOKEN|>""",
+             ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 prompt_formats = \
 {
     "raw": PromptFormat_raw,
@@ -398,4 +441,5 @@ prompt_formats = \
     "openchat": PromptFormat_openchat,
     "nous": PromptFormat_nous,
     "gemma": PromptFormat_gemma,
+    "cohere": PromptFormat_cohere,
 }
