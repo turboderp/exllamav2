@@ -11,6 +11,9 @@ def optimize(job, save_fn, model):
 
     error_norm = 2.4
     max_step_size = 2
+    first_layer_bias = 10
+    bias_layers = 2
+    bias_iter = 10
 
     key = "model.layers.0"
     key_q = key + ".self_attn.q_proj"
@@ -60,8 +63,11 @@ def optimize(job, save_fn, model):
 
     measurement = job["measurement"]
 
-    def fn(x):
-        return 1 - ((1 - x) ** error_norm)
+    def fn(x, idx):
+        if idx < bias_layers:
+            return 1 - ((1 - x) ** error_norm) * first_layer_bias
+        else:
+            return 1 - ((1 - x) ** error_norm)
 
     weights = []
     values = []
@@ -74,7 +80,7 @@ def optimize(job, save_fn, model):
             m1 = measurement["model.layers." + str(i) + ".self_attn"]
             m2 = measurement["model.layers." + str(i) + "." + mlp_mode]
         for m in [m1, m2]:
-            v = [fn(e["accuracy"]) for e in m]
+            v = [fn(e["accuracy"], i) for e in m]
             w = [e["total_bits"] for e in m]
             weights.append(w)
             values.append(v)
@@ -111,10 +117,13 @@ def optimize(job, save_fn, model):
     value = 1
     for i in range(num_layers * 2): value *= values[i][0]
 
+    iteration = 0
+
     while True:
         min_idx = -1
         min_value = float("inf")
-        for i in range(num_layers * 2):
+        iteration += 1
+        for i in range(bias_layers if iteration < bias_iter else num_layers * 2):
             s = f_solution[i]
             if values[i][s] < min_value:
                 if s < len(weights[i]) - 1:
@@ -211,6 +220,7 @@ def optimize(job, save_fn, model):
 
     print(" -- Quantization strategy:")
 
+    errp = 1
     job["strategy"] = {}
     for layer_ in range(num_layers):
 
@@ -224,5 +234,8 @@ def optimize(job, save_fn, model):
             bpw = p["total_bits"] / n
             err = 1 - p["accuracy"]
             print(f" --   {k:50} {bpw:1.4f} bpw - exp. error: {err:1.8f}")
+            errp *= (1 - err)
+
+    print(f" -- Total exp. error: {1 - errp:1.12f}")
 
     xx = 0
