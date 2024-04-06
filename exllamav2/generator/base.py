@@ -186,6 +186,11 @@ class ExLlamaV2BaseGenerator:
             if isinstance(prompt, str): return ""
             else: return [""] * len(prompt)
 
+        # Remove indexed embeddings from generator's sequence
+
+        if input_embeddings is not None:
+            self.sequence_ids[self.sequence_ids >= EMBEDDING_INDEX] = self.tokenizer.pad_token_id
+
         # Begin filters
 
         id_to_piece = self.tokenizer.get_id_to_piece_list()
@@ -212,14 +217,9 @@ class ExLlamaV2BaseGenerator:
                                         position_offsets = position_offsets,
                                         indexed_embeddings = input_embeddings).float().cpu()
 
-            sample_seq_ids = self.sequence_ids
-
-            if input_embeddings is not None:
-                sample_seq_ids[sample_seq_ids >= EMBEDDING_INDEX] = self.tokenizer.pad_token_id
-
             token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits,
                                                                         gen_settings,
-                                                                        sample_seq_ids,
+                                                                        self.sequence_ids,
                                                                         random.random(),
                                                                         self.tokenizer,
                                                                         prefix_token = unhealed_token)
