@@ -163,8 +163,12 @@ class ExLlamaV2BaseGenerator:
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
         if overflow > 0: ids = ids[:, overflow:]
+        else: overflow = 0
 
         mask = self.tokenizer.padding_mask(ids) if batch_size > 1 else None
+
+        first_token = 0 if input_embeddings is None else input_embeddings.shape[1]
+        first_token = max(first_token - overflow, 0)
 
         # Prepare for healing
 
@@ -258,7 +262,8 @@ class ExLlamaV2BaseGenerator:
 
         # Decode
 
-        text = self.tokenizer.decode(self.sequence_ids, decode_special_tokens = decode_special_tokens)
+        text = self.tokenizer.decode(self.sequence_ids[:, first_token:],
+                                     decode_special_tokens = decode_special_tokens)
 
         if isinstance(prompt, str): return text[0]
         return text
