@@ -139,8 +139,6 @@ class ExLlamaV2DeviceTensors:
 
 class ExLlamaV2:
 
-    EMBEDDING_INDEX: int = 1e6
-
     config: ExLlamaV2Config
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
@@ -701,7 +699,8 @@ class ExLlamaV2:
                                   loras = loras,
                                   return_last_state = return_last_state and remaining_q_len <= chunk_size,
                                   position_offsets = position_offsets,
-                                  abort_event = abort_event)
+                                  abort_event = abort_event,
+                                  **kwargs)
 
             if abort_event and abort_event.is_set(): return
 
