@@ -83,7 +83,6 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         # Apply indexed embeddings
 
-
         indexed_embeddings = kwargs.get("indexed_embeddings")
         if indexed_embeddings is not None:
 
