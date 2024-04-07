@@ -152,11 +152,11 @@ class ExLlamaV2BaseGenerator:
             assert input_embeddings.shape[0] == batch_size, \
                 "Input embeddings tensor does not match batch size of prompt."
 
-            pre_ids, _ = self.tokenizer.encode(prompt_split[0].rstrip(),
+            pre_ids, _ = self.tokenizer.encode(prompt_split[0].rstrip(" \t"),
                                                encode_special_tokens = encode_special_tokens,
                                                return_offsets = True,
                                                add_bos = add_bos)
-            post_ids, _ = self.tokenizer.encode(prompt_split[1].lstrip(),
+            post_ids, _ = self.tokenizer.encode(prompt_split[1].lstrip(" \t"),
                                                encode_special_tokens = encode_special_tokens,
                                                return_offsets = True,
                                                add_bos = False)
