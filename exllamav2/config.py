@@ -196,7 +196,10 @@ class ExLlamaV2Config:
 
         self.rotary_embedding_base = read(read_config, float, ["rope_theta", "attn_config->rope_theta"], 10000.0)
 
-        self.max_seq_len = read(read_config, int,["max_sequence_length", "max_position_embeddings", "max_seq_len"],2048)
+        self.max_seq_len = read(read_config, int,["max_sequence_length",
+                                                  "model_max_length",
+                                                  "max_position_embeddings",
+                                                  "max_seq_len"], 2048)
 
         rs = read(read_config, dict, "rope_scaling", None)
         if rs and "factor" in rs:
