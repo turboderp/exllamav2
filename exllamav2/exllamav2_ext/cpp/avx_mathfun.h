@@ -4,26 +4,9 @@
 #ifndef __linux__
 #include <intrin.h>
 #endif
+#include <immintrin.h>
 
-bool avx2_check = false;
-bool avx2_supported = false;
-
-bool is_avx2_supported()
-{
-    if (avx2_check)
-        return avx2_supported;
-#ifdef __linux__
-    avx2_supported = __builtin_cpu_supports("avx2");
-#else
-    int cpuInfo[4];
-    __cpuidex(cpuInfo, 7, 0);
-    avx2_supported = (cpuInfo[1] & (1 << 5)) != 0;
-#endif
-    avx2_check = true;
-//    if (avx2_supported) printf("AVX2 supported\n");
-//    else printf("AVX2 not supported\n");
-    return avx2_supported;
-}
+#include "avx2_target.h"
 
 /*
    AVX implementation of sin, cos, sincos, exp and log
@@ -123,25 +106,50 @@ _PS256_CONST(cephes_log_q2, 0.693359375);
 
 #ifndef __AVX2__
 
-typedef union imm_xmm_union {
-  v8si imm;
-  v4si xmm[2];
-} imm_xmm_union;
+#ifdef __linux__
 
-#define COPY_IMM_TO_XMM(imm_, xmm0_, xmm1_) {    \
-    imm_xmm_union u __attribute__((aligned(32)));  \
-    u.imm = imm_;				   \
-    xmm0_ = u.xmm[0];                            \
-    xmm1_ = u.xmm[1];                            \
-}
+    typedef union imm_xmm_union {
+      v8si imm;
+      v4si xmm[2];
+    } imm_xmm_union;
 
-#define COPY_XMM_TO_IMM(xmm0_, xmm1_, imm_) {                       \
-    imm_xmm_union u __attribute__((aligned(32))); \
-    u.xmm[0]=xmm0_; u.xmm[1]=xmm1_; imm_ = u.imm; \
-  }
+    #define COPY_IMM_TO_XMM(imm_, xmm0_, xmm1_) {    \
+        imm_xmm_union u __attribute__((aligned(32)));  \
+        u.imm = imm_;				   \
+        xmm0_ = u.xmm[0];                            \
+        xmm1_ = u.xmm[1];                            \
+    }
 
+    #define COPY_XMM_TO_IMM(xmm0_, xmm1_, imm_) {                       \
+        imm_xmm_union u __attribute__((aligned(32))); \
+        u.xmm[0]=xmm0_; u.xmm[1]=xmm1_; imm_ = u.imm; \
+    }
+
+#else
+
+    typedef union imm_xmm_union {
+        __m256i imm;
+        __m128i xmm[2];
+    } imm_xmm_union;
+
+    #define COPY_IMM_TO_XMM(imm_, xmm0_, xmm1_) { \
+        imm_xmm_union u;                          \
+        u.imm = imm_;                             \
+        xmm0_ = u.xmm[0];                         \
+        xmm1_ = u.xmm[1];                         \
+    }
+
+    #define COPY_XMM_TO_IMM(xmm0_, xmm1_, imm_) { \
+        imm_xmm_union u;                          \
+        u.xmm[0] = xmm0_;                         \
+        u.xmm[1] = xmm1_;                         \
+        imm_ = u.imm;                             \
+    }
+
+#endif
 
 #define AVX2_BITOP_USING_SSE2(fn) \
+AVX2_TARGET \
 static inline v8si avx2_mm256_##fn(v8si x, int a) \
 { \
   /* use SSE2 instruction to perform the bitop AVX2 */ \
@@ -159,6 +167,7 @@ AVX2_BITOP_USING_SSE2(slli_epi32)
 AVX2_BITOP_USING_SSE2(srli_epi32)
 
 #define AVX2_INTOP_USING_SSE2(fn) \
+AVX2_TARGET \
 static inline v8si avx2_mm256_##fn(v8si x, v8si y) \
 { \
   /* use SSE2 instructions to perform the AVX2 integer operation */ \
@@ -195,6 +204,7 @@ AVX2_INTOP_USING_SSE2(add_epi32)
 /* natural logarithm computed for 8 simultaneous float 
    return NaN for x <= 0
 */
+AVX2_TARGET
 v8sf log256_ps(v8sf x) {
   v8si imm0;
   v8sf one = *(v8sf*)_ps256_1;
@@ -281,6 +291,7 @@ _PS256_CONST(cephes_exp_p3, 4.1665795894E-2);
 _PS256_CONST(cephes_exp_p4, 1.6666665459E-1);
 _PS256_CONST(cephes_exp_p5, 5.0000001201E-1);
 
+AVX2_TARGET
 v8sf exp256_ps(v8sf x) {
   v8sf tmp = _mm256_setzero_ps(), fx;
   v8si imm0;
@@ -361,6 +372,7 @@ _PS256_CONST(cephes_FOPI, 1.27323954473516); // 4 / M_PI
    surprising but correct result.
 
 */
+AVX2_TARGET
 v8sf sin256_ps(v8sf x) { // any x
   v8sf xmm1, xmm2 = _mm256_setzero_ps(), xmm3, sign_bit, y;
   v8si imm0, imm2;
@@ -488,6 +500,7 @@ v8sf sin256_ps(v8sf x) { // any x
 }
 
 /* almost the same as sin_ps */
+AVX2_TARGET
 v8sf cos256_ps(v8sf x) { // any x
   v8sf xmm1, xmm2 = _mm256_setzero_ps(), xmm3, y;
   v8si imm0, imm2;
@@ -605,6 +618,7 @@ v8sf cos256_ps(v8sf x) { // any x
 
 /* since sin256_ps and cos256_ps are almost identical, sincos256_ps could replace both of them..
    it is almost as fast, and gives you a free cosine with your sine */
+AVX2_TARGET
 void sincos256_ps(v8sf x, v8sf *s, v8sf *c) {
 
   v8sf xmm1, xmm2, xmm3 = _mm256_setzero_ps(), sign_bit_sin, y;

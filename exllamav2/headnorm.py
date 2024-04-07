@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
-class ExLlamaV2LayerNorm(ExLlamaV2Module):
+class ExLlamaV2HeadNorm(ExLlamaV2Module):
 
     name: str = "LayerNorm"
 
@@ -17,16 +17,24 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
     bias: nn.Parameter | None
     variance_epsilon: float
 
+    head_dim: int
+    num_heads: int
+
 
     def __init__(self,
                  model: ExLlamaV2,
-                 key: str):
+                 key: str,
+                 num_heads: int,
+                 head_dim: int):
         super().__init__(model, key)
 
         self.layernorm = None
         self.weight = None
         self.bias = None
-        self.variance_epsilon = 1e-6
+        self.variance_epsilon = self.model.config.norm_eps
+
+        self.head_dim = head_dim
+        self.num_heads = num_heads
 
 
     def load(self):
@@ -54,13 +62,7 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
             self.layernorm.bias = bias
             self.bias = bias
 
-        self.variance_epsilon = self.model.config.norm_eps
-
-
-    def numel(self):
-
-        return 0
-        # return self.layernorm.weight.data.numel()
+        assert self.weight.shape == (self.num_heads, self.head_dim), "Head norm tensor shape mismatch"
 
 
     def unload(self):
@@ -68,6 +70,12 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         self.layernorm = None
         self.weight = None
         self.bias = None
+
+
+    def numel(self):
+
+        return 0
+        # return self.layernorm.weight.data.numel()
 
 
     def get_weight(self) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
@@ -101,22 +109,17 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
                 loras = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        output_shape = hidden_states.shape
-        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
         norm = torch.empty_like(hidden_states)
-        ext_c.layer_norm(hidden_states,
-                         self.weight.data,
-                         self.bias.data if self.bias is not None else none_tensor,
-                         norm,
-                         self.variance_epsilon)
-
-        hidden_states = norm.view(output_shape)
+        ext_c.head_norm(hidden_states,
+                        self.weight.data,
+                        self.bias.data if self.bias is not None else none_tensor,
+                        hidden_states,
+                        self.variance_epsilon)
 
         if intermediates:
             return {"hidden_states": hidden_states}
         else:
             return hidden_states
-
 
     def forward_torch(self,
                       hidden_states: torch.Tensor,
@@ -127,7 +130,13 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
                       loras = None,
                       **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        hidden_states = self.layernorm(hidden_states)
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        mean = hidden_states.mean(-1, keepdim = True)
+        variance = (hidden_states - mean).pow(2).mean(-1, keepdim = True)
+        hidden_states = (hidden_states - mean) * torch.rsqrt(variance + self.variance_epsilon)
+        hidden_states = self.weight.to(torch.float32) * hidden_states
+        hidden_states = hidden_states.to(input_dtype)
 
         if intermediates:
             return {"hidden_states": hidden_states}

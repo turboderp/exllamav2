@@ -13,6 +13,7 @@ import torch
 import random
 import threading
 from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook, ExLlamaV2PostSamplingResult
+from exllamav2.embedding import EMBEDDING_INDEX
 
 class ExLlamaV2BaseGenerator:
 
@@ -44,6 +45,7 @@ class ExLlamaV2BaseGenerator:
 
         input_ids = torch.zeros((1, 2), dtype = torch.long)
         self.model.forward(input_ids, cache = None, input_mask = None, preprocess_only = True)
+        torch.cuda.synchronize()
 
 
     def full(self):
@@ -59,10 +61,12 @@ class ExLlamaV2BaseGenerator:
                         token_healing: bool = False,
                         encode_special_tokens: bool = False,
                         decode_special_tokens: bool = False,
-                        loras: ExLlamaV2Lora or list[ExLlamaV2Lora] or None = None,
+                        loras: ExLlamaV2Lora or list[ExLlamaV2Lora] | None = None,
                         stop_token: int or None = -1,
                         add_bos: bool = False,
-                        abort_event: threading.Event or None = None):
+                        abort_event: threading.Event | None = None,
+                        input_embeddings: torch.Tensor | None = None,
+                        completion_only: bool = False):
 
         """
         Generate one or more completions.
@@ -106,6 +110,14 @@ class ExLlamaV2BaseGenerator:
         :param abort_event:
             Forwarded to the model during generation. Will abort prefill/context ingestion if triggered.
 
+        :param input_embeddings:
+            Tensor of shape (batch_size, n, hidden_size) added to the beginning of the prompt. Batching
+            is not supported when passing input embeddings unless all prompts are the same. Prompt must
+            contain the string `{{EMBED_HERE}}` to indicate where embeddings are to be inserted.
+
+        :param completion_only:
+            Only return completion. If False, returned string will include the input prompt.
+
         :return:
             Completion(s) (str or list[str] depending on the type of the input prompt argument)
         """
@@ -126,19 +138,62 @@ class ExLlamaV2BaseGenerator:
 
         if seed is not None: random.seed(seed)
 
-        # Tokenize input and produce padding mask if needed
+        # Tokenize input and produce padding mask if needed, inserting embeddings if provided
 
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
-        ids, position_offsets = self.tokenizer.encode(prompt,
-                                                      encode_special_tokens = encode_special_tokens,
-                                                      return_offsets = True,
-                                                      add_bos = add_bos)
-        if batch_size == 1: position_offsets = None
+        prompts_identical = batch_size == 1 or all(s == prompt[0] for s in prompt)
+
+        if input_embeddings is not None:
+
+            embed_marker = "{{EMBED_HERE}}"
+            prompt_split = prompt.split(embed_marker)
+            assert len(prompt_split) == 2, \
+                f"Prompt must contain one instance of {embed_marker} when embeddings are provided"
+
+            if batch_size > 1: assert prompts_identical, \
+                "Batched generation with input embeddings requires all prompts to be identical."
+
+            assert input_embeddings.shape[0] == batch_size, \
+                "Input embeddings tensor does not match batch size of prompt."
+
+            pre_ids, _ = self.tokenizer.encode(prompt_split[0].rstrip(" \t"),
+                                               encode_special_tokens = encode_special_tokens,
+                                               return_offsets = True,
+                                               add_bos = add_bos)
+            post_ids, _ = self.tokenizer.encode(prompt_split[1].lstrip(" \t"),
+                                               encode_special_tokens = encode_special_tokens,
+                                               return_offsets = True,
+                                               add_bos = False)
+
+            num_emb_tokens = input_embeddings.shape[1]
+            image_ids = torch.arange(EMBEDDING_INDEX, EMBEDDING_INDEX + num_emb_tokens, dtype = torch.long).unsqueeze(0)
+            ids = torch.cat((pre_ids, image_ids, post_ids), dim = -1)
+
+            position_offsets = None
+
+        else:
+            ids, position_offsets = self.tokenizer.encode(prompt,
+                                                          encode_special_tokens = encode_special_tokens,
+                                                          return_offsets = True,
+                                                          add_bos = add_bos)
+
+            if prompts_identical:
+                position_offsets = None
+
+        # Truncate prompt if generation would cause cache overflow
 
         overflow = ids.shape[-1] + num_tokens - self.model.config.max_seq_len
         if overflow > 0: ids = ids[:, overflow:]
+        else: overflow = 0
 
         mask = self.tokenizer.padding_mask(ids) if batch_size > 1 else None
+
+        first_token = max(-overflow, 0)
+
+        # Completion only
+
+        if completion_only:
+            first_token = ids.shape[-1]
 
         # Prepare for healing
 
@@ -150,13 +205,24 @@ class ExLlamaV2BaseGenerator:
 
         # Process prompt and begin gen
 
-        self._gen_begin_base(ids, mask, loras, position_offsets = position_offsets)
+        self._gen_begin_base(ids,
+                             mask,
+                             loras,
+                             position_offsets = position_offsets,
+                             input_embeddings = input_embeddings)
+
         if self.abort_event and self.abort_event.is_set():
             if isinstance(prompt, str): return ""
             else: return [""] * len(prompt)
 
+        # Remove indexed embeddings from generator's sequence
+
+        if input_embeddings is not None:
+            self.sequence_ids[self.sequence_ids >= EMBEDDING_INDEX] = self.tokenizer.pad_token_id
+
         # Begin filters
 
+        healed_token = []
         id_to_piece = self.tokenizer.get_id_to_piece_list()
         if unhealed_token is not None:
             unhealed_token_list = unhealed_token.flatten().tolist()
@@ -178,8 +244,19 @@ class ExLlamaV2BaseGenerator:
                                         self.cache,
                                         input_mask = mask,
                                         loras = loras,
-                                        position_offsets = position_offsets).float().cpu()
-            token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits, gen_settings, self.sequence_ids, random.random(), self.tokenizer, prefix_token = unhealed_token)
+                                        position_offsets = position_offsets,
+                                        indexed_embeddings = input_embeddings).float().cpu()
+
+            token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits,
+                                                                        gen_settings,
+                                                                        self.sequence_ids,
+                                                                        random.random(),
+                                                                        self.tokenizer,
+                                                                        prefix_token = unhealed_token)
+
+            if unhealed_token is not None:
+                unhealed_token_copy = unhealed_token
+                healed_token = token
 
             if stop_token is not None:
                 for b in range(batch_size):
@@ -215,17 +292,31 @@ class ExLlamaV2BaseGenerator:
 
         # Decode
 
-        text = self.tokenizer.decode(self.sequence_ids, decode_special_tokens = decode_special_tokens)
+        decode_ids = self.sequence_ids[:, first_token:]
+        if input_embeddings is not None:
+            decode_ids = torch.stack([decode_ids[i][decode_ids[i] != self.tokenizer.pad_token_id] for i in range(batch_size)])
 
-        if isinstance(prompt, str): return text[0]
-        return text
+        if len(healed_token) and completion_only:
+            decode_ids = torch.cat([healed_token, decode_ids], dim = -1)
+
+        text = self.tokenizer.decode(decode_ids, decode_special_tokens = decode_special_tokens)
+
+        if len(healed_token) and completion_only:
+            pre_text = self.tokenizer.decode(unhealed_token_copy, decode_special_tokens = decode_special_tokens)
+            text = [t[len(p):] for t, p in zip(text, pre_text)]
+
+        if isinstance(prompt, str):
+            return text[0]
+        else:
+            return text
 
 
     def _gen_begin_base(self,
                         input_ids: torch.Tensor,
                         mask: torch.Tensor | None = None,
                         loras: ExLlamaV2Lora or list[ExLlamaV2Lora] or None = None,
-                        position_offsets: torch.Tensor | None = None):
+                        position_offsets: torch.Tensor | None = None,
+                        input_embeddings: torch.Tensor | None = None):
 
         self.cache.current_seq_len = 0
         self.sequence_ids = input_ids
@@ -236,6 +327,7 @@ class ExLlamaV2BaseGenerator:
                            preprocess_only = True,
                            loras = loras,
                            position_offsets = position_offsets,
-                           abort_event = self.abort_event)
+                           abort_event = self.abort_event,
+                           indexed_embeddings = input_embeddings)
         if self.abort_event and self.abort_event.is_set():
             self.sequence_ids = self.sequence_ids[:, :self.cache.current_seq_len + 1]

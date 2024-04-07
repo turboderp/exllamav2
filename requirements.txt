@@ -1,5 +1,7 @@
 pandas
 ninja
+wheel
+setuptools
 fastparquet
 torch>=2.2.0
 safetensors>=0.3.2

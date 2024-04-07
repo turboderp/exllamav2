@@ -79,7 +79,7 @@ if build_jit:
 
     # gcc / cl.exe flags
 
-    extra_cflags = ["/Ox", "/arch:AVX2"] if windows else ["-O3", "-mavx2"]
+    extra_cflags = ["/Ox"] if windows else ["-O3"]
 
     if ext_debug:
         extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
@@ -128,6 +128,7 @@ if build_jit:
         "cuda/q_mlp.cu",
         "cuda/q_gemm.cu",
         "cuda/rms_norm.cu",
+        "cuda/head_norm.cu",
         "cuda/layer_norm.cu",
         "cuda/rope.cu",
         "cuda/cache.cu",
@@ -143,7 +144,9 @@ if build_jit:
         "cuda/comp_units/unit_exl2_3a.cu",
         "cuda/comp_units/unit_exl2_3b.cu",
         "cpp/quantize_func.cpp",
+        "cpp/profiling.cpp",
         "cpp/sampling.cpp",
+        "cpp/sampling_avx2.cpp",
         "cpp/safetensors.cpp"
     ]
 
@@ -198,7 +201,8 @@ def make_group_map(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
 def make_q_matrix(w: dict,
                   temp_dq: torch.Tensor,
                   key: str = None,
-                  prescale: float = 1):
+                  prescale: float = 1,
+                  max_dq_rows = 0):
 
     # EXL2
 
@@ -222,7 +226,8 @@ def make_q_matrix(w: dict,
                                    none_tensor,
                                    none_tensor,
                                    w.get("bias", none_tensor),
-                                   temp_dq)
+                                   temp_dq,
+                                   max_dq_rows)
 
     # GPTQ
 
@@ -249,7 +254,8 @@ def make_q_matrix(w: dict,
                                        w["scales"],
                                        w["g_idx"].cpu(),
                                        w.get("bias", none_tensor),
-                                       temp_dq)
+                                       temp_dq,
+                                       max_dq_rows)
 
         # GPTQ without g_idx
 
@@ -266,6 +272,7 @@ def make_q_matrix(w: dict,
                                        w["scales"],
                                        none_tensor,
                                        w.get("bias", none_tensor),
-                                       temp_dq)
+                                       temp_dq,
+                                       max_dq_rows)
 
 

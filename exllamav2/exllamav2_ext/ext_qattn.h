@@ -21,7 +21,9 @@ uintptr_t make_q_attn
     int head_dim,
     int max_seq_len,
     bool has_residual,
-    bool neox_style
+    bool neox_style,
+    torch::Tensor q_norm,
+    torch::Tensor k_norm
 );
 
 void free_q_attn

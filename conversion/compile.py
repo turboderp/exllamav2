@@ -97,12 +97,17 @@ def compile_model(job, save_fn, model):
         if isinstance(module, ExLlamaV2ParallelDecoder):
 
             has_gate = model.config.arch.mlp_gate
+            has_qk_norm = model.config.use_qk_norm
             d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.attn.q_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.attn.k_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.attn.v_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.attn.o_proj); out_dict.update(d); current_size += _dsize(d)
-            if has_gate: d = get_q_module(job, module.mlp.gate_proj); out_dict.update(d); current_size += _dsize(d)
+            if has_qk_norm:
+                d = get_f_module(job, module.attn.q_norm); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module.attn.k_norm); out_dict.update(d); current_size += _dsize(d)
+            if has_gate:
+                d = get_q_module(job, module.mlp.gate_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.mlp.up_proj); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.mlp.down_proj); out_dict.update(d); current_size += _dsize(d)
 
@@ -206,27 +211,29 @@ def compile_model(job, save_fn, model):
 
     # Add signature to config.json
 
-    ds = job["cal_dataset"]
-    if ds is not None: qcfg_ds = os.path.split(ds)[1]
-    else: qcfg_ds = "(default)"
+    if job["compile_full"] is not None:
 
-    qcfg = {
-        "quant_method": "exl2",
-        "version": __version__,
-        "bits": job["bits"],
-        "head_bits": job["head_bits"],
-        "calibration": {
-            "rows": job["dataset_rows"],
-            "length": job["length"],
-            "dataset": qcfg_ds
-        },
-    }
+        ds = job["cal_dataset"]
+        if ds is not None: qcfg_ds = os.path.split(ds)[1]
+        else: qcfg_ds = "(default)"
 
-    config_json = os.path.join(out_dir, "config.json")
-    with open(config_json, "r") as f:
-        config_dict = json.load(f)
+        qcfg = {
+            "quant_method": "exl2",
+            "version": __version__,
+            "bits": job["bits"],
+            "head_bits": job["head_bits"],
+            "calibration": {
+                "rows": job["dataset_rows"],
+                "length": job["length"],
+                "dataset": qcfg_ds
+            },
+        }
 
-    config_dict["quantization_config"] = qcfg
+        config_json = os.path.join(out_dir, "config.json")
+        with open(config_json, "r") as f:
+            config_dict = json.load(f)
 
-    with open(config_json, "w") as f:
-        f.write(json.dumps(config_dict, indent = 4))
+        config_dict["quantization_config"] = qcfg
+
+        with open(config_json, "w") as f:
+            f.write(json.dumps(config_dict, indent = 4))

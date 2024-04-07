@@ -217,7 +217,8 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                 attn_params = None,
                 past_len = None,
                 intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                loras: list[ExLlamaV2Lora] | None = None,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
@@ -225,7 +226,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         # for the LoRA matmuls in order to work with the C++ path
 
         if self.q_handle is None or intermediates or batch_size * sequence_length > 4 or self.num_experts not in [4, 8, 16] or (loras is not None and len(loras) > 0):
-            return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras)
+            return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras, **kwargs)
 
         # if loras is None or self.temp_lora_size == 0:
         #     pass_loras = []
@@ -247,7 +248,8 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                       attn_params = None,
                       past_len = None,
                       intermediates = False,
-                      loras: list[ExLlamaV2Lora] | None = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                      loras: list[ExLlamaV2Lora] | None = None,
+                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         residual = hidden_states
 

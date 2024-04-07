@@ -1,15 +1,16 @@
 from __future__ import annotations
 import torch
 import torch.nn.functional as F
-from exllamav2.module import ExLlamaV2Module
 from torch import nn
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.module import ExLlamaV2Module
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.lora import ExLlamaV2Lora
     from exllamav2.model import ExLlamaV2
+
 
 class ExLlamaV2Linear(ExLlamaV2Module):
 
@@ -84,7 +85,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
 
     def load(self,
-             w: dict | nn.Parameter | tuple | None = None):
+             w: dict | nn.Parameter | tuple | None = None,
+             device_tensors: bool = True):
 
         if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features)
         if w is None: w = self.load_weight()
@@ -97,11 +99,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 assert "bias" in w, self.key + " has no bias but bias expected"
             else:
                 assert "bias" not in w, self.key + " has bias but bias is not expected"
-            device_tensors = self.model.get_device_tensors(self.device_idx)
-            device_tensors.begin_scratch_alloc()
-            self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
+            if device_tensors:
+                device_tensors = self.model.get_device_tensors(self.device_idx)
+                device_tensors.begin_scratch_alloc()
+                self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
+            else:
+                self.temp_dq = none_tensor
             self.q_tensors = w
-            self.q_handle = ext.make_q_matrix(w, self.temp_dq, prescale = self.prescale)
+            self.q_handle = ext.make_q_matrix(w,
+                                              self.temp_dq,
+                                              prescale = self.prescale,
+                                              max_dq_rows = self.model.config.max_dq_size // self.out_features)
             self.prev_prescale = self.prescale
             self.prescale = 1
 
@@ -199,7 +207,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def temp_dq_size(self) -> int:
 
-        return self.in_features * self.out_features * 2 + 128
+        dq = self.in_features * self.out_features
+        dq = min(dq, self.model.config.max_dq_size)
+        dq = dq * 2 + 128
+        return dq
 
 
     def temp_fwd_size(self) -> int:
@@ -217,7 +228,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 intermediates: bool = False,
                 loras: list[ExLlamaV2Lora] | None = None,
                 force_recons: bool = False,
-                force_cuda: bool = False) -> torch.Tensor | dict[str: torch.Tensor]:
+                force_cuda: bool = False,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         # Linear forward
 

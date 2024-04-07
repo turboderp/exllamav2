@@ -145,16 +145,27 @@ __global__ void layer_norm_kernel
     }
 }
 
+#define kernel_instance(bpw) \
+    if (blocks_per_warp == bpw) return layer_norm_kernel<bpw>
+
 fp_layer_norm_kernel pick_layer_norm_kernel(const int blocks_per_warp)
 {
-    if (blocks_per_warp == 1) return layer_norm_kernel<1>;
-    if (blocks_per_warp == 2) return layer_norm_kernel<2>;
-    if (blocks_per_warp == 3) return layer_norm_kernel<3>;
-    if (blocks_per_warp == 4) return layer_norm_kernel<4>;
-    if (blocks_per_warp == 5) return layer_norm_kernel<5>;
-    if (blocks_per_warp == 6) return layer_norm_kernel<6>;
-    if (blocks_per_warp == 7) return layer_norm_kernel<7>;
-    if (blocks_per_warp == 8) return layer_norm_kernel<8>;
+    kernel_instance(1);
+    kernel_instance(2);
+    kernel_instance(3);
+    kernel_instance(4);
+    kernel_instance(5);
+    kernel_instance(6);
+    kernel_instance(7);
+    kernel_instance(8);
+    kernel_instance(9);
+    kernel_instance(10);
+    kernel_instance(11);
+    kernel_instance(12);
+    kernel_instance(13);
+    kernel_instance(14);
+    kernel_instance(15);
+    kernel_instance(16);
 	return NULL;
 }
 
@@ -177,7 +188,7 @@ void layer_norm_cuda
 
     float r_dim = 1.0f / (float) dim;
 
-    int blocks_per_warp = DIVIDE(dim, NUM_THREADS);
+    int blocks_per_warp = DIVIDE(dim, NUM_THREADS * 2);
     fp_layer_norm_kernel kernel = pick_layer_norm_kernel(blocks_per_warp);
     kernel<<<gridDim, blockDim>>>(x, w, b, y, epsilon, r_dim, rows, dim);
 }

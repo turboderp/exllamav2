@@ -12,4 +12,7 @@
 #define QMODE_6BIT 1
 #define QMODE_8BIT 0
 
+#define USE_AVX2
+//#define PROFILING
+
 #endif

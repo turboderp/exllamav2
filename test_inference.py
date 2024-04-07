@@ -57,6 +57,7 @@ parser.add_argument("-nwu", "--no_warmup", action = "store_true", help = "Skip w
 parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Load model layer by layer (perplexity evaluation only)")
 parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512 (experimental)")
 parser.add_argument("-rr", "--rank_reduce", type = str, help = "Rank-reduction for MLP layers of model, in reverse order (for experimentation)")
+parser.add_argument("-mol", "--max_output_len", type = int, help = "Set max output chunk size (incompatible with ppl tests)")
 
 # Initialize model and tokenizer
 
@@ -87,7 +88,11 @@ if args.stream_layers:
 
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args, allow_auto_split = True, skip_load = args.stream_layers, benchmark = True)
+model, tokenizer = model_init.init(args,
+                                   allow_auto_split = True,
+                                   skip_load = args.stream_layers,
+                                   benchmark = True,
+                                   max_output_len = args.max_output_len)
 cache = None
 
 # Auto split
@@ -218,6 +223,7 @@ if args.eval_dataset or args.standard_perplexity:
 
         if args.standard_perplexity:
 
+            eval_length = args.eval_length
             if args.eval_dataset:
                 print(f" !! Note, overriding specified --eval_dataset with {args.standard_perplexity}")
 

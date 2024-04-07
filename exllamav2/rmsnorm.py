@@ -59,6 +59,12 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             self.bias = None
 
 
+    def numel(self):
+
+        return 0
+        # return self.weight.numel()
+
+
     def get_weight(self) -> torch.Tensor:
 
         # Make sure to return the original weight tensor for Gemma
@@ -90,7 +96,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
                 attn_params = None,
                 past_len = None,
                 intermediates: bool = False,
-                loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                loras = None,
+                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -110,7 +117,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
                       attn_params = None,
                       past_len = None,
                       intermediates: bool = False,
-                      loras = None) -> torch.Tensor | dict[str: torch.Tensor]:
+                      loras = None,
+                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         hidden_states[hidden_states == -float('inf')] = -65504.0
         hidden_states[hidden_states == float('inf')] = 65504.0

@@ -18,6 +18,9 @@ public:
     bool layernorm_is_rms;
     float norm_epsilon;
 
+    half* q_norm;
+    half* k_norm;
+
     QMatrix* q_proj;
     QMatrix* k_proj;
     QMatrix* v_proj;
@@ -67,7 +70,9 @@ public:
         int _head_dim,
         int _max_seq_len,
         bool _has_residual,
-        bool _neox_style
+        bool _neox_style,
+        half* _q_norm,
+        half* _k_norm
     );
 
     ~QAttn();

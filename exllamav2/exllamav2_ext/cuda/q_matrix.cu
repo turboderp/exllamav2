@@ -67,13 +67,15 @@ QMatrix::QMatrix
 
     half* _bias,
 
-    half* _temp_dq
+    half* _temp_dq,
+    const int _max_dq_rows
 ) :
     device(_device),
     height(_height),
     width(_width),
     groups(_groups),
-    temp_dq(_temp_dq)
+    temp_dq(_temp_dq),
+    max_dq_rows(_max_dq_rows)
 {
     cudaSetDevice(device);
 
@@ -197,7 +199,9 @@ __global__ void reconstruct_gptq_kernel
     const int groupsize,
     const int groups,
     half* __restrict__ b,
-    const int rows_4
+    const int rows_4,
+    const int row_a,
+    const int row_b
 )
 {
     MatrixView_half_rw b_(b, size_k, size_n);
@@ -248,8 +252,6 @@ __global__ void reconstruct_gptq_kernel
     dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
     dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
     dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
-
-    __syncthreads();
 
     int k = offset_k;
     int lk = 0;
@@ -324,7 +326,9 @@ __global__ void reconstruct_kernel
     const int rows_5,
     const int rows_4,
     const int rows_3,
-    const int rows_2
+    const int rows_2,
+    const int row_a,
+    const int row_b
 )
 {
     MatrixView_half_rw b_(b, size_k, size_n);
@@ -476,12 +480,14 @@ __global__ void reconstruct_kernel
     }
 }
 
-void QMatrix::reconstruct(half* out)
+void QMatrix::reconstruct(half* out, int row_a, int row_b)
 {
     dim3 blockDim, gridDim;
     blockDim.x = BLOCK_KN_SIZE;
     blockDim.y = 1;
-    gridDim.y = DIVIDE(height, BLOCK_KN_SIZE);
+    if (row_a == 0 && row_b == 0) row_b = height;
+
+    gridDim.y = DIVIDE(row_b - row_a, BLOCK_KN_SIZE);
 
     if (!is_gptq)
     {
@@ -503,7 +509,9 @@ void QMatrix::reconstruct(half* out)
             rows_5,
             rows_4,
             rows_3,
-            rows_2
+            rows_2,
+            row_a,
+            row_b
         );
     }
     else
@@ -521,7 +529,9 @@ void QMatrix::reconstruct(half* out)
             gptq_groupsize,
             groups,
             out,
-            rows_4
+            rows_4,
+            row_a,
+            row_b
         );
     }
 }

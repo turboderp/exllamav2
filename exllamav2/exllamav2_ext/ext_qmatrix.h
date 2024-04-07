@@ -12,7 +12,8 @@ uintptr_t make_q_matrix
     torch::Tensor gptq_scales,
     torch::Tensor gptq_g_idx,
     torch::Tensor bias,
-    torch::Tensor temp_dq
+    torch::Tensor temp_dq,
+    int max_dq_rows
 );
 
 void free_q_matrix

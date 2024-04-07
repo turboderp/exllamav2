@@ -31,3 +31,22 @@ void layer_norm_
     float epsilon
 );
 
+void head_norm
+(
+    torch::Tensor x,
+    torch::Tensor w,
+    torch::Tensor b,
+    torch::Tensor y,
+    float epsilon
+);
+
+void head_norm_
+(
+    torch::Tensor x,
+    torch::Tensor w,
+    torch::Tensor b,
+    float epsilon
+);
+
+
+

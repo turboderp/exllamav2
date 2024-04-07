@@ -58,6 +58,8 @@ class ExLlamaV2Config:
     fasttensors: bool                           # Experimental, Linux only
     load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
 
+    max_dq_size: int                            # Max number of elements to dequantize at once
+
     # Loaded/set by .prepare():
 
     architecture: str
@@ -87,6 +89,7 @@ class ExLlamaV2Config:
     num_experts: int | None
     num_experts_per_token: int | None
     logit_scale: float
+    use_qk_norm: bool
 
     checkpoint_fused_mlp: bool
 
@@ -115,6 +118,7 @@ class ExLlamaV2Config:
         else:
             self.model_dir = None
 
+        self.max_dq_size = 512*(1024**2)
 
     # Set low-mem options
 
@@ -176,7 +180,7 @@ class ExLlamaV2Config:
 
         self.num_key_value_heads = read(read_config, int, ["num_key_value_heads", "attn_config->kv_n_heads"], self.num_attention_heads)
         self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
-
+        self.use_qk_norm = read(read_config, bool, ["use_qk_norm"], False)
 
         # MLP params
 
@@ -192,7 +196,10 @@ class ExLlamaV2Config:
 
         self.rotary_embedding_base = read(read_config, float, ["rope_theta", "attn_config->rope_theta"], 10000.0)
 
-        self.max_seq_len = read(read_config, int,["max_sequence_length", "max_position_embeddings", "max_seq_len"],2048)
+        self.max_seq_len = read(read_config, int,["max_sequence_length",
+                                                  "model_max_length",
+                                                  "max_position_embeddings",
+                                                  "max_seq_len"], 2048)
 
         rs = read(read_config, dict, "rope_scaling", None)
         if rs and "factor" in rs:

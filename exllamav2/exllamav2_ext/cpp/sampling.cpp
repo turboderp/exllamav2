@@ -5,80 +5,18 @@
 #include <vector>
 #include <queue>
 #include <utility>
-#include <chrono>
-#include <map>
-#include <string>
-
-#define USE_AVX2
-//#define PROFILING
-
-#ifdef USE_AVX2
-#include "avx_mathfun.h"
-#endif
-
-struct ProfileItem
-{
-    uint64_t min;
-    uint64_t max;
-    uint64_t total;
-    uint64_t count;
-};
-
-std::map<std::string, ProfileItem> all_stages = {};
-std::string current_stage = "";
-std::chrono::time_point<std::chrono::high_resolution_clock> stage_start;
-
-inline void profile_start(std::string stage)
-{
-#ifdef PROFILING
-    current_stage = stage;
-    stage_start = std::chrono::high_resolution_clock::now();
-#endif
-}
-
-inline void profile_stop()
-{
-#ifdef PROFILING
-    auto stage_stop = std::chrono::high_resolution_clock::now();
-    uint64_t duration = std::chrono::duration_cast<std::chrono::microseconds>(stage_stop - stage_start).count();
-    auto r = all_stages.find(current_stage);
-    if (r == all_stages.end())
-    {
-        ProfileItem item;
-        item.min = duration;
-        item.max = duration;
-        item.total = duration;
-        item.count = 1;
-        all_stages[current_stage] = item;
-    }
-    else
-    {
-        ProfileItem* item = &(r->second);
-        item->total += duration;
-        item->min = std::min(item->min, duration);
-        item->max = std::max(item->max, duration);
-        item->count++;
-    }
-#endif
-}
-
-void profile_results()
-{
-#ifdef PROFILING
-    printf("stage                               total             min             max            mean\n");
-    printf("-----------------------------------------------------------------------------------------\n");
-    for (const auto& entry : all_stages)
-    {
-        printf("%26s %11llu us  %11llu us  %11llu us  %11llu us\n", entry.first.c_str(), entry.second.total, entry.second.min, entry.second.max, entry.second.total / entry.second.count);
-    }
-#endif
-}
+#include "avx2_target.h"
+#include "sampling_avx2.h"
+#include "profiling.h"
 
 const int top_k_heap_threshold = 500;
 
 bool* g_rep_mask = NULL;
 int g_vocab_size = 0;
 
+// Repetition penalty
+
+AVX2_TARGET_OPTIONAL
 void apply_rep_penalty_cpu
 (
     const int vocab_size,
@@ -167,120 +105,7 @@ void apply_rep_penalty_cpu
     profile_stop();
 }
 
-void softmax_cpu_avx2
-(
-    const int vocab_size,
-    const float temperature,
-    const float* logits,
-    const bool* logits_filter,
-    const float exponent,
-    float* output
-)
-{
-    profile_start("softmax_cpu (AVX2)");
-
-    int vocab_size_aligned = ((vocab_size + 31) / 32) * 32;
-    float esum = 0.0f;
-    float itemp = 1.0f / temperature;
-    const float minf = -1e38;
-    float maxl = minf;
-
-    // Apply logit filter and find max logit
-
-    int i = 0;
-    for (; i < vocab_size; ++i)
-    {
-        float l = logits[i];
-        bool f = logits_filter[i];
-        l = f ? l : minf;
-        maxl = fmaxf(l, maxl);
-        output[i] = l;
-    }
-    for (; i < vocab_size_aligned; i++)
-        output[i] = minf;
-
-    // SIMD values
-
-    __m256 maxl8  = _mm256_set1_ps(maxl);
-    __m256 itemp8 = _mm256_set1_ps(itemp);
-    __m256 esum8  = _mm256_set1_ps(esum);
-
-    // Apply temperature, exponentiate and compute exponential sum
-
-    if (exponent == 2.0f)
-    {
-        __m256 sign_mask = _mm256_set1_ps(-0.0f);
-        i = 0;
-        for (; i < vocab_size_aligned; i += 8)
-        {
-            __m256 x = _mm256_load_ps(&output[i]);
-            x = _mm256_sub_ps(x, maxl8);
-            x = _mm256_mul_ps(x, x);
-            x = _mm256_xor_ps(x, sign_mask);
-            x = _mm256_mul_ps(x, itemp8);
-            x = exp256_ps(x);
-            _mm256_store_ps(&output[i], x);
-            esum8 = _mm256_add_ps(esum8, x);
-        }
-    }
-    else if (exponent != 1.0f)
-    {
-        // TODO: SIMD version of this
-        for (int i = 0; i < vocab_size_aligned; i++)
-        {
-            float l = output[i] - maxl;
-            l = -powf(fabs(l), exponent);
-            float e = expf(l * itemp);
-            output[i] = e;
-            esum += e;
-        }
-    }
-    else
-    {
-        i = 0;
-        for (; i < vocab_size_aligned; i += 8)
-        {
-            __m256 x = _mm256_load_ps(&output[i]);
-            x = _mm256_sub_ps(x, maxl8);
-            x = _mm256_mul_ps(x, itemp8);
-            x = exp256_ps(x);
-            _mm256_store_ps(&output[i], x);
-            esum8 = _mm256_add_ps(esum8, x);
-        }
-    }
-
-    // Normalize
-
-    float xv[8];
-    _mm256_store_ps(xv, esum8);
-    for (int k = 0; k < 8; ++k) esum += xv[k];
-    float isum = 1.0f / esum;
-    __m256 isum8  = _mm256_set1_ps(isum);
-
-    i = 0;
-    for (; i < vocab_size_aligned; i += 8)
-    {
-        __m256 x = _mm256_load_ps(&output[i]);
-        x = _mm256_mul_ps(x, isum8);
-        _mm256_store_ps(&output[i], x);
-    }
-
-    profile_stop();
-
-//    printf("Softmax:");
-//    float summ = 0.0f;
-//    for (int i = 0; i < vocab_size; i++)
-//    {
-//        if (logits_filter[i])
-//        {
-//            summ += output[i];
-//            if (output[i] < 1e-5) continue;
-//            printf("%d, %f\n", i, output[i]);
-//        }
-//    }
-//    printf("sum: %f\n\n", summ);
-}
-
+AVX2_TARGET_OPTIONAL
 void softmax_cpu_nonavx2
 (
     const int vocab_size,
@@ -350,14 +175,13 @@ void softmax_cpu
     float* output
 )
 {
-#ifdef USE_AVX2
     if (is_avx2_supported())
         return softmax_cpu_avx2(vocab_size, temperature, logits, logits_filter, exponent, output);
-#endif
-
-    return softmax_cpu_nonavx2(vocab_size, temperature, logits, logits_filter, exponent, output);
+    else
+        return softmax_cpu_nonavx2(vocab_size, temperature, logits, logits_filter, exponent, output);
 }
 
+AVX2_TARGET_OPTIONAL
 int post_softmax_temperature
 (
     const int num_candidates,
@@ -427,6 +251,7 @@ int post_softmax_temperature
     return num_candidates;
 }
 
+AVX2_TARGET_OPTIONAL
 void normalize_cpu
 (
     const int num_candidates,
@@ -464,6 +289,7 @@ inline bool cmp_desc(const float& a, const float& b)
 }
 
 template <bool (*cmp_func)(const float&, const float&)>
+AVX2_TARGET_OPTIONAL
 void quicksort_with_idx
 (
     float* arr,
@@ -559,6 +385,7 @@ void quicksort_with_idx
 
 // Discard tiny probabilities, improves performance when temperature is very low
 
+AVX2_TARGET_OPTIONAL
 int pre_sort_descending
 (
     const int num_candidates,
@@ -583,6 +410,7 @@ int pre_sort_descending
     return i;
 }
 
+AVX2_TARGET_OPTIONAL
 int sort_descending
 (
     const int num_candidates,
@@ -601,6 +429,7 @@ int sort_descending
     return pre;
 }
 
+AVX2_TARGET_OPTIONAL
 int top_k_cpu
 (
     const int num_candidates,
@@ -669,6 +498,7 @@ int top_k_cpu
     return top_k;
 }
 
+AVX2_TARGET_OPTIONAL
 int top_p_cpu
 (
     const int num_candidates,
@@ -713,6 +543,7 @@ int top_p_cpu
     return k;
 }
 
+AVX2_TARGET_OPTIONAL
 int keep_threshold
 (
     const int num_candidates,
@@ -763,6 +594,7 @@ int top_a_cpu
     return n;
 }
 
+AVX2_TARGET_OPTIONAL
 int min_p_cpu
 (
     const int num_candidates,
@@ -784,6 +616,7 @@ int min_p_cpu
     return n;
 }
 
+AVX2_TARGET_OPTIONAL
 int tfs_cpu
 (
     const int num_candidates,
@@ -832,6 +665,7 @@ int tfs_cpu
     return k;
 }
 
+AVX2_TARGET_OPTIONAL
 int mirostat_pre_cpu
 (
     const int num_candidates,
@@ -888,6 +722,7 @@ float mirostat_post_cpu
     return mu;
 }
 
+AVX2_TARGET_OPTIONAL
 int typical_cpu
 (
     const int num_candidates,
@@ -952,6 +787,7 @@ int typical_cpu
     return num;
 }
 
+AVX2_TARGET_OPTIONAL
 int multinomial_cpu
 (
     const int num_candidates,
@@ -989,5 +825,3 @@ int multinomial_cpu
     profile_stop();
     return 1;
 }
-
-

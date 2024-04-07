@@ -1,5 +1,6 @@
 #include "quantize_func.h"
 #include "../cuda/quantize.cuh"
+#include <c10/cuda/CUDAGuard.h>
 
 void quantize_range
 (
@@ -18,6 +19,8 @@ void quantize_range
     int columns = weights.size(1);
     int hcolumns = hessian_inv.size(1);
     TORCH_CHECK(hcolumns == weights.size(0), "H shape mismatch")
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(weights));
 
     for (int c = a; c < b; c++)
     {
@@ -64,6 +67,8 @@ void quantize_range_inplace
 {
     int columns = weights.size(1);
     int rows = weights.size(0);
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(weights));
 
     for (int c = a; c < b; c++)
     {

@@ -83,24 +83,30 @@ def quant_linear(job: dict,
     recons_dict = {}
     recons_keys = ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups"]
     if source.has_bias: recons_keys += ["bias"]
+    r_device = packed_dict[source.key + ".q_weight"].device
+    recons_linear.set_device_idx(r_device.index)
     for k in recons_keys:
-        recons_dict[k] = packed_dict[source.key + "." + k]
+        recons_dict[k] = packed_dict[source.key + "." + k].to(r_device)
     recons_dict["q_perm"] = torch.argsort(recons_dict["q_invperm"]).to(torch.int)
-    recons_linear.load(recons_dict)
+    recons_linear.load(recons_dict, device_tensors = False)
 
     # Sanity test to ensure reconstructed matrix matches unpacked matrix
 
     quant_w = source.linear.weight.T
     recons_w = recons_linear.get_weight_tensor_dq()
 
-    if quant_w.numel() <= 1e9:
-        ident = torch.eye(recons_linear.in_features, dtype = torch.half).cuda()
-        recons_w2 = recons_linear.forward(ident, force_cuda = True)
-        recons_w2.sub_(quant_w)
-        if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
-        recons_w2.abs_()
-        diff2 = torch.max(recons_w2)
-    else:
+    try:
+        if quant_w.numel() <= 1e9:
+            ident = torch.eye(recons_linear.in_features, dtype = torch.half, device = r_device)
+            recons_w2 = recons_linear.forward(ident, force_cuda = True)
+            recons_w2.sub_(quant_w)
+            if recons_linear.has_bias: recons_w2.sub_(recons_dict["bias"])
+            recons_w2.abs_()
+            diff2 = torch.max(recons_w2)
+        else:
+            diff2 = 0
+    except torch.cuda.OutOfMemoryError as e:
+        print(f" !! Warning, not enough VRAM for second sanity check of {source.key}")
         diff2 = 0
 
     quant_w.sub_(recons_w)
@@ -120,7 +126,7 @@ def quant_linear(job: dict,
 
     # Apply reconstructed matrix to source layer
 
-    source.linear.weight.data = recons_w.T
+    source.linear.weight.data = recons_w.T.to("cuda:0")
 
 
 def quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat):
@@ -246,7 +252,9 @@ def quant_parallel_decoder(job, module, hidden_states, target_states, quantizers
 @torch.inference_mode()
 def quant(job, save_fn, model):
 
-    snapshot_interval = 10
+    last_snapshot_time = time.time()
+    snapshot_interval_s = 90
+
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")
     strategy = job["strategy"]
@@ -412,6 +420,7 @@ def quant(job, save_fn, model):
             strat_mlp = strategy[module.key + ".mlp"]
             quant_parallel_decoder(job, module, hidden_states, target_states, quantizers, attn_params, strat_attn, strat_mlp)
 
+        torch.cuda.synchronize()
         quantizers.clear()
         gc.collect()
         torch.cuda.empty_cache()
@@ -421,6 +430,7 @@ def quant(job, save_fn, model):
         if mode == "linear":
             with safe_open(job["cal_filename"], framework = "pt", device = "cpu") as f:
                 cal_ids = f.get_tensor("input_ids")
+            module.linear.weight.data = module.linear.weight.data.to("cuda:0")
 
         rfn_sum = 0
         rfn_count = 0
@@ -494,7 +504,10 @@ def quant(job, save_fn, model):
 
         # Checkpoint
 
-        if index % snapshot_interval == 0 or index == len(model.modules) - 1:
+        time_since_snapshot = time.time() - last_snapshot_time
+        if time_since_snapshot > snapshot_interval_s or index == len(model.modules) - 1:
+
+            print(" -- Saving checkpoint...")
 
             if mode != "linear":
                 save_dict = {f"row.{idx:05}": h for idx, h in enumerate(hidden_states)}
@@ -512,3 +525,5 @@ def quant(job, save_fn, model):
 
             del job["invalid"]
             save_fn()
+
+            time_since_snapshot = time.time()
