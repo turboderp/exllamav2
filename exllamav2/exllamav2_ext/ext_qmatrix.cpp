@@ -74,7 +74,10 @@ uintptr_t make_q_matrix
     }
 
     if (!temp_dq.device().is_meta())
-        TORCH_CHECK(temp_dq.size(0) >= width * height, "Insufficient size of temp_dq buffer")
+    {
+        uint64_t dq_req = (uint64_t)width * std::min((uint64_t)max_dq_rows, (uint64_t)height);
+        TORCH_CHECK(temp_dq.size(0) >= dq_req, "Insufficient size of temp_dq buffer")
+    }
 
     QMatrix* m = new QMatrix
     (
