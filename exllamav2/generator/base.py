@@ -65,7 +65,10 @@ class ExLlamaV2BaseGenerator:
                         stop_token: int or None = -1,
                         add_bos: bool = False,
                         abort_event: threading.Event | None = None,
-                        input_embeddings: torch.Tensor | None = None):
+                        input_embeddings: torch.Tensor | None = None,
+                        return_logits: bool = False,
+                        return_ids: bool = False,
+                        return_prompt: bool = True):
 
         """
         Generate one or more completions.
@@ -114,8 +117,21 @@ class ExLlamaV2BaseGenerator:
             is not supported when passing input embeddings unless all prompts are the same. Prompt must
             contain the string `{{EMBED_HERE}}` to indicate where embeddings are to be inserted.
 
+        :param return_logits:
+            Return the logits for each NEW token generated in a list of Tensors of shape (BATCHSIZE, NEW_TOKEN_NUM, VOCAB_SIZE). If batchsize is 1, then it will be a 2D tensor of shape (NEW_TOKEN_NUM, VOCAB_SIZE).
+            There will not be logits returned for prompt tokens.
+            Logits will be returned for special tokens too regardless of the value of decode_special_tokens. Thus, you may get length mismatch between the logits and the returned new token IDs.
+            If True, this function will return a dictionary with the keys 'text', 'ids', and 'logits'.
+
+        :param return_ids:
+            Return the token IDs for each token generated in a Tensors of shape (BATCHSIZE, SEQ_LEN). If batchsize is 1, then it will be a 1D tensor of shape (SEQ_LEN,).
+            If True, this function will return a dictionary with the keys 'text', 'ids', and 'logits'.
+
+        :param return_prompt:
+            Whether return the prompt or just the new tokens. If True, return_ids will also not have the prompt.
+
         :return:
-            Completion(s) (str or list[str] depending on the type of the input prompt argument)
+            Completion(s) (str or list[str] or dict depending on the type of the input prompt argument)
         """
 
 
@@ -164,6 +180,7 @@ class ExLlamaV2BaseGenerator:
             num_emb_tokens = input_embeddings.shape[1]
             image_ids = torch.arange(EMBEDDING_INDEX, EMBEDDING_INDEX + num_emb_tokens, dtype = torch.long).unsqueeze(0)
             ids = torch.cat((pre_ids, image_ids, post_ids), dim = -1)
+            prompt_text_ids_len = pre_ids.shape[1] + post_ids.shape[1]
 
             position_offsets = None
 
@@ -172,6 +189,7 @@ class ExLlamaV2BaseGenerator:
                                                           encode_special_tokens = encode_special_tokens,
                                                           return_offsets = True,
                                                           add_bos = add_bos)
+            prompt_text_ids_len = ids.shape[1]
             if prompts_identical:
                 position_offsets = None
 
@@ -223,6 +241,7 @@ class ExLlamaV2BaseGenerator:
         # Generate tokens
 
         batch_eos = [False] * batch_size
+        logits_hist = [] if return_logits else None
 
         for i in range(num_tokens):
 
@@ -271,6 +290,7 @@ class ExLlamaV2BaseGenerator:
                 gen_settings.feed_filters(token)
 
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
+            if return_logits: logits_hist.append(logits)
 
             unhealed_token = None
             if eos: break
@@ -281,9 +301,21 @@ class ExLlamaV2BaseGenerator:
         if input_embeddings is not None:
             decode_ids = torch.stack([decode_ids[i][decode_ids[i] != self.tokenizer.pad_token_id] for i in range(batch_size)])
         text = self.tokenizer.decode(decode_ids, decode_special_tokens = decode_special_tokens)
+        logits_hist = torch.cat(logits_hist, dim=1) if return_logits else None
+        if not return_prompt:
+            if isinstance(prompt, str):
+                _prompt = [prompt]
+            else:
+                _prompt = prompt
+            text = [t[len(p)-1:] for p, t in zip(_prompt, text)]
+            if return_ids: decode_ids = decode_ids[:, prompt_text_ids_len:]
 
-        if isinstance(prompt, str): return text[0]
-        return text
+        if not return_ids and not return_logits:
+            if isinstance(prompt, str): return text[0]
+            return text
+        else:
+            if isinstance(prompt, str): return {'text': text[0], 'ids': decode_ids[0], 'logits': logits_hist[0]}
+            return {'text': text, 'ids': decode_ids, 'logits': logits_hist}
 
 
     def _gen_begin_base(self,
