@@ -1,5 +1,7 @@
 
 #include "cpp/quantize_func.h"
+#include <vector>
+#include <tuple>
 
 void pack_columns
 (
@@ -35,4 +37,15 @@ void quantize
     torch::Tensor out_q,
     float qzero,
     float maxq
+);
+
+std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, uint64_t, float> sim_anneal
+(
+    const std::vector<std::vector<std::tuple<uint64_t, float>>>& slots,
+    uint64_t max_cost,
+    float initial_temp,
+    float cooling_factor,
+    float min_temp,
+    int iterations,
+    float norm
 );
