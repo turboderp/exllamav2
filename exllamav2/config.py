@@ -93,6 +93,7 @@ class ExLlamaV2Config:
 
     checkpoint_fused_mlp: bool
 
+    quarot: bool = False
 
     def __init__(self,
                  model_dir: str | None = None):
@@ -200,6 +201,10 @@ class ExLlamaV2Config:
                                                   "model_max_length",
                                                   "max_position_embeddings",
                                                   "max_seq_len"], 2048)
+        
+        quarot_config = read(read_config, dict, "quarot_config", None)
+        if quarot_config is not None:
+            self.quarot = quarot_config["rotated"]
 
         rs = read(read_config, dict, "rope_scaling", None)
         if rs and "factor" in rs:
