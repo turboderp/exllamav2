@@ -65,6 +65,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     has_norm: bool
     has_residual: bool
     quarot: bool
+    kv_quarot: bool
     had_K: torch.Tensor
     K: int
     had_dim: int
@@ -200,6 +201,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         self.has_norm = has_norm
         self.has_residual = has_residual
         self.quarot = quarot
+        self.kv_quarot = True   # should be an option
 
         if self.quarot:
             self.had_K, self.K = hadamard_utils.get_hadK(model.config.num_attention_heads)
@@ -463,7 +465,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         global has_flash_attn
 
-        if self.quarot or self.q_handle is None or intermediates:
+        if self.quarot or self.kv_quarot or self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states,
                                       cache,
                                       attn_params,
@@ -766,6 +768,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
         ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
 
+        # Add another rotation for the keys/queries
+
+        if self.kv_quarot:
+            query_states = fast_hadamard_transform.hadamard_transform(query_states.float(), scale=1/math.sqrt(query_states.shape[-1])).to(query_states.dtype)
+            key_states = fast_hadamard_transform.hadamard_transform(key_states.float(), scale=1/math.sqrt(key_states.shape[-1])).to(key_states.dtype)
+
         # Add keys and values to cache
 
         if cache is not None:
@@ -815,6 +823,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if cache is not None:
             cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
+
+        # QuaRot before output
 
         if self.quarot:
             init_shape = attn_output.shape
