@@ -34,6 +34,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/ext_bindings.cpp",
                 "exllamav2/exllamav2_ext/ext_cache.cpp",
                 "exllamav2/exllamav2_ext/ext_gemm.cpp",
+                "exllamav2/exllamav2_ext/ext_hadamard.cpp",
                 "exllamav2/exllamav2_ext/ext_norm.cpp",
                 "exllamav2/exllamav2_ext/ext_qattn.cpp",
                 "exllamav2/exllamav2_ext/ext_qmatrix.cpp",
