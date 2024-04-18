@@ -72,7 +72,7 @@ class AdaptiveQuantizer:
 
 class AdaptiveGPTQ:
 
-    percdamp: float = 0.07
+    percdamp: float = 0.12
 
     layer: nn.Linear
     device: torch.device
