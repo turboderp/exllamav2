@@ -277,6 +277,21 @@ class ExLlamaV2Tokenizer:
         return torch.tensor([[token_id]], dtype = torch.long)
 
 
+    def single_id(self, token: str) -> torch.Tensor:
+        """
+        Get the ID of a single token from exact string match
+
+        :param token:
+            Token
+
+        :return:
+            int
+        """
+
+        tid = self.extended_piece_to_id.get(token, self.get_piece_to_id_dict().get(token))
+        return tid
+
+
     # Encode string with added, unspecial tokens
 
     def encode_unspecial(self, text: str) -> list[int]:
