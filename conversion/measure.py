@@ -387,7 +387,7 @@ def measure_quant(job, save_fn, model):
     overall_rolling_accuracy = 0  
 
     last_snapshot_time = time.time()
-    snapshot_interval_s = 90
+    snapshot_interval_s = 180
 
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")

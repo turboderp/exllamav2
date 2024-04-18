@@ -253,7 +253,7 @@ def quant_parallel_decoder(job, module, hidden_states, target_states, quantizers
 def quant(job, save_fn, model):
 
     last_snapshot_time = time.time()
-    snapshot_interval_s = 90
+    snapshot_interval_s = 180
 
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")
@@ -526,4 +526,4 @@ def quant(job, save_fn, model):
             del job["invalid"]
             save_fn()
 
-            time_since_snapshot = time.time()
+            last_snapshot_time = time.time()
