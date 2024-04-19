@@ -100,6 +100,48 @@ class PromptFormat_llama(PromptFormat):
         return True
 
 
+class PromptFormat_llama3(PromptFormat):
+
+    description = "Llama-chat, Llama2-chat and Mistral-instruct models"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            """Assist users with tasks and answer questions to the best of your knowledge. Provide helpful and informative """ + \
+            """responses. Be conversational and engaging. If you are unsure or lack knowledge on a topic, admit it and try """ + \
+            """to find the answer or suggest where to find it. Keep responses concise and relevant. Follow ethical """ + \
+            """guidelines and promote a safe and respectful interaction."""
+
+    def first_prompt(self):
+        return \
+            """<|start_header_id|>system<|end_header_id|>\n\n""" + \
+            """<|system_prompt|><|eot_id|>""" + \
+            """<|start_header_id|>user<|end_header_id|>\n\n""" + \
+            """<|user_prompt|><|eot_id|>""" + \
+            """<|start_header_id|>assistant<|end_header_id|>"""
+
+    def subs_prompt(self):
+        return \
+            """<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n""" + \
+            """<|user_prompt|><|eot_id|>""" + \
+            """<|start_header_id|>assistant<|end_header_id|>"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             tokenizer.single_id("<|eot_id|>"),
+             tokenizer.single_id("<|start_header_id|>")]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 class PromptFormat_codellama(PromptFormat_llama):
 
     description = "CodeLlama-instruct"
@@ -432,6 +474,7 @@ prompt_formats = \
 {
     "raw": PromptFormat_raw,
     "llama": PromptFormat_llama,
+    "llama3": PromptFormat_llama3,
     "codellama": PromptFormat_codellama,
     "chatml": PromptFormat_chatml,
     "tinyllama": PromptFormat_tinyllama,

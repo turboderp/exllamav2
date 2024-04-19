@@ -69,10 +69,14 @@ class AdaptiveQuantizer:
         self.scale = qscale_tw * best_p
         self.qscale_max = qscale_max_t * best_p
 
+        # Make sure scales are rounded correctly for sanity test
+        prescale = torch.tensor([1 / 256], dtype = torch.half, device = self.scale.device)
+        self.scale = ((self.qscale * self.qscale).to(torch.half) * (self.qscale_max.half() * prescale)).float()
+
 
 class AdaptiveGPTQ:
 
-    percdamp: float = 0.07
+    percdamp: float = 0.12
 
     layer: nn.Linear
     device: torch.device

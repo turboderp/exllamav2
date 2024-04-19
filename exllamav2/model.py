@@ -26,7 +26,7 @@ from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.layernorm import ExLlamaV2LayerNorm
-from exllamav2.attn import ExLlamaV2Attention
+from exllamav2.attn import ExLlamaV2Attention, has_flash_attn
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.moe_mlp import ExLlamaV2MoEMLP
@@ -675,12 +675,20 @@ class ExLlamaV2:
 
             # Limit chunk_size to keep size of attention operation <= max_attention_size
 
-            past_len = cache.current_seq_len
-            attn_size = (past_len + remaining_q_len) * remaining_q_len
-            max_a = self.config.max_attention_size
-            if attn_size > max_a:
-                cs = (math.sqrt(past_len ** 2 + 4 * max_a) - past_len) / 2
-                chunk_size = min(chunk_size, math.floor(cs))
+            if has_flash_attn:
+
+                # Can't measure increase in VRAM usage with longer k_len, assume usage is constant
+                # for given chunk_size
+                pass
+
+            else:
+
+                past_len = cache.current_seq_len
+                attn_size = (past_len + remaining_q_len) * remaining_q_len
+                max_a = self.config.max_attention_size
+                if attn_size > max_a:
+                    cs = (math.sqrt(past_len ** 2 + 4 * max_a) - past_len) / 2
+                    chunk_size = min(chunk_size, math.floor(cs))
 
             # Process chunk
 

@@ -15,20 +15,23 @@ The tl;dr:
 Token-level perplexity tests for various full-precision and quantized models using FP16, FP8 and Q4 cache
 modes. Dataset is The Pile, 10 rows of 512 tokens per test. 
 
-Model	| Precision	| FP16 cache	| FP8 cache	| Q4 cache
---------|-----------|---------------|-----------|---------
-Mistral 7B Instruct	| 3.0 bpw	| 13.33	| 13.43	| 13.41
---	| 3.5 bpw	| 13.07	| 13.14	| 13.12
---	| 4.0 bpw	| 12.90	| 12.90	| 12.90
---	| 5.0 bpw	| 12.73	| 12.73	| 12.75
---	| 6.0 bpw	| 12.73	| 12.75	| 12.74
---	| FP16	| 12.69	| 12.71	| 12.72
-Mixtral 8x7B	| 3.5 bpw	| 10.27	| 10.41	| 10.39
---	| 4.0 bpw	| 10.09	| 10.26	| 10.23
---	| 5.0 bpw	| 10.02	| 10.16	| 10.15
-Llama2 7B	| 4.0 bpw	| 11.43	| 11.92	| 11.74
---	| 5.0 bpw	| 11.13	| 11.40	| 11.31
---	| FP16	| 10.91	| 11.24	| 11.16
+Results are updated for the new method which uses Hadamard rotations on the keys/values. Old results for version
+0.0.18 and prior kept for reference.
+
+Model	| Precision	 | FP16 cache	 | FP8 cache	| Q4 cache (old) | Q4 cache
+--------|---------|-------------|-----------|-------|----------
+Mistral 7B Instruct	| 3.0 bpw | **13.33**	  | 13.43	| 13.41 | **13.37**
+--	| 3.5 bpw	 | **13.07**	  | 13.14	| 13.12 | **13.09**
+--	| 4.0 bpw	 | **12.90**	  | 12.90	| 12.90 | **12.90**
+--	| 5.0 bpw	 | **12.73**	  | 12.73	| 12.75 | **12.75** 
+--	| 6.0 bpw	 | **12.73**	  | 12.75	| 12.74 | **12.74**
+--	| FP16	   | **12.69**	  | 12.71	| 12.72 | **12.69**
+Mixtral 8x7B	| 3.5 bpw	 | **10.27**	  | 10.41	| 10.39 | **10.32** 
+--	| 4.0 bpw	 | **10.09**	  | 10.26	| 10.23 | **10.19**
+--	| 5.0 bpw	 | **10.02**	  | 10.16	| 10.15 | **10.04**
+Llama2 7B	| 4.0 bpw	 | **11.43**	  | 11.92	| 11.74 | **11.60** 
+--	| 5.0 bpw	 | **11.13**	  | 11.40	| 11.31 | **11.19**
+--	| FP16	   | **10.91**	  | 11.24	| 11.16 | **11.05**
 
 
 ### HumanEval
@@ -36,6 +39,8 @@ Llama2 7B	| 4.0 bpw	| 11.43	| 11.92	| 11.74
 The following are HumanEval tests on various full-precision and quantized models using FP16 and Q4 cache,
 respectively. Number of samples per task is limited to 10 (still giving 39360 completions in total produced
 over about 24 hours.)
+
+The following tests were done prior to the improvements in 0.0.18-dev. 
 
 #### pass@1 
 

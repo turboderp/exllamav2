@@ -224,6 +224,8 @@ __global__ void reconstruct_gptq_kernel
             perm[t] = b_q_perm[offset_k + t];
     }
 
+    __syncthreads();
+
     // Column
 
     int n = offset_n + t * 4;

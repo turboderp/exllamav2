@@ -15,6 +15,7 @@
 #include "ext_qattn.h"
 #include "ext_qmlp.h"
 #include "ext_cache.h"
+#include "ext_hadamard.h"
 #include "ext_gemm.h"
 #include "ext_norm.h"
 #include "ext_rope.h"
@@ -29,6 +30,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("quantize_err", &quantize_err, "quantize_err");
     m.def("quantize_range", &quantize_range, "quantize_range");
     m.def("quantize_range_inplace", &quantize_range_inplace, "quantize_range_inplace");
+    m.def("sim_anneal", &sim_anneal, "sim_anneal");
 
     // sampling
 
@@ -84,6 +86,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("q4_to_fp16_kv", &q4_to_fp16_kv, "q4_to_fp16_kv");
 //    m.def("array_fp16_to_fp8_ref", &array_fp16_to_fp8_ref, "array_fp16_to_fp8_ref");
 //    m.def("array_fp8_to_fp16_ref", &array_fp8_to_fp16_ref, "array_fp8_to_fp16_ref");
+
+    // hadamard
+
+    m.def("had_paley", &had_paley, "had_paley");
+    m.def("had_paley2", &had_paley2, "had_paley2");
 
     // gemm
 

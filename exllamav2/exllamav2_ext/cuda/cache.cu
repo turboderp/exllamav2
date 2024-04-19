@@ -7,6 +7,7 @@
 #define THREADS 32
 #define BLOCKSIZE_Q 256
 #define THREADS_Q (BLOCKSIZE_Q / 2)
+#define HADAMARD_Q4
 
 // The upper 8 bits of FP16 are equivalent to FP8 E5M2.
 //
@@ -164,6 +165,22 @@ __global__ void fp16_to_q4_kv_kernel
     half2 w2 = in2[t];
     half2 o = w2;
 
+    // Perform hadamard transform on two interleaved 32-element groups. Don't scale output by 1/sqrt(32) here, instead
+    // scale by 1/32 when dequantizing
+
+    #ifdef HADAMARD_Q4
+
+        for (int i = 1; i < 32; i <<= 1)
+        {
+            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i, 32);
+            uint32_t* w2i = reinterpret_cast<uint32_t*>(&w2);
+            int32_t sfm = -static_cast<int32_t>(t & i) >> 31;
+            *w2i ^= (sfm & 0x80008000);
+            w2 = __hadd2(w2, pw2);
+        }
+
+    #endif
+
     // Max abs value for lane_id 0..15, 16..31
 
     half2 absmax2 = __habs2(w2);
@@ -176,7 +193,7 @@ __global__ void fp16_to_q4_kv_kernel
 
     // Normalize
 
-    half2 c_8 = __half2half2(__int2half_rn(8));
+    half2 c_8 = __half2half2(__float2half_rn(8));
     half c_i = __float2half_rn(1.0f / 8.0f);
 
     w2 = __h2div(w2, absmax2);
@@ -254,6 +271,23 @@ __global__ void q4_to_fp16_kv_kernel
     half w1 = __int2half_rn(q1);
     half2 w2 = __halves2half2(w0, w1);
     w2 = __hmul2(w2, scale2);
+
+    // Perform hadamard transform on two interleaved 32-element groups. Skipped scaling when quantizing, so result
+    // is scaled by 1/32 here
+
+    #ifdef HADAMARD_Q4
+
+        for (int i = 1; i < 32; i <<= 1)
+        {
+            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i, 32);
+            uint32_t* w2i = reinterpret_cast<uint32_t*>(&w2);
+            int32_t sfm = -static_cast<int32_t>(t & i) >> 31;
+            *w2i ^= (sfm & 0x80008000);
+            w2 = __hadd2(w2, pw2);
+        }
+        w2 = __hmul2(w2, __float2half2_rn(1.0f/32.0f));
+
+    #endif
 
     // Store
 

@@ -110,6 +110,7 @@ if build_jit:
         "ext_bindings.cpp",
         "ext_cache.cpp",
         "ext_gemm.cpp",
+        "ext_hadamard.cpp",
         "ext_norm.cpp",
         "ext_qattn.cpp",
         "ext_qmatrix.cpp",
