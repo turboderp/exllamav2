@@ -172,7 +172,7 @@ __global__ void fp16_to_q4_kv_kernel
 
         for (int i = 1; i < 32; i <<= 1)
         {
-            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i, 32);
+            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i);
             uint32_t* w2i = reinterpret_cast<uint32_t*>(&w2);
             int32_t sfm = -static_cast<int32_t>(t & i) >> 31;
             *w2i ^= (sfm & 0x80008000);
@@ -279,7 +279,7 @@ __global__ void q4_to_fp16_kv_kernel
 
         for (int i = 1; i < 32; i <<= 1)
         {
-            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i, 32);
+            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i);
             uint32_t* w2i = reinterpret_cast<uint32_t*>(&w2);
             int32_t sfm = -static_cast<int32_t>(t & i) >> 31;
             *w2i ^= (sfm & 0x80008000);
