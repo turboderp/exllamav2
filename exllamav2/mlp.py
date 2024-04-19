@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
+from auto_quarot import hadamard_utils
+
 
 class ExLlamaV2MLP(ExLlamaV2Module):
 
@@ -30,25 +32,33 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     has_norm: bool
     has_residual: bool
+    quarot: bool
+    had_K: torch.Tensor
+    K: int
 
     def __init__(self,
                  model: ExLlamaV2,
                  key: str,
                  layer_idx: int,
                  has_norm: bool = True,
-                 has_residual: bool = True):
+                 has_residual: bool = True,
+                 quarot: bool = False):
 
         super().__init__(model, key)
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
         self.has_residual = has_residual
+        self.quarot = quarot
 
         self.q_handle = None
         self.temp_lora_size = 0
 
         hidden_size = self.model.config.hidden_size
         intermediate_size = self.model.config.intermediate_size
+
+        if self.quarot:
+            self.had_K, self.K = hadamard_utils.get_hadK(intermediate_size)
 
         if self.has_norm:
             if self.model.config.arch.norm == "layernorm":
@@ -136,6 +146,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              self.model.config.max_input_len * self.model.config.max_batch_size,
                                              self.model.config.arch.mlp_act_func == "gelu",
                                              self.has_residual)
+            
+        if self.quarot:
+            self.had_K = self.had_K.to(self.device_idx)
 
 
     def unload(self):
@@ -224,7 +237,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 loras: list[ExLlamaV2Lora] | None = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        if self.q_handle is None or intermediates:
+        if self.quarot or self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras, **kwargs)
 
         if loras is None or self.temp_lora_size == 0:
@@ -270,6 +283,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 y = F.silu(up)
             elif self.model.config.arch.mlp_act_func == "gelu":
                 y = F.gelu(up)
+
+        if self.quarot:
+            y = hadamard_utils.matmul_hadU_cuda(y, self.had_K, self.K)
 
         down = self.down_proj.forward(y, loras = loras)
         hidden_states = down + residual if self.has_residual else down

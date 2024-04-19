@@ -11,3 +11,4 @@ websockets
 regex
 numpy
 tokenizers
+git+https://github.com/sgsdxzy/AutoQuarot.git

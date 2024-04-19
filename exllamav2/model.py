@@ -169,9 +169,9 @@ class ExLlamaV2:
                 pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx)
                 self.modules += [pd]
             else:
-                attn = ExLlamaV2Attention(self, layer_key, layer_idx)
+                attn = ExLlamaV2Attention(self, layer_key, layer_idx, quarot=self.config.quarot)
                 if self.config.arch.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)
-                else: mlp = ExLlamaV2MLP(self, layer_key, layer_idx)
+                else: mlp = ExLlamaV2MLP(self, layer_key, layer_idx, quarot=self.config.quarot)
                 self.modules += [attn, mlp]
 
         if self.config.arch.norm == "layernorm": norm = ExLlamaV2LayerNorm(self, "model.norm")
