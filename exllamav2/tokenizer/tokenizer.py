@@ -277,7 +277,7 @@ class ExLlamaV2Tokenizer:
         return torch.tensor([[token_id]], dtype = torch.long)
 
 
-    def single_id(self, token: str) -> torch.Tensor:
+    def single_id(self, token: str) -> int:
         """
         Get the ID of a single token from exact string match
 
