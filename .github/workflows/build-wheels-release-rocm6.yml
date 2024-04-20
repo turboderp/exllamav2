@@ -31,11 +31,11 @@ jobs:
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
-          tool-cache: false
+          tool-cache: true
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false
           swap-storage: true
           
       - uses: actions/checkout@v3
