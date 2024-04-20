@@ -31,7 +31,7 @@ jobs:
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
-          tool-cache: true
+          tool-cache: false
           android: true
           dotnet: true
           haskell: true
@@ -68,14 +68,6 @@ jobs:
           pip3 install torch --index-url="https://download.pytorch.org/whl/test/rocm$ROCM_VERSION"
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
           pip3 cache purge
-
-          # installing previously removed powershell
-          sudo apt install -y wget apt-transport-https software-properties-common
-          wget -q https://packages.microsoft.com/config/ubuntu/$VERSION_ID/packages-microsoft-prod.deb
-          sudo dpkg -i packages-microsoft-prod.deb
-          rm packages-microsoft-prod.deb
-          sudo apt update
-          sudo apt install powershell -y
 
       - name: Build Wheel
         id: build-wheel
