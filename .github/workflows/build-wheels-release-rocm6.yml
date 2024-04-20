@@ -69,24 +69,30 @@ jobs:
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
           pip3 cache purge
 
+          # installing previously removed powershell
+          sudo apt install -y wget apt-transport-https software-properties-common
+          wget -q https://packages.microsoft.com/config/ubuntu/$VERSION_ID/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm packages-microsoft-prod.deb
+          sudo apt update
+          sudo apt install powershell -y
+
       - name: Build Wheel
         id: build-wheel
         run: |
-          export versionString=$(<exllamav2/version.py)
-
-          if [[ $versionString =~ __version__\ =\ \"([0-9]+\.(?:[0-9]+\.?(?:dev[0-9]+)?)*)\" ]]; then
-              echo "::notice file=build-wheels-release-rocm.yml,line=73,title=Package Version::Detected package version is: ${BASH_REMATCH[1]}"
-              echo "PACKAGE_VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-              export PACKAGE_VERSION=${BASH_REMATCH[1]}
-          else
-              echo "::error file=build-wheels-release.yml,line=76::Could not parse version from exllamav2/version.py! You must upload wheels manually!"
-              echo "PACKAGE_VERSION=None" >> "$GITHUB_OUTPUT"
-              export PACKAGE_VERSION=None
-          fi
-
-          export BUILDTAG="+rocm$ROCM_VERSION"
-          python3 -m build -n --wheel -C--build-option=egg_info -C--build-option=--tag-build=$BUILDTAG
-        shell: bash
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
+          {
+              Write-Output $('::notice file=build-wheels-release-rocm.yml,line=73,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=76::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
+          $BUILDTAG = "+rocm$env:ROCM_VERSION"
+          python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+        shell: pwsh
         
       - uses: actions/upload-artifact@v3
         with:
