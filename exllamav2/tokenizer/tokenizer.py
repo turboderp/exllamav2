@@ -43,6 +43,7 @@ class ExLlamaV2Tokenizer:
 
     id_to_ord: list | None
     id_to_piece: list | None
+    id_to_piece_with_special: list | None
     piece_to_id: dict | None
     prefix_to_ids: dict | None
     prefix_id_to_ids: dict | None
@@ -231,6 +232,7 @@ class ExLlamaV2Tokenizer:
 
         self.id_to_ord = None
         self.id_to_piece = None
+        self.id_to_piece_with_special = None
         self.piece_to_id = None
         self.prefix_to_ids = None
         self.prefix_id_to_ids = None
@@ -569,7 +571,18 @@ class ExLlamaV2Tokenizer:
 
     # Copy vocabulary from model
 
-    def get_id_to_piece_list(self):
+    def get_id_to_piece_list(self, include_special_tokens = False):
+
+        if include_special_tokens:
+            if self.id_to_piece_with_special is not None: return self.id_to_piece_with_special
+
+            id_to_piece_extended = self.get_id_to_piece_list()
+            for k, v in self.extended_id_to_piece.items():
+                id_to_piece_extended[k] = v
+
+            self.id_to_piece_with_special = id_to_piece_extended
+            return self.id_to_piece_with_special
+
 
         if self.id_to_piece is not None: return self.id_to_piece
         id_to_ord = self.get_id_to_ord_list()
