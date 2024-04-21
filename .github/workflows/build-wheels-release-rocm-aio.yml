@@ -1,0 +1,103 @@
+name: Build ROCm AIO Wheels & Release
+
+on:
+  workflow_dispatch:
+    # inputs:
+    #   pypi:
+    #     description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
+    #     default: '0'
+    #     required: true
+    #     type: string
+  workflow_call:
+    inputs:
+      pypi:
+        description: 'Upload wheels to PyPI? 1 = yes, 0 = no'
+        default: '0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build_wheels:
+    name: Build ROCm ${{ matrix.rocmver }} wheel for python ${{ matrix.pyver }}
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        pyver: ["3.8", "3.9", "3.10", "3.11"]
+        rocmver: ["5.6", "5.7", "6.0"]
+
+    steps:
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+          
+      - uses: actions/checkout@v3
+
+      - name: Install ROCm SDK
+        run: |
+          export ROCM_VERSION=${{ matrix.rocmver }}
+
+          [ ! -d /etc/apt/keyrings ] && sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+          wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION jammy main" | sudo tee --append /etc/apt/sources.list.d/rocm.list
+          echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt update
+
+          sudo apt install rocm-hip-sdk -y
+          sudo apt clean -y
+
+          echo "/opt/rocm/bin" >> $GITHUB_PATH
+          echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
+          echo "ROCM_VERSION=$ROCM_VERSION" >> $GITHUB_ENV
+          echo "USE_ROCM=1" >> $GITHUB_ENV
+
+      - uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.pyver }}
+
+      - name: Install Dependencies
+        run: |
+          pip3 install torch --pre --index-url="https://download.pytorch.org/whl/nightly/rocm$ROCM_VERSION"
+          pip3 install --upgrade build wheel safetensors sentencepiece ninja
+          pip3 cache purge
+
+      - name: Build Wheel
+        id: build-wheel
+        run: |
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"')
+          {
+              Write-Output $('::notice file=build-wheels-release-rocm.yml,line=73,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+              Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          } else {
+              Write-Output '::error file=build-wheels-release.yml,line=76::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+              Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+          
+          $BUILDTAG = "+rocm$env:ROCM_VERSION"
+          python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+        shell: pwsh
+        
+      - uses: actions/upload-artifact@v3
+        with:
+          name: 'wheels'
+          path: ./dist/*.whl
+          
+      - name: Upload files to a GitHub release
+        if: steps.build-wheel.outputs.PACKAGE_VERSION != 'None'
+        uses: svenstaro/upload-release-action@2.6.1
+        with:
+          file: ./dist/*.whl
+          tag: ${{ format('v{0}', steps.build-wheel.outputs.PACKAGE_VERSION) }}
+          file_glob: true
+          overwrite: true
+          release_name: ${{ steps.build-wheel.outputs.PACKAGE_VERSION }}    
