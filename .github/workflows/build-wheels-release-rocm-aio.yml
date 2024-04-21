@@ -67,7 +67,7 @@ jobs:
       - name: Install Dependencies
         run: |
           if [ ${{ matrix.rocmver == '6.0' }}]; then
-            pip3 install torch --pre --index-url="https://download.pytorch.org/whl/test/rocm$ROCM_VERSION"
+            pip3 install torch --index-url="https://download.pytorch.org/whl/test/rocm$ROCM_VERSION"
           else
             pip3 install torch --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
           fi
