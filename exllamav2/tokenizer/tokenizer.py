@@ -576,7 +576,7 @@ class ExLlamaV2Tokenizer:
         if include_special_tokens:
             if self.id_to_piece_with_special is not None: return self.id_to_piece_with_special
 
-            id_to_piece_extended = self.get_id_to_piece_list()
+            id_to_piece_extended = self.get_id_to_piece_list().copy()
             for k, v in self.extended_id_to_piece.items():
                 id_to_piece_extended[k] = v
 
