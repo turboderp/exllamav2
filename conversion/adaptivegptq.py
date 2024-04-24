@@ -202,11 +202,8 @@ class AdaptiveGPTQ:
                 self.hessian = torch.zeros((self.rows, self.rows), device=self.device, dtype=torch.float)
 
             self.num_batches += 1
-            num_samples = len(inputs)
-            # inputs = torch.cat(inputs, dim = 0)
-            inputs = inputs.view((-1, inputs.shape[-1])).float().T.to("cuda:0")
-            inputs *= math.sqrt(2 / num_samples)
-            self.hessian += inputs.matmul(inputs.T)
+            inputs = inputs.view((-1, inputs.shape[-1])).float().to("cuda:0")
+            self.hessian.addmm_(inputs.T, inputs)
 
 
     def prepare(self, no_h_inv = False):
