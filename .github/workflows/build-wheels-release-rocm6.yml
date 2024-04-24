@@ -65,7 +65,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip3 install torch --index-url="https://download.pytorch.org/whl/test/rocm$ROCM_VERSION"
+          pip3 install torch --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
           pip3 cache purge
 
