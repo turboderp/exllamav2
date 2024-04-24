@@ -114,27 +114,57 @@ class ExLlamaV2DeviceTensors:
 
     def prepare_sincos(self):
 
-        base = self.model.config.rotary_embedding_base
-        alpha = self.model.config.scale_alpha_value or 1.0
-        scale = self.model.config.scale_pos_emb or 1.0
-        head_dim = self.model.config.head_dim
+        cfg = self.model.config
+
+        base = cfg.rotary_embedding_base
+        alpha = cfg.scale_alpha_value or 1.0
+        scale = cfg.scale_pos_emb or 1.0
+        head_dim = cfg.head_dim
         device = _torch_device(self.device_idx)
+        scaling_factor = 1.0
 
-        if alpha != 1.0: base *= alpha ** (self.model.config.head_dim / (self.model.config.head_dim - 2))
+        # Alpha scaling for any rope_scaling type
 
-        inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2, device = device).float() / head_dim))
-        t = torch.arange(self.model.config.max_seq_len, device = device, dtype = torch.float32)
+        if alpha != 1.0: base *= alpha ** (cfg.head_dim / (cfg.head_dim - 2))
 
+        # "su"
+
+        if cfg.alt_rope_method == "su":
+
+            a = cfg.max_seq_len
+            b = cfg.original_max_seq_len
+            if a > b:
+                ext_factors = torch.tensor(cfg.scale_long_factor, dtype = torch.float32, device = device)
+                scaling_factor = math.sqrt(1 + math.log(a / b) / math.log(b))
+            else:
+                ext_factors = torch.tensor(cfg.scale_short_factor, dtype = torch.float32, device = device)
+
+            inv_freq = 1.0 / (ext_factors * base ** (torch.arange(0, head_dim, 2, device = device).float() / head_dim))
+
+        # Regular
+
+        else:
+
+            inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2, device = device).float() / head_dim))
+
+        # Common
+
+        t = torch.arange(cfg.max_seq_len, device = device, dtype = torch.float32)
         if scale != 1.0: t /= scale
 
         freqs = torch.einsum("i,j->ij", t, inv_freq)
-        if self.model.config.arch.rope_neox_style:
+        if cfg.arch.rope_neox_style:
             emb = torch.cat((freqs, freqs), dim=-1)
         else:
             emb = torch.repeat_interleave(freqs, 2, dim=-1)
 
-        self.sin = emb.sin()[None, None, :, :].half()
-        self.cos = emb.cos()[None, None, :, :].half()
+        self.sin = emb.sin()[None, None, :, :]
+        self.cos = emb.cos()[None, None, :, :]
+        if scaling_factor != 1.0:
+            self.sin *= scaling_factor
+            self.cos *= scaling_factor
+        self.sin = self.sin.half()
+        self.cos = self.cos.half()
 
 
 class ExLlamaV2:
