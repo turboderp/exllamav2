@@ -102,7 +102,7 @@ class PromptFormat_llama(PromptFormat):
 
 class PromptFormat_llama3(PromptFormat):
 
-    description = "Llama-chat, Llama2-chat and Mistral-instruct models"
+    description = "Llama3-instruct models"
 
     def __init__(self):
         super().__init__()
@@ -134,6 +134,49 @@ class PromptFormat_llama3(PromptFormat):
             [tokenizer.eos_token_id,
              tokenizer.single_id("<|eot_id|>"),
              tokenizer.single_id("<|start_header_id|>")]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
+class PromptFormat_phi3(PromptFormat):
+
+    description = "Phi3-instruct models"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            """You are a helpful AI assistant."""
+
+    def first_prompt(self):
+        return \
+            """<s><|system|>\n""" + \
+            """<|system_prompt|>""" + \
+            """<|end|>\n""" + \
+            """<|user|>\n""" + \
+            """<|user_prompt|><|end|>\n""" + \
+            """<|assistant|>\n"""
+
+    def subs_prompt(self):
+        return \
+            """<|end|>\n""" + \
+            """<|user|>\n""" + \
+            """<|user_prompt|>""" + \
+            """<|end|>\n""" + \
+            """<|assistant|>\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             tokenizer.single_id("<|end|>"),
+             tokenizer.single_id("<|assistant|>"),
+             tokenizer.single_id("<|endoftext|>")]
 
     def encoding_options(self):
         return False, False, True
@@ -485,4 +528,5 @@ prompt_formats = \
     "nous": PromptFormat_nous,
     "gemma": PromptFormat_gemma,
     "cohere": PromptFormat_cohere,
+    "phi3": PromptFormat_phi3,
 }
