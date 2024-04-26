@@ -16,23 +16,19 @@ import json
 
 # Models to test
 
-# model_base = "/mnt/str/models/_exl2"
-# model_base = "/mnt/str/models/mixtral-8x7b-instruct-exl2/"
-model_base = "/mnt/str/models/llama3-8b-exl2"
-# variants = ["x3-8b"]
-
+model_base = "/mnt/str/models/llama3-70b-instruct-exl2"
 variants = [v for v in os.listdir(model_base) if os.path.isdir(os.path.join(model_base, v))]
+if not variants: variants = ["."]
 
 # variants = \
 # [
 #     "2.4bpw",
-#     "2.5bpw",
-#     "3.0bpw",
+#     "2.8bpw",
 #     "4.0bpw",
-#     "6.0bpw",
 # ]
 
-gpu_split = (20, 21.3, 24)
+# gpu_split = (20, 21.3, 21, 24)
+gpu_split = None  #auto
 
 qa_set = "cais/mmlu"
 qa_split = "test"
@@ -65,12 +61,14 @@ def get_model(base, variant_, gpu_split_, batch_size_):
     model_ = ExLlamaV2(config)
     print(" -- Loading model: " + model_dir)
 
-    model_.load(gpu_split_)
+    if gpu_split_:
+        model_.load(gpu_split_)
+        cache_ = None
+    else:
+        cache_ = ExLlamaV2Cache(model_, batch_size = batch_size_, lazy = True)
+        model_.load_autosplit(cache_)
 
     tokenizer_ = ExLlamaV2Tokenizer(config)
-
-    # cache_ = ExLlamaV2Cache(model)
-    cache_ = None
 
     return model_, cache_, tokenizer_
 
