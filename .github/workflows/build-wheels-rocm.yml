@@ -1,4 +1,4 @@
-name: Build ROCm 5.6 Wheels
+name: Build ROCm Wheels
 
 on:
   workflow_dispatch:
