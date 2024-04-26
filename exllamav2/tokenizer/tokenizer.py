@@ -164,7 +164,7 @@ class ExLlamaV2Tokenizer:
 
         # If model config doesn't specify BOS and EOS tokens, try to load from tokenizer config
 
-        def get_default_token_id(config_key: str, current: int | None, default: int):
+        def get_default_token_id(config_key: str, current: int | None, default: int | None):
             if current is not None: return current
             if self.tokenizer_config_dict is not None and config_key in self.tokenizer_config_dict:
                 st = self.tokenizer_config_dict[config_key]
@@ -182,7 +182,7 @@ class ExLlamaV2Tokenizer:
             else:
                 return default
 
-        self.pad_token_id = get_default_token_id("pad_token", self.pad_token_id, 0)
+        self.pad_token_id = get_default_token_id("pad_token", self.pad_token_id, None)
         self.bos_token_id = get_default_token_id("bos_token", self.bos_token_id, 1)
         self.eos_token_id = get_default_token_id("eos_token", self.eos_token_id, 2)
 
@@ -192,11 +192,11 @@ class ExLlamaV2Tokenizer:
         self.bos_token = (self.tokenizer_model.bos_token() or self.extended_id_to_piece.get(self.bos_token_id, None)) or self.tokenizer_model.id_to_piece(self.bos_token_id)
         self.eos_token = (self.tokenizer_model.eos_token() or self.extended_id_to_piece.get(self.eos_token_id, None)) or self.tokenizer_model.id_to_piece(self.eos_token_id)
 
-        # Use "<pad>" or EOS token as fallback for padding token
+        # Use "<pad>" or BOS token as fallback for padding token
 
         if self.pad_token_id is None:
             pad_test = self.tokenizer_model.piece_to_id("<pad>")
-            self.pad_token_id = pad_test or self.eos_token_id
+            self.pad_token_id = pad_test or self.bos_token_id
 
         # Special case if <unk> and <pad> have the same ID
 
