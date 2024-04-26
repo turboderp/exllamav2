@@ -198,6 +198,25 @@ class AdaptiveGPTQ:
 
         with torch.inference_mode():
 
+            # dim = inputs.shape[-1]
+            # inputs = inputs.view((-1, dim)).float().T.to("cuda:0")
+            # ns = 1
+            #
+            # if self.hessian is None:
+            #     self.hessian = torch.zeros((dim, dim), device = self.device, dtype = torch.float)
+            # else:
+            #     self.hessian.mul_(self.num_samples / (self.num_samples + ns))
+            # self.num_samples += ns
+            # inputs.mul_(math.sqrt(2 / self.num_samples))
+            # self.hessian.addmm_(inputs, inputs.T)
+
+            # self.num_batches += 1
+            # num_samples = len(inputs)
+            # # inputs = torch.cat(inputs, dim = 0)
+            # inputs = inputs.view((-1, inputs.shape[-1])).float().T.to("cuda:0")
+            # inputs *= math.sqrt(2 / num_samples)
+            # self.hessian += inputs.matmul(inputs.T)
+
             if self.hessian is None:
                 self.hessian = torch.zeros((self.rows, self.rows), device=self.device, dtype=torch.float)
 
