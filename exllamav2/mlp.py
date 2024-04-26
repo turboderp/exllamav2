@@ -39,6 +39,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                  has_residual: bool = True):
 
         super().__init__(model, key)
+        cfg = self.model.config
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
@@ -47,27 +48,29 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.q_handle = None
         self.temp_lora_size = 0
 
-        hidden_size = self.model.config.hidden_size
-        intermediate_size = self.model.config.intermediate_size
+        f_a = 0
+        f_b = cfg.intermediate_size
+        f_c = f_b + cfg.intermediate_size
+        f_key = (key + ".mlp." + cfg.arch.fused_mlp_key_12) if cfg.arch.fused_mlp_key_12 else None
 
         if self.has_norm:
-            if self.model.config.arch.norm == "layernorm":
-                self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_2)
-            elif self.model.config.arch.norm == "rmsnorm":
-                self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_2)
+            if cfg.arch.norm == "layernorm":
+                self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_2)
+            elif cfg.arch.norm == "rmsnorm":
+                self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_2)
         else:
             self.post_attention_layernorm = None
 
-        self.up_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_up, hidden_size, intermediate_size, self.model.config.arch.mlp_bias)
-        self.down_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_down, intermediate_size, hidden_size, self.model.config.arch.mlp_bias)
+        self.up_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_up, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c)
+        self.down_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_down, cfg.intermediate_size, cfg.hidden_size, self.model.config.arch.mlp_bias)
 
         self.submodules = [self.up_proj,
                            self.down_proj]
         if self.has_norm:
             self.submodules += [self.post_attention_layernorm]
 
-        if self.model.config.arch.mlp_gate:
-            self.gate_proj = ExLlamaV2Linear(model, key + self.model.config.arch.mlp_key_gate, hidden_size, intermediate_size, self.model.config.arch.mlp_bias)
+        if cfg.arch.mlp_gate:
+            self.gate_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_gate, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_a, f_end = f_b)
             self.submodules += [self.gate_proj]
         else:
             self.gate_proj = None
@@ -89,14 +92,16 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def load(self):
 
+        cfg = self.model.config
+
         if self.post_attention_layernorm is not None:
             self.post_attention_layernorm.load()
 
-        if self.model.config.checkpoint_fused_mlp:
-            w12 = self.load_weight(self.key + self.model.config.arch.fused_mlp_key_12)
-            w1 = nn.Parameter(w12[:self.model.config.intermediate_size, :].contiguous())
-            w2 = nn.Parameter(w12[self.model.config.intermediate_size:, :].contiguous())
-            w3 = self.load_weight(self.key + self.model.config.arch.fused_mlp_key_3)
+        if cfg.checkpoint_fused_mlp:
+            w12 = self.load_weight(self.key + cfg.arch.fused_mlp_key_12)
+            w1 = nn.Parameter(w12[:cfg.intermediate_size, :].contiguous())
+            w2 = nn.Parameter(w12[cfg.intermediate_size:, :].contiguous())
+            w3 = self.load_weight(self.key + cfg.arch.fused_mlp_key_3)
             self.gate_proj.load(w1)
             self.up_proj.load(w2)
             self.down_proj.load(w3)
@@ -133,8 +138,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              device_tensors.get_scratch_slice(self.temp_a_size()),
                                              device_tensors.get_scratch_slice(self.temp_b_size()),
                                              device_tensors.get_scratch_slice(self.temp_dq_size()),
-                                             self.model.config.max_input_len * self.model.config.max_batch_size,
-                                             self.model.config.arch.mlp_act_func == "gelu",
+                                             cfg.max_input_len * cfg.max_batch_size,
+                                             cfg.arch.mlp_act_func == "gelu",
                                              self.has_residual)
 
 

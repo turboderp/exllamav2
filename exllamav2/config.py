@@ -85,6 +85,10 @@ class ExLlamaV2Config:
     norm_eps: float | None
     vocab_size: int
     rotary_embedding_base: float
+    scale_long_factor: list[float] | None
+    scale_short_factor: list[float] | None
+    alt_rope_method: str | None
+    original_max_seq_len: int
     head_dim: int
     num_experts: int | None
     num_experts_per_token: int | None
@@ -107,6 +111,9 @@ class ExLlamaV2Config:
         self.max_output_len = None
         self.scale_pos_emb = 1.0
         self.scale_alpha_value = 1.0
+        self.scale_long_factor = None
+        self.scale_short_factor = None
+        self.alt_rope_method = None
 
         self.no_flash_attn = False
         self.fasttensors = False
@@ -119,6 +126,7 @@ class ExLlamaV2Config:
             self.model_dir = None
 
         self.max_dq_size = 512*(1024**2)
+
 
     # Set low-mem options
 
@@ -200,14 +208,24 @@ class ExLlamaV2Config:
                                                   "model_max_length",
                                                   "max_position_embeddings",
                                                   "max_seq_len"], 2048)
+        self.original_max_seq_len = self.max_seq_len
 
         rs = read(read_config, dict, "rope_scaling", None)
-        if rs and "factor" in rs:
-            factor = rs["factor"]
+        if rs:
             scaling_type = rs.get("type", None)
             if scaling_type == "linear":
-                self.scale_pos_emb = factor
-            # elif scaling_type == "yarn":
+                assert "factor" in rs, "'factor' missing from 'rope_scaling' config"
+                self.scale_pos_emb = rs.get("factor", 1.0)
+            if scaling_type == "su":
+                assert "long_factor" in rs, "'long_factor' missing from 'rope_scaling' config"
+                assert "short_factor" in rs, "'short_factor' missing from 'rope_scaling' config"
+                assert "original_max_position_embeddings" in read_config, \
+                    "'original_max_position_embeddings' required for 'su' scaling"
+                self.scale_long_factor = rs["long_factor"]
+                self.scale_short_factor = rs["short_factor"]
+                self.original_max_seq_len = read_config["original_max_position_embeddings"]
+                self.alt_rope_method = "su"
+            # if scaling_type == "yarn":
             #     self.scale_alpha_value = factor
 
         # Create map of model tensors
