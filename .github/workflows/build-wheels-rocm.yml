@@ -55,7 +55,11 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          pip3 install torch==2.3.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          if [ "${{ matrix.rocm }}" = "6.0" ]; then
+            pip3 install torch==2.3.0 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          else
+            pip3 install torch==2.2.2 --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          fi
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
           pip3 cache purge
 
