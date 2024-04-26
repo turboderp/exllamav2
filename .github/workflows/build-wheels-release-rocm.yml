@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build_wheels:
-    name: Build ROCm wheel for Python ${{ matrix.pyver }}
+    name: Build ROCm ${{ matrix.rocm }} wheel for Python ${{ matrix.pyver }}
     runs-on: ubuntu-20.04
     strategy:
       matrix:
