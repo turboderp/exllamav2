@@ -65,7 +65,7 @@ jobs:
 
       - name: Build Wheel
         run: |
-          BUILDTAG="+rocm$env:ROCM_VERSION"
+          BUILDTAG="+rocm${{ env.ROCM_VERSION }}
           python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
 
       - uses: actions/upload-artifact@v3
