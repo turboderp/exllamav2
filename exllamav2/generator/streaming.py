@@ -99,6 +99,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     active_loras: list[ExLlamaV2Lora]
 
+    # Extra decoding options
+
+    decode_special_tokens: bool
+
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
         super().__init__(model, cache, tokenizer)
@@ -216,7 +220,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                         return_probabilities: bool = False,
                         return_top_tokens: int = 0,
                         return_logits: bool = False,
-                        abort_event: threading.Event = None):
+                        abort_event: threading.Event = None,
+                        decode_special_tokens: bool = False):
         """
         Resets the generator and starts a new completion of the supplied input_ids. Reuses the existing
         cache for any token IDs matching the previous sequence.
@@ -254,6 +259,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         :param abort_event:
             Forwarded to the model during generation. Will abort prefill/context ingestion if triggered.
+
+        :param decode_special_tokens:
+            Also decode special tokens into output text stream
         """
 
         self.return_probabilities = return_probabilities
@@ -261,6 +269,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.return_logits = return_logits
 
         self.abort_event = abort_event
+
+        self.decode_special_tokens = decode_special_tokens
 
         assert input_ids.shape[0] <= 2, "Streaming generator does not support batch size > 1"
         if input_ids.shape[0] == 2:
@@ -394,7 +404,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             # Pop the last token
 
-            old_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:])[0]
+            old_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:],
+                                             decode_special_tokens = self.decode_special_tokens)[0]
             last_token = self.sequence_ids[:, -1:]
             self.sequence_ids = self.sequence_ids[:, :-1]
             self.cache.current_seq_len -= 1
@@ -403,13 +414,14 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             if self.first_token:
 
-                self.settings.begin_filters(self.tokenizer.get_id_to_piece_list()[last_token])
+                self.settings.begin_filters(self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)[last_token])
                 self.first_token = False
 
             # Regenerate the last token again, with prefix
 
             healed_token, _, _, _, eos, logits = self._gen_single_token(self.settings, prefix_token = last_token)
-            new_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:])[0]
+            new_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:],
+                                             decode_special_tokens = self.decode_special_tokens)[0]
             self.held_text += new_tail[len(old_tail):]
 
             self.heal_next_token = False
@@ -436,7 +448,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if next_token.item() in self.stop_tokens:
             return self.held_text, True, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits
 
-        id_to_piece = self.tokenizer.get_id_to_piece_list()
+        id_to_piece = self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)
         new_text = id_to_piece[next_token]
 
         next_token, new_text = self._catch_utf8(next_token, new_text)
@@ -507,7 +519,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             b = [id_to_ord[x] for x in self.held_utf8_tokens[0].tolist()]
             c = bytes(b).decode('utf-8')
         except ValueError or UnicodeDecodeError:
-            id_to_piece = self.tokenizer.get_id_to_piece_list()
+            id_to_piece = self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)
             c = "".join(id_to_piece[x] for x in self.held_utf8_tokens[0].tolist())
 
         pre_t = self.held_utf8_tokens
@@ -521,7 +533,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             if "�" not in new_text: return next_token, new_text
 
         self.held_fallback_tokens = torch.cat((self.held_fallback_tokens, next_token), dim = -1)
-        new_decode = self.tokenizer.decode(self.held_fallback_tokens)[0]
+        new_decode = self.tokenizer.decode(self.held_fallback_tokens,
+                                           decode_special_tokens = self.decode_special_tokens)[0]
 
         if "�" not in new_decode or self.held_fallback_tokens.shape[-1] >= self.max_fallback_tokens:
             r_tokens = self.held_fallback_tokens

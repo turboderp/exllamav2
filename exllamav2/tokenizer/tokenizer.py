@@ -43,6 +43,7 @@ class ExLlamaV2Tokenizer:
 
     id_to_ord: list | None
     id_to_piece: list | None
+    id_to_piece_with_special: list | None
     piece_to_id: dict | None
     prefix_to_ids: dict | None
     prefix_id_to_ids: dict | None
@@ -163,7 +164,7 @@ class ExLlamaV2Tokenizer:
 
         # If model config doesn't specify BOS and EOS tokens, try to load from tokenizer config
 
-        def get_default_token_id(config_key: str, current: int | None, default: int):
+        def get_default_token_id(config_key: str, current: int | None, default: int | None):
             if current is not None: return current
             if self.tokenizer_config_dict is not None and config_key in self.tokenizer_config_dict:
                 st = self.tokenizer_config_dict[config_key]
@@ -181,7 +182,7 @@ class ExLlamaV2Tokenizer:
             else:
                 return default
 
-        self.pad_token_id = get_default_token_id("pad_token", self.pad_token_id, 0)
+        self.pad_token_id = get_default_token_id("pad_token", self.pad_token_id, None)
         self.bos_token_id = get_default_token_id("bos_token", self.bos_token_id, 1)
         self.eos_token_id = get_default_token_id("eos_token", self.eos_token_id, 2)
 
@@ -191,11 +192,11 @@ class ExLlamaV2Tokenizer:
         self.bos_token = (self.tokenizer_model.bos_token() or self.extended_id_to_piece.get(self.bos_token_id, None)) or self.tokenizer_model.id_to_piece(self.bos_token_id)
         self.eos_token = (self.tokenizer_model.eos_token() or self.extended_id_to_piece.get(self.eos_token_id, None)) or self.tokenizer_model.id_to_piece(self.eos_token_id)
 
-        # Use "<pad>" or EOS token as fallback for padding token
+        # Use "<pad>" or BOS token as fallback for padding token
 
         if self.pad_token_id is None:
             pad_test = self.tokenizer_model.piece_to_id("<pad>")
-            self.pad_token_id = pad_test or self.eos_token_id
+            self.pad_token_id = pad_test or self.bos_token_id
 
         # Special case if <unk> and <pad> have the same ID
 
@@ -231,6 +232,7 @@ class ExLlamaV2Tokenizer:
 
         self.id_to_ord = None
         self.id_to_piece = None
+        self.id_to_piece_with_special = None
         self.piece_to_id = None
         self.prefix_to_ids = None
         self.prefix_id_to_ids = None
@@ -277,7 +279,7 @@ class ExLlamaV2Tokenizer:
         return torch.tensor([[token_id]], dtype = torch.long)
 
 
-    def single_id(self, token: str) -> torch.Tensor:
+    def single_id(self, token: str) -> int:
         """
         Get the ID of a single token from exact string match
 
@@ -569,7 +571,18 @@ class ExLlamaV2Tokenizer:
 
     # Copy vocabulary from model
 
-    def get_id_to_piece_list(self):
+    def get_id_to_piece_list(self, include_special_tokens = False):
+
+        if include_special_tokens:
+            if self.id_to_piece_with_special is not None: return self.id_to_piece_with_special
+
+            id_to_piece_extended = self.get_id_to_piece_list().copy()
+            for k, v in self.extended_id_to_piece.items():
+                id_to_piece_extended[k] = v
+
+            self.id_to_piece_with_special = id_to_piece_extended
+            return self.id_to_piece_with_special
+
 
         if self.id_to_piece is not None: return self.id_to_piece
         id_to_ord = self.get_id_to_ord_list()

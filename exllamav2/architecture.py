@@ -14,9 +14,16 @@ layer_keys_dbrx_attn = [["self_attn.Wqkv", "self_attn.q_proj"],
                         ["self_attn.Wqkv", "self_attn.k_proj"],
                         ["self_attn.Wqkv", "self_attn.v_proj"],
                         ["self_attn.o_proj"]]
+layer_keys_phi3_attn = [["self_attn.qkv_proj", "self_attn.q_proj"],
+                        ["self_attn.qkv_proj", "self_attn.k_proj"],
+                        ["self_attn.qkv_proj", "self_attn.v_proj"],
+                        ["self_attn.o_proj"]]
 layer_keys_llama_mlp = [["mlp.down_proj"],
                         ["mlp.gate_proj"],
                         ["mlp.up_proj"]]
+layer_keys_phi3_mlp = [["mlp.down_proj"],
+                       ["mlp.gate_up_proj", "mlp.gate_proj"],
+                       ["mlp.gate_up_proj", "mlp.up_proj"]]
 layer_keys_mixtral_mlp = [["block_sparse_moe.experts.*.w1"],
                           ["block_sparse_moe.experts.*.w2"],
                           ["block_sparse_moe.experts.*.w3"],
@@ -385,6 +392,39 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = dbrx_keymap
             self.fused_qkv_key = "Wqkv"
+
+        # Llama (default + fallback)
+
+        if arch_string == "Phi3ForCausalLM":
+            arch_recognized = True
+            self.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_phi3_attn + \
+                layer_keys_phi3_mlp
+            self.expect_keys += \
+                expect_keys_llama
+            self.norm_eps_key = "rms_norm_eps"
+            self.attention_bias_qkv = False
+            self.attention_bias_o = False
+            self.mlp_bias = False
+            self.mlp_gate = True
+            self.mlp_key_gate = ".mlp.gate_proj"
+            self.mlp_key_up = ".mlp.up_proj"
+            self.mlp_key_down = ".mlp.down_proj"
+            self.mlp_act_func = "silu"
+            self.is_moe = False
+            self.norm = "rmsnorm"
+            self.lm_head_key = "lm_head"
+            self.normalize_embeddings = False
+            self.norm_key_1 = ".input_layernorm"
+            self.norm_key_2 = ".post_attention_layernorm"
+            self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
+            self.requires_bos = False
+            self.rope_neox_style = True
+            self.keymap = None
+            self.fused_qkv_key = "qkv_proj"
+            self.fused_mlp_key_12 = "gate_up_proj"
 
         # Llama (default + fallback)
 
