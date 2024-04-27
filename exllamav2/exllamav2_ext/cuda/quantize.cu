@@ -127,7 +127,8 @@ __global__ void fused_quantize_adjust_kernel
 
     // Adjust error
 
-    float d = hessian_inv[row * rows + row];  // H diagonal
+    uint64_t d_idx = (uint64_t)row * (uint64_t)rows + (uint64_t)row;
+    float d = hessian_inv[d_idx];  // H diagonal
     float w = weights[idx];
     error[idx] = (w - q) / d;
 }
@@ -185,7 +186,8 @@ __global__ void quantize_kernel
 
     // Quantize
 
-    float x = input[row * columns + column];
+    uint64_t idx = (uint64_t)row * (uint64_t) + (uint64_t)column;
+    float x = input[idx];
     float s = scale[column];
     x /= s;
     x = rintf(x);
@@ -197,7 +199,7 @@ __global__ void quantize_kernel
     if (out_q)
     {
         uint16_t q = static_cast<uint16_t>(x);
-        out_q[row * columns + column] = q;
+        out_q[idx] = q;
     }
 
     half h_s = __float2half_rn(s);
@@ -209,7 +211,7 @@ __global__ void quantize_kernel
 
     // Dequantize
 
-    output[row * columns + column] = __half2float(h_x);
+    output[idx] = __half2float(h_x);
 }
 
 void quantize_cuda
@@ -306,8 +308,9 @@ __global__ void quantize_err_kernel
     float clamp_min = -qzero;
     float clamp_max = maxq - qzero;
 
+    uint64_t idx = (uint64_t)row * (uint64_t)columns + (uint64_t)column;
     float4 sc4 = *((float4*) (scale + column));
-    float4 w4 = *((float4*) (input + row * columns + column));
+    float4 w4 = *((float4*) (input + idx));
 
     for (int i = 0; i <= p_grid; i++)
     {
@@ -382,7 +385,7 @@ __global__ void vv_mul_sub_kernel
     if (y_idx >= y_size) return;
     if (x_idx >= x_size) return;
 
-    int z_idx = y_size * x_idx + y_idx;
+    uint64_t z_idx = (uint64_t)y_size * (uint64_t)x_idx + (uint64_t)y_idx;
 
     float vx = x[x_idx];
     float4 vy = *((float4*) (y + y_idx));

@@ -41,9 +41,9 @@ void quantize_range
 
         vv_mul_sub_cuda
         (
-            ((const float*) hessian_inv.data_ptr()) + c * hcolumns + c,
-            ((const float*) error.data_ptr()) + c * columns,
-            ((float*) weights.data_ptr()) + c * columns,
+            ((const float*) hessian_inv.data_ptr()) + (uint64_t)c * (uint64_t)hcolumns + (uint64_t)c,
+            ((const float*) error.data_ptr()) + (uint64_t)c * (uint64_t)columns,
+            ((float*) weights.data_ptr()) + (uint64_t)c * (uint64_t)columns,
             b - c,
             columns
         );
