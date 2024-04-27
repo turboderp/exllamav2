@@ -120,9 +120,7 @@ jobs:
     name: Build ROCm Wheels & Release
     needs: build_wheels
     uses: ./.github/workflows/build-wheels-release-rocm.yml
-    with:
-      pypi: '0'
-      
+
   # publish-wheels-to-pypi:
   #   name: Publish Python distribution to PyPI
   #   if: inputs.pypi == '1'
