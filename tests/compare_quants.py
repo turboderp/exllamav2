@@ -63,19 +63,24 @@ def get_tokens_exl2(tokenizer, model, text):
     data = tokenizer.encode("\n\n".join(text), add_bos = True)
     return data
 
-def get_dataset():
+def get_dataset(ds_path, ds_name, ds_split, cache_file, max_rows):
     module_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(module_dir, "wikitext_cached.json")
+    filename = os.path.join(module_dir, cache_file)
     if os.path.exists(filename):
         print("Loading cached dataset...")
         with open(filename, "r") as f:
             return json.load(f)
     else:
-        print("Loading dataset...")
-        c_dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")["text"]
+        print(f"Loading dataset: {ds_path}...")
+        c_dataset = load_dataset(ds_path, ds_name, split = ds_split, streaming = True)
+        c_rows = []
+        for row in c_dataset:
+            c_rows.append(row["text"])
+            max_rows -= 1
+            if not max_rows: break
         with open(filename, "w") as f:
-            f.write(json.dumps(c_dataset, indent = 4))
-        return c_dataset
+            f.write(json.dumps(c_rows, indent = 4))
+        return c_rows
 
 def model_instance_awq(model_dir):
     model = AutoAWQForCausalLM.from_pretrained(model_dir, device_map="auto").model
@@ -107,9 +112,12 @@ def flush():
 
 def run_tests(test_models):
 
-    wikitext = get_dataset()
-    # wikitext = wikitext[:200]
+    wikitext = get_dataset("wikitext", "wikitext-2-raw-v1", "test", "wikitext_cached.json", 4358)
+    c4 = get_dataset("allenai/c4", "en", "validation", "c4_cached.json", 750)
+    fineweb = get_dataset("HuggingFaceFW/fineweb", "default", "train", "fineweb_cached.json", 500)
 
+    datasets = [wikitext, c4, fineweb]
+    # datasets = [d[:100] for d in datasets]
     results = []
 
     num_devices = torch.cuda.device_count()
@@ -123,18 +131,18 @@ def run_tests(test_models):
 
         if fw == "awq":
             model, tokenizer = model_instance_awq(model_dir)
-            ppl = evaluate_perplexity(wikitext, model, tokenizer, get_tokens_hf, get_logits_hf)
+            ppl = [evaluate_perplexity(ds, model, tokenizer, get_tokens_hf, get_logits_hf) for ds in datasets]
             model, tokenizer = None, None
 
         if fw in ["exl2", "exl2_fp16"]:
             model, tokenizer = model_instance_exl2(model_dir)
-            ppl = evaluate_perplexity(wikitext, model, tokenizer, get_tokens_exl2, get_logits_exl2)
+            ppl = [evaluate_perplexity(ds, model, tokenizer, get_tokens_exl2, get_logits_exl2) for ds in datasets]
             model.unload()
             model, tokenizer = None, None
 
         if fw == "gptq":
             model, tokenizer = model_instance_gptq(model_dir)
-            ppl = evaluate_perplexity(wikitext, model, tokenizer, get_tokens_hf, get_logits_hf)
+            ppl = [evaluate_perplexity(ds, model, tokenizer, get_tokens_hf, get_logits_hf) for ds in datasets]
             model, tokenizer = None, None
 
         total_memory = sum(torch.cuda.max_memory_allocated(d) for d in range(num_devices))
@@ -143,7 +151,9 @@ def run_tests(test_models):
 
         results.append({
             "": text,
-            "ppl": f"{ppl:.30f}",
+            "Wikitext": f"{ppl[0]:.3f}",
+            "C4": f"{ppl[1]:.3f}",
+            "FineWeb": f"{ppl[2]:.3f}",
             "Max VRAM": f"{max_mem_gb:.2f} GB"
         })
 
