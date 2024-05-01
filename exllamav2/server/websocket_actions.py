@@ -114,6 +114,7 @@ async def infer(request, ws, server, response):
                 freq_pen: float,                    # (optional) frequency penalty (0.0 = no penalty)
                 pres_pen: float,                    # (optional) presence penalty (0.0 = no penalty)
                 skew: float,                        # (optional) skew factor (0.0 = disabled)
+                customBos: str,                     # (optional) custom BOS token
                 stop_conditions: [str|int],         # (optional) list of stop conditions
                 token_healing: bool,                # (optionsl) enable token healing
                 tag: str }                          # (optional) tag to echo in response packet
@@ -167,13 +168,24 @@ async def infer(request, ws, server, response):
         full_ctx = request["text"]
         num_tokens = request["max_new_tokens"]
 
-        ids = server.tokenizer.cached_encode_str(full_ctx)
+        cb=''
+        if 'customBos' in request:
+            cb = request['customBos']
+        ids = server.tokenizer.cached_encode_str(cb+full_ctx)
         overflow = ids.shape[-1] + num_tokens - server.model.config.max_seq_len
-        if overflow > 0:
+
+
+        if overflow < 0:
+            util_ctx = cb+full_ctx
+
+        elif 'customBos' in request:
+            ids = ids[:,:1]+ids[:, overflow+1:]
+            util_ctx = server.tokenizer.decode(ids)
+
+        else:
             ids = ids[:, overflow:]
             util_ctx = server.tokenizer.decode(ids)
-        else:
-            util_ctx = full_ctx
+            
 
         # Sampler
 
