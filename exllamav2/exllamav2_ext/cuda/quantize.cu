@@ -186,7 +186,7 @@ __global__ void quantize_kernel
 
     // Quantize
 
-    uint64_t idx = (uint64_t)row * (uint64_t) + (uint64_t)column;
+    uint64_t idx = (uint64_t)row * (uint64_t)columns + (uint64_t)column;
     float x = input[idx];
     float s = scale[column];
     x /= s;
