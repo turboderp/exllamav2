@@ -18,6 +18,7 @@ import torch
 import random
 import threading
 from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook, ExLlamaV2PostSamplingResult
+from exllamav2.embedding import EMBEDDING_INDEX
 
 class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
@@ -42,6 +43,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     position_offsets: torch.Tensor | None
     input_mask: torch.Tensor | None
+    indexed_embeddings: torch.Tensor | None
 
     # Stop conditions
 
@@ -118,6 +120,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.return_probabilities = False
         self.return_top_tokens = 0
         self.return_logits = False
+        self.indexed_embeddings = None
 
         # Speculative decoding
 
@@ -221,6 +224,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                         return_top_tokens: int = 0,
                         return_logits: bool = False,
                         abort_event: threading.Event = None,
+                        input_embeddings: torch.Tensor | None = None,
                         decode_special_tokens: bool = False):
         """
         Resets the generator and starts a new completion of the supplied input_ids. Reuses the existing
@@ -260,6 +264,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         :param abort_event:
             Forwarded to the model during generation. Will abort prefill/context ingestion if triggered.
 
+        :param input_embeddings:
+            Tensor of shape (batch_size, n, hidden_size) added to the beginning of the prompt. Batching
+            is not supported when passing input embeddings unless all prompts are the same. Prompt must
+            contain the string `{{EMBED_HERE}}` to indicate where embeddings are to be inserted.
+
         :param decode_special_tokens:
             Also decode special tokens into output text stream
         """
@@ -282,6 +291,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if loras is not None and isinstance(loras, ExLlamaV2Lora): loras = [loras]
         self.active_loras = loras
 
+        self.indexed_embeddings = input_embeddings
+
         # Decluttering
 
         self.no_logits = torch.empty((0, ((self.model.config.vocab_size + 31) // 32) * 32), dtype = torch.float)
@@ -303,9 +314,19 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.held_pprobs = self.no_pprobs
         self.held_logits = self.no_logits
         self.settings = gen_settings
-        self._gen_begin_reuse(input_ids, gen_settings)
 
+        # Ingest prompt
+
+        assert input_embeddings is None or self.draft_model is None, \
+            "Can not use input embeddings with draft model"
+
+        self._gen_begin_reuse(input_ids, gen_settings)
         self.heal_next_token = (token_healing and self.sequence_ids.shape[-1] >= 2)
+
+        # Remove indexed embeddings from generator's sequence
+
+        if input_embeddings is not None:
+            self.sequence_ids[self.sequence_ids >= EMBEDDING_INDEX] = self.tokenizer.pad_token_id
 
         # Initialize n-gram cache
 
@@ -602,7 +623,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                            loras = self.active_loras,
                            input_mask = self.input_mask,
                            position_offsets = self.position_offsets,
-                           abort_event = self.abort_event)
+                           abort_event = self.abort_event,
+                           indexed_embeddings = self.indexed_embeddings)
         if self.abort_event and self.abort_event.is_set():
             self._truncate_seq_to_cache()
             return
@@ -676,7 +698,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                            loras = self.active_loras,
                            input_mask = self.input_mask,
                            position_offsets = self.position_offsets,
-                           abort_event = self.abort_event)
+                           abort_event = self.abort_event,
+                           indexed_embeddings = self.indexed_embeddings)
         if self.abort_event and self.abort_event.is_set():
             self._truncate_seq_to_cache()
             return
