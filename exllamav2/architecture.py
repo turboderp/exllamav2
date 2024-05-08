@@ -13,7 +13,7 @@ layer_keys_llama_attn = [["self_attn.q_proj"],
                          ["self_attn.v_proj"],
                          ["self_attn.o_proj"]]
 layer_keys_bigcode_attn = [["self_attn.c_attn"],
-                           ["self_attn.c_proj"]]
+                           ["self_attn.o_proj"]]
 layer_keys_dbrx_attn = [["self_attn.Wqkv", "self_attn.q_proj"],
                         ["self_attn.Wqkv", "self_attn.k_proj"],
                         ["self_attn.Wqkv", "self_attn.v_proj"],
@@ -49,8 +49,7 @@ expect_keys_gemma = [["model.norm"],
                      ["model.embed_tokens"]]
 expect_keys_starcoder2 = [["model.norm"],
                           ["model.embed_tokens"]]
-expect_keys_bigcode = [["lm_head"],
-                       ["model.embed_tokens"]]
+expect_keys_bigcode = [["model.embed_tokens"]]
 
 dbrx_keymap = [("transformer.", "model."),
                (".blocks.", ".layers."),
@@ -64,8 +63,8 @@ dbrx_keymap = [("transformer.", "model."),
                (".wte.", ".embed_tokens.")]
 
 bigcode_keymap = [("transformer.ln_f", "model.norm"),
-                  ("transformer.wpe", "lm_head"),
                   ("transformer.", "model."),
+                  (".attn.c_proj.", ".self_attn.o_proj."),
                   (".attn.", ".self_attn."),
                   (".h.", ".layers."),
                   (".wte.", ".embed_tokens.")]
@@ -466,13 +465,13 @@ class ExLlamaV2ArchParams:
             self.attention_bias_o = True
             self.mlp_bias = True
             self.mlp_gate = False
-            self.mlp_key_gate = ".mlp.gate_proj"
-            self.mlp_key_up = ".mlp.up_proj"
-            self.mlp_key_down = ".mlp.down_proj"
-            self.mlp_act_func = "gelu_tanh"
+            self.mlp_key_gate = None
+            self.mlp_key_up = ".mlp.c_fc"
+            self.mlp_key_down = ".mlp.c_proj"
+            self.mlp_act_func = "gelu"
             self.is_moe = False
             self.norm = "layernorm"
-            self.lm_head_key = "model.wte"
+            self.lm_head_key = "model.embed_tokens"
             self.normalize_embeddings = False
             self.norm_key_1 = ".ln_1"
             self.norm_key_2 = ".ln_2"
