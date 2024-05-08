@@ -10,6 +10,7 @@ from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.compat import safe_move_tensor
 from exllamav2.lora import ExLlamaV2Lora
+from exllamav2.architecture import RopeStyle
 import math
 # import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
@@ -312,7 +313,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                               self.model.config.head_dim,
                                               self.model.config.max_seq_len,
                                               self.has_residual,
-                                              self.model.config.arch.rope_neox_style,
+                                              self.model.config.arch.rope_style == RopeStyle.NEOX,
                                               q_norm,
                                               k_norm)
 
@@ -747,8 +748,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
             position_offsets = none_tensor
 
-        ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
-        ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, self.model.config.arch.rope_neox_style)
+        if cfg.arch.rope_style != RopeStyle.NONE:
+            ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, cfg.arch.rope_style == RopeStyle.NEOX)
+            ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, cfg.arch.rope_style == RopeStyle.NEOX)
 
         # Add keys and values to cache
 

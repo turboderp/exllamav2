@@ -1,3 +1,4 @@
+from enum import Enum
 
 # Common keys
 
@@ -69,6 +70,11 @@ bigcode_keymap = [("transformer.ln_f", "model.norm"),
                   (".h.", ".layers."),
                   (".wte.", ".embed_tokens.")]
 
+class RopeStyle(Enum):
+    NONE = 0
+    GPTJ = 1
+    NEOX = 2
+
 class ExLlamaV2ArchParams:
 
     def __init__(self, arch_string, read_config):
@@ -81,6 +87,7 @@ class ExLlamaV2ArchParams:
 
         self.fused_mlp_key_12 = None
         self.fused_mlp_key_3 = None
+        self.learned_pos_emb_key = None
 
         # Mistral
 
@@ -110,7 +117,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -144,7 +151,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -177,7 +184,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -210,7 +217,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -243,7 +250,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -276,7 +283,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 1
             self.parallel_decoder_blocks = False
             self.requires_bos = True
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -308,7 +315,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -343,7 +350,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 1
             self.parallel_decoder_blocks = False
             self.requires_bos = True
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -376,7 +383,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = True
             self.requires_bos = True
-            self.rope_neox_style = False
+            self.rope_style = RopeStyle.GPTJ
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
@@ -411,7 +418,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = dbrx_keymap
             self.fused_qkv_key = "Wqkv"
             self.mqa = False
@@ -444,7 +451,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = "qkv_proj"
             self.fused_mlp_key_12 = "gate_up_proj"
@@ -478,10 +485,11 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NONE
             self.keymap = bigcode_keymap
             self.fused_qkv_key = "c_attn"
             self.mqa = True
+            self.learned_pos_emb_key = "model.wpe"
 
         # Llama (default + fallback)
 
@@ -514,7 +522,7 @@ class ExLlamaV2ArchParams:
             self.norm_constant_bias = 0
             self.parallel_decoder_blocks = False
             self.requires_bos = False
-            self.rope_neox_style = True
+            self.rope_style = RopeStyle.NEOX
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
