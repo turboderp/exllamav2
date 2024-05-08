@@ -393,7 +393,7 @@ class ExLlamaV2ArchParams:
             self.keymap = dbrx_keymap
             self.fused_qkv_key = "Wqkv"
 
-        # Llama (default + fallback)
+        # Phi3
 
         if arch_string == "Phi3ForCausalLM":
             arch_recognized = True
@@ -466,6 +466,14 @@ class ExLlamaV2ArchParams:
         if read_config.get("attention_bias", False):
             self.attention_bias_qkv = True
             self.attention_bias_o = True
+
+        if read_config.get("mlp_bias", False):
+            self.mlp_bias = True
+
+        if read_config.get("tie_word_embeddings", False):
+            if ["lm_head"] in self.expect_keys:
+                self.expect_keys.remove(["lm_head"])
+                self.lm_head_key = "model.embed_tokens"
 
 
     def make_fused_mlp(self):
