@@ -18,8 +18,6 @@ def read(input_dict: dict[str, Any], expected_type: type, keys: str | list[str],
 
         key_split = key.split("->")
         for subk in key_split[:-1]:
-            input_dict = input_dict.get(subk, None)
-            if not input_dict:
             input_dict_s = input_dict_s.get(subk, None)
             if not input_dict_s:
                 key = None
@@ -171,7 +169,7 @@ class ExLlamaV2Config:
         # Standard params
 
         self.initializer_range = read(read_config, float, ["initializer_range"])
-        self.num_hidden_layers = read(read_config, int, ["num_hidden_layers", "n_layers"])
+        self.num_hidden_layers = read(read_config, int, ["num_hidden_layers", "n_layers", "n_layer"])
 
         # Norm params
 
@@ -182,20 +180,23 @@ class ExLlamaV2Config:
 
         # Model dimensions
 
-        self.hidden_size = read(read_config, int, ["hidden_size", "d_model"])
+        self.hidden_size = read(read_config, int, ["hidden_size", "d_model", "n_embd"])
 
         # Attn params
 
-        self.num_attention_heads = read(read_config, int, ["num_attention_heads", "n_heads"])
+        self.num_attention_heads = read(read_config, int, ["num_attention_heads", "n_heads", "n_head"])
         self.head_dim = read(read_config, int, "head_dim", self.hidden_size // self.num_attention_heads)
 
-        self.num_key_value_heads = read(read_config, int, ["num_key_value_heads", "attn_config->kv_n_heads"], self.num_attention_heads)
+        if self.arch.mqa:
+            self.num_key_value_heads = 1
+        else:
+            self.num_key_value_heads = read(read_config, int, ["num_key_value_heads", "attn_config->kv_n_heads"], self.num_attention_heads)
         self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
         self.use_qk_norm = read(read_config, bool, ["use_qk_norm"], False)
 
         # MLP params
 
-        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size"])
+        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"])
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
         self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
@@ -210,7 +211,8 @@ class ExLlamaV2Config:
         self.max_seq_len = read(read_config, int,["max_sequence_length",
                                                   "model_max_length",
                                                   "max_position_embeddings",
-                                                  "max_seq_len"], 2048)
+                                                  "max_seq_len",
+                                                  "n_positions"], 2048)
         self.original_max_seq_len = self.max_seq_len
 
         rs = read(read_config, dict, "rope_scaling", None)

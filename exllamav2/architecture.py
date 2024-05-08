@@ -4,12 +4,16 @@
 layer_keys_llama_norms = [["input_layernorm"],
                           ["post_attention_layernorm"]]
 layer_keys_cohere_norms = [["input_layernorm"]]
+layer_keys_bigcode_norms = [["ln_1"],
+                            ["ln_2"]]
 layer_keys_yi_norms = [["ln1", "input_layernorm"],
                        ["ln2", "post_attention_layernorm"]]
 layer_keys_llama_attn = [["self_attn.q_proj"],
                          ["self_attn.k_proj"],
                          ["self_attn.v_proj"],
                          ["self_attn.o_proj"]]
+layer_keys_bigcode_attn = [["self_attn.c_attn"],
+                           ["self_attn.c_proj"]]
 layer_keys_dbrx_attn = [["self_attn.Wqkv", "self_attn.q_proj"],
                         ["self_attn.Wqkv", "self_attn.k_proj"],
                         ["self_attn.Wqkv", "self_attn.v_proj"],
@@ -36,6 +40,8 @@ layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
                                ["mlp.swiglu.w3"]]
 layer_keys_starcoder2_mlp = [["mlp.c_fc"],
                              ["mlp.c_proj"]]
+layer_keys_bigcode_mlp = [["mlp.c_fc"],
+                          ["mlp.c_proj"]]
 expect_keys_llama = [["lm_head"],
                      ["model.norm"],
                      ["model.embed_tokens"]]
@@ -43,6 +49,8 @@ expect_keys_gemma = [["model.norm"],
                      ["model.embed_tokens"]]
 expect_keys_starcoder2 = [["model.norm"],
                           ["model.embed_tokens"]]
+expect_keys_bigcode = [["lm_head"],
+                       ["model.embed_tokens"]]
 
 dbrx_keymap = [("transformer.", "model."),
                (".blocks.", ".layers."),
@@ -55,6 +63,12 @@ dbrx_keymap = [("transformer.", "model."),
                (".norm_f.", ".norm."),
                (".wte.", ".embed_tokens.")]
 
+bigcode_keymap = [("transformer.ln_f", "model.norm"),
+                  ("transformer.wpe", "lm_head"),
+                  ("transformer.", "model."),
+                  (".attn.", ".self_attn."),
+                  (".h.", ".layers."),
+                  (".wte.", ".embed_tokens.")]
 
 class ExLlamaV2ArchParams:
 
@@ -100,6 +114,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Mixtral
 
@@ -133,6 +148,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Yi
 
@@ -165,6 +181,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Orion
 
@@ -197,6 +214,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Qwen2 (1.5)
 
@@ -229,6 +247,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Gemma
 
@@ -261,6 +280,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # StarCoder2
 
@@ -292,6 +312,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # GemMoE
 
@@ -326,6 +347,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Cohere
 
@@ -358,6 +380,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = False
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # DBRX
 
@@ -392,6 +415,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = dbrx_keymap
             self.fused_qkv_key = "Wqkv"
+            self.mqa = False
 
         # Phi3
 
@@ -425,6 +449,40 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = "qkv_proj"
             self.fused_mlp_key_12 = "gate_up_proj"
+            self.mqa = False
+
+        # GPTBigCode
+
+        if arch_string == "GPTBigCodeForCausalLM":
+            arch_recognized = True
+            self.layer_keys += \
+                layer_keys_bigcode_norms + \
+                layer_keys_bigcode_attn + \
+                layer_keys_bigcode_mlp
+            self.expect_keys += \
+                expect_keys_bigcode
+            self.norm_eps_key = "layer_norm_epsilon"
+            self.attention_bias_qkv = True
+            self.attention_bias_o = True
+            self.mlp_bias = True
+            self.mlp_gate = False
+            self.mlp_key_gate = ".mlp.gate_proj"
+            self.mlp_key_up = ".mlp.up_proj"
+            self.mlp_key_down = ".mlp.down_proj"
+            self.mlp_act_func = "gelu_tanh"
+            self.is_moe = False
+            self.norm = "layernorm"
+            self.lm_head_key = "model.wte"
+            self.normalize_embeddings = False
+            self.norm_key_1 = ".ln_1"
+            self.norm_key_2 = ".ln_2"
+            self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
+            self.requires_bos = False
+            self.rope_neox_style = True
+            self.keymap = bigcode_keymap
+            self.fused_qkv_key = "c_attn"
+            self.mqa = True
 
         # Llama (default + fallback)
 
@@ -460,6 +518,7 @@ class ExLlamaV2ArchParams:
             self.rope_neox_style = True
             self.keymap = None
             self.fused_qkv_key = None
+            self.mqa = False
 
         # Arch overrides
 
