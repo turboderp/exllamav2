@@ -121,6 +121,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Mixtral
 
@@ -155,6 +156,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Yi
 
@@ -188,6 +190,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Orion
 
@@ -221,6 +224,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Qwen2 (1.5)
 
@@ -254,6 +258,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Gemma
 
@@ -287,6 +292,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # StarCoder2
 
@@ -319,6 +325,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # GemMoE
 
@@ -354,6 +361,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Cohere
 
@@ -387,6 +395,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # DBRX
 
@@ -422,6 +431,7 @@ class ExLlamaV2ArchParams:
             self.keymap = dbrx_keymap
             self.fused_qkv_key = "Wqkv"
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Phi3
 
@@ -456,6 +466,7 @@ class ExLlamaV2ArchParams:
             self.fused_qkv_key = "qkv_proj"
             self.fused_mlp_key_12 = "gate_up_proj"
             self.mqa = False
+            self.scale_attn_weights = False
 
         # GPTBigCode
 
@@ -490,6 +501,7 @@ class ExLlamaV2ArchParams:
             self.fused_qkv_key = "c_attn"
             self.mqa = True
             self.learned_pos_emb_key = "model.wpe"
+            self.scale_attn_weights = True
 
         # Llama (default + fallback)
 
@@ -526,6 +538,7 @@ class ExLlamaV2ArchParams:
             self.keymap = None
             self.fused_qkv_key = None
             self.mqa = False
+            self.scale_attn_weights = False
 
         # Arch overrides
 

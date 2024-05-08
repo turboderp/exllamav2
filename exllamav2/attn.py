@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
@@ -233,6 +234,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cfg.use_qk_norm:
             self.submodules += [self.q_norm,
                                 self.k_norm]
+
+        # if cfg.arch.scale_attn_weights:
+        #     self.unscale_factor = self.layer_idx + 1
+        #     self.scale_factor = 1 / self.unscale_factor
+        # else:
+        self.unscale_factor = 1
+        self.scale_factor = 1
 
 
     def numel(self) -> int:
@@ -577,7 +585,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 k_states = None
                 q_states = None
 
-                attn_weights /= math.sqrt(head_dim)
+                # attn_weights *= self.scale_factor / math.sqrt(head_dim)
+                # attn_mask = attn_params.get_attn_mask(hidden_states.device)
+                # if self.unscale_factor != 1: attn_weights *= self.unscale_factor
+                attn_weights *= 1 / math.sqrt(head_dim)
                 attn_mask = attn_params.get_attn_mask(hidden_states.device)
                 if attn_mask is not None: attn_weights = attn_weights + attn_mask
                 attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
@@ -594,7 +605,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             else:
 
                 # TODO: Enable flash-attn with input mask
-                attn_output = flash_attn_func(q_states, k_states, v_states, causal = True)
+                attn_output = flash_attn_func(
+                    q_states,
+                    k_states,
+                    v_states,
+                    # softmax_scale = None if self.scale_factor == 1 else self.scale_factor / math.sqrt(head_dim),
+                    causal = True
+                )
                 attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
             # xformers memory_efficient_attention
@@ -779,7 +796,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             key_states = key_states.transpose(-1, -2)
 
             attn_weights = torch.matmul(query_states, key_states)
-            attn_weights /= math.sqrt(head_dim)
+            # attn_weights *= self.scale_factor / math.sqrt(head_dim)
+            # attn_mask = attn_params.get_attn_mask(hidden_states.device)
+            # if self.scale_factor != 1: attn_weights *= self.unscale_factor
+            attn_weights *= 1 / math.sqrt(head_dim)
             attn_mask = attn_params.get_attn_mask(hidden_states.device)
             if attn_mask is not None: attn_weights = attn_weights + attn_mask
             attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
@@ -794,7 +814,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         else:
 
-            attn_output = flash_attn_func(query_states, key_states, value_states, causal = True)
+            attn_output = flash_attn_func(
+                query_states,
+                key_states,
+                value_states,
+                # softmax_scale = None if self.scale_factor == 1 else self.scale_factor / math.sqrt(head_dim),
+                causal = True
+            )
             attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
         # Update 8-bit/Q4 cache
