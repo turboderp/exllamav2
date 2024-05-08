@@ -31,7 +31,7 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
         w = self.load_weight()
         assert isinstance(w, nn.Parameter)
         self.native_ctx_size = w.shape[0]
-        assert self.model.config.max_seq_len < self.native_ctx_size, \
+        assert self.model.config.max_seq_len <= self.native_ctx_size, \
             f"Learned positional embeddings cannot be extended past native size of {self.native_ctx_size}."
 
         self.embedding = nn.Embedding(self.native_ctx_size, self.model.config.hidden_size, device = "meta")
