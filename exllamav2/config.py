@@ -14,17 +14,20 @@ def read(input_dict: dict[str, Any], expected_type: type, keys: str | list[str],
     if isinstance(keys, str): keys = [keys]
 
     for key in keys:
+        input_dict_s = input_dict
 
         key_split = key.split("->")
         for subk in key_split[:-1]:
             input_dict = input_dict.get(subk, None)
             if not input_dict:
+            input_dict_s = input_dict_s.get(subk, None)
+            if not input_dict_s:
                 key = None
                 break
         if key is None: continue
         key = key_split[-1]
 
-        x = input_dict.get(key, None)
+        x = input_dict_s.get(key, None)
         if x is not None:
 
             if expected_type == float and isinstance(x, int):
