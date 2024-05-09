@@ -176,7 +176,7 @@ class STFile:
                    out_dtype = None) -> torch.Tensor:
         global global_tensorcache
 
-        if self.tensor_remap:
+        if self.tensor_remap and (not_fast or not self.fast):
             key = self.tensor_remap[key]
 
         if cached:

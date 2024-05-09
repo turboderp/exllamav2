@@ -1,6 +1,7 @@
 from exllamav2.model import \
 (
     ExLlamaV2Embedding,
+    ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
@@ -66,6 +67,10 @@ def compile_model(job, save_fn, model):
         module = model.modules[index]
 
         if isinstance(module, ExLlamaV2Embedding):
+
+            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
+
+        if isinstance(module, ExLlamaV2PosEmbedding):
 
             d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 

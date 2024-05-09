@@ -22,7 +22,7 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
                  key: str):
         super().__init__(model, key)
 
-        self.native_ctx_size = None
+        self.native_ctx_size = model.config.max_seq_len
         self.embedding = None
 
 
@@ -73,21 +73,30 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
                 loras = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        if attn_params.past_len is not None:
+        if attn_params is None:
 
-            pos_start = attn_params.past_len
-            pos_end = pos_start + attn_params.seq_len
+            pos_start = 0
+            pos_end = hidden_states.shape[1]
             emb_slice = self.embedding.weight.data[pos_start:pos_end]
             hidden_states[:] += emb_slice
 
         else:
 
-            assert attn_params.past_lens is not None
-            for b, pl in enumerate(attn_params.past_lens):
-                pos_start = pl
+            if attn_params.past_len is not None:
+
+                pos_start = attn_params.past_len
                 pos_end = pos_start + attn_params.seq_len
                 emb_slice = self.embedding.weight.data[pos_start:pos_end]
-                hidden_states[b] += emb_slice
+                hidden_states[:] += emb_slice
+
+            else:
+
+                assert attn_params.past_lens is not None
+                for b, pl in enumerate(attn_params.past_lens):
+                    pos_start = pl
+                    pos_end = pos_start + attn_params.seq_len
+                    emb_slice = self.embedding.weight.data[pos_start:pos_end]
+                    hidden_states[b] += emb_slice
 
         if intermediates:
             return {"hidden_states": hidden_states}

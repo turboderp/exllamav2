@@ -13,7 +13,9 @@ layer_keys_llama_attn = [["self_attn.q_proj"],
                          ["self_attn.k_proj"],
                          ["self_attn.v_proj"],
                          ["self_attn.o_proj"]]
-layer_keys_bigcode_attn = [["self_attn.c_attn"],
+layer_keys_bigcode_attn = [["self_attn.c_attn", "self_attn.q_proj"],
+                           ["self_attn.c_attn", "self_attn.k_proj"],
+                           ["self_attn.c_attn", "self_attn.v_proj"],
                            ["self_attn.o_proj"]]
 layer_keys_dbrx_attn = [["self_attn.Wqkv", "self_attn.q_proj"],
                         ["self_attn.Wqkv", "self_attn.k_proj"],
