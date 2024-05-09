@@ -96,7 +96,8 @@ class ExLlamaV2Sampler:
                random: float,
                tokenizer: ExLlamaV2Tokenizer,
                prefix_token: torch.Tensor | None = None,
-               return_top_tokens: int = 0):
+               return_top_tokens: int = 0,
+               blocked_tokens: list[int] | None = None):
         """
         Sample tokens from (batched) logits tensor
 
@@ -121,6 +122,9 @@ class ExLlamaV2Sampler:
 
         :param return_top_tokens:
             Number of top tokens to return
+
+        :param blocked_tokens:
+            List of tokens to ban temporarily
 
         :return:
             Tuple of:
@@ -167,6 +171,11 @@ class ExLlamaV2Sampler:
                                     settings.token_frequency_penalty,
                                     settings.token_presence_penalty,
                                     logits)
+
+        # Temporarily ban individual tokens
+
+        if blocked_tokens:
+            logits[:, blocked_tokens] = -1e30
 
         # Token bias
 
