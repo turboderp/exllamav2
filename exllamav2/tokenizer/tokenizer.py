@@ -249,6 +249,12 @@ class ExLlamaV2Tokenizer:
             self.get_char_trie()
             self.get_char_trie_ci()
 
+        # Take stock and issue warnings if needed
+
+        if self.pad_token_id == self.bos_token_id:
+            print(" !! Warning: PAD and EOS tokens are identical. Generations might break " + \
+                  "and batch sizes > 1 are unlikely to work correctly.")
+
 
     # Return size of valid vocabulary
 
