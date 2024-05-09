@@ -196,7 +196,12 @@ class ExLlamaV2Config:
 
         # MLP params
 
-        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"], self.arch.default_inner_dim_mult * self.hidden_size)
+        if self.arch.default_inner_dim_mult is not None:
+            default_intermediat_size = self.arch.default_inner_dim_mult * self.hidden_size
+        else:
+            default_intermediat_size = None
+
+        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"], default_intermediat_size)
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
         self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
