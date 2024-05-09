@@ -82,21 +82,32 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
 
         else:
 
-            if attn_params.past_len is not None:
+            bsz, q_len, dim = hidden_states.shape
+            for b in range(bsz):
 
-                pos_start = attn_params.past_len
-                pos_end = pos_start + attn_params.seq_len
-                emb_slice = self.embedding.weight.data[pos_start:pos_end]
-                hidden_states[:] += emb_slice
+                if attn_params.past_len is not None:
+                    past_len = attn_params.past_len
+                else:
+                    assert attn_params.past_lens is not None
+                    past_len = attn_params.past_lens[b]
 
-            else:
+                if attn_params.position_offsets is not None:
+                    offset = attn_params.position_offsets[b].item()
+                else:
+                    offset = 0
 
-                assert attn_params.past_lens is not None
-                for b, pl in enumerate(attn_params.past_lens):
-                    pos_start = pl
-                    pos_end = pos_start + attn_params.seq_len
-                    emb_slice = self.embedding.weight.data[pos_start:pos_end]
-                    hidden_states[b] += emb_slice
+                slice_a = past_len + offset
+                slice_b = past_len + q_len + offset
+                assert slice_b > 0
+                target_a = 0
+                target_b = q_len
+
+                if slice_a < 0:
+                    target_a -= slice_a
+                    slice_a = 0
+
+                emb_slice = self.embedding.weight.data[slice_a : slice_b]
+                hidden_states[b, target_a:target_b] += emb_slice
 
         if intermediates:
             return {"hidden_states": hidden_states}
