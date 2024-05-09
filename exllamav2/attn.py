@@ -321,7 +321,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                                               self.model.config.head_dim,
                                               self.model.config.max_seq_len,
                                               self.has_residual,
-                                              self.model.config.arch.rope_style == RopeStyle.NEOX,
+                                              self.model.config.arch.rope_style.value,
                                               q_norm,
                                               k_norm)
 
