@@ -123,10 +123,14 @@ class ExLlamaV2Module:
                     tensors = self.load_multi(key, ["weight", "bias"])
                     tensor = tensors["weight"].half()
                     bias = tensors["bias"].half()
+                    if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
+                        tensor = tensor.T
                     return nn.Parameter(tensor), nn.Parameter(bias)
                 else:
                     tensors = self.load_multi(key, ["weight"])
                     tensor = tensors["weight"].half()
+                    # if self.model.config.arch.orig_weights_transposed:
+                    #     tensor = tensor.T
                     return nn.Parameter(tensor)
 
             # No weights found for key
@@ -150,6 +154,8 @@ class ExLlamaV2Module:
             stfile = STFile.open(filename, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
             # tensor = stfile.get_tensor(key, device = self.device()).half()
             tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
+            if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
+                tensor = tensor.T
             tensor = tensor[f_beg:f_end]
             if not key.endswith(".bias"):
                 if in_feat != out_feat and \
