@@ -1,4 +1,5 @@
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Tokenizer
+from exllamav2.architecture import RopeStyle
 import argparse, os, shutil
 import sys
 import json
@@ -186,6 +187,17 @@ if job["rope_alpha"] is not None: config.scale_alpha_value = job["rope_alpha"]
 
 model = ExLlamaV2(config)
 model.load(lazy = True)
+
+# Limit context length if necessary
+
+if model.config.arch.rope_style == RopeStyle.NONE:
+    max_ctx = model.config.max_seq_len
+    if job["length"] > max_ctx:
+        print (f" !! Warning: Reducing calibration length to model max context: {max_ctx}")
+        job["length"] = max_ctx
+    if job["measurement_length"] > max_ctx:
+        print (f" !! Warning: Reducing measurement calibration length to model max context: {max_ctx}")
+        job["measurement_length"] = max_ctx
 
 # Do the things
 
