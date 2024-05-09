@@ -135,7 +135,7 @@ class ExLlamaV2Config:
 
         self.max_input_len = 1024
         self.max_attention_size = 1024 ** 2
-        self.max_output_len = 1024
+        self.max_output_len = min(self.max_output_len, 1024)
 
 
     # Populate config with required files from model_dir
@@ -197,11 +197,11 @@ class ExLlamaV2Config:
         # MLP params
 
         if self.arch.default_inner_dim_mult is not None:
-            default_intermediat_size = self.arch.default_inner_dim_mult * self.hidden_size
+            default_intermediate_size = self.arch.default_inner_dim_mult * self.hidden_size
         else:
-            default_intermediat_size = None
+            default_intermediate_size = None
 
-        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"], default_intermediat_size)
+        self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"], default_intermediate_size)
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
         self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
