@@ -196,7 +196,12 @@ class ExLlamaV2Tokenizer:
 
         if self.pad_token_id is None:
             pad_test = self.tokenizer_model.piece_to_id("<pad>")
-            self.pad_token_id = pad_test or self.bos_token_id
+            if pad_test:
+                self.pad_token_id = pad_test
+            elif self.eos_token_id != self.bos_token_id:
+                self.pad_token_id = self.eos_token_id
+            else:
+                self.pad_token_id = -1
 
         # Special case if <unk> and <pad> have the same ID
 
@@ -453,6 +458,8 @@ class ExLlamaV2Tokenizer:
 
         else:
 
+            max_token = self.tokenizer_model.vocab_size()
+            seq = [t for t in seq if (t != self.pad_token_id and t < max_token)]
             text = ""
             start = 0
             end = 0
