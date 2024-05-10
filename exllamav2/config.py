@@ -216,7 +216,7 @@ class ExLlamaV2Config:
         if self.arch.default_inner_dim_mult is not None:
             default_intermediate_size = self.arch.default_inner_dim_mult * self.hidden_size
         else:
-            default_intermediate_size = None
+            default_intermediate_size = no_default
 
         self.intermediate_size = read(read_config, int, ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"], default_intermediate_size)
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
