@@ -152,6 +152,23 @@ class ExLlamaV2Config:
         with open(self.model_config, encoding = "utf8") as f:
             read_config = json.load(f)
 
+        # Load generation_config.json
+
+        self.generation_config_path = os.path.join(self.model_dir, "generation_config.json")
+        if os.path.exists(self.generation_config_path):
+            with open(self.generation_config_path, encoding = "utf8") as f:
+                gen_config = json.load(f)
+                self.generation_config = {}
+                try:
+                    self.generation_config['eos_token_id'] = read(gen_config, list, "eos_token_id", None)
+                except (ValueError, TypeError):
+                    eos_token_id_as_int = read(gen_config, int, "eos_token_id", None)
+                    if eos_token_id_as_int is not None:
+                        self.generation_config['eos_token_id'] = [eos_token_id_as_int]
+                    else:
+                        self.generation_config['eos_token_id'] = None
+                    
+        
         # Model architecture
 
         assert len(read_config["architectures"]) == 1, "Multiple architectures defined in config.json"
