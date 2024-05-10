@@ -18,6 +18,7 @@
 #include "config.h"
 #include "ext_sampling.h"
 
+#include "cpp/generator.h"
 #include "cpp/sampling.h"
 
 #include "cpp/util.h"

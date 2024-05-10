@@ -114,9 +114,9 @@ def generate(use_banned_strings):
         if show_suppressed_text and "suppressed" in res:
             print(col_banned + res["suppressed"] + col_default, end = "")
 
-        if res["eos"]: break
         print(res["chunk"], end = "")
         sys.stdout.flush()
+        if res["eos"]: break
 
     print()
 

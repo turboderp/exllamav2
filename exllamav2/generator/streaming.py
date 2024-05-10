@@ -19,6 +19,8 @@ import random
 import threading
 from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook, ExLlamaV2PostSamplingResult
 from exllamav2.embedding import EMBEDDING_INDEX
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+import numpy as np
 
 class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
@@ -48,6 +50,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     # Stop conditions
 
     stop_strings: set
+    stop_strings_utf32_buffer: np.array or None
+    stop_strings_utf32_offsets: np.array or None
     stop_tokens: set
     remaining_tokens: int
 
@@ -108,6 +112,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     # Banned strings
 
     banned_strings: list[str]
+    banned_strings_utf32_buffer: np.array or None
+    banned_strings_utf32_offsets: np.array or None
     ban_checkpoint: dict | None
     blocked_tokens: list[int]
     blocked_position: int
@@ -194,6 +200,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             if isinstance(t, int): self.stop_tokens.add(t)
             elif isinstance(t, str): self.stop_strings.add(t)
             else: raise ValueError("Unsupported type in stop_conditions")
+        self.stop_strings_utf32_buffer, self.stop_strings_utf32_offsets = \
+            self.strings_to_utf32(list(self.stop_strings))
 
 
     # Legacy function
@@ -287,7 +295,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             List of strings that the generator will refuse to output. As soon as a partial match happens,
             a checkpoint is saved that the generator can rewind to if need be. Subsequent tokens are then
             held until the full string is resolved (match or no match) and either emitted or discarded,
-            accordingly.
+            accordingly. Strings are case-insensitive.
         """
 
         self.return_probabilities = return_probabilities
@@ -357,10 +365,35 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         if banned_strings is None: banned_strings = []
         self.banned_strings = [s.lower() for s in banned_strings]
+        self.banned_strings_utf32_buffer, self.banned_strings_utf32_offsets = \
+            self.strings_to_utf32(self.banned_strings)
+
         self.ban_checkpoint = None
         self.blocked_tokens = []
         self.blocked_position = -1
         self.current_blocked_tokens = []
+
+
+    # Convert list of strings to UTF32 format needed, to pass by reference to partial matching function
+
+    def strings_to_utf32(self, strings: list[str]) -> (np.array, list[int]):
+
+        if not strings: return bytearray(), None
+
+        encoded_strings = [s.encode("utf-32-le") for s in strings]
+        encoded_lengths = [len(s) for s in encoded_strings]
+        offsets = [0] + encoded_lengths
+        for i in range(1, len(offsets)):
+            offsets[i] += offsets[i - 1]
+        total_length = offsets[-1]
+        concat_strings = bytearray(total_length)
+        for s, offset in zip(encoded_strings, offsets[:-1]):
+            concat_strings[offset:offset + len(s)] = s
+
+        concat_strings = np.frombuffer(concat_strings, dtype = np.uint8)
+        offsets = np.frombuffer(np.array(offsets, dtype = np.int32), dtype = np.uint8)
+        return concat_strings, offsets
+
 
     # Get the next chunk of text in the stream
 
@@ -450,7 +483,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         return tuple(ret)
 
 
-    # @profile
     def _stream(self, ban_tokens: list[str] | None = None) -> (str, bool, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict | None):
 
         # Blocked/banned tokens
@@ -529,29 +561,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         if eos: return self.held_text, True, self.held_tokens, self.held_probs, self.held_ptokens, self.held_pprobs, self.held_logits, None
 
-        # Hold text as long as it contains part of a stop string
-
-        partial_ss = False
-        for ss in self.stop_strings:
-
-            # Check if held_text fully contains stop string
-
-            position = self.held_text.find(ss)
-            if position != -1:
-                return self.held_text[:position], True, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
-
-            # Check for overlap between end of held_text and start of stop string
-
-            overlap = 0
-            for j in range(1, min(len(self.held_text), len(ss)) + 1):
-                if self.held_text[-j:] == ss[:j]: overlap = j
-            if overlap > 0: partial_ss = True
-
-        # If holding text because of a partial stop condition, return nothing but also EOS = False
-
-        if partial_ss:
-            return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
-
         # Hold text as long as it contains part of a banned string
 
         def set_checkpoint():
@@ -582,31 +591,34 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.ban_checkpoint = None
             return cp["offending_token"], off_text
 
-        held_lower = self.held_text.lower()
-        partial_ban = False
-        for ban in self.banned_strings:
-            # Check if held_text fully contains banned string and if so, rewind to checkpoint
-
-            position = held_lower.find(ban)
-            if position != -1:
+        if self.banned_strings_utf32_offsets is not None:
+            match = ext_c.partial_strings_match(
+                np.frombuffer(self.held_text.lower().encode("utf-32-le"), dtype = np.uint8),
+                self.banned_strings_utf32_offsets,
+                self.banned_strings_utf32_buffer
+            )
+            if match >= 0:
                 if self.ban_checkpoint is None: set_checkpoint()
                 offending_token, offending_text = rewind_checkpoint()
                 self.blocked_tokens.append(offending_token.item())
                 extra_ret = { "suppressed": offending_text }
                 return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, extra_ret
+            if match == -2:
+                if self.ban_checkpoint is None: set_checkpoint()
+                return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
 
-            # Check for overlap between end of held_text and start of banned string
+        # Check for stop strings and hold text as long as it contains part of a stop string
 
-            overlap = 0
-            for j in range(1, min(len(self.held_text), len(ban)) + 1):
-                if held_lower[-j:] == ban[:j]: overlap = j
-            if overlap > 0: partial_ban = True
-
-        # If holding text because of a partial banned string, set checkpoint if need be and return nothing
-
-        if partial_ban:
-            if self.ban_checkpoint is None: set_checkpoint()
-            return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
+        if self.stop_strings_utf32_offsets is not None:
+            match = ext_c.partial_strings_match(
+                np.frombuffer(self.held_text.encode("utf-32-le"), dtype = np.uint8),
+                self.stop_strings_utf32_offsets,
+                self.stop_strings_utf32_buffer
+            )
+            if match >= 0:
+                return self.held_text[:match], True, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
+            if match == -2:
+                return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
 
         # No stop condition or banned string, so clear checkpoint and return whatever is being held
 
