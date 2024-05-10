@@ -205,7 +205,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                      loras: ExLlamaV2Lora | list[ExLlamaV2Lora] = None,
                      input_mask: torch.Tensor | None = None,
                      position_offsets: torch.Tensor | None = None,
-                     abort_event: threading.Event = None):
+                     abort_event: threading.Event = None,
+                     **kwargs):
         """
         See ExLlamaV2StreamingGenerator.begin_stream_ex
         """
@@ -234,7 +235,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                         abort_event: threading.Event = None,
                         input_embeddings: torch.Tensor | None = None,
                         decode_special_tokens: bool = False,
-                        banned_strings: list[str] | None = None):
+                        banned_strings: list[str] | None = None,
+                        **kwargs):
         """
         Resets the generator and starts a new completion of the supplied input_ids. Reuses the existing
         cache for any token IDs matching the previous sequence.
@@ -362,7 +364,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     # Get the next chunk of text in the stream
 
-    def stream_ex(self, ban_tokens: list[int] | None = None):
+    def stream_ex(self, ban_tokens: list[int] | None = None, **kwargs):
         """
         Perform one streaming iteration, returning one chunk of text.
 
@@ -427,9 +429,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     # Legacy function
 
-    def stream(self) -> Union[Tuple[str, bool, torch.Tensor],
-                              Tuple[str, bool, torch.Tensor, torch.Tensor],
-                              Tuple[str, bool, torch.Tensor, torch.Tensor, torch.Tensor]]:
+    def stream(self, **kwargs) -> Union[Tuple[str, bool, torch.Tensor],
+                                  Tuple[str, bool, torch.Tensor, torch.Tensor],
+                                  Tuple[str, bool, torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
         Legacy functions that returns a tuple rather than a dict. See ExLlamaV2StreamingGenerator.stream_ex
         """
