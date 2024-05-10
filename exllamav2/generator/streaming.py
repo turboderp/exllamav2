@@ -110,6 +110,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     banned_strings: list[str]
     ban_checkpoint: dict | None
     blocked_tokens: list[int]
+    blocked_position: int
+    current_blocked_tokens: list[int]
 
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
@@ -355,14 +357,19 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.banned_strings = [s.lower() for s in banned_strings]
         self.ban_checkpoint = None
         self.blocked_tokens = []
-
+        self.blocked_position = -1
+        self.current_blocked_tokens = []
 
     # Get the next chunk of text in the stream
 
-    def stream_ex(self):
+    def stream_ex(self, ban_tokens: list[int] | None = None):
         """
-        Perform one streaming iteration, returning one chunk of text. Returns a dict with the following
-        entries:
+        Perform one streaming iteration, returning one chunk of text.
+
+        :param ban_tokens:
+            List of tokens to disallow for this iteration only.
+
+        Returns a dict with the following entries:
 
             chunk:
                 Decoded output text. May be an empty string if the generator holds text to resolve a
@@ -394,7 +401,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 Raw output logits for the model, shape (1, n, vocab_size)
         """
 
-        chunk, eos, chunk_token_ids, probs, ptokens, pprobs, logits, extra = self._stream()
+        chunk, eos, chunk_token_ids, probs, ptokens, pprobs, logits, extra = self._stream(
+            ban_tokens = ban_tokens
+        )
 
         ret = { "chunk": chunk,
                 "eos": eos,
@@ -440,7 +449,13 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
 
     # @profile
-    def _stream(self) -> (str, bool, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
+    def _stream(self, ban_tokens: list[str] | None = None) -> (str, bool, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict | None):
+
+        # Blocked/banned tokens
+
+        self.current_blocked_tokens = [] if ban_tokens is None else ban_tokens
+        if self.cache.current_seq_len == self.blocked_position:
+            self.current_blocked_tokens += self.blocked_tokens
 
         # Token healing
 
@@ -548,6 +563,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 "held_logits": self.held_logits[:-1, :],
                 "offending_token": next_token
             }
+            self.blocked_position = self.cache.current_seq_len - 1
 
         def rewind_checkpoint():
             cp = self.ban_checkpoint
@@ -594,6 +610,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.ban_checkpoint = None
         self.blocked_tokens = []
+        self.blocked_position = -1
         stream_text = self.held_text
         stream_tokens = self.held_tokens
         stream_probs = self.held_probs
@@ -824,7 +841,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 self.tokenizer,
                 prefix_token,
                 self.return_top_tokens,
-                blocked_tokens = self.blocked_tokens
+                blocked_tokens = self.current_blocked_tokens
             )
 
         else:
@@ -920,7 +937,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.tokenizer,
             prefix_token,
             self.return_top_tokens,
-            blocked_tokens = self.blocked_tokens
+            blocked_tokens = self.current_blocked_tokens
         )
         self.future_logits = self.future_logits[:, 1:, :]
         self.future_tokens = self.future_tokens[:, 1:]
@@ -981,7 +998,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.tokenizer,
             prefix_token,
             self.return_top_tokens,
-            blocked_tokens = self.blocked_tokens
+            blocked_tokens = self.current_blocked_tokens
         )
         self.future_logits = self.future_logits[:, 1:, :]
         self.future_tokens = self.future_tokens[:, 1:]
