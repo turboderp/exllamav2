@@ -159,7 +159,13 @@ class ExLlamaV2Config:
             with open(self.generation_config_path, encoding = "utf8") as f:
                 gen_config = json.load(f)
                 self.generation_config = {}
-                self.generation_config['eos_token_id'] = read(gen_config, list, "eos_token_id", None)
+                try:
+                    self.generation_config['eos_token_id'] = read(gen_config, list, "eos_token_id", None)
+                except ValueError as e:
+                    eos_token_id_as_int = read(gen_config, int, "eos_token_id", None)
+                    if eos_token_id_as_int:
+                        self.generation_config['eos_token_id'] = [eos_token_id_as_int]
+                    
         
         # Model architecture
 
