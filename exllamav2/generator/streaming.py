@@ -118,6 +118,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     blocked_tokens: list[int]
     blocked_position: int
     current_blocked_tokens: list[int]
+    reuse_logits: torch.Tensor | None
 
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
@@ -372,6 +373,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.blocked_tokens = []
         self.blocked_position = -1
         self.current_blocked_tokens = []
+        self.reuse_logits = None
 
 
     # Convert list of strings to UTF32 format needed, to pass by reference to partial matching function
@@ -512,7 +514,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             # Regenerate the last token again, with prefix
 
-            healed_token, _, _, _, eos, logits = self._gen_single_token(self.settings, prefix_token = last_token)
+            healed_token, _, _, _, eos, logits, dev_logits = self._gen_single_token(self.settings, prefix_token = last_token)
             new_tail = self.tokenizer.decode(self.sequence_ids[:, -self.tail_decode_tokens:],
                                              decode_special_tokens = self.decode_special_tokens)[0]
             self.held_text += new_tail[len(old_tail):]
@@ -534,7 +536,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Generate a single token and append to the sequence
 
-        next_token, next_ptokens, next_pprobs, next_prob, eos, next_logits = self._gen_single_token(self.settings)
+        next_token, next_ptokens, next_pprobs, next_prob, eos, next_logits, dev_logits = self._gen_single_token(self.settings)
 
         # End immediately if it was a stop token
 
@@ -572,7 +574,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 "held_ptokens": self.held_ptokens[:, :-1, :],
                 "held_pprobs": self.held_pprobs[:, :-1, :],
                 "held_logits": self.held_logits[:-1, :],
-                "offending_token": next_token
+                "offending_token": next_token,
+                "next_logits": dev_logits
             }
             self.blocked_position = self.cache.current_seq_len - 1
 
@@ -587,8 +590,10 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.held_ptokens = cp["held_ptokens"]
             self.held_pprobs = cp["held_pprobs"]
             self.held_logits = cp["held_logits"]
+            self.future_logits = None
             self.future_tokens = None
             self.ban_checkpoint = None
+            self.reuse_logits = cp["next_logits"]
             return cp["offending_token"], off_text
 
         if self.banned_strings_utf32_offsets is not None:
@@ -836,16 +841,24 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         if self.speculative_ngram:
 
             token, ptokens, pprobs, prob, eos, logits = self._gen_single_token_ngram(gen_settings, prefix_token)
+            dev_logits = None
 
         elif self.draft_model is None:
 
-            logits = self.model.forward(
-                self.sequence_ids[:, -1:],
-                self.cache,
-                loras = self.active_loras,
-                input_mask = self.input_mask,
-                position_offsets = self.position_offsets
-            ).float().cpu()
+            if self.reuse_logits is not None:
+                dev_logits = self.reuse_logits
+                self.reuse_logits = None
+                self.cache.current_seq_len += 1
+                logits = dev_logits.float().cpu()
+            else:
+                dev_logits = self.model.forward(
+                    self.sequence_ids[:, -1:],
+                    self.cache,
+                    loras = self.active_loras,
+                    input_mask = self.input_mask,
+                    position_offsets = self.position_offsets
+                )
+                logits = dev_logits.float().cpu()
 
             token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(
                 logits,
@@ -862,6 +875,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             token, ptokens, pprobs, prob, eos, logits = \
                 self._gen_single_token_speculative(gen_settings, prefix_token)
+            dev_logits = None
 
         # Post sampling hook
 
@@ -889,7 +903,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         else:
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
         
-        return token, ptokens, pprobs, prob, eos, logits.flatten(1)
+        return token, ptokens, pprobs, prob, eos, logits.flatten(1), dev_logits
 
 
     # Speculative decoding with draft model
