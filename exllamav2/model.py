@@ -720,7 +720,7 @@ class ExLlamaV2:
 
             # Limit chunk_size to keep size of attention operation <= max_attention_size
 
-            if has_flash_attn:
+            if has_flash_attn and not self.config.no_flash_attn:
 
                 # Can't measure increase in VRAM usage with longer k_len, assume usage is constant
                 # for given chunk_size
