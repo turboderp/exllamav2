@@ -91,7 +91,7 @@ QAttn::QAttn
     int _head_dim,
     int _max_seq_len,
     bool _has_residual,
-    bool _neox_style,
+    int _rope_style,
     half* _q_norm,
     half* _k_norm
 ):
@@ -115,7 +115,7 @@ QAttn::QAttn
     head_dim(_head_dim),
     max_seq_len(_max_seq_len),
     has_residual(_has_residual),
-    neox_style(_neox_style),
+    rope_style(_rope_style),
     q_norm(_q_norm),
     k_norm(_k_norm)
 {
@@ -169,22 +169,26 @@ void QAttn::forward_cuda_1
 
 //    rope_cuda(temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
 //    rope_cuda(temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
-    rope_cuda_qk
-    (
-        temp_q,
-        temp_k,
-        sin,
-        cos,
-        batch_size,
-        q_len * num_heads,
-        q_len * num_kv_heads,
-        head_dim,
-        num_heads,
-        num_kv_heads,
-        past_len,
-        past_lens,
-        neox_style
-    );
+
+    if (rope_style != ROPE_STYLE_NONE)
+    {
+        rope_cuda_qk
+        (
+            temp_q,
+            temp_k,
+            sin,
+            cos,
+            batch_size,
+            q_len * num_heads,
+            q_len * num_kv_heads,
+            head_dim,
+            num_heads,
+            num_kv_heads,
+            past_len,
+            past_lens,
+            rope_style == ROPE_STYLE_NEOX
+        );
+    }
 }
 
 void QAttn::forward_cuda_2

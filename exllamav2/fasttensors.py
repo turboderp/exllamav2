@@ -72,7 +72,10 @@ class STFile:
             for key in self.header.keys():
                 nkey = key
                 for z in keymap:
-                    nkey = nkey.replace(z[0], z[1])
+                    if z[0].startswith("$") and nkey.startswith(z[0][1:]):
+                        nkey = ("$" + nkey).replace(z[0], z[1])
+                    else:
+                        nkey = nkey.replace(z[0], z[1])
                 nheader[nkey] = self.header[key]
                 self.tensor_remap[nkey] = key
             self.header = nheader
@@ -176,7 +179,7 @@ class STFile:
                    out_dtype = None) -> torch.Tensor:
         global global_tensorcache
 
-        if self.tensor_remap:
+        if self.tensor_remap and (not_fast or not self.fast):
             key = self.tensor_remap[key]
 
         if cached:

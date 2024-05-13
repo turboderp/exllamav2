@@ -123,10 +123,14 @@ class ExLlamaV2Module:
                     tensors = self.load_multi(key, ["weight", "bias"])
                     tensor = tensors["weight"].half()
                     bias = tensors["bias"].half()
+                    if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
+                        tensor = tensor.T
                     return nn.Parameter(tensor), nn.Parameter(bias)
                 else:
                     tensors = self.load_multi(key, ["weight"])
                     tensor = tensors["weight"].half()
+                    # if self.model.config.arch.orig_weights_transposed:
+                    #     tensor = tensor.T
                     return nn.Parameter(tensor)
 
             # No weights found for key
@@ -141,7 +145,8 @@ class ExLlamaV2Module:
                           in_feat: int,
                           out_feat: int):
 
-        for key in [f_key, f_key + ".weight"]:
+        res = []
+        for key in [f_key, f_key + ".weight", f_key + ".bias"]:
 
             filename = self.model.config.tensor_file_map.get(key)
             if not filename: continue
@@ -149,14 +154,19 @@ class ExLlamaV2Module:
             stfile = STFile.open(filename, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
             # tensor = stfile.get_tensor(key, device = self.device()).half()
             tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
-            tensor = tensor[f_beg:f_end, :]
-            if in_feat != out_feat and \
-                tensor.shape[1] == out_feat and \
-                tensor.shape[0] == in_feat:
+            if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
                 tensor = tensor.T
+            tensor = tensor[f_beg:f_end]
+            if not key.endswith(".bias"):
+                if in_feat != out_feat and \
+                    tensor.shape[1] == out_feat and \
+                    tensor.shape[0] == in_feat:
+                    tensor = tensor.T
             tensor = tensor.contiguous().to(self.device())
-            return nn.Parameter(tensor)
+            res.append(nn.Parameter(tensor))
 
+        if len(res) == 2: return res[0], res[1]
+        if len(res) == 1: return res[0]
         return None
 
 

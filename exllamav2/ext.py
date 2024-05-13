@@ -146,6 +146,7 @@ if build_jit:
         "cuda/comp_units/unit_exl2_3b.cu",
         "cpp/quantize_func.cpp",
         "cpp/profiling.cpp",
+        "cpp/generator.cpp",
         "cpp/sampling.cpp",
         "cpp/sampling_avx2.cpp",
         "cpp/safetensors.cpp"

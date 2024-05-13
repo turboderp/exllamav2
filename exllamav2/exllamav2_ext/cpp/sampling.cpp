@@ -75,22 +75,25 @@ void apply_rep_penalty_cpu
     for (int i = seq_len; i > beg;)
     {
         uint64_t t = sequence[--i];
-
-        // If t has not been encountered before, apply rep_p and pres_p
-
-        if (!g_rep_mask[t])
+        if (t < g_vocab_size)
         {
-            if (logits[t] > 0.0) logits[t] /= rep_p;  // Multiplicative penalty
-            else logits[t] *= rep_p;
 
-            logits[t] -= pres_p;  // Additive penalty
+            // If t has not been encountered before, apply rep_p and pres_p
 
-            g_rep_mask[t] = true;  // Only once per logit
+            if (!g_rep_mask[t])
+            {
+                if (logits[t] > 0.0) logits[t] /= rep_p;  // Multiplicative penalty
+                else logits[t] *= rep_p;
+
+                logits[t] -= pres_p;  // Additive penalty
+
+                g_rep_mask[t] = true;  // Only once per logit
+            }
+
+            // Apply freq_p penalty for every time a token is encountered, so the total additive penalty is count * freq_p
+
+            logits[t] -= freq_p;
         }
-
-        // Apply freq_p penalty for every time a token is encountered, so the total additive penalty is count * freq_p
-
-        logits[t] -= freq_p;
 
         // If we're in the "decay" range, reduce penalties for every token
 

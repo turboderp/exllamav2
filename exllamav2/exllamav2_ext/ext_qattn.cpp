@@ -37,7 +37,7 @@ uintptr_t make_q_attn
     int head_dim,
     int max_seq_len,
     bool has_residual,
-    bool neox_style,
+    int rope_style,
     torch::Tensor q_norm,
     torch::Tensor k_norm
 )
@@ -76,7 +76,7 @@ uintptr_t make_q_attn
         head_dim,
         max_seq_len,
         has_residual,
-        neox_style,
+        rope_style,
         (half*) q_norm.is_meta() ? NULL : (half*) q_norm.data_ptr(),
         (half*) k_norm.is_meta() ? NULL : (half*) k_norm.data_ptr()
     );

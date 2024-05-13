@@ -41,6 +41,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("fast_fadd_cpu", &fast_fadd_cpu, "fast_fadd_cpu");
     m.def("fast_copy_cpu", &fast_copy_cpu, "fast_copy_cpu");
     m.def("dump_profile_results", &dump_profile_results, "dump_profile_results");
+    m.def("partial_strings_match", &partial_strings_match, "partial_strings_match");
 
     // safetensors
 
