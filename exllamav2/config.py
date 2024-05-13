@@ -162,11 +162,7 @@ class ExLlamaV2Config:
                 try:
                     self.generation_config['eos_token_id'] = read(gen_config, list, "eos_token_id", None)
                 except (ValueError, TypeError):
-                    eos_token_id_as_int = read(gen_config, int, "eos_token_id", None)
-                    if eos_token_id_as_int is not None:
-                        self.generation_config['eos_token_id'] = [eos_token_id_as_int]
-                    else:
-                        self.generation_config['eos_token_id'] = None
+                    self.generation_config['eos_token_id'] = read(gen_config, int, "eos_token_id", None)
                     
         
         # Model architecture
