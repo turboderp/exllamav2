@@ -13,7 +13,6 @@ from exllamav2.compat import safe_move_tensor
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
 import math
-# import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 # import torch.nn.functional as F
 
@@ -34,6 +33,16 @@ try:
         has_flash_attn = True
 except ModuleNotFoundError:
     pass
+
+
+has_xformers = False
+if has_flash_attn == False:
+    try:
+        import xformers.ops as xops
+        from xformers.ops.fmha import LowerTriangularFromBottomRightMask
+        has_xformers = True
+    except ModuleNotFoundError:
+        pass
 
 
 class ExLlamaV2Attention(ExLlamaV2Module):
@@ -455,6 +464,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         global has_flash_attn
+        global has_xformers
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states,
@@ -572,7 +582,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             # Torch matmul attention
 
-            if cfg.no_flash_attn or not has_flash_attn or not attn_params.is_causal():
+            if cfg.no_flash_attn or not ( has_flash_attn or has_xformers) or not attn_params.is_causal():
 
                 q_states = q_states.transpose(1, 2)
                 k_states = k_states.transpose(1, 2)
@@ -602,7 +612,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             # Flash Attention 2
 
-            else:
+            elif has_flash_attn:
 
                 # TODO: Enable flash-attn with input mask
                 attn_output = flash_attn_func(
@@ -613,12 +623,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                     causal = True
                 )
                 attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+            else:
+                # xformers memory_efficient_attention
+                # when >=sm_80, xfomrers uses the same implemention with flash_attn, as we need to expand the kv mannually, xfomrers is never faster than flash-attn. It's only recommended when flash_attn is not available.
+                
+                k_states = k_states.transpose(1, 2)
+                v_states = v_states.transpose(1, 2)
 
-            # xformers memory_efficient_attention
+                k_states = self.repeat_kv(k_states, num_key_value_groups)
+                v_states = self.repeat_kv(v_states, num_key_value_groups)
+                
+                k_states = k_states.transpose(1, 2)
+                v_states = v_states.transpose(1, 2)
 
-            # attn_output = xops.memory_efficient_attention(q_states, k_states, v_states, attn_bias = xops.LowerTriangularMask())
-            # attn_output = attn_output.reshape((batch_size, q_len, hidden_size));
-
+                attn_output = xops.memory_efficient_attention(q_states, k_states, v_states, attn_bias = LowerTriangularFromBottomRightMask())
+                attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+                
             # Torch SDP attention:
 
             # q_states = q_states.transpose(1, 2)
