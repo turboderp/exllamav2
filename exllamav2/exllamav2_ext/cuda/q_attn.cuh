@@ -9,6 +9,10 @@
 
 #include "q_matrix.cuh"
 
+#define ROPE_STYLE_NONE 0
+#define ROPE_STYLE_GPTJ 1
+#define ROPE_STYLE_NEOX 2
+
 class QAttn
 {
 public:
@@ -46,7 +50,7 @@ public:
     std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> o_proj_lora;
 
     bool has_residual;
-    bool neox_style;
+    int rope_style;
 
     QAttn
     (
@@ -70,7 +74,7 @@ public:
         int _head_dim,
         int _max_seq_len,
         bool _has_residual,
-        bool _neox_style,
+        int _rope_style,
         half* _q_norm,
         half* _k_norm
     );

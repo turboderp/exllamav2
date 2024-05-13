@@ -1,6 +1,7 @@
 from exllamav2.model import \
 (
     ExLlamaV2Embedding,
+    ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
@@ -326,6 +327,9 @@ def quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
             mode = "norm"
+
+        elif isinstance(module, ExLlamaV2PosEmbedding):
+            mode = "pos_emb"
 
         elif isinstance(module, ExLlamaV2ParallelDecoder):
             mode = "parallel_decoder"

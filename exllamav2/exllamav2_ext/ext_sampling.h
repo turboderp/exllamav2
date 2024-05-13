@@ -1,4 +1,6 @@
 
+#include "cpp/generator.h"
+
 void apply_rep_penalty
 (
     torch::Tensor sequence,

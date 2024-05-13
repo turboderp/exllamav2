@@ -6,10 +6,12 @@ import time
 
 def optimize(job, save_fn, model):
 
-    has_gate = model.config.arch.mlp_gate
-    if has_gate: mlp_key_gate = model.config.arch.mlp_key_gate
-    mlp_key_up = model.config.arch.mlp_key_up
-    mlp_key_down = model.config.arch.mlp_key_down
+    cfg = model.config
+
+    has_gate = cfg.arch.mlp_gate
+    if has_gate: mlp_key_gate = cfg.arch.mlp_key_gate
+    mlp_key_up = cfg.arch.mlp_key_up
+    mlp_key_down = cfg.arch.mlp_key_down
 
     norm_interval = (1.5, 3.5)
     norm_2ndstage = 0.15
@@ -19,6 +21,10 @@ def optimize(job, save_fn, model):
     anneal_iter = 1000
     anneal_samples = 80
     anneal_stages = 3
+
+    first_q_layer = 0
+    while not model.modules[first_q_layer].key.startswith("model.layers"):
+        first_q_layer += 1
 
     # max_step_size = 2
     # first_layer_bias = 4
@@ -31,7 +37,7 @@ def optimize(job, save_fn, model):
     key_v = key + ".self_attn.v_proj"
     key_o = key + ".self_attn.o_proj"
 
-    if not model.config.arch.is_moe:
+    if not cfg.arch.is_moe:
         if has_gate: key_g = key + mlp_key_gate
         key_u = key + mlp_key_up
         key_d = key + mlp_key_down
@@ -42,7 +48,7 @@ def optimize(job, save_fn, model):
         key_d = key + mlp_key_down.replace("*", "0")
         mlp_mode = "block_sparse_moe"
 
-    num_experts = model.config.num_experts if model.config.num_experts is not None else 1
+    num_experts = cfg.num_experts if cfg.num_experts is not None else 1
     shape_q = model.modules_dict[key_q].matrix_shape()
     shape_k = model.modules_dict[key_k].matrix_shape()
     shape_v = model.modules_dict[key_v].matrix_shape()
@@ -62,9 +68,9 @@ def optimize(job, save_fn, model):
 
     # Combined size of hidden layers
 
-    num_layers = model.config.num_hidden_layers
+    num_layers = cfg.num_hidden_layers
     num_modules = num_layers * 2
-    numel = sum(m.numel() for m in model.modules[1 : num_modules + 1])
+    numel = sum(m.numel() for m in model.modules[first_q_layer : num_modules + first_q_layer])
 
     target_bpw = job["bits"]
     weight_budget = int(numel * target_bpw)
@@ -76,7 +82,7 @@ def optimize(job, save_fn, model):
     params = []
 
     for i in range(num_layers):
-        if model.config.arch.parallel_decoder_blocks:
+        if cfg.arch.parallel_decoder_blocks:
             m1 = measurement["model.layers." + str(i) + ".parallel_decoder"]["attn"]
             m2 = measurement["model.layers." + str(i) + ".parallel_decoder"]["mlp"]
         else:

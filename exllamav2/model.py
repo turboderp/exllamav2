@@ -1,5 +1,8 @@
 from __future__ import annotations
 import os, sys
+
+from exllamav2.architecture import RopeStyle
+
 min_version = (3, 8)
 if sys.version_info < min_version:
     print("")
@@ -32,6 +35,7 @@ from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.moe_mlp import ExLlamaV2MoEMLP
 from exllamav2.parallel_decoder import ExLlamaV2ParallelDecoder
 from exllamav2.embedding import ExLlamaV2Embedding
+from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
@@ -114,13 +118,18 @@ class ExLlamaV2DeviceTensors:
 
     def prepare_sincos(self):
 
+        device = _torch_device(self.device_idx)
+
         cfg = self.model.config
+        if cfg.arch.rope_style == RopeStyle.NONE:
+            self.sin = torch.zeros((1,), device = device, dtype = torch.half)
+            self.cos = self.sin
+            return
 
         base = cfg.rotary_embedding_base
         alpha = cfg.scale_alpha_value or 1.0
         scale = cfg.scale_pos_emb or 1.0
         head_dim = cfg.head_dim
-        device = _torch_device(self.device_idx)
         scaling_factor = 1.0
 
         # Alpha scaling for any rope_scaling type
@@ -153,10 +162,12 @@ class ExLlamaV2DeviceTensors:
         if scale != 1.0: t /= scale
 
         freqs = torch.einsum("i,j->ij", t, inv_freq)
-        if cfg.arch.rope_neox_style:
+        if cfg.arch.rope_style == RopeStyle.NEOX:
             emb = torch.cat((freqs, freqs), dim=-1)
-        else:
+        elif cfg.arch.rope_style == RopeStyle.GPTJ:
             emb = torch.repeat_interleave(freqs, 2, dim=-1)
+        else:
+            raise ValueError()
 
         self.sin = emb.sin()[None, None, :, :]
         self.cos = emb.cos()[None, None, :, :]
@@ -191,6 +202,10 @@ class ExLlamaV2:
 
         emb = ExLlamaV2Embedding(self, "model.embed_tokens")
         self.modules += [emb]
+
+        if self.config.arch.learned_pos_emb_key:
+            pos_emb = ExLlamaV2PosEmbedding(self, self.config.arch.learned_pos_emb_key)
+            self.modules += [pos_emb]
 
         for layer_idx in range(self.config.num_hidden_layers):
 

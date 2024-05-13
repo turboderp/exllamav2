@@ -1,6 +1,7 @@
 from exllamav2.model import \
 (
     ExLlamaV2Embedding,
+    ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
@@ -487,6 +488,9 @@ def measure_quant(job, save_fn, model):
         elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
             mode = "norm"
 
+        elif isinstance(module, ExLlamaV2PosEmbedding):
+            mode = "pos_emb"
+
         # Reference forward pass
 
         cache = None
@@ -535,6 +539,9 @@ def measure_quant(job, save_fn, model):
                 hidden_states[i] = outputs["post_norm"]
                 target_states_attn.append(outputs["hidden_states_attn"].to("cpu"))
                 target_states_mlp.append(outputs["hidden_states_mlp"].to("cpu"))
+                target_states.append(outputs["hidden_states"].to("cpu"))
+
+            if mode == "pos_emb":
                 target_states.append(outputs["hidden_states"].to("cpu"))
 
         # For MoE layers, warn if any layer received less than 10% of a calibration batch

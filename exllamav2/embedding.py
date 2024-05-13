@@ -81,6 +81,11 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                 loras = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
+        # If input IDs contain negative values, assume they are padding tokens from a model with not pad_token_id
+        # defined
+
+        hidden_states = hidden_states.clamp(min = 0)
+
         # Apply indexed embeddings
 
         indexed_embeddings = kwargs.get("indexed_embeddings")

@@ -470,6 +470,44 @@ class PromptFormat_gemma(PromptFormat):
         return True
 
 
+class PromptFormat_granite(PromptFormat):
+    description = "Granite (code)"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return "You are an AI coding assistant."
+
+    def first_prompt(self):
+        return \
+            """System:\n""" + \
+            """<|system_prompt|>\n\n""" + \
+            """Question:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """Answer:\n"""
+
+    def subs_prompt(self):
+        return \
+            """\n\n""" + \
+            """Question:\n""" + \
+            """<|user_prompt|>\n\n""" + \
+            """Answer:\n"""
+
+    def stop_conditions(self, tokenizer):
+        return [
+            tokenizer.eos_token_id,
+            """\n\nQuestion:""",
+        ]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 class PromptFormat_cohere(PromptFormat):
     description = "Cohere"
 
@@ -507,7 +545,7 @@ class PromptFormat_cohere(PromptFormat):
              ]
 
     def encoding_options(self):
-        return False, False, True
+        return True, False, True
 
     def print_extra_newline(self):
         return True
@@ -529,4 +567,5 @@ prompt_formats = \
     "gemma": PromptFormat_gemma,
     "cohere": PromptFormat_cohere,
     "phi3": PromptFormat_phi3,
+    "granite": PromptFormat_granite,
 }
