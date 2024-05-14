@@ -127,6 +127,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         # Stop conditions
 
         self.stop_strings = set()
+        self.stop_strings_utf32_buffer = None
+        self.stop_strings_utf32_offsets = None
         self.stop_tokens = {tokenizer.eos_token_id,}
         self.remaining_tokens = 0
 
@@ -182,6 +184,17 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         # Token healing
 
         self.active_loras = []
+
+        # Banned strings
+
+        self.banned_strings = []
+        self.banned_strings_utf32_buffer = None
+        self.banned_strings_utf32_offsets = None
+        self.ban_checkpoint = None
+        self.blocked_tokens = []
+        self.blocked_position = 0
+        self.current_blocked_tokens = []
+        self.reuse_logits = None
 
 
     def set_stop_conditions(self,
