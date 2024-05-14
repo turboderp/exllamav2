@@ -29,7 +29,7 @@ from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.layernorm import ExLlamaV2LayerNorm
-from exllamav2.attn import ExLlamaV2Attention, has_flash_attn
+from exllamav2.attn import ExLlamaV2Attention, has_flash_attn, has_xformers
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.moe_mlp import ExLlamaV2MoEMLP
@@ -720,7 +720,7 @@ class ExLlamaV2:
 
             # Limit chunk_size to keep size of attention operation <= max_attention_size
 
-            if has_flash_attn:
+            if has_flash_attn or has_xformers:
 
                 # Can't measure increase in VRAM usage with longer k_len, assume usage is constant
                 # for given chunk_size
