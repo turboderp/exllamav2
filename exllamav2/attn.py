@@ -301,29 +301,31 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             else:
                 k_norm = self.k_norm.weight
 
-            self.q_handle = ext_c.make_q_attn(norm_weight,
-                                              norm_bias,
-                                              is_rms,
-                                              eps,
-                                              self.q_proj.q_handle,
-                                              self.k_proj.q_handle,
-                                              self.v_proj.q_handle,
-                                              self.o_proj.q_handle,
-                                              self.temp_state,
-                                              # self.temp_q,
-                                              # self.temp_k,
-                                              # self.temp_v,
-                                              self.temp_dq,
-                                              self.model.config.max_input_len * self.model.config.max_batch_size,
-                                              self.model.config.hidden_size,
-                                              self.model.config.num_attention_heads,
-                                              self.model.config.num_key_value_heads,
-                                              self.model.config.head_dim,
-                                              self.model.config.max_seq_len,
-                                              self.has_residual,
-                                              self.model.config.arch.rope_style.value,
-                                              q_norm,
-                                              k_norm)
+            self.q_handle = ext_c.make_q_attn(
+                norm_weight,
+                norm_bias,
+                is_rms,
+                eps,
+                self.q_proj.q_handle,
+                self.k_proj.q_handle,
+                self.v_proj.q_handle,
+                self.o_proj.q_handle,
+                self.temp_state,
+                # self.temp_q,
+                # self.temp_k,
+                # self.temp_v,
+                self.temp_dq,
+                self.model.config.max_input_len * self.model.config.max_batch_size,
+                self.model.config.hidden_size,
+                self.model.config.num_attention_heads,
+                self.model.config.num_key_value_heads,
+                self.model.config.head_dim,
+                self.model.config.max_seq_len,
+                self.has_residual,
+                self.model.config.arch.rope_style.value,
+                q_norm,
+                k_norm
+            )
 
 
     def unload(self):
@@ -457,35 +459,21 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         global has_flash_attn
 
         if self.q_handle is None or intermediates:
-            return self.forward_torch(hidden_states,
-                                      cache,
-                                      attn_params,
-                                      past_len,
-                                      intermediates,
-                                      loras = loras,
-                                      **kwargs)
-
-        batch_size = hidden_states.shape[0]
-        q_len = hidden_states.shape[1]
+            return self.forward_torch(
+                hidden_states,
+                cache,
+                attn_params,
+                past_len,
+                intermediates,
+                loras = loras,
+                **kwargs
+            )
 
         cfg = self.model.config
-
-        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2CacheBase))
-
-        # past_len = 0
-        # if cache is not None:
-        #     if isinstance(cache, ExLlamaV2Cache):
-        #         past_len = cache.current_seq_len
-        #     if isinstance(cache, list):
-        #         past_len = [c.current_seq_len for c in cache]
-
-        num_attention_heads = cfg.num_attention_heads
-        num_key_value_heads = cfg.num_key_value_heads
-        num_key_value_groups = cfg.num_key_value_groups
-        head_dim = cfg.head_dim
-        hidden_size = cfg.hidden_size
-
         constants = self.model.get_device_tensors(self.device_idx)
+
+        batch_size, q_len, _ = hidden_states.shape
+        direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2CacheBase))
 
         q_shape = hidden_states.shape[:-1] + (self.q_proj.out_features,)
         k_shape = hidden_states.shape[:-1] + (self.k_proj.out_features,)
@@ -495,13 +483,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # If conditions are right we can write the K/V projections directly into the cache
 
         if direct:
-
             batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
-            k_states = batch_keys.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
-            v_states = batch_values.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
-
+            k_states = batch_keys[:batch_size, past_len : past_len + q_len, :]
+            v_states = batch_values[:batch_size, past_len : past_len + q_len, :]
         else:
-
             k_states = torch.empty(k_shape, device = hidden_states.device, dtype = torch.half)
             v_states = torch.empty(v_shape, device = hidden_states.device, dtype = torch.half)
 
@@ -514,203 +499,77 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_loras = [id(x) for x in loras]
             pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
-        if attn_params.multi_cache:
-            pass_past_len_1 = -1
-            pass_past_len_2 = attn_params.get_past_lens(hidden_states.device)
-        elif attn_params.position_offsets is not None:
+        if attn_params.position_offsets is not None:
             pass_past_len_1 = past_len
             pass_past_len_2 = attn_params.get_position_offsets(hidden_states.device)
         else:
             pass_past_len_1 = past_len
             pass_past_len_2 = none_tensor
 
-        ext_c.q_attn_forward_1(self.q_handle,
-                               hidden_states,
-                               batch_size,
-                               q_len,
-                               pass_past_len_1,
-                               pass_past_len_2,
-                               q_states,
-                               k_states,
-                               v_states,
-                               constants.sin,
-                               constants.cos,
-                               pass_loras,
-                               pass_lora_temp)
+        ext_c.q_attn_forward_1(
+            self.q_handle,
+            hidden_states,
+            batch_size,
+            q_len,
+            pass_past_len_1,
+            pass_past_len_2,
+            q_states,
+            k_states,
+            v_states,
+            constants.sin,
+            constants.cos,
+            pass_loras,
+            pass_lora_temp
+        )
 
-        # Shape for attention
+        # Select attention function
 
-        q_states = q_states.view(batch_size, q_len, num_attention_heads, head_dim)
-        k_states = k_states.view(batch_size, q_len, num_key_value_heads, head_dim)
-        v_states = v_states.view(batch_size, q_len, num_key_value_heads, head_dim)
+        if cfg.no_flash_attn or not has_flash_attn or not attn_params.is_causal():
+            attn_func = self._attn_matmul
+        else:
+            attn_func = self._attn_flash
 
-        # Regular (batched) attention with optional padding mask
+        # Straight attention without cache
 
-        if cache is None or isinstance(cache, ExLlamaV2CacheBase):
+        if cache is None:
 
-            # Add keys and values to cache
+            q_states = q_states.view(batch_size, q_len, cfg.num_attention_heads, cfg.head_dim)
+            k_states = k_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            v_states = v_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
 
-            if cache is not None:
+            attn_output = attn_func(batch_size, q_len, q_states, k_states, v_states, attn_params, cfg)
 
-                if direct:
+        # Regular cache (FP16, FP8, Q4)
 
-                    k_states = batch_keys.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
-                    v_states = batch_values.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
+        elif isinstance(cache, ExLlamaV2CacheBase):
 
-                else:
+            q_states = q_states.view(batch_size, q_len, cfg.num_attention_heads, cfg.head_dim)
+            k_states = k_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            v_states = v_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
 
-                    batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
-                    new_keys = batch_keys.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
-                    new_values = batch_values.narrow(0, 0, batch_size).narrow(1, past_len, q_len)
-                    new_keys.copy_(k_states)
-                    new_values.copy_(v_states)
+            if not direct:
+                batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+                batch_keys[:batch_size, :past_len + q_len, :].copy_(k_states)
+                batch_values[:batch_size, :past_len + q_len, :].copy_(v_states)
 
-                    # Key/value tensors with past
+            k_states = batch_keys[:batch_size, :past_len + q_len, :]
+            v_states = batch_values[:batch_size, :past_len + q_len, :]
 
-                    k_states = batch_keys.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
-                    v_states = batch_values.narrow(0, 0, batch_size).narrow(1, 0, past_len + q_len)
+            cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
 
-            # Torch matmul attention
-
-            if cfg.no_flash_attn or not has_flash_attn or not attn_params.is_causal():
-
-                q_states = q_states.transpose(1, 2)
-                k_states = k_states.transpose(1, 2)
-                v_states = v_states.transpose(1, 2)
-
-                k_states = self.repeat_kv(k_states, num_key_value_groups)
-                k_states = k_states.transpose(-1, -2)
-
-                attn_weights = torch.matmul(q_states, k_states)
-                k_states = None
-                q_states = None
-
-                # attn_weights *= self.scale_factor / math.sqrt(head_dim)
-                # attn_mask = attn_params.get_attn_mask(hidden_states.device)
-                # if self.unscale_factor != 1: attn_weights *= self.unscale_factor
-                attn_weights *= 1 / math.sqrt(head_dim)
-                attn_mask = attn_params.get_attn_mask(hidden_states.device)
-                if attn_mask is not None: attn_weights = attn_weights + attn_mask
-                attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
-
-                v_states = self.repeat_kv(v_states, num_key_value_groups)
-                attn_output = torch.matmul(attn_weights, v_states)
-                v_states = None
-
-                attn_output = attn_output.transpose(1, 2)
-                attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
-
-            # Flash Attention 2
-
-            else:
-
-                # TODO: Enable flash-attn with input mask
-                attn_output = flash_attn_func(
-                    q_states,
-                    k_states,
-                    v_states,
-                    # softmax_scale = None if self.scale_factor == 1 else self.scale_factor / math.sqrt(head_dim),
-                    causal = True
-                )
-                attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
-
-            # xformers memory_efficient_attention
-
-            # attn_output = xops.memory_efficient_attention(q_states, k_states, v_states, attn_bias = xops.LowerTriangularMask())
-            # attn_output = attn_output.reshape((batch_size, q_len, hidden_size));
-
-            # Torch SDP attention:
-
-            # q_states = q_states.transpose(1, 2)
-            # k_states = k_states.transpose(1, 2)
-            # v_states = v_states.transpose(1, 2)
-            #
-            # # k_states = self.repeat_kv(k_states, num_key_value_groups)
-            # # v_states = self.repeat_kv(v_states, num_key_value_groups)
-            #
-            # attn_output = F.scaled_dot_product_attention(q_states, k_states, v_states, attn_mask = attn_mask, is_causal = False)
-            # attn_output = attn_output.transpose(1, 2)
-            # attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
-
-            # Update 8-bit/Q4 cache
-
-            if cache is not None:
-                cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
-
-        # Multiple caches
-
-        elif isinstance(cache, list):
-
-            assert attn_params.multi_cache
-            attn_masks = attn_params.get_attn_masks(hidden_states.device)
-
-            attn_outputs = []
-            for i in range(len(cache)):
-
-                # TODO: Once nested tensors are finalized in Torch, this could all be batched, probably
-
-                # Add keys and values to cache
-
-                batch_keys, batch_values = cache[i].get_kv_state(self.layer_idx, 1, 0, past_len[i])
-                new_keys = batch_keys.narrow(1, past_len[i], q_len)
-                new_values = batch_values.narrow(1, past_len[i], q_len)
-                new_keys.copy_(k_states.narrow(0, i, 1))
-                new_values.copy_(v_states.narrow(0, i, 1))
-
-                # Store updated cache values
-
-                cache[i].store_kv_state(self.layer_idx, 1, past_len[i], q_len)
-
-                # Key/value tensors with past
-
-                k_states_b = batch_keys.narrow(1, 0, past_len[i] + q_len)
-                v_states_b = batch_values.narrow(1, 0, past_len[i] + q_len)
-
-                # Torch matmul attention
-
-                # TODO: enable flash-attn
-
-                q_states_b = q_states.transpose(1, 2).narrow(0, i, 1)
-                k_states_b = k_states_b.transpose(1, 2)
-                v_states_b = v_states_b.transpose(1, 2)
-
-                k_states_b = self.repeat_kv(k_states_b, num_key_value_groups)
-                k_states_b = k_states_b.transpose(-1, -2)
-
-                attn_weights = torch.matmul(q_states_b, k_states_b)
-                q_states_b = None
-                k_states_b = None
-
-                attn_weights /= math.sqrt(head_dim)
-                if attn_masks[i] is not None: attn_weights = attn_weights + attn_masks[i]
-                attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
-
-                v_states_b = self.repeat_kv(v_states_b, num_key_value_groups)
-                attn_output_b = torch.matmul(attn_weights, v_states_b)
-                v_states_b = None
-
-                attn_outputs.append(attn_output_b)
-
-            q_states = None
-            k_states = None
-            v_states = None
-
-            attn_output = torch.cat(attn_outputs, dim = 0)
-            attn_output = attn_output.transpose(1, 2)
-            attn_output = attn_output.reshape((batch_size, q_len, hidden_size))
+            attn_output = attn_func(batch_size, q_len, q_states, k_states, v_states, attn_params, cfg)
 
         # Output projection
 
-        ext_c.q_attn_forward_2(self.q_handle,
-                               hidden_states,
-                               attn_output,
-                               batch_size,
-                               q_len,
-                               pass_loras,
-                               pass_lora_temp)
-
-        attn_output = None
-        attn_weights = None
+        ext_c.q_attn_forward_2(
+            self.q_handle,
+            hidden_states,
+            attn_output,
+            batch_size,
+            q_len,
+            pass_loras,
+            pass_lora_temp
+        )
 
         return hidden_states
 
