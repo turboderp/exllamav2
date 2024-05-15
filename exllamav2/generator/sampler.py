@@ -45,6 +45,15 @@ class ExLlamaV2Sampler:
 
         post_sampling_hooks: list[ExLlamaV2PostSamplingHook] = field(default_factory = list)
 
+        @staticmethod
+        def greedy() -> ExLlamaV2Sampler.Settings():
+            s = ExLlamaV2Sampler.Settings()
+            s.temperature = 1.0
+            s.token_repetition_penalty = 1.0
+            s.top_p = 0.0
+            s.top_k = 1
+            return s
+
 
         def clone(self):
             c = copy(self)
