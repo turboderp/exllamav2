@@ -14,7 +14,7 @@ class SeqTensor:
 
     def __init__(
         self,
-        shape: tuple[int],
+        shape: tuple,
         dtype: torch.dtype,
         seq_dim: int,
         device: torch.device = "cpu",
