@@ -44,7 +44,7 @@ generator.warmup()  # for more accurate timing
 
 # Generate with or without filter
 
-def completion(prompt, filters = None, max_new_tokens = 200, eos_bias = False):
+def completion(prompt, filters = None, max_new_tokens = 200):
 
     settings = ExLlamaV2Sampler.Settings()
     settings.temperature = 0.75
@@ -54,10 +54,6 @@ def completion(prompt, filters = None, max_new_tokens = 200, eos_bias = False):
 
     settings.filters = filters
 
-    # If using a filter, sample the EOS token as soon as filter allows it
-
-    settings.filter_prefer_eos = eos_bias
-
     # Send prompt to generator to begin stream
 
     input_ids = tokenizer.encode(prompt)
@@ -66,7 +62,7 @@ def completion(prompt, filters = None, max_new_tokens = 200, eos_bias = False):
     time_begin_prompt = time.time()
 
     generator.set_stop_conditions([tokenizer.eos_token_id])
-    generator.begin_stream_ex(input_ids, settings)
+    generator.begin_stream_ex(input_ids, settings, filters = filters, filter_prefer_eos = True)
 
     # Streaming loop
 
@@ -120,14 +116,14 @@ prefix_filter = ExLlamaV2PrefixFilter(model, tokenizer, "{")  # Make sure we sta
 
 prompt = "Here is some information about Superman:\n"
 completion(prompt, [])
-result = completion(prompt, [lmfe_filter, prefix_filter], eos_bias = True)
+result = completion(prompt, [lmfe_filter, prefix_filter])
 
 j = json.loads(result)
 print("Parsed JSON:" , j)
 
 prompt = "Here is some information about Batman:\n"
 completion(prompt, [])
-result = completion(prompt, [lmfe_filter, prefix_filter], eos_bias = True)
+result = completion(prompt, [lmfe_filter, prefix_filter])
 
 j = json.loads(result)
 print("Parsed JSON:" , j)

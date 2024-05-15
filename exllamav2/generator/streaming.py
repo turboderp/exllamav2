@@ -7,12 +7,13 @@ from exllamav2 import (
     ExLlamaV2Cache,
     ExLlamaV2CacheBase,
     ExLlamaV2Tokenizer,
-    ExLlamaV2Lora
+    ExLlamaV2Lora,
 )
 from exllamav2.generator import (
     ExLlamaV2Sampler,
     ExLlamaV2BaseGenerator
 )
+from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.generator.ngram import NgramCache
 import torch
 import random
@@ -119,6 +120,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     blocked_position: int
     current_blocked_tokens: list[int]
     reuse_logits: torch.Tensor | None
+
+    # Filters
+
+    filters: list[ExLlamaV2Filter] | None
+    filter_prefer_eos: bool
 
 
     def __init__(self, model, cache, tokenizer, draft_model = None, draft_cache = None, num_speculative_tokens = 5):
@@ -244,21 +250,25 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
     # Begin stream
 
-    def begin_stream_ex(self,
-                        input_ids: torch.Tensor,
-                        gen_settings: ExLlamaV2Sampler.Settings,
-                        token_healing: bool = False,
-                        loras: ExLlamaV2Lora | list[ExLlamaV2Lora] = None,
-                        input_mask: torch.Tensor | None = None,
-                        position_offsets: torch.Tensor | None = None,
-                        return_probabilities: bool = False,
-                        return_top_tokens: int = 0,
-                        return_logits: bool = False,
-                        abort_event: threading.Event = None,
-                        input_embeddings: torch.Tensor | None = None,
-                        decode_special_tokens: bool = False,
-                        banned_strings: list[str] | None = None,
-                        **kwargs):
+    def begin_stream_ex(
+        self,
+        input_ids: torch.Tensor,
+        gen_settings: ExLlamaV2Sampler.Settings,
+        token_healing: bool = False,
+        loras: ExLlamaV2Lora | list[ExLlamaV2Lora] = None,
+        input_mask: torch.Tensor | None = None,
+        position_offsets: torch.Tensor | None = None,
+        return_probabilities: bool = False,
+        return_top_tokens: int = 0,
+        return_logits: bool = False,
+        abort_event: threading.Event = None,
+        input_embeddings: torch.Tensor | None = None,
+        decode_special_tokens: bool = False,
+        banned_strings: list[str] | None = None,
+        filters: list[ExLlamaV2Filter] | None = None,
+        filter_prefer_eos: bool = False,
+        **kwargs
+    ):
         """
         Resets the generator and starts a new completion of the supplied input_ids. Reuses the existing
         cache for any token IDs matching the previous sequence.
@@ -304,6 +314,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         :param decode_special_tokens:
             Also decode special tokens into output text stream
+
+        :param filters:
+            List of ExLlamaV2Filters to apply during generation.
+
+        :param filter_prefer_eos:
+            If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
 
         :param banned_strings:
             List of strings that the generator will refuse to output. As soon as a partial match happens,
@@ -387,6 +403,11 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.blocked_position = -1
         self.current_blocked_tokens = []
         self.reuse_logits = None
+
+        # Filters
+
+        self.filters = filters if filters is not None else []
+        self.filter_prefer_eos = filter_prefer_eos
 
 
     # Convert list of strings to UTF32 format needed, to pass by reference to partial matching function
@@ -522,7 +543,8 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             if self.first_token:
 
-                self.settings.begin_filters(self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)[last_token])
+                for f in self.filters:
+                    f.begin(self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)[last_token])
                 self.first_token = False
 
             # Regenerate the last token again, with prefix
@@ -544,7 +566,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
             if self.first_token:
 
-                self.settings.begin_filters()
+                for f in self.filters: f.begin("")
                 self.first_token = False
 
         # Generate a single token and append to the sequence
@@ -881,7 +903,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 self.tokenizer,
                 prefix_token,
                 self.return_top_tokens,
-                blocked_tokens = self.current_blocked_tokens
+                blocked_tokens = self.current_blocked_tokens,
+                filters = self.filters,
+                filter_prefer_eos = self.filter_prefer_eos
             )
 
         else:
@@ -904,10 +928,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                 h(p)
             token = p.sampled_token
             if p.feed_filters:
-                gen_settings.feed_filters(token)
-
+                for f in self.filters: f.feed(token)
         else:
-            gen_settings.feed_filters(token)
+            for f in self.filters: f.feed(token)
 
         # Accept token
         
@@ -978,7 +1001,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.tokenizer,
             prefix_token,
             self.return_top_tokens,
-            blocked_tokens = self.current_blocked_tokens
+            blocked_tokens = self.current_blocked_tokens,
+            filters = self.filters,
+            filter_prefer_eos = self.filter_prefer_eos
         )
         self.future_logits = self.future_logits[:, 1:, :]
         self.future_tokens = self.future_tokens[:, 1:]
@@ -1039,7 +1064,9 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             self.tokenizer,
             prefix_token,
             self.return_top_tokens,
-            blocked_tokens = self.current_blocked_tokens
+            blocked_tokens = self.current_blocked_tokens,
+            filters=self.filters,
+            filter_prefer_eos=self.filter_prefer_eos
         )
         self.future_logits = self.future_logits[:, 1:, :]
         self.future_tokens = self.future_tokens[:, 1:]
