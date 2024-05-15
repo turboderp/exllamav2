@@ -82,12 +82,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
     ngram: NgramCache | None
     ngram_preloaded: NgramCache | None
 
-    # UTF-8 decoding
-
-    held_utf8_tokens: torch.Tensor | None
-    held_fallback_tokens: torch.Tensor | None
-    expect_utf8: int
-
     # Output buffers
 
     held_text: str
@@ -180,12 +174,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.speculative_ngram_threshold = 1
         self.ngram = None
         self.ngram_preloaded = None
-
-        # UTF-8 decoding
-
-        self.held_utf8_tokens = None
-        self.held_fallback_tokens = None
-        self.expect_utf8: int = 0
 
         # Token healing
 
@@ -360,9 +348,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.held_text = ""
 
-        self.held_utf8_tokens = self.no_tokens
-        self.held_fallback_tokens = self.no_tokens
-        self.expect_utf8 = 0
         self.held_tokens = self.no_tokens
         self.held_ptokens = self.no_ptokens
         self.held_probs = self.no_probs
@@ -581,9 +566,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         id_to_piece = self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)
         new_text = id_to_piece[next_token]
 
-        next_token, new_text = self._catch_utf8(next_token, new_text)
-        next_token, new_text = self._catch_fallback(next_token, new_text)
-
         self.held_text += new_text
         self.held_tokens = torch.cat([self.held_tokens, next_token], dim = -1)
         if self.return_probabilities:
@@ -597,6 +579,18 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         # Return now if newly added token ends a filter
 
         if eos: return self.held_text, True, self.held_tokens, self.held_probs, self.held_ptokens, self.held_pprobs, self.held_logits, None
+
+        # Hold text if it contains an incomplete character
+
+        if self.held_text.endswith("�") and not self.held_text.endswith("�����"):
+            test_decode = self.tokenizer.decode(
+                self.held_tokens,
+                decode_special_tokens=self.decode_special_tokens
+            )[0]
+            if not test_decode.endswith("�"):
+                self.held_text = test_decode
+            else:
+                return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
 
         # Hold text as long as it contains part of a banned string
 
@@ -678,79 +672,6 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         self.held_pprobs = self.no_pprobs
         self.held_logits = self.no_logits
         return stream_text, False, stream_tokens, stream_probs, stream_ptokens, stream_pprobs, stream_logits, None
-
-
-    # Functions for catching and holding partial UTF-8 characters
-
-    def _decode_utf8(self):
-
-        if self.held_utf8_tokens.shape[-1] == 0: return self.no_tokens, ""
-
-        try:
-            id_to_ord = self.tokenizer.get_id_to_ord_list()
-            b = [id_to_ord[x] for x in self.held_utf8_tokens[0].tolist()]
-            c = bytes(b).decode('utf-8')
-        except ValueError or UnicodeDecodeError:
-            id_to_piece = self.tokenizer.get_id_to_piece_list(self.decode_special_tokens)
-            c = "".join(id_to_piece[x] for x in self.held_utf8_tokens[0].tolist())
-
-        pre_t = self.held_utf8_tokens
-        self.held_utf8_tokens = self.no_tokens
-        return pre_t, c
-
-
-    def _catch_fallback(self, next_token, new_text):
-
-        if self.held_fallback_tokens.shape[-1] == 0:
-            if "�" not in new_text: return next_token, new_text
-
-        self.held_fallback_tokens = torch.cat((self.held_fallback_tokens, next_token), dim = -1)
-        new_decode = self.tokenizer.decode(self.held_fallback_tokens,
-                                           decode_special_tokens = self.decode_special_tokens)[0]
-
-        if "�" not in new_decode or self.held_fallback_tokens.shape[-1] >= self.max_fallback_tokens:
-            r_tokens = self.held_fallback_tokens
-            self.held_fallback_tokens = self.no_tokens
-            return r_tokens, new_decode
-
-        return self.no_tokens, ""
-
-
-    def _catch_utf8(self, next_token, new_text):
-
-        if self.held_fallback_tokens.shape[-1] > 0:
-            return next_token, new_text
-
-        if self.expect_utf8 == 0:
-
-            if new_text != "�": return next_token, new_text
-
-            id_to_ord = self.tokenizer.get_id_to_ord_list()
-            t = next_token[0, 0].item()
-            b = id_to_ord[t]
-
-            if 0 < b < 256:
-                if b & 0b1100000 == 0b1000000: self.expect_utf8 = 2
-                if b & 0b1110000 == 0b1100000: self.expect_utf8 = 3
-                if b & 0b1111000 == 0b1110000: self.expect_utf8 = 4
-                if b & 0b1111100 == 0b1111000: self.expect_utf8 = 5
-            self.held_utf8_tokens = self.no_tokens
-            if self.expect_utf8 == 0: return next_token, new_text
-            new_text = ""
-
-        if self.expect_utf8:
-
-            if len(new_text) > 1:
-
-                pre_t, pre_c = self._decode_utf8()
-                next_token = torch.cat((pre_t, next_token), dim = -1)
-                new_text = pre_c + new_text
-                return next_token, new_text
-
-            self.held_utf8_tokens = torch.cat((self.held_utf8_tokens, next_token), dim = -1)
-            self.expect_utf8 -= 1
-            if self.expect_utf8 == 0: return self._decode_utf8()
-            return self.no_tokens, ""
 
 
     # Helper for limiting the sequence length to the cache length. Necessary in case the cache prefill was
