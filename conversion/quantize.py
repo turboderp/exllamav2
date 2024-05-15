@@ -436,7 +436,7 @@ def quant(job, save_fn, model):
                 cal_ids = f.get_tensor("input_ids")
             module.linear.weight.data = module.linear.weight.data.to("cuda:0")
 
-        rfn_sum = 0
+        rfn_sum = torch.tensor(0.0).cuda()
         rfn_count = 0
         logprob_sum = 0.0
         logprob_count = 0
@@ -455,7 +455,7 @@ def quant(job, save_fn, model):
                 output_ref = target_states[i].to("cuda:0")
                 output_ref = output_ref[0].float()
 
-                rfn_sum += (torch.linalg.norm(output - output_ref, 'fro') / torch.linalg.norm(output_ref, 'fro')).item()
+                rfn_sum += torch.linalg.norm(output - output_ref, 'fro') / torch.linalg.norm(output_ref, 'fro')
                 rfn_count += 1
 
                 output_ref = None
@@ -482,7 +482,7 @@ def quant(job, save_fn, model):
 
         if mode != "linear":
 
-            err = rfn_sum / rfn_count
+            err = rfn_sum.item() / rfn_count
             print(f" -- Module quantized, rfn_error: {err:1.6f}")
 
         else:
