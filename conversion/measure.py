@@ -125,7 +125,7 @@ def test_quant(source: ExLlamaV2Linear,
 
 def test_error(module, hidden_states, target_states, cache, attn_params):
 
-    rfn_sum = 0
+    rfn_sum = torch.tensor(0.0).cuda()
     rfn_count = 0
     for x, xref in zip(hidden_states, target_states):
         x = x.cuda()
@@ -133,10 +133,10 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
         xtest = module.forward(x, cache, attn_params)
         xtest = xtest[0].float()
         xref = xref[0].float()
-        rfn_sum += (torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')).item()
+        rfn_sum += torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')
         rfn_count += 1
 
-    return max(1e-6, 1 - (rfn_sum / rfn_count))
+    return max(1e-6, 1 - (rfn_sum.item() / rfn_count))
 
 
 def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False):
