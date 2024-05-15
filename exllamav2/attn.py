@@ -497,6 +497,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cfg = self.model.config
         constants = self.model.get_device_tensors(self.device_idx)
 
+        PAGE_SIZE = 256
+
         batch_size, q_len, _ = hidden_states.shape
         q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
         k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
@@ -504,6 +506,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # TODO: Support paged Q4 cache and maybe FP8?
         k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 0)
+        k_cache = k_cache.view(k_cache.shape[1] // PAGE_SIZE, PAGE_SIZE, k_cache.shape[2], k_cache.shape[3])
+        v_cache = v_cache.view(v_cache.shape[1] // PAGE_SIZE, PAGE_SIZE, v_cache.shape[2], v_cache.shape[3])
 
         if loras is None or self.temp_lora_size == 0:
             pass_loras, pass_lora_temp = [], none_tensor
