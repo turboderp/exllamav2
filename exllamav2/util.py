@@ -1,5 +1,91 @@
+from __future__ import annotations
+
 import gc
 import torch
+
+class SeqTensor:
+
+    PAGE_SIZE = 256
+
+    tensor: torch.Tensor
+    seq_dim: int
+    seq_len: int
+    seq_cap: int
+
+    def __init__(
+        self,
+        shape: tuple[int],
+        dtype: torch.dtype,
+        seq_dim: int,
+        device: torch.device = "cpu",
+        init_cap: int = -1
+    ):
+        if seq_dim < 0: seq_dim = len(shape) + seq_dim
+        self.seq_dim = seq_dim
+        self.seq_len = 0
+        if init_cap == -1:
+            init_cap = self.PAGE_SIZE
+        else:
+            init_cap = (init_cap // self.PAGE_SIZE + 1) * self.PAGE_SIZE
+        shape = list(shape)
+        shape[seq_dim] = self.seq_cap = init_cap
+        shape = tuple(shape)
+        self.tensor = torch.empty(shape, dtype = dtype, device = device)
+
+    def __len__(self):
+        return self.seq_len
+
+    def __bool__(self):
+        return self.seq_len > 0
+
+    @staticmethod
+    def from_tensor(tensor: torch.Tensor, seq_dim: int):
+        s = SeqTensor(tensor.shape, tensor.dtype, seq_dim, tensor.device, init_cap = tensor.shape[seq_dim])
+        s.append(tensor)
+        return s
+
+    def clear(self):
+        self.seq_len = 0
+
+    def set(self, new_data: SeqTensor | torch.tensor | None = None):
+        self.clear()
+        self.append(new_data)
+
+    def append(self, new_data: SeqTensor | torch.tensor | None):
+        if new_data is None: return
+        if isinstance(new_data, SeqTensor):
+            new_data = new_data.torch()
+        new_len = new_data.shape[self.seq_dim]
+        end_pos = self.seq_len + new_len
+        if end_pos >= self.seq_cap:
+            new_cap = (end_pos // self.PAGE_SIZE + 1) * self.PAGE_SIZE
+            grow_shape = list(new_data.shape)
+            grow_shape[self.seq_dim] = new_cap - self.seq_cap
+            grow_shape = tuple(grow_shape)
+            grow_tensor = torch.empty(grow_shape, dtype = self.tensor.dtype, device = self.tensor.device)
+            self.tensor = torch.cat((self.tensor, grow_tensor), dim = self.seq_dim)
+            self.seq_cap = new_cap
+        s = self.tensor.narrow(self.seq_dim, self.seq_len, end_pos - self.seq_len)
+        s.copy_(new_data)
+        self.seq_len += new_len
+
+    def truncate(self, new_len: int):
+        assert new_len <= self.seq_len
+        self.seq_len = new_len
+
+    def torch(self):
+        s = self.tensor.narrow(self.seq_dim, 0, self.seq_len)
+        return s
+
+    def torch_slice(self, a: int | None, b: int | None):
+        if b is None:
+            s = self.tensor.narrow(self.seq_dim, a, self.seq_len - a)
+        elif a is None:
+            s = self.tensor.narrow(self.seq_dim, 0, b)
+        else:
+            s = self.tensor.narrow(self.seq_dim, a, b - a)
+        return s
+
 
 def list_live_tensors():
 
