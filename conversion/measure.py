@@ -139,6 +139,32 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
     return max(1e-6, 1 - (rfn_sum / rfn_count))
 
 
+def batch_test_error(module_factory, factory_params, hidden_states, target_states, cache, attn_params):
+
+    rfn_sums = [torch.tensor(0.0).cuda() for _ in factory_params]
+    rfn_count = 0
+    print(f" -- Testing {len(hidden_states)} samples with {len(factory_params)} variants")
+    for x, xref in zip(hidden_states, target_states):
+        torch.cuda.empty_cache()
+
+        x = x.cuda()
+        xref = xref.cuda()
+        xref = xref[0].float()
+
+        print(f" -- Sample {rfn_count + 1}/{len(hidden_states)}")
+        for i, params in enumerate(factory_params):
+            xtest = module_factory(params).forward(x, cache, attn_params)
+            xtest = xtest[0].float()
+            rfn_sums[i] += torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')
+
+        rfn_count += 1
+
+    return [
+        max(1e-6, 1 - (rfn_sum.item() / rfn_count))
+        for rfn_sum in rfn_sums
+    ]
+
+
 def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False):
 
     qjobs, qmaps = get_qparams_reduced(qparams_attn)
@@ -161,23 +187,25 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
 
     pcache = ParamCache({'q': options_q, 'k': options_k, 'v': options_v, 'o': options_o})
 
-    for (q, k, v, o) in qmaps:
-
+    def module_factory(qkvo):
+        q, k, v, o = qkvo
         module.q_proj.linear.weight = pcache.get('q', q)
         module.k_proj.linear.weight = pcache.get('k', k)
         module.v_proj.linear.weight = pcache.get('v', v)
         module.o_proj.linear.weight = pcache.get('o', o)
+        return module
 
+    accuracies = batch_test_error(module_factory, qmaps, hidden_states, target_states, cache, attn_params)
+
+    for qkvo, accuracy in zip(qmaps, accuracies):
+        q, k, v, o = qkvo
         total_bits = bits_q[q]
         total_bits += bits_k[k]
         total_bits += bits_v[v]
         total_bits += bits_o[o]
         total_bpw = total_bits / total_numel
 
-        accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
         print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
-
-        torch.cuda.empty_cache()
 
         r = { "accuracy": accuracy,
               "total_bits": total_bits,
