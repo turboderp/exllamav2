@@ -29,6 +29,7 @@ parser.add_argument("-mr", "--measurement_rows", type = int, default = 16, help 
 parser.add_argument("-l", "--length", type = int, default = 2048, help = "Max no. tokens per sample")
 parser.add_argument("-ml", "--measurement_length", type = int, default = 2048, help = "Max no. tokens per sample when measuring")
 parser.add_argument("-so", "--status_output", action = "store_true", help = "Include machine-parseable status updates in console output")
+parser.add_argument("-pcs", "--param_cache_size", type = int, default = 10000, help = "Parameter cache size in MB (lower to reduce VRAM use with speed penalty)")
 
 args = parser.parse_args()
 
@@ -242,7 +243,7 @@ while True:
         model = ExLlamaV2(config)
         model.load(lazy = True)
 
-        status = measure_quant(job, save_job, model)  # capturing the graceful exits
+        status = measure_quant(job, save_job, model, args.param_cache_size)  # capturing the graceful exits
         if status == "interrupted":
             print("Process interrupted. Exiting gracefully.")
             save_job()

@@ -376,17 +376,19 @@ def get_qparams_reduced(options, ignore_gate = False):
 
 
 class ParamCache:
-    def __init__(self, options, maxlen = 2048):
+    def __init__(self, options, maxsize = 10000):
         self.options = options
-        self.maxlen = maxlen
+        self.maxsize = maxsize
+        self.used = 0
         self.keys = []
         self.seen = set()
         self.cache = {k: {} for k in options.keys()}
+        self.sizes = {k: {} for k in options.keys()}
         self.stats = {
-            "hits": 0,
-            "misses": 0,
-            "evictions": 0,
-            "reconstructions": 0,
+            "hits": 0,          # hits in the cache
+            "misses": 0,        # reconstructions of previously evicted entries
+            "loads": 0,         # initial loading of entries never seen before
+            "evictions": 0,     # evictions due to cache size limit
         }
 
     def get(self, option, idx):
@@ -396,16 +398,22 @@ class ParamCache:
             self.stats["hits"] += 1
         else:
             if (option, idx) in self.seen:
-                self.stats["reconstructions"] += 1
+                self.stats["misses"] += 1
+                size = self.sizes[option][idx]
             else:
                 self.seen.add((option, idx))
-            self.cache[option][idx] = nn.Parameter(self.options[option][idx].weight.cuda())
-            self.keys.append((option, idx))
-            self.stats["misses"] += 1
-            if len(self.keys) > self.maxlen:
+                self.stats["loads"] += 1
+                size = self.options[option][idx].weight.numel() * self.options[option][idx].weight.element_size()
+                self.sizes[option][idx] = size
+
+            self.used += size
+            while len(self.keys) > 0 and self.used > self.maxsize:
                 evict = self.keys.pop(0)
+                self.used -= self.sizes[evict[0]][evict[1]]
                 del self.cache[evict[0]][evict[1]]
                 self.stats["evictions"] += 1
-        if (self.stats["hits"] + self.stats["misses"]) % 100 == 0:
+            self.cache[option][idx] = nn.Parameter(self.options[option][idx].weight.cuda())
+            self.keys.append((option, idx))
+        if (self.stats["hits"] + self.stats["misses"]) % 1000 == 0:
             print(f" -- ParamCache stats: {self.stats}")
         return self.cache[option][idx]

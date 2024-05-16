@@ -165,7 +165,7 @@ def batch_test_error(module_factory, factory_params, hidden_states, target_state
     ]
 
 
-def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False):
+def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False, param_cache_size = 10000):
 
     qjobs, qmaps = get_qparams_reduced(qparams_attn)
     results = []
@@ -185,7 +185,7 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
     total_numel += module.v_proj.numel()
     total_numel += module.o_proj.numel()
 
-    pcache = ParamCache({'q': options_q, 'k': options_k, 'v': options_v, 'o': options_o})
+    pcache = ParamCache({'q': options_q, 'k': options_k, 'v': options_v, 'o': options_o}, maxsize = param_cache_size)
 
     def module_factory(qkvo):
         q, k, v, o = qkvo
@@ -410,7 +410,7 @@ def print_status_box(*content_lines):
     print('-' * box_width)
 
 @torch.inference_mode()
-def measure_quant(job, save_fn, model):
+def measure_quant(job, save_fn, model, param_cache_size):
 
     # vars for status box
     time_spent_list = []  
@@ -592,7 +592,7 @@ def measure_quant(job, save_fn, model):
         m = None
 
         if mode == "self_attn":
-            m = measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params)
+            m = measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, param_cache_size=param_cache_size)
 
         if mode == "mlp":
             m = measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params)
