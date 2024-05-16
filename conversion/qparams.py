@@ -1,3 +1,5 @@
+from torch import nn
+
 import math
 
 class QParams:
@@ -371,3 +373,39 @@ def get_qparams_reduced(options, ignore_gate = False):
         maps.append(m)
 
     return idx_to_qp, maps
+
+
+class ParamCache:
+    def __init__(self, options, maxlen = 2048):
+        self.options = options
+        self.maxlen = maxlen
+        self.keys = []
+        self.seen = set()
+        self.cache = {k: {} for k in options.keys()}
+        self.stats = {
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
+            "reconstructions": 0,
+        }
+
+    def get(self, option, idx):
+        if idx in self.cache[option]:
+            self.keys.remove((option, idx))
+            self.keys.append((option, idx))
+            self.stats["hits"] += 1
+        else:
+            if (option, idx) in self.seen:
+                self.stats["reconstructions"] += 1
+            else:
+                self.seen.add((option, idx))
+            self.cache[option][idx] = nn.Parameter(self.options[option][idx].weight.cuda())
+            self.keys.append((option, idx))
+            self.stats["misses"] += 1
+            if len(self.keys) > self.maxlen:
+                evict = self.keys.pop(0)
+                del self.cache[evict[0]][evict[1]]
+                self.stats["evictions"] += 1
+        if (self.stats["hits"] + self.stats["misses"]) % 100 == 0:
+            print(f" -- ParamCache stats: {self.stats}")
+        return self.cache[option][idx]

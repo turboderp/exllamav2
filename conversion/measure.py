@@ -13,7 +13,7 @@ from exllamav2.model import \
 
 from safetensors import safe_open
 from safetensors.torch import save_file
-from conversion.qparams import QParams, qparams_headoptions, qparams_attn, qparams_mlp, get_qparams_reduced
+from conversion.qparams import ParamCache, QParams, qparams_headoptions, qparams_attn, qparams_mlp, get_qparams_reduced
 from conversion.adaptivegptq import AdaptiveGPTQ
 import torch
 from torch import nn
@@ -159,14 +159,14 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
     total_numel += module.v_proj.numel()
     total_numel += module.o_proj.numel()
 
-    (q_, k_, v_, o_) = (-1, -1, -1, -1)
+    pcache = ParamCache({'q': options_q, 'k': options_k, 'v': options_v, 'o': options_o})
+
     for (q, k, v, o) in qmaps:
 
-        if q != q_: module.q_proj.linear.weight = nn.Parameter(options_q[q].weight.cuda())
-        if k != k_: module.k_proj.linear.weight = nn.Parameter(options_k[k].weight.cuda())
-        if v != v_: module.v_proj.linear.weight = nn.Parameter(options_v[v].weight.cuda())
-        if o != o_: module.o_proj.linear.weight = nn.Parameter(options_o[o].weight.cuda())
-        (q_, k_, v_, o_) = (q, k, v, o)
+        module.q_proj.linear.weight = pcache.get('q', q)
+        module.k_proj.linear.weight = pcache.get('k', k)
+        module.v_proj.linear.weight = pcache.get('v', v)
+        module.o_proj.linear.weight = pcache.get('o', o)
 
         total_bits = bits_q[q]
         total_bits += bits_k[k]
