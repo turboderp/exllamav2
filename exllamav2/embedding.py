@@ -36,6 +36,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         w = self.load_weight()
         assert isinstance(w, nn.Parameter)
+        w.pin_memory()
         self.native_vocab_size = w.shape[0]
 
         self.embedding = nn.Embedding(vocab_size, hidden_size, pad_token_id, device = "meta")
