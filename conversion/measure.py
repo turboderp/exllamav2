@@ -21,6 +21,7 @@ import os, time, math, json
 import torch.nn.functional as F
 import gc
 from conversion.bot_status import print_stage
+from tqdm import tqdm
 
 # graceful exiting
 import signal
@@ -144,14 +145,13 @@ def batch_test_error(module_factory, factory_params, hidden_states, target_state
     rfn_sums = [torch.tensor(0.0).cuda() for _ in factory_params]
     rfn_count = 0
     print(f" -- Testing {len(hidden_states)} samples with {len(factory_params)} variants")
-    for x, xref in zip(hidden_states, target_states):
+    for x, xref in tqdm(zip(hidden_states, target_states), total=len(hidden_states)):
         torch.cuda.empty_cache()
 
         x = x.cuda()
         xref = xref.cuda()
         xref = xref[0].float()
 
-        print(f" -- Sample {rfn_count + 1}/{len(hidden_states)}")
         for i, params in enumerate(factory_params):
             xtest = module_factory(params).forward(x, cache, attn_params)
             xtest = xtest[0].float()
