@@ -42,6 +42,7 @@ from exllamav2.fasttensors import cleanup_stfiles
 import gc
 import threading
 from typing import Callable
+from exllamav2.util import get_basic_progress
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -336,23 +337,41 @@ class ExLlamaV2:
         return [(ab - rb - rba) / 1024**3 for (ab, rb, rba) in zip(allocation_bytes, reserve_bytes, reserve_bytes_attn)]
 
 
-    def load(self,
-             gpu_split: list[float] | None = None,
-             lazy: bool = False,
-             stats: bool = False,
-             callback: Callable[[int, int], None] | None = None,
-             callback_gen: Callable[[int, int], None] | None = None):
+    def load(
+        self,
+        gpu_split: list[float] | None = None,
+        lazy: bool = False,
+        stats: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None,
+        progress: bool = False
+    ):
 
+        if progress:
+            progressbar = get_basic_progress()
+            progressbar.start()
+            task_id = progressbar.add_task("Loading: " + self.config.model_dir, total = len(self.modules))
+            module = 0
+            def callback_pb(a, b):
+                progressbar.update(task_id, advance = 1)
+            assert callback is None, \
+                "Cannot use callback function and console progress bar at the same time."
+            callback = callback_pb
         f = self.load_gen(gpu_split, lazy, stats, callback, callback_gen)
-        for item in f: x = item
+        for item in f:
+            pass
+        if progress:
+            progressbar.stop()
 
 
-    def load_gen(self,
-                 gpu_split: list[float] | None = None,
-                 lazy: bool = False,
-                 stats: bool = False,
-                 callback: Callable[[int, int], None] | None = None,
-                 callback_gen: Callable[[int, int], None] | None = None):
+    def load_gen(
+        self,
+        gpu_split: list[float] | None = None,
+        lazy: bool = False,
+        stats: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None
+    ):
 
         with torch.inference_mode():
 
@@ -383,22 +402,40 @@ class ExLlamaV2:
             # else: yield gpu_split
 
 
-    def load_autosplit(self,
-                       cache: ExLlamaV2CacheBase,
-                       reserve_vram: int | None = None,
-                       last_id_only: bool = False,
-                       callback: Callable[[int, int], None] | None = None,
-                       callback_gen: Callable[[int, int], None] | None = None):
+    def load_autosplit(
+        self,
+        cache: ExLlamaV2CacheBase,
+        reserve_vram: int | None = None,
+        last_id_only: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None,
+        progress: bool = False
+    ):
 
+        if progress:
+            progressbar = get_basic_progress()
+            progressbar.start()
+            task_id = progressbar.add_task("Loading: " + self.config.model_dir, total = len(self.modules))
+            module = 0
+            def callback_pb(a, b):
+                progressbar.update(task_id, advance = 1)
+            assert callback is None, \
+                "Cannot use callback function and console progress bar at the same time."
+            callback = callback_pb
         f = self.load_autosplit_gen(cache, reserve_vram, last_id_only, callback, callback_gen)
-        for item in f: x = item
+        for item in f:
+            pass
+        if progress:
+            progressbar.stop()
 
-    def load_autosplit_gen(self,
-                           cache: ExLlamaV2CacheBase,
-                           reserve_vram: int | None = None,
-                           last_id_only: bool = False,
-                           callback: Callable[[int, int], None] | None = None,
-                           callback_gen: Callable[[int, int], None] | None = None):
+    def load_autosplit_gen(
+        self,
+        cache: ExLlamaV2CacheBase,
+        reserve_vram: int | None = None,
+        last_id_only: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None
+    ):
 
         # Limit model's max_input_len to max_seq_len if necessary
         self.config.max_input_len = min(self.config.max_input_len, self.config.max_seq_len)
