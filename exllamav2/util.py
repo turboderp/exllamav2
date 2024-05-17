@@ -1,4 +1,5 @@
 from __future__ import annotations
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 import gc
 import torch
@@ -85,6 +86,17 @@ class SeqTensor:
         else:
             s = self.tensor.narrow(self.seq_dim, a, b - a)
         return s
+
+
+def get_basic_progress():
+    progress = Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width = None),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+    )
+    return progress
 
 
 def list_live_tensors():

@@ -1,8 +1,11 @@
+from __future__ import annotations
 import torch
 from torch.utils.cpp_extension import load
-import os
+import os, glob
 import sys
 import platform
+import threading
+from exllamav2.util import get_basic_progress
 
 extension_name = "exllamav2_ext"
 verbose = False  # Print wall of text when compiling
@@ -37,6 +40,54 @@ def maybe_set_arch_list_env():
     os.environ["TORCH_CUDA_ARCH_LIST"] = ";".join(arch_list)
 
 
+# Print feedback from JIT extension build
+
+feedback_stop_event: threading.Event
+feedback_thread: threading.Thread
+feedback_thread_started = False
+
+def count_object_files(directory):
+    pattern = os.path.join(directory, '*.o')
+    files = glob.glob(pattern)
+    return len(files)
+
+def build_feedback():
+    global feedback_stop_event
+    from torch.utils.cpp_extension import _get_build_directory
+    build_dir = _get_build_directory(extension_name, False)
+    num_sources = len(sources_)
+    num_objects = count_object_files(build_dir)
+
+    while not feedback_stop_event.is_set():
+        if num_objects != num_sources: break
+        feedback_stop_event.wait(1)
+
+    progressbar = get_basic_progress()
+    progressbar.start()
+    task_id = progressbar.add_task("Building C++/CUDA extension", total = num_sources)
+
+    while not feedback_stop_event.is_set():
+        num_objects = count_object_files(build_dir)
+        progressbar.update(task_id, completed = num_objects)
+        feedback_stop_event.wait(1)
+
+    progressbar.stop()
+
+def start_build_feedback():
+    global feedback_stop_event, feedback_thread, feedback_thread_started
+    feedback_stop_event = threading.Event()
+    feedback_thread = threading.Thread(target = build_feedback)
+    feedback_thread.start()
+    feedback_thread_started = True
+
+
+def end_build_feedback():
+    global feedback_thread_started
+    if feedback_thread_started:
+        feedback_stop_event.set()
+        feedback_thread.join()
+
+
 # Determine if we're on Windows
 
 windows = (os.name == "nt")
@@ -48,6 +99,12 @@ try:
     import exllamav2_ext
 except ModuleNotFoundError:
     build_jit = True
+except ImportError as e:
+    if "undefined symbol" in str(e):
+        print("\"undefined symbol\" error here usually means you are attempting to load a prebuilt extension wheel "
+              "that was compiled against a different version of PyTorch than the one you are you using. Please verify "
+              "that the versions match.")
+        raise e
 
 if build_jit:
 
@@ -183,9 +240,22 @@ if build_jit:
 
     sources = [os.path.join(sources_dir, s) for s in sources_]
 
-    # Load extension
+    # Suppress warning
 
     maybe_set_arch_list_env()
+
+    # Provide build feedback if loading takes a long time, suggesting the extension is being compiled
+
+    if not verbose:
+
+        def load_feedback():
+            print("Loading exllamav2_ext extension (JIT)...")
+            start_build_feedback()
+
+        timer = threading.Timer(1, load_feedback)
+        timer.start()
+
+    # Load extension
 
     exllamav2_ext = load \
     (
@@ -197,6 +267,10 @@ if build_jit:
         extra_cuda_cflags = extra_cuda_cflags,
         extra_cflags = extra_cflags
     )
+
+    if not verbose:
+        timer.cancel()
+        end_build_feedback()
 
 ext_c = exllamav2_ext
 
