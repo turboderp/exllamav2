@@ -267,7 +267,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             must be 2.
 
         :param gen_settings:
-            Sampling settings, including filters
+            Sampling settings
 
         :param token_healing:
             Apply token healing by regenerating the last token of the input sequence with prefix
