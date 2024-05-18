@@ -9,3 +9,4 @@ from exllamav2.config import ExLlamaV2Config
 from exllamav2.tokenizer.tokenizer import ExLlamaV2Tokenizer
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.util import SeqTensor
+from exllamav2.util import Timer
