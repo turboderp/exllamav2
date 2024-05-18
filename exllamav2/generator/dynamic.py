@@ -41,6 +41,9 @@ class CachePage:
     access_serial: int = 0
     prefill_complete: bool = False
 
+    def __repr__(self):
+        return f"CachePage: idx = {self.page_index}, ref_count = {self.ref_count}, phash: ..{str(self.phash)[8:24]}.."
+
 
 class NGramTrie:
 
@@ -216,6 +219,42 @@ class ExLlamaV2DynamicGenerator:
                 "Cannot use both draft model and ngram draft"
         self.max_ngram = max_ngram
         self.use_ngram_draft = use_ngram_draft
+
+
+    def print_page_list(self, short: bool = True):
+        for cp in self.all_pages:
+            if cp.phash in self.referenced_pages:
+                assert cp.ref_count > 0
+                ref = str(cp.ref_count) if cp.ref_count < 10 else "+"
+            elif cp.phash in self.unreferenced_pages:
+                assert cp.ref_count == 0
+                ref = "."
+            else:
+                ref = "#"
+            if short: print(ref, end = "")
+            else: print(str(cp) + f", ref {ref}")
+        print()
+
+
+    def validate_cache(self):
+        try:
+            assert len(self.referenced_pages) + len(self.unreferenced_pages) == self.max_pages, "sum"
+            ref_counts = [0] * self.max_pages
+            for job in self.active_jobs:
+                for seq in job.sequences:
+                    for page in seq.allocated_pages:
+                        ref_counts[page.page_index] += 1
+            for (h, page) in self.referenced_pages.items():
+                assert page.phash == h, "r hash " + str(page)
+                assert page.ref_count == ref_counts[page.page_index], "r refc " + str(page)
+                assert h not in self.unreferenced_pages, "r2u " + str(page)
+            for (h, page) in self.unreferenced_pages.items():
+                assert page.phash == h, "u hash " + str(page)
+                assert page.ref_count == ref_counts[page.page_index], "u refc " + str(page)
+                assert h not in self.referenced_pages, "u2r " + str(page)
+        except Exception as ex:
+            print(ex)
+            raise ex
 
 
     @profile
@@ -517,20 +556,20 @@ class ExLlamaV2DynamicGenerator:
                 for j in skipped_jobs:
                     j.skips += 1
 
-                # Allocate pages for job
-
-                job.allocate_pages()
-
                 # Add job to active list
 
                 self.pending_jobs.remove(job)
                 self.active_jobs.append(job)
+
+                # Allocate pages for job
+
+                job.allocate_pages()
+                current_max_batch += len(job.sequences)
+
                 results.append({
                     "job": job,
                     "stage": "started",
                 })
-
-                current_max_batch += len(job.sequences)
 
 
 # Convert list of strings to UTF32 format to pass by reference to partial matching function
