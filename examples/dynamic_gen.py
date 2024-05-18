@@ -1,6 +1,5 @@
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Cache, ExLlamaV2Tokenizer
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, ExLlamaV2Sampler
@@ -27,7 +26,7 @@ use_draft_model = False
 draft_model_dir = "/mnt/str/models/tinyllama-1b-32k-exl2/4.0bpw"
 
 # Max number of batches to run at once, assuming the sequences will fit within total_context.
-max_batch_size = 1
+max_batch_size = 20
 
 # Max chunk size. Determines the size of prefill operations. Can be reduced to reduce pauses whenever a
 # new job is started, but at the expense of overall prompt ingestion speed.
