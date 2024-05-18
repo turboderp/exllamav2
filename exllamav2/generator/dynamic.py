@@ -359,6 +359,7 @@ class ExLlamaV2DynamicGenerator:
             {
                 "job": ExLlamaV2DynamicJob  - reference to job
                 "stage": "started"
+                "identifier":  - optional identifier
             }
 
             # Prefill is underway
@@ -367,12 +368,14 @@ class ExLlamaV2DynamicGenerator:
                 "stage": "prefill"
                 "curr_progress": int  - prompt tokens ingested so far
                 "max_progress": int  - total prompt tokens to ingest
+                "identifier":  - optional identifier
             }
 
             # Generation is underway
             {
                 "job": ExLlamaV2DynamicJob  - reference to job
                 "stage": "streaming"
+                "identifier":  - optional identifier
                 "eos": bool  - True if stop condition has been met
 
                 optional, if eos:
@@ -678,10 +681,13 @@ class ExLlamaV2DynamicGenerator:
                 job.allocate_pages()
                 current_max_batch += len(job.sequences)
 
-                results.append({
+                r = {
                     "job": job,
                     "stage": "started",
-                })
+                }
+                if job.identifier is not None:
+                    r.update({ "identifier": job.identifier })
+                results.append(r)
 
 
 # Convert list of strings to UTF32 format to pass by reference to partial matching function
@@ -783,6 +789,7 @@ class ExLlamaV2DynamicJob:
         filters: list[ExLlamaV2Filter] | None = None,
         filter_prefer_eos: bool = False,
         token_healing: bool = False,
+        identifier: object | None = None,
         **kwargs
     ):
         """
@@ -839,6 +846,9 @@ class ExLlamaV2DynamicJob:
             one of "_Hello", "_Help", "_Helium", etc. Only the added part of the healed token is emitted as
             text, i.e. "lo", "p", "ium" etc.
 
+        :param identifier:
+            Object to return with every stream event relating to this job
+
         :param kwargs:
         """
 
@@ -847,6 +857,7 @@ class ExLlamaV2DynamicJob:
 
         self.generator = None
         self.serial_number = None
+        self.identifier = identifier
 
         self.max_skips = max_skips
         self.allocated_pages = None
@@ -1101,6 +1112,9 @@ class ExLlamaV2DynamicJob:
                         "rejected_draft_tokens": self.rejected_draft_tokens
                     })
 
+            if self.identifier is not None:
+                r.update({ "identifier": self.identifier })
+
             results.append(r)
             return emit_eos, next_token
 
@@ -1298,13 +1312,15 @@ class ExLlamaV2DynamicJob:
             progress += prefill_end - prefill_start
 
         if progress:
-
-            results.append({
+            r = {
                 "job": self,
                 "stage": "prefill",
                 "curr_progress": sum(seq.kv_position for seq in self.sequences),
                 "max_progress": sum(len(seq.sequence_ids) - 1 for seq in self.sequences),
-            })
+            }
+            if self.identifier is not None:
+                r.update({"identifier": self.identifier})
+            results.append(r)
 
 
     # @profile
