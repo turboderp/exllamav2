@@ -285,7 +285,7 @@ class ExLlamaV2DynamicGenerator:
 
 
     @profile
-    def iterate(self):
+    def iterate(self) -> list[dict]:
 
         results = []
         self.iterate_start_jobs(results)
@@ -850,13 +850,35 @@ class ExLlamaV2DynamicJob:
                 else:
                     last_hash = None
                 page_ids = seq.sequence_ids.torch_slice(page_before * PAGE_SIZE, page_after * PAGE_SIZE)
+                old_hash = page.phash
                 new_hash = _tensor_blake2b_checksum(page_ids, last_hash)
-                del self.generator.referenced_pages[page.phash]
-                page.phash = new_hash
-                page.prefill_complete = True
-                self.generator.referenced_pages[new_hash] = page
-                # if page_after < len(seq.allocated_pages):
-                #     next_page = seq.allocated_pages[page_after]
+
+                del self.generator.referenced_pages[old_hash]
+
+                if new_hash in self.generator.referenced_pages:
+                    assert page.ref_count == 1
+                    page.ref_count = 0
+                    self.generator.unreferenced_pages[old_hash] = page
+                    page = self.generator.referenced_pages[new_hash]
+                    seq.allocated_pages[page_before] = page
+                    assert page.prefill_complete
+                    page.ref_count += 1
+                else:
+                    if new_hash in self.generator.unreferenced_pages:
+                        assert page.ref_count == 1
+                        page.ref_count = 0
+                        self.generator.unreferenced_pages[old_hash] = page
+                        page = self.generator.unreferenced_pages[new_hash]
+                        assert page.ref_count == 0
+                        assert page.prefill_complete
+                        seq.allocated_pages[page_before] = page
+                        del self.generator.unreferenced_pages[new_hash]
+                        page.ref_count += 1
+                        self.generator.referenced_pages[new_hash] = page
+                    else:
+                        page.phash = new_hash
+                        page.prefill_complete = True
+                        self.generator.referenced_pages[new_hash] = page
 
         # Stream output
 
