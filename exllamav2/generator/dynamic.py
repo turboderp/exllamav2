@@ -24,6 +24,7 @@ from line_profiler import profile
 #  - Unpaged mode to support matmul attn
 #  - PGO, C++ functions where needed
 #  - ExLlamaV2StreamingGenerator wrapper
+#  - Q4 cache
 
 PAGE_SIZE = 256
 PARTIAL_PAGE_SIZE = 16
@@ -125,6 +126,56 @@ class ExLlamaV2DynamicGenerator:
         max_ngram: int = 4,
         **kwargs
     ):
+        """
+        Initialize generator
+
+        :param model:
+            The model (loaded)
+
+        :param cache:
+            ExLlamaV2Cache allocated with batch size 1. The max_seq_len of the cache defines the total
+            number of tokens that the generator can assign to a batch of jobs.
+
+        :param tokenizer:
+            ExLlamaV2Tokenizer
+
+        :param max_batch_size:
+            The maximum number of sequences to process in parallel. The generator will also limit this
+            dynamically considering the available cache space.
+
+        :param max_seq_len:
+            Maximum length of each individual sequence. Defaults to the model's max_seq_len.
+
+        :param max_chunk_size:
+            Maximum number of tokens to process in parallel during prefill (prompt ingestion). Should not
+            exceed the model's max_input_len but can be lowered to trade off prompt speed for a shorter
+            interruption to ongoing jobs when a new job is started.
+
+        :param max_q_size:
+            Maximum number of tokens to evaluate per sequence during generation. Leave this at the default
+            (16) unless there's a good reason to increase it.
+
+        :param draft_model:
+            Draft model. Enables speculative decoding with draft, and must be specified along with
+            draft_cache. Note that speculative decoding with many parallel jobs is likely not advantageous.
+
+        :param draft_cache:
+            ExLlamaV2Cache allocated for draft model. Must have batch_size 1 and same max_seq_len as the
+            main cmodel cache.
+
+        :param num_draft_tokens:
+            Number of future tokens to draft.
+
+        :param use_ngram_draft:
+            Use n-gram speculative decoding. Uses a simple n-gram model created from the input sequence
+            to predict future tokens.
+
+        :param max_ngram:
+            Longest n-gram to consider.
+
+        :param kwargs:
+        """
+
         self.model = model
         self.cache = cache
         self.tokenizer = tokenizer
@@ -281,6 +332,9 @@ class ExLlamaV2DynamicGenerator:
         self,
         job: ExLlamaV2DynamicJob | list[ExLlamaV2DynamicJob]
     ):
+        """
+        Adds a job or list of jobs to the queue.
+        """
 
         if isinstance(job, list):
             for j in job: self.enqueue(j)
@@ -294,6 +348,55 @@ class ExLlamaV2DynamicGenerator:
 
     @profile
     def iterate(self) -> list[dict]:
+        """
+        Performs inference on available jobs.
+
+        :return:
+            List of dicts:
+
+            # Job has started
+            {
+                "job": ExLlamaV2DynamicJob  - reference to job
+                "stage": "started"
+            }
+
+            # Prefill is underway
+            {
+                "job": ExLlamaV2DynamicJob  - reference to job
+                "stage": "prefill"
+                "curr_progress": int  - prompt tokens ingested so far
+                "max_progress": int  - total prompt tokens to ingest
+            }
+
+            # Generation is underway
+            {
+                "job": ExLlamaV2DynamicJob  - reference to job
+                "stage": "streaming"
+                "eos": bool  - True if stop condition has been met
+
+                optional, if eos:
+                    "eos_reason":  - one of:
+                        "stop_token"
+                        "stop_string"
+                        "max_new_tokens"
+                        "end_filter"
+                    "full_completion": str  - full text completion
+                    "new_tokens": int  - number of tokens generated
+                    "time_enqueued": float  - time from job was enqueued until it started, in seconds
+                    "time_prefill": float  - time to first token, in seconds
+                    "time_generate": float  - time to last token, in seconds
+                    optional, if SD enabled:
+                        "accepted_draft_tokens": int
+                        "rejected_draft_tokens": int
+
+                "text": str  - streamed text output. Does not include prefix from healed token, or stop string
+                "token_ids": torch.Tensor  - output tokens, shape (1, n)
+                "token_probs": torch.Tensor  - last sampling probability of output tokens, shape (1, n)
+                "top_k_tokens": torch.Tensor  - shape (1, n, k)
+                "top_k_probs": torch.Tensor  - shape (1, n, k)
+                "logits": torch.Tensor  - shape (1, n, vocab_size)
+            }
+        """
 
         results = []
         self.iterate_start_jobs(results)
@@ -681,6 +784,63 @@ class ExLlamaV2DynamicJob:
         token_healing: bool = False,
         **kwargs
     ):
+        """
+        Create new job.
+
+        :param input_ids:
+            Tokenized IDs of the input prompt, shape (1, n)
+
+        :param max_new_tokens:
+            Max no. output tokens to allow
+
+        :param max_skips:
+            In the event that the job is too large to fit in the cache at any given moment but there are
+            smaller jobs pending that would fit, those smaller jobs are started instead. This number
+            specifies the maximum number of times a job can be skipped in favor of a smaller job before it
+            stalls the queue. After this, the job is guaranteed to be the next job started.
+
+        :param gen_settings:
+            ExLlamaV2Sampler.Settings containing sampling parameters
+
+        :param seed:
+             RNG seed (determinism is not guaranteed)
+
+        :param stop_conditions:
+            List of strings and/or token IDs that will trigger the EOS condition. If a stop condition is
+            encountered it is not emitted as output. If the beginning of a stop string is sampled, stream
+            output will be held until the stop condition can be resolved.
+
+        :param decode_special_tokens:
+            If True, special tokens like <|im_start|> etc. will be decoded and included in the text output.
+            If False, special tokens will still be respected as stop conditions.
+
+        :param return_top_tokens:
+            Number of top tokens to return, along with their final sampling probabilities. There is some
+            performance penalty for enabling this.
+
+        :param return_logits:
+            Return pre-sampling logits along with output tokens.
+
+        :param return_probs:
+            Return final sampling probability for each chosen token.
+
+        :param filters:
+            List of ExLlamaV2Filters to apply during generation.
+
+        :param filter_prefer_eos:
+            If True, the sampler will prefer whatever token the filter presents as an EOS condition, e.g.
+            the outer closing bracket in a JSON grammar, as soon as that (sub)token is legal under the
+            grammar.
+
+        :param token_healing:
+            Resample the last token of the input with a prefix constraint. E.g. if the last token is
+            "_Hel", it is removed from the input and the first token of the output will be constrained to
+            one of "_Hello", "_Help", "_Helium", etc. Only the added part of the healed token is emitted as
+            text, i.e. "lo", "p", "ium" etc.
+
+        :param kwargs:
+        """
+
         assert all(ids.device.type == "cpu" for ids in input_ids), \
                 "input_ids must reside in system memory"
 
