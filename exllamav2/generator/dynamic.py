@@ -3,17 +3,18 @@ from __future__ import annotations
 from collections import deque
 import hashlib
 from dataclasses import dataclass
-from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer, SeqTensor
+from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer, SeqTensor, ExLlamaV2Lora
 from exllamav2.generator import ExLlamaV2Sampler
 from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.cache import ExLlamaV2Cache
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+
 import torch
 import random
 import numpy as np
 import time
-from line_profiler import profile
+import threading
 # from line_profiler import profile
 
 # TODO:
@@ -21,11 +22,11 @@ from line_profiler import profile
 #  - Interface for CFG + test CFG
 #  - Banned strings
 #  - LoRA support
-#  - "generate_simple" interface
 #  - Unpaged mode to support matmul attn
 #  - PGO, C++ functions where needed
 #  - ExLlamaV2StreamingGenerator wrapper
 #  - Q4 cache
+#  - Input embeddings
 
 PAGE_SIZE = 256
 PARTIAL_PAGE_SIZE = 16
@@ -282,6 +283,132 @@ class ExLlamaV2DynamicGenerator:
         self.use_ngram_draft = use_ngram_draft
 
 
+    def warmup(self):
+        """
+        Warm up the generator by generating some text, making sure kernel autotune has time to complete.
+        """
+        self.generate("Once upon a time,", max_new_tokens = 200)
+
+
+    def generate(
+        self,
+        prompt: str or list,
+        max_new_tokens: int,
+        seed: int or None = None,
+        gen_settings: ExLlamaV2Sampler.Settings | None = None,
+        token_healing: bool = False,
+        encode_special_tokens: bool = False,
+        decode_special_tokens: bool = False,
+        loras: ExLlamaV2Lora or list[ExLlamaV2Lora] | None = None,
+        stop_conditions: list[int | str] | None = None,
+        add_bos: bool = False,
+        abort_event: threading.Event | None = None,
+        completion_only: bool = False,
+        filters: list[ExLlamaV2Filter] | None = None,
+        filter_prefer_eos: bool = False,
+        **kwargs
+    ):
+        """
+        Generate one or more completions.
+
+        :param prompt:
+            String or list of strings. If this argument is a list, its length determinse the batch size, and
+            the output will be a list of strings as well.
+
+        :param gen_settings:
+            ExLlamaV2Sampler.Settings
+
+        :param max_new_tokens:
+            Max number of tokens to generate.
+
+        :param seed:
+            Seed for the sampling RNG. Doesn't guarantee perfect determinism from the implementation.
+
+        :param token_healing:
+            Apply token healing by regenerating the last token of the input sequence with prefix
+            constraint.
+
+        :param encode_special_tokens:
+            Encode special tokens (BOS etc.) represented as text in the input. If False, special tokens are
+            interpreted as text by the tokenizer.
+
+        :param decode_special_tokens:
+            Decode special tokens output by the model. If False, tokens marked as special in the tokenizer
+            are decoded as empty strings.
+
+        :param loras:
+            (List of) ExLlamaV2Lora objects to apply during generation
+
+        :param stop_conditions:
+            List of strings and/or token IDs that will end generation. The stop condition is not included
+            in the output.
+
+        :param add_bos:
+            Prepend the tokenizer's specified BOS token to the input.
+
+        :param abort_event:
+            Forwarded to the model during generation. Will abort prefill/context ingestion if triggered.
+
+        :param completion_only:
+            Only return completion. If False, returned string will include the input prompt.
+
+        :param filters:
+            List of ExLlamaV2Filters to apply during generation.
+
+        :param filter_prefer_eos:
+            If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
+
+        :return:
+            Completion(s) (str or list[str] depending on the type of the input prompt argument)
+        """
+
+        assert loras is None, "Not implemented"  # TODO:
+
+        order = {}
+        prompts = prompt if isinstance(prompt, list) else [prompt]
+        batch_size = len(prompts)
+        for idx, p in enumerate(prompts):
+            job = ExLlamaV2DynamicJob(
+                input_ids = self.tokenizer.encode(p, encode_special_tokens = encode_special_tokens, add_bos = add_bos),
+                max_new_tokens = max_new_tokens,
+                seed = seed,
+                stop_conditions = stop_conditions,
+                gen_settings = gen_settings or ExLlamaV2Sampler.Settings(),
+                filters = filters or [],
+                filter_prefer_eos = filter_prefer_eos,
+                token_healing = token_healing,
+                decode_special_tokens = decode_special_tokens,
+            )
+            if seed is not None: seed += 1
+            serial = self.enqueue(job)
+            order[serial] = idx
+
+        # Collect outputs until all jobs finish
+
+        completions = [""] * batch_size
+
+        while self.num_remaining_jobs():
+            results = self.iterate()
+            for r in results:
+                idx = order[r["serial"]]
+                if r["stage"] == "streaming":
+                    text = r.get("text", "")
+                    completions[idx] += text
+                if abort_event is not None and abort_event.is_set():
+                    self.clear_queue()
+                    return None
+
+        # Return results
+
+        if not completion_only:
+            completions = [p + c for p, c in zip(prompts, completions)]
+
+        if isinstance(prompt, list):
+            return completions
+        else:
+            return completions[0]
+
+
     def print_page_list(self, short: bool = True):
         for cp in self.all_pages:
             if cp.phash in self.referenced_pages:
@@ -328,6 +455,14 @@ class ExLlamaV2DynamicGenerator:
         return len(self.pending_jobs) + len(self.active_jobs)
 
 
+    def clear_queue(self):
+
+        for job in self.active_jobs + self.pending_jobs:
+            job.deallocate_pages()
+        self.active_jobs.clear()
+        self.pending_jobs.clear()
+
+
     # @profile
     def enqueue(
         self,
@@ -338,13 +473,16 @@ class ExLlamaV2DynamicGenerator:
         """
 
         if isinstance(job, list):
-            for j in job: self.enqueue(j)
-            return
+            serials = []
+            for j in job:
+                serials.append(self.enqueue(j))
+            return serials
 
         job.prepare_for_queue(self, self.job_serial)
         self.job_serial += 1
         self.pending_jobs.append(job)
         job.time_enqueue = time.time()
+        return job.serial_number
 
 
     # @profile
@@ -360,6 +498,7 @@ class ExLlamaV2DynamicGenerator:
                 "job": ExLlamaV2DynamicJob  - reference to job
                 "stage": "started"
                 "identifier":  - optional identifier
+                "serial": int  - job serial number
             }
 
             # Prefill is underway
@@ -369,6 +508,7 @@ class ExLlamaV2DynamicGenerator:
                 "curr_progress": int  - prompt tokens ingested so far
                 "max_progress": int  - total prompt tokens to ingest
                 "identifier":  - optional identifier
+                "serial": int   - job serial number
             }
 
             # Generation is underway
@@ -376,6 +516,7 @@ class ExLlamaV2DynamicGenerator:
                 "job": ExLlamaV2DynamicJob  - reference to job
                 "stage": "streaming"
                 "identifier":  - optional identifier
+                "serial": int   - job serial number
                 "eos": bool  - True if stop condition has been met
 
                 optional, if eos:
@@ -684,6 +825,7 @@ class ExLlamaV2DynamicGenerator:
                 r = {
                     "job": job,
                     "stage": "started",
+                    "serial": job.serial_number,
                 }
                 if job.identifier is not None:
                     r.update({ "identifier": job.identifier })
@@ -1072,6 +1214,7 @@ class ExLlamaV2DynamicJob:
                 "job": self,
                 "stage": "streaming",
                 "eos": emit_eos,
+                "serial": self.serial_number,
             }
 
             if eos_reason is not None:
@@ -1317,6 +1460,7 @@ class ExLlamaV2DynamicJob:
                 "stage": "prefill",
                 "curr_progress": sum(seq.kv_position for seq in self.sequences),
                 "max_progress": sum(len(seq.sequence_ids) - 1 for seq in self.sequences),
+                "serial": self.serial_number,
             }
             if self.identifier is not None:
                 r.update({"identifier": self.identifier})
