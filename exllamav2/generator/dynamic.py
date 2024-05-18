@@ -619,6 +619,7 @@ class ExLlamaV2DynamicJob:
 
     decode_special_tokens: bool
     return_top_tokens: int
+    prefix_token: torch.Tensor | None
 
     skips: int
     max_skips: int | None
@@ -652,7 +653,6 @@ class ExLlamaV2DynamicJob:
 
     filters: list[ExLlamaV2Filter] | None
     filter_prefer_eos: bool
-    first_token: bool = False
 
 
     @profile
@@ -670,6 +670,7 @@ class ExLlamaV2DynamicJob:
         return_probs: bool = False,
         filters: list[ExLlamaV2Filter] | None = None,
         filter_prefer_eos: bool = False,
+        token_healing: bool = False,
         **kwargs
     ):
         assert all(ids.device.type == "cpu" for ids in input_ids), \
@@ -686,13 +687,22 @@ class ExLlamaV2DynamicJob:
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
 
+        if token_healing and all(ids.shape[-1] > 1 for ids in input_ids):
+            input_seq_ids = [ids[:, :-1] for ids in input_ids]
+            self.prefix_token = torch.cat([ids[:, -1:] for ids in input_ids], dim = 0)
+        else:
+            input_seq_ids = input_ids
+            self.prefix_token = None
+
         self.sequences = []
-        for ids in input_ids:
+        for ids, seq_ids in zip(input_ids, input_seq_ids):
+            assert ids.shape[-1] > 0, \
+                "Input IDs cannot be empty."
             assert ids.shape[0] == 1, \
                 "input_ids must be [1, seq_len] tensor or list of [1, seq_len] tensors"
             seq = ExLlamaV2DynamicJob.Sequence()
             seq.input_ids = SeqTensor.from_tensor(ids, seq_dim = -1)
-            seq.sequence_ids = SeqTensor.from_tensor(ids, seq_dim = -1)  # TODO: token healing
+            seq.sequence_ids = SeqTensor.from_tensor(seq_ids, seq_dim = -1)
             seq.kv_position = 0
             seq.page_hashes = None
             seq.new_unique_pages = 0
@@ -704,7 +714,7 @@ class ExLlamaV2DynamicJob:
         # Generation parameters
 
         self.max_new_tokens = max_new_tokens
-        self.new_tokens = 0
+        self.new_tokens = 0 if self.prefix_token is None else -1
         self.gen_settings = gen_settings
         self.rng = random.Random() if seed is None else random.Random(seed)
 
@@ -747,7 +757,6 @@ class ExLlamaV2DynamicJob:
 
         self.filters = filters if filters is not None else []
         self.filter_prefer_eos = filter_prefer_eos
-        self.first_token = True
 
 
     def __repr__(self):
@@ -790,8 +799,6 @@ class ExLlamaV2DynamicJob:
         logits: torch.Tensor,
         results: list
     ):
-        # TODO: Token healing
-
         # Support single seq and CFG for now
 
         # TODO: Test CFG
@@ -802,9 +809,8 @@ class ExLlamaV2DynamicJob:
 
         # Start filters
 
-        if self.first_token:
+        if self.new_tokens == 0:
             for f in self.filters: f.begin("")
-            self.first_token = False
 
         # Sample
 
@@ -815,16 +821,17 @@ class ExLlamaV2DynamicJob:
             self.sequences[0].sequence_ids.torch(),
             self.rng.random(),
             self.generator.tokenizer,
-            None,  # prefix_token,
+            self.prefix_token if self.new_tokens == -1 else None,
             self.return_top_tokens,
             blocked_tokens = None,  # self.current_blocked_tokens
-            filters = self.filters,
+            filters = self.filters if self.new_tokens >= 0 else None,
             filter_prefer_eos = self.filter_prefer_eos
         )
 
         # Feed filters
 
-        for f in self.filters: f.feed(next_token)
+        if self.new_tokens >= 0:
+            for f in self.filters: f.feed(next_token)
 
         # Accept token
 
@@ -939,6 +946,10 @@ class ExLlamaV2DynamicJob:
 
         id_to_piece = self.generator.tokenizer.get_id_to_piece_list(self.decode_special_tokens)
         new_text = id_to_piece[next_token.item()]
+
+        if self.new_tokens == 0:
+            unhealed = id_to_piece[self.prefix_token[0].item()]
+            new_text = new_text[len(unhealed):]
 
         self.held_text += new_text
         self.held_tokens.append(next_token)
@@ -1244,3 +1255,4 @@ class ExLlamaV2DynamicJob:
                 if page.ref_count == 0:
                     del self.generator.referenced_pages[page.phash]
                     self.generator.unreferenced_pages[page.phash] = page
+
