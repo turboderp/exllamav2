@@ -71,7 +71,6 @@ void softmax_cpu_avx2
     }
     else if (exponent != 1.0f)
     {
-        // TODO: SIMD version of this
         for (int i = 0; i < vocab_size_aligned; i++)
         {
             float l = output[i] - maxl;

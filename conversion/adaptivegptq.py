@@ -631,7 +631,6 @@ class AdaptiveGPTQ:
 
         qst_packed = torch.zeros((qst.shape[0], qst.shape[1] * qparams.scale_bits // 32), dtype = torch.int32, device = self.device)
         if qparams.scale_bits == 4: ext_c.pack_rows_4(qst, qst_packed)
-        # if qparams.scale_bits == 6: ext_c.pack_rows_6(qst, qst_packed) # TODO:
         output[key + ".q_scale"] = qst_packed
 
         qwt_packed = []

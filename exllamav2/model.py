@@ -17,7 +17,6 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 # if not "PYTORCH_CUDA_ALLOC_CONF" in os.environ:
 #     try:
 #         x = torch.__version__
-#         # TODO: Should maybe be a warning here?
 #     except NameError:
 #         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
 
@@ -444,7 +443,7 @@ class ExLlamaV2:
         last_touched_device = -1
         current_device = 0
         num_devices = torch.torch.cuda.device_count()
-        loras = None  # TODO:
+        loras = None  # TODO: Autosplit load with LoRAs
 
         with torch.inference_mode():
 
