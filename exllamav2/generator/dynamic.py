@@ -15,9 +15,18 @@ import numpy as np
 import time
 from line_profiler import profile
 
-PAGE_SIZE = 256
-PARTIAL_PAGE_SIZE = 16  # TODO:
+# TODO:
+#  - Reuse partially evaluated pages
+#  - Interface for CFG + test CFG
+#  - Banned strings
+#  - LoRA support
+#  - "generate_simple" interface
+#  - Unpaged mode to support matmul attn
+#  - PGO, C++ functions where needed
+#  - ExLlamaV2StreamingGenerator wrapper
 
+PAGE_SIZE = 256
+PARTIAL_PAGE_SIZE = 16
 
 def _tensor_blake2b_checksum(tensor: torch.Tensor, prev_hash: bytes | None) -> bytes:
     hasher = hashlib.blake2b(digest_size = 16)
@@ -259,7 +268,6 @@ class ExLlamaV2DynamicGenerator:
 
     @profile
     def update_partial_pages(self, page: CachePage, lhash: bytes, ):
-        # TODO:
         pass
 
 
@@ -801,8 +809,6 @@ class ExLlamaV2DynamicJob:
     ):
         # Support single seq and CFG for now
 
-        # TODO: Test CFG
-
         assert logits.shape[0] == len(self.sequences) == (2 if self.gen_settings.cfg_scale is not None else 1)
         assert self.is_prefill_done()
         assert all(seq.live for seq in self.sequences)
@@ -982,8 +988,6 @@ class ExLlamaV2DynamicJob:
                 self.held_text = test_decode
             else:
                 return emit(results)
-
-        # TODO: Banned strings
 
         # End on stop strings
 
@@ -1255,4 +1259,3 @@ class ExLlamaV2DynamicJob:
                 if page.ref_count == 0:
                     del self.generator.referenced_pages[page.phash]
                     self.generator.unreferenced_pages[page.phash] = page
-
