@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-import hashlib, os
+import hashlib
 from dataclasses import dataclass
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer, SeqTensor
 from exllamav2.generator import ExLlamaV2Sampler
@@ -26,6 +26,8 @@ def _tensor_blake2b_checksum(tensor: torch.Tensor, prev_hash: bytes | None) -> b
     hasher.update(tensor.numpy().tobytes())
     return hasher.digest()
 
+def _randomhash():
+    return np.random.bytes(16)
 
 @dataclass
 class CachePage:
@@ -77,6 +79,7 @@ class ExLlamaV2DynamicGenerator:
     max_pages: int
     referenced_pages: dict[bytes: CachePage]
     unreferenced_pages: dict[bytes: CachePage]
+    all_pages: list[CachePage]
     partial_pages: dict[bytes: CachePage]
     access_serial: int
     job_serial: int
@@ -158,9 +161,12 @@ class ExLlamaV2DynamicGenerator:
 
         self.referenced_pages = {}
         self.unreferenced_pages = {}
+        self.all_pages = []
         for idx in range(self.max_pages):
-            h = os.urandom(16)
-            self.unreferenced_pages[h] = CachePage(page_index = idx, phash = h)
+            h = _randomhash()
+            cp = CachePage(page_index = idx, phash = h)
+            self.all_pages.append(cp)
+            self.unreferenced_pages[h] = cp
         self.partial_pages = {}
 
         # Chunking
@@ -1147,7 +1153,7 @@ class ExLlamaV2DynamicJob:
 
                 np = available_pages.popleft()
                 del self.generator.unreferenced_pages[np.phash]
-                hr = os.urandom(16)
+                hr = _randomhash()
                 self.generator.referenced_pages[hr] = np
                 np.phash = hr
                 assert np.ref_count == 0
