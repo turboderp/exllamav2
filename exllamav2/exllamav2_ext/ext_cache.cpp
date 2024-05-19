@@ -190,3 +190,22 @@ void q4_to_fp16_kv
 //    TORCH_CHECK_DTYPE(out_tensor, kHalf);
 //    array_fp8_to_fp16_ref_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
 //}
+
+int count_match
+(
+    torch::Tensor a,
+    torch::Tensor b,
+    int max_a
+)
+{
+    uint64_t* pa = (uint64_t*) a.data_ptr();
+    uint64_t* pb = (uint64_t*) b.data_ptr();
+    int max_b = b.size(1);
+    if (max_b < max_a) max_a = max_b;
+
+    int match = 0;
+    while (match < max_a && *pa++ == *pb++)
+        match++;
+
+    return match;
+}

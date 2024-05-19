@@ -28,6 +28,13 @@ void q4_to_fp16_kv
     int width
 );
 
+int count_match
+(
+    torch::Tensor a,
+    torch::Tensor b,
+    int max_a
+);
+
 //void array_fp16_to_fp8_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size);
 //void array_fp8_to_fp16_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size);
 

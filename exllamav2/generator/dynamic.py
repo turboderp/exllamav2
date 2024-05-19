@@ -15,16 +15,17 @@ import random
 import numpy as np
 import time
 import threading
-# from line_profiler import profile
+from line_profiler import profile
 
 # TODO:
 #  - Interface for CFG + test CFG
 #  - Banned strings
 #  - Unpaged mode to support matmul attn
-#  - PGO, C++ functions where needed
 #  - ExLlamaV2StreamingGenerator wrapper
 #  - Q4 cache
 #  - Input embeddings
+#  - Multi-threaded sampling
+#  - Faster hash algorithm (Murmur?)
 
 PAGE_SIZE = 256
 
@@ -35,8 +36,11 @@ def _tensor_blake2b_checksum(tensor: torch.Tensor, prev_hash: bytes | None) -> b
     hasher.update(tensor.numpy().tobytes())
     return hasher.digest()
 
+_uniquehash = 0
 def _randomhash():
-    return np.random.bytes(16)
+    global _uniquehash
+    _uniquehash += 1
+    return _uniquehash.to_bytes(16, byteorder = 'big')
 
 @dataclass
 class CachePage:
@@ -138,7 +142,6 @@ class ExLlamaV2DynamicGenerator:
     current_loras: list[ExLlamaV2Lora] | None
 
 
-    # @profile
     def __init__(
         self,
         model: ExLlamaV2,
@@ -510,7 +513,6 @@ class ExLlamaV2DynamicGenerator:
             raise ex
 
 
-    # @profile
     def num_remaining_jobs(self):
         return len(self.pending_jobs) + len(self.active_jobs)
 
@@ -523,7 +525,6 @@ class ExLlamaV2DynamicGenerator:
         self.pending_jobs.clear()
 
 
-    # @profile
     def enqueue(
         self,
         job: ExLlamaV2DynamicJob | list[ExLlamaV2DynamicJob]
@@ -548,7 +549,6 @@ class ExLlamaV2DynamicGenerator:
         return job.serial_number
 
 
-    # @profile
     @torch.inference_mode
     def iterate(self) -> list[dict]:
         """
@@ -637,7 +637,6 @@ class ExLlamaV2DynamicGenerator:
         return results
 
 
-    # @profile
     def iterate_ngram_gen(self, results: list):
 
         draft_ids_list = []
@@ -690,7 +689,6 @@ class ExLlamaV2DynamicGenerator:
         return torch.cat(draft_ids_list, dim = 0) if len(draft_ids_list) > 0 else None
 
 
-    # @profile
     def iterate_draftmodel_gen(self, results: list):
 
         batch_size = 0
@@ -756,7 +754,7 @@ class ExLlamaV2DynamicGenerator:
         return self.draft_ids_pinned
 
 
-    # @profile
+    @profile
     def iterate_gen(self, results: list, draft_tokens: torch.Tensor | None = None):
 
         batch_size = 0
@@ -847,7 +845,6 @@ class ExLlamaV2DynamicGenerator:
             self.active_jobs.remove(job)
 
 
-    # @profile
     def iterate_start_jobs(self, results: list):
 
         # Get current max batch
@@ -900,7 +897,6 @@ class ExLlamaV2DynamicGenerator:
 
 # Convert list of strings to UTF32 format to pass by reference to partial matching function
 
-# @profile
 def _strings_to_utf32(strings: list[str]) -> (np.array, list[int]):
 
     if not strings: return bytearray(), None
@@ -921,13 +917,13 @@ def _strings_to_utf32(strings: list[str]) -> (np.array, list[int]):
 
 
 # Count matching elements from left between two (1, n) tensors
-
-def _count_match(a: torch.Tensor, b: torch.Tensor):
-    m = min(a.shape[-1], b.shape[-1])
-    for i in range(m):
-        if a[0, i] != b[0, i]:
-            return i
-    return m
+#
+# def _count_match(a: torch.Tensor, b: torch.Tensor):
+#     m = min(a.shape[-1], b.shape[-1])
+#     for i in range(m):
+#         if a[0, i] != b[0, i]:
+#             return i
+#     return m
 
 
 class ExLlamaV2DynamicJob:
@@ -994,7 +990,6 @@ class ExLlamaV2DynamicJob:
     filter_prefer_eos: bool
 
 
-    # @profile
     def __init__(
         self,
         input_ids: torch.Tensor | list[torch.Tensor],
@@ -1170,12 +1165,10 @@ class ExLlamaV2DynamicJob:
             return f"ExLlamaV2DynamicJob #{self.serial_number}"
 
 
-    # @profile
     def is_prefill_done(self):
         return all(seq.kv_position == len(seq.sequence_ids) - 1 for seq in self.sequences)
 
 
-    # @profile
     def get_max_seq_len(self):
         if not self.is_prefill_done():
             return 0
@@ -1186,7 +1179,6 @@ class ExLlamaV2DynamicJob:
         return max_seq_len
 
 
-    # @profile
     def get_input_ids_list(self, draft_tokens: torch.Tensor | None = None, idx: int = 0):
         input_ids_list = []
         for seq in self.sequences:
@@ -1197,7 +1189,6 @@ class ExLlamaV2DynamicJob:
         return input_ids_list
 
 
-    # @profile
     def receive_logits(
         self,
         logits: torch.Tensor,
@@ -1415,7 +1406,6 @@ class ExLlamaV2DynamicJob:
         return emit(results, emit_held = True)
 
 
-    # @profile
     def prepare_for_queue(self, generator, serial_number: int):
 
         self.serial_number = serial_number
@@ -1467,7 +1457,6 @@ class ExLlamaV2DynamicJob:
         self.full_completion = ""
 
 
-    # @profile
     def current_new_pages_required(self):
         new_pages = 0
         for h in self.all_unique_hashes:
@@ -1478,7 +1467,6 @@ class ExLlamaV2DynamicJob:
         return new_pages
 
 
-    # @profile
     def prefill(self, results: list):
 
         if self.time_first_prefill is None:
@@ -1528,7 +1516,8 @@ class ExLlamaV2DynamicJob:
                 for page in self.generator.all_pages:
                     if page.prev_hash != prev_hash or page == seq.allocated_pages[p0]:
                         continue
-                    match = _count_match(page.sequence[:, :page.kv_position], prefill_ids)
+                    # match = _count_match(page.sequence[:, :page.kv_position], prefill_ids)
+                    match = ext_c.count_match(page.sequence, prefill_ids, page.kv_position)
                     if match > best_match:
                         best_match = match
                         best_match_page = page
@@ -1610,7 +1599,6 @@ class ExLlamaV2DynamicJob:
             results.append(r)
 
 
-    # @profile
     def get_block_index(self, seq: Sequence, max_len) -> torch.Tensor:
 
         if seq.block_index_tensor is None:
@@ -1621,7 +1609,6 @@ class ExLlamaV2DynamicJob:
         return seq.block_index_tensor[:num_blocks]
 
 
-    # @profile
     def allocate_pages(self):
 
         for seq in self.sequences:
@@ -1717,7 +1704,6 @@ class ExLlamaV2DynamicJob:
                     break
 
 
-    # @profile
     def deallocate_pages(self):
 
         for seq in self.sequences:
