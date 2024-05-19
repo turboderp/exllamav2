@@ -15,7 +15,7 @@ import random
 import numpy as np
 import time
 import threading
-from line_profiler import profile
+# from line_profiler import profile
 
 # TODO:
 #  - Interface for CFG + test CFG
@@ -754,7 +754,7 @@ class ExLlamaV2DynamicGenerator:
         return self.draft_ids_pinned
 
 
-    @profile
+    # @profile
     def iterate_gen(self, results: list, draft_tokens: torch.Tensor | None = None):
 
         batch_size = 0
