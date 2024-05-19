@@ -18,7 +18,6 @@ import threading
 # from line_profiler import profile
 
 # TODO:
-#  - Reuse partially evaluated pages
 #  - Interface for CFG + test CFG
 #  - Banned strings
 #  - Unpaged mode to support matmul attn
@@ -28,7 +27,6 @@ import threading
 #  - Input embeddings
 
 PAGE_SIZE = 256
-PARTIAL_PAGE_SIZE = 16
 
 def _tensor_blake2b_checksum(tensor: torch.Tensor, prev_hash: bytes | None) -> bytes:
     hasher = hashlib.blake2b(digest_size = 16)
@@ -42,18 +40,45 @@ def _randomhash():
 
 @dataclass
 class CachePage:
+
     # Page index in the actual cache
     page_index: int
-    # Hash of this page if prefill_complete == True, else random hash. Also used to index (un)referenced_pages
+    # Hash of this page if kv_position == PAGE_SIZE, else random hash. Also used to index (un)referenced_pages
     phash: bytes
+    phash_revert: bytes
+    # Hash of previous page in chain
+    prev_hash: bytes | None
+    prev_hash_revert: bytes | None
     # Number of active jobs referencing page
-    ref_count: int = 0
+    ref_count: int
     # Last time this page was assigned to a job
-    access_serial: int = 0
-    prefill_complete: bool = False
+    access_serial: int
+    access_serial_revert: int
+    # Number of tokens in page for which KV is valid assuming prev_hash
+    kv_position: int
+    kv_position_revert: int
+    # Specific tokens for which KV is valid assuming prev_hash
+    sequence: torch.Tensor
+    can_revert: bool
 
     def __repr__(self):
-        return f"CachePage: idx = {self.page_index}, ref_count = {self.ref_count}, phash: ..{str(self.phash)[8:24]}.."
+        return (f"CachePage: idx = {self.page_index}, ref_count = {self.ref_count}, "
+                f"phash: ..{str(self.phash)[8:24]}.., prev_hash: ..{str(self.prev_hash)[8:24]}..")
+
+    def backup(self):
+        self.phash_revert = self.phash
+        self.prev_hash_revert = self.prev_hash
+        self.access_serial_revert = self.access_serial
+        self.kv_position_revert = self.kv_position
+        self.can_revert = True
+
+    def restore(self):
+        assert self.can_revert
+        self.phash = self.phash_revert
+        self.prev_hash = self.prev_hash_revert
+        self.access_serial = self.access_serial_revert
+        self.kv_position = self.kv_position_revert
+        self.can_revert = False
 
 
 class NGramTrie:
@@ -94,7 +119,6 @@ class ExLlamaV2DynamicGenerator:
     referenced_pages: dict[bytes: CachePage]
     unreferenced_pages: dict[bytes: CachePage]
     all_pages: list[CachePage]
-    partial_pages: dict[bytes: CachePage]
     access_serial: int
     job_serial: int
 
@@ -232,10 +256,22 @@ class ExLlamaV2DynamicGenerator:
         self.all_pages = []
         for idx in range(self.max_pages):
             h = _randomhash()
-            cp = CachePage(page_index = idx, phash = h)
+            cp = CachePage(
+                page_index = idx,
+                phash = h,
+                phash_revert = h,
+                prev_hash = None,
+                prev_hash_revert = None,
+                sequence = torch.empty((1, PAGE_SIZE), dtype = torch.long),
+                ref_count = 0,
+                access_serial = 0,
+                access_serial_revert = 0,
+                kv_position = 0,
+                kv_position_revert = 0,
+                can_revert = False
+            )
             self.all_pages.append(cp)
             self.unreferenced_pages[h] = cp
-        self.partial_pages = {}
 
         # Chunking
 
@@ -423,9 +459,9 @@ class ExLlamaV2DynamicGenerator:
                 if r["stage"] == "streaming":
                     text = r.get("text", "")
                     completions[idx] += text
-                if abort_event is not None and abort_event.is_set():
-                    self.clear_queue()
-                    return None
+            if abort_event is not None and abort_event.is_set():
+                self.clear_queue()
+                return None
 
         # Return results
 
@@ -475,11 +511,6 @@ class ExLlamaV2DynamicGenerator:
 
 
     # @profile
-    def update_partial_pages(self, page: CachePage, lhash: bytes, ):
-        pass
-
-
-    # @profile
     def num_remaining_jobs(self):
         return len(self.pending_jobs) + len(self.active_jobs)
 
@@ -496,9 +527,12 @@ class ExLlamaV2DynamicGenerator:
     def enqueue(
         self,
         job: ExLlamaV2DynamicJob | list[ExLlamaV2DynamicJob]
-    ):
+    ) -> int | list[int]:
         """
         Adds a job or list of jobs to the queue.
+
+        returns:
+            int: (List of) unique serial number(s) for job(s)
         """
 
         if isinstance(job, list):
@@ -515,6 +549,7 @@ class ExLlamaV2DynamicGenerator:
 
 
     # @profile
+    @torch.inference_mode
     def iterate(self) -> list[dict]:
         """
         Performs inference on available jobs.
@@ -885,6 +920,16 @@ def _strings_to_utf32(strings: list[str]) -> (np.array, list[int]):
     return concat_strings, offsets
 
 
+# Count matching elements from left between two (1, n) tensors
+
+def _count_match(a: torch.Tensor, b: torch.Tensor):
+    m = min(a.shape[-1], b.shape[-1])
+    for i in range(m):
+        if a[0, i] != b[0, i]:
+            return i
+    return m
+
+
 class ExLlamaV2DynamicJob:
 
     generator: ExLlamaV2DynamicGenerator | None
@@ -1225,8 +1270,9 @@ class ExLlamaV2DynamicJob:
                     self.generator.unreferenced_pages[old_hash] = page
                     page = self.generator.referenced_pages[new_hash]
                     seq.allocated_pages[page_before] = page
-                    assert page.prefill_complete
+                    assert page.kv_position == PAGE_SIZE
                     page.ref_count += 1
+                    page.can_revert = False
                 else:
                     if new_hash in self.generator.unreferenced_pages:
                         assert page.ref_count == 1
@@ -1234,15 +1280,17 @@ class ExLlamaV2DynamicJob:
                         self.generator.unreferenced_pages[old_hash] = page
                         page = self.generator.unreferenced_pages[new_hash]
                         assert page.ref_count == 0
-                        assert page.prefill_complete
+                        assert page.kv_position == PAGE_SIZE
                         seq.allocated_pages[page_before] = page
                         del self.generator.unreferenced_pages[new_hash]
                         page.ref_count += 1
                         self.generator.referenced_pages[new_hash] = page
+                        page.can_revert = False
                     else:
                         page.phash = new_hash
-                        page.prefill_complete = True
+                        page.kv_position = PAGE_SIZE
                         self.generator.referenced_pages[new_hash] = page
+                        page.can_revert = False
 
         # Stream output
 
@@ -1283,6 +1331,7 @@ class ExLlamaV2DynamicJob:
                 r.update({
                     "full_completion": self.full_completion,
                     "new_tokens": self.new_tokens,
+                    "prompt_tokens": len(self.sequences[0].input_ids),
                     "time_enqueued": self.time_first_prefill - self.time_enqueue,
                     "time_prefill": self.time_first_token - self.time_first_prefill,
                     "time_generate": self.time_last_token - self.time_first_token,
@@ -1447,17 +1496,18 @@ class ExLlamaV2DynamicJob:
             p1 = (prefill_end + PAGE_SIZE - 1) // PAGE_SIZE
             for local_idx in range(p0, p1):
                 page = seq.allocated_pages[local_idx]
-                if page.prefill_complete:
+                if page.kv_position == PAGE_SIZE:
                     prefill_start = (local_idx + 1) * PAGE_SIZE
                     seq.kv_position = prefill_start
                     self.cached_pages += 1
+                    page.can_revert = False
                 else:
                     break
 
             p0 = prefill_start // PAGE_SIZE
             for local_idx in range(p0, p1):
                 page = seq.allocated_pages[local_idx]
-                if page.prefill_complete:
+                if page.kv_position == PAGE_SIZE:
                     prefill_end = local_idx * PAGE_SIZE
                     break
 
@@ -1466,35 +1516,86 @@ class ExLlamaV2DynamicJob:
 
             prefill_ids = seq.sequence_ids.torch_slice(prefill_start, prefill_end)
 
-            attn_params = ExLlamaV2Attention.PagedParams(
-                batch_size = 1,
-                block_index = self.get_block_index(seq, prefill_end).unsqueeze(0),
-                cache_seqlens = torch.tensor([prefill_start], dtype = torch.int32)
-            )
+            # Special case for partial last page, check if there's a page anywhere in the cache that
+            # partially matches, then copy keys/values from there
 
-            if self.generator.draft_model:
-                self.generator.draft_model.forward_chunk(
+            p0 = prefill_start // PAGE_SIZE
+            p1 = prefill_end // PAGE_SIZE
+            if prefill_start == p0 * PAGE_SIZE:
+                prev_hash = None if p0 == 0 else seq.allocated_pages[p0 - 1].phash
+                best_match = 0
+                best_match_page = None
+                for page in self.generator.all_pages:
+                    if page.prev_hash != prev_hash or page == seq.allocated_pages[p0]:
+                        continue
+                    match = _count_match(page.sequence[:, :page.kv_position], prefill_ids)
+                    if match > best_match:
+                        best_match = match
+                        best_match_page = page
+                if best_match_page:
+                    page = seq.allocated_pages[p0]
+                    for c in [self.generator.cache] if not self.generator.draft_model else \
+                        [self.generator.cache, self.generator.draft_cache]:
+                        c.copy_states(
+                            self.generator.cache,
+                            best_match_page.page_index * PAGE_SIZE, best_match,
+                            page.page_index * PAGE_SIZE, best_match,
+                            0, 1,
+                            0, 1,
+                        )
+                    page.sequence[:, :best_match].copy_(prefill_ids[:, :best_match])
+                    prefill_ids = prefill_ids[:, best_match:]
+                    prefill_start += best_match
+                    seq.kv_position += best_match
+                    page.kv_position = best_match
+                    page.can_revert = False
+                    self.cached_tokens += best_match
+                    progress += best_match
+
+            # Inference
+
+            if prefill_end > prefill_start:
+
+                attn_params = ExLlamaV2Attention.PagedParams(
+                    batch_size = 1,
+                    block_index = self.get_block_index(seq, prefill_end).unsqueeze(0),
+                    cache_seqlens = torch.tensor([prefill_start], dtype = torch.int32)
+                )
+
+                if self.generator.draft_model:
+                    self.generator.draft_model.forward_chunk(
+                        input_ids = prefill_ids,
+                        preprocess_only = True,
+                        attn_params = attn_params,
+                        cache = self.generator.draft_cache,
+                    )
+
+                self.generator.model.forward_chunk(
                     input_ids = prefill_ids,
                     preprocess_only = True,
                     attn_params = attn_params,
-                    cache = self.generator.draft_cache,
+                    cache = self.generator.cache,
+                    loras = self.generator.current_loras,
                 )
 
-            self.generator.model.forward_chunk(
-                input_ids = prefill_ids,
-                preprocess_only = True,
-                attn_params = attn_params,
-                cache = self.generator.cache,
-                loras = self.generator.current_loras,
-            )
+                seq.kv_position = prefill_end
 
-            seq.kv_position = prefill_end
-            p0 = prefill_start // PAGE_SIZE
-            p1 = prefill_end // PAGE_SIZE
-            for local_idx in range(p0, p1):
-                seq.allocated_pages[local_idx].prefill_complete = True
+                p2 = min(p1 + 1, len(seq.allocated_pages))
+                for local_idx in range(p0, p2):
+                    page = seq.allocated_pages[local_idx]
+                    page.kv_position = min(max(prefill_end - local_idx * PAGE_SIZE, 0), PAGE_SIZE)
+                    if local_idx == 0:
+                        page.prev_hash = None
+                    else:
+                        page.prev_hash = seq.allocated_pages[local_idx - 1].phash
+                    pf_a = max(local_idx * PAGE_SIZE, prefill_start)
+                    pf_b = min(local_idx * PAGE_SIZE + PAGE_SIZE, prefill_end)
+                    pfp_a = pf_a - local_idx * PAGE_SIZE
+                    pfp_b = pf_b - local_idx * PAGE_SIZE
+                    page.sequence[:, pfp_a:pfp_b].copy_(seq.sequence_ids.torch_slice(pf_a, pf_b))
+                    page.can_revert = False
 
-            progress += prefill_end - prefill_start
+                progress += prefill_end - prefill_start
 
         if progress:
             r = {
@@ -1543,6 +1644,7 @@ class ExLlamaV2DynamicJob:
                     rp.ref_count += 1
                     rp.access_serial = new_serial
                     seq.allocated_pages.append(rp)
+                    rp.can_revert = False
 
                 # If possible, reuse an unreferenced page with matching hash
 
@@ -1555,6 +1657,7 @@ class ExLlamaV2DynamicJob:
                         del self.generator.unreferenced_pages[h]
                         self.generator.referenced_pages[h] = up
                         seq.allocated_pages.append(up)
+                        up.can_revert = False
 
                     # No matching pages
 
@@ -1575,8 +1678,10 @@ class ExLlamaV2DynamicJob:
                         np.phash = h
                         assert np.ref_count == 0
                         np.ref_count = 1
-                        np.prefill_complete = False
+                        np.kv_position = 0
                         np.access_serial = new_serial
+                        np.prev_hash = None
+                        np.can_revert = False
                         seq.allocated_pages.append(np)
 
             # Allocate unique pages
@@ -1597,14 +1702,16 @@ class ExLlamaV2DynamicJob:
                 np.phash = hr
                 assert np.ref_count == 0
                 np.ref_count = 1
-                np.prefill_complete = False
+                np.kv_position = 0
                 np.access_serial = new_serial
+                np.prev_hash = None
                 seq.allocated_pages.append(np)
+                np.backup()
 
             # Advance cache over prefilled pages
 
             for page in seq.allocated_pages:
-                if page.prefill_complete:
+                if page.kv_position == PAGE_SIZE:
                     seq.kv_position += PAGE_SIZE
                 else:
                     break
@@ -1621,4 +1728,6 @@ class ExLlamaV2DynamicJob:
                 page.ref_count -= 1
                 if page.ref_count == 0:
                     del self.generator.referenced_pages[page.phash]
+                    if page.can_revert:
+                        page.restore()
                     self.generator.unreferenced_pages[page.phash] = page

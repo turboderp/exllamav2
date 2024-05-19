@@ -142,6 +142,7 @@ class ExLlamaV2CacheBase:
         raise NotImplementedError
 
 
+    @torch.inference_mode
     def copy_states(self,
                     target: ExLlamaV2CacheBase,
                     from_column: int,
@@ -162,18 +163,18 @@ class ExLlamaV2CacheBase:
 
         for i in range(num_hidden_layers):
 
-            source_view_k = self.key_states[i].narrow(0, from_row, from_rows).narrow(2, from_column, from_columns)
-            source_view_v = self.value_states[i].narrow(0, from_row, from_rows).narrow(2, from_column, from_columns)
-            target_view_k = target.key_states[i].narrow(0, to_row, to_rows).narrow(2, to_column, to_columns)
-            target_view_v = target.value_states[i].narrow(0, to_row, to_rows).narrow(2, to_column, to_columns)
+            source_view_k = self.key_states[i].narrow(0, from_row, from_rows).narrow(1, from_column, from_columns)
+            source_view_v = self.value_states[i].narrow(0, from_row, from_rows).narrow(1, from_column, from_columns)
+            target_view_k = target.key_states[i].narrow(0, to_row, to_rows).narrow(1, to_column, to_columns)
+            target_view_v = target.value_states[i].narrow(0, to_row, to_rows).narrow(1, to_column, to_columns)
 
             if to_rows > 1:
 
                 source_view_k = source_view_k.expand_as(target_view_k)
                 source_view_v = source_view_v.expand_as(target_view_v)
 
-            target_view_k.copy_(source_view_k)
-            target_view_v.copy_(source_view_v)
+            target_view_k.copy_(source_view_k, non_blocking = True)
+            target_view_v.copy_(source_view_v, non_blocking = True)
 
 
     def touch_device(self, device):

@@ -14,7 +14,7 @@ import pprint
 display_mode = 1
 
 # Where to find our model
-model_dir = "/mnt/str/models/mistral-7b-instruct-exl2/4.0bpw"
+model_dir = "/mnt/str/models/mistral-7b-instruct-v0.2-exl2/4.0bpw"
 
 # Total number of tokens to allocate space for. This is not the max_seq_len supported by the model but
 # the total to distribute dynamically over however many jobs are active at once
@@ -83,8 +83,8 @@ prompts = [
     "What seems out of place in this sequence: " + ", ".join(str(n if n != 160 else 420) for n in range(400)),
     "What seems out of place in this sequence: " + ", ".join(str(n if n != 161 else 421) for n in range(400)),
     "What's inside a black hole?",
-    "What do the numbers 2, 4, 8, 16, 32 ans 64 have in common?",
-    "What do the numbers 2, 3, 5, 7, 11 ans 13 have in common?",
+    "What do the numbers 2, 4, 8, 16, 32 and 64 have in common?",
+    "What do the numbers 2, 3, 5, 7, 11 and 13 have in common?",
     "Is there life on Mars?",
     "Hello!",
     "Hi!",
