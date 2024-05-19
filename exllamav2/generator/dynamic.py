@@ -292,7 +292,7 @@ class ExLlamaV2DynamicGenerator:
 
     def generate(
         self,
-        prompt: str or list,
+        prompt: list | str,
         max_new_tokens: int,
         seed: int or None = None,
         gen_settings: ExLlamaV2Sampler.Settings | None = None,
@@ -304,7 +304,7 @@ class ExLlamaV2DynamicGenerator:
         add_bos: bool = False,
         abort_event: threading.Event | None = None,
         completion_only: bool = False,
-        filters: list[ExLlamaV2Filter] | None = None,
+        filters: list[list[ExLlamaV2Filter]] | list[ExLlamaV2Filter] | None = None,
         filter_prefer_eos: bool = False,
         **kwargs
     ):
@@ -353,7 +353,8 @@ class ExLlamaV2DynamicGenerator:
             Only return completion. If False, returned string will include the input prompt.
 
         :param filters:
-            List of ExLlamaV2Filters to apply during generation.
+            (List of) list of ExLlamaV2Filters to apply during generation. Each prompt in a batch needs
+            its own filter list, or a value of None to disable filters for individual prompts.
 
         :param filter_prefer_eos:
             If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
@@ -365,6 +366,19 @@ class ExLlamaV2DynamicGenerator:
         assert loras is None, "Not implemented"  # TODO:
 
         order = {}
+        if isinstance(prompt, list):
+            prompts = prompt
+        else:
+            prompts = [prompt]
+            filters = [filters]
+
+        if filters is None:
+            filters = [None] * len(prompts)
+        else:
+            assert len(filters) == len(prompts) and \
+                all((f is None or isinstance(f, list)) for f in filters), \
+                "If using filters, must provide one filter list (or None-value) per prompt."
+
         prompts = prompt if isinstance(prompt, list) else [prompt]
         batch_size = len(prompts)
         for idx, p in enumerate(prompts):
@@ -374,7 +388,7 @@ class ExLlamaV2DynamicGenerator:
                 seed = seed,
                 stop_conditions = stop_conditions,
                 gen_settings = gen_settings or ExLlamaV2Sampler.Settings(),
-                filters = filters or [],
+                filters = filters[idx] or [],
                 filter_prefer_eos = filter_prefer_eos,
                 token_healing = token_healing,
                 decode_special_tokens = decode_special_tokens,
