@@ -28,6 +28,7 @@ parser.add_argument("-r", "--dataset_rows", type = int, default = 100, help = "N
 parser.add_argument("-mr", "--measurement_rows", type = int, default = 16, help = "Number of rows to apply from dataset when measuring")
 parser.add_argument("-l", "--length", type = int, default = 2048, help = "Max no. tokens per sample")
 parser.add_argument("-ml", "--measurement_length", type = int, default = 2048, help = "Max no. tokens per sample when measuring")
+parser.add_argument("-so", "--status_output", action = "store_true", help = "Include machine-parseable status updates in console output")
 
 args = parser.parse_args()
 
@@ -199,6 +200,10 @@ if model.config.arch.rope_style == RopeStyle.NONE:
         print (f" !! Warning: Reducing measurement calibration length to model max context: {max_ctx}")
         job["measurement_length"] = max_ctx
 
+# Overridable settings
+
+job["status_output"] = args.status_output
+
 # Do the things
 
 save_job()
@@ -252,7 +257,6 @@ while True:
         config.max_output_len = None
         model = ExLlamaV2(config)
         model.load(lazy = True)
-
 
     if progress == "optimize":
 
