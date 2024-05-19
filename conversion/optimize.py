@@ -3,6 +3,7 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 import math
 import itertools
 import time
+from conversion.bot_status import print_stage
 
 def optimize(job, save_fn, model):
 
@@ -106,6 +107,7 @@ def optimize(job, save_fn, model):
     for i in range(anneal_stages * anneal_samples):
         if time.time() - last_update > 1 or i == anneal_samples - 1:
             print(f" -- Optimizing: {i + 1:4}/{anneal_stages * anneal_samples:4}")
+            print_stage(job, "Optimizing", i + 1, anneal_stages * anneal_samples)
             last_update = time.time()
 
         if i < anneal_samples:

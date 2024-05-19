@@ -17,6 +17,7 @@ import torch
 import os, glob, shutil, json
 from safetensors import safe_open
 from safetensors.torch import save_file
+from conversion.bot_status import print_stage
 
 def _tsize(t):
 
@@ -131,6 +132,8 @@ def compile_model(job, save_fn, model):
 
         if current_size > shard_bytes or index == len(model.modules):
 
+            print_stage(job, "Compiling", index, len(model.modules))
+
             save_dict = {}
             dont_save_dict = {}
             this_shard_size = 0
@@ -242,3 +245,5 @@ def compile_model(job, save_fn, model):
 
         with open(config_json, "w") as f:
             f.write(json.dumps(config_dict, indent = 4))
+
+    print_stage(job, "Compiling", len(model.modules), len(model.modules))
