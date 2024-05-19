@@ -257,20 +257,21 @@ if build_jit:
 
     # Load extension
 
-    exllamav2_ext = load \
-    (
-        name = extension_name,
-        sources = sources,
-        extra_include_paths = [sources_dir],
-        verbose = verbose,
-        extra_ldflags = extra_ldflags,
-        extra_cuda_cflags = extra_cuda_cflags,
-        extra_cflags = extra_cflags
-    )
-
-    if not verbose:
-        timer.cancel()
-        end_build_feedback()
+    try:
+        exllamav2_ext = load \
+        (
+            name = extension_name,
+            sources = sources,
+            extra_include_paths = [sources_dir],
+            verbose = verbose,
+            extra_ldflags = extra_ldflags,
+            extra_cuda_cflags = extra_cuda_cflags,
+            extra_cflags = extra_cflags
+        )
+    finally:
+        if not verbose:
+            timer.cancel()
+            end_build_feedback()
 
 ext_c = exllamav2_ext
 
