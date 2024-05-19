@@ -28,7 +28,7 @@ max_new_tokens = 250
 
 generator.warmup()
 
-# Generate one completion, using default settinms
+# Generate one completion, using default settings
 
 prompt = "Once upon a time,"
 
