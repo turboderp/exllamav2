@@ -24,7 +24,7 @@ generator = ExLlamaV2DynamicGenerator(
 
 max_new_tokens = 250
 
-# Warmup generator. Can be a little slow for larger models. Only relevant for more timing purposes.
+# Warmup generator. Can be a little slow for larger models. Only relevant for timing purposes.
 
 generator.warmup()
 
