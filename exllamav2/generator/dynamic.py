@@ -21,7 +21,6 @@ import threading
 #  - Reuse partially evaluated pages
 #  - Interface for CFG + test CFG
 #  - Banned strings
-#  - LoRA support
 #  - Unpaged mode to support matmul attn
 #  - PGO, C++ functions where needed
 #  - ExLlamaV2StreamingGenerator wrapper
@@ -109,6 +108,10 @@ class ExLlamaV2DynamicGenerator:
     logits_pinned: torch.Tensor
     draft_input_ids_pinned: torch.Tensor
     draft_ids_pinned: torch.Tensor
+
+    # LoRAs
+
+    current_loras: list[ExLlamaV2Lora] | None
 
 
     # @profile
@@ -282,12 +285,30 @@ class ExLlamaV2DynamicGenerator:
         self.max_ngram = max_ngram
         self.use_ngram_draft = use_ngram_draft
 
+        # LoRAs
+
+        self.current_loras = None
+
 
     def warmup(self):
         """
         Warm up the generator by generating some text, making sure kernel autotune has time to complete.
         """
         self.generate("Once upon a time,", max_new_tokens = 200)
+
+
+    def set_loras(self, loras: list[ExLlamaV2Lora] | None):
+        """
+        Enable LoRAs. Queue must be empty when this is called.
+
+        :param loras:
+            List of LoRAs to enable, or None to disable all.
+        """
+
+        assert not self.num_remaining_jobs(), \
+            "LoRAs cannot be updated while there are jobs in the generator queue."
+
+        self.current_loras = loras if isinstance(loras, list) else [loras]
 
 
     def generate(
@@ -299,7 +320,6 @@ class ExLlamaV2DynamicGenerator:
         token_healing: bool = False,
         encode_special_tokens: bool = False,
         decode_special_tokens: bool = False,
-        loras: ExLlamaV2Lora or list[ExLlamaV2Lora] | None = None,
         stop_conditions: list[int | str] | None = None,
         add_bos: bool = False,
         abort_event: threading.Event | None = None,
@@ -336,9 +356,6 @@ class ExLlamaV2DynamicGenerator:
             Decode special tokens output by the model. If False, tokens marked as special in the tokenizer
             are decoded as empty strings.
 
-        :param loras:
-            (List of) ExLlamaV2Lora objects to apply during generation
-
         :param stop_conditions:
             List of strings and/or token IDs that will end generation. The stop condition is not included
             in the output.
@@ -362,8 +379,6 @@ class ExLlamaV2DynamicGenerator:
         :return:
             Completion(s) (str or list[str] depending on the type of the input prompt argument)
         """
-
-        assert loras is None, "Not implemented"  # TODO:
 
         order = {}
         if isinstance(prompt, list):
@@ -693,7 +708,8 @@ class ExLlamaV2DynamicGenerator:
             device_logits, _ = self.draft_model.forward_chunk(
                 input_ids = batch_ids,
                 attn_params = attn_params,
-                cache = self.draft_cache
+                cache = self.draft_cache,
+                loras = self.current_loras,
             )
 
             new_ids = torch.argmax(device_logits, dim = -1)
@@ -761,7 +777,8 @@ class ExLlamaV2DynamicGenerator:
         device_logits, _ = self.model.forward_chunk(
             input_ids = batch_ids,
             attn_params = attn_params,
-            cache = self.cache
+            cache = self.cache,
+            loras = self.current_loras,
         )
 
         # Pass logits to jobs for sampling
@@ -1450,14 +1467,15 @@ class ExLlamaV2DynamicJob:
                     input_ids = prefill_ids,
                     preprocess_only = True,
                     attn_params = attn_params,
-                    cache = self.generator.draft_cache
+                    cache = self.generator.draft_cache,
                 )
 
             self.generator.model.forward_chunk(
                 input_ids = prefill_ids,
                 preprocess_only = True,
                 attn_params = attn_params,
-                cache = self.generator.cache
+                cache = self.generator.cache,
+                loras = self.generator.current_loras,
             )
 
             seq.kv_position = prefill_end
