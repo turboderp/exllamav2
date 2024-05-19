@@ -923,6 +923,9 @@ class ExLlamaV2DynamicJob:
     time_last_token: float | None
     accepted_draft_tokens: int
     rejected_draft_tokens: int
+    cached_pages: int
+    cached_tokens: int
+    is_finished: bool
 
     # Output buffers
 
@@ -1100,6 +1103,9 @@ class ExLlamaV2DynamicJob:
         self.time_last_token = None
         self.accepted_draft_tokens = 0
         self.rejected_draft_tokens = 0
+        self.cached_pages = 0
+        self.cached_tokens = 0
+        self.is_finished = False
 
         # Ngram
 
@@ -1272,6 +1278,7 @@ class ExLlamaV2DynamicJob:
                     self.held_logits.clear()
 
             if emit_eos:
+                self.is_finished = True
                 self.time_last_token = time.time()
                 r.update({
                     "full_completion": self.full_completion,
@@ -1279,6 +1286,8 @@ class ExLlamaV2DynamicJob:
                     "time_enqueued": self.time_first_prefill - self.time_enqueue,
                     "time_prefill": self.time_first_token - self.time_first_prefill,
                     "time_generate": self.time_last_token - self.time_first_token,
+                    "cached_pages": self.cached_pages,
+                    "cached_tokens": self.cached_pages * PAGE_SIZE + self.cached_tokens,
                 })
                 if self.generator.draft_model or self.generator.use_ngram_draft:
                     r.update({
@@ -1441,6 +1450,7 @@ class ExLlamaV2DynamicJob:
                 if page.prefill_complete:
                     prefill_start = (local_idx + 1) * PAGE_SIZE
                     seq.kv_position = prefill_start
+                    self.cached_pages += 1
                 else:
                     break
 
