@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer, SeqTensor, ExLlamaV2Lora
 from exllamav2.generator import ExLlamaV2Sampler
 from exllamav2.generator.filters import ExLlamaV2Filter
-from exllamav2.cache import ExLlamaV2Cache
+from exllamav2.cache import ExLlamaV2CacheBase, ExLlamaV2Cache_8bit
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
@@ -22,7 +22,6 @@ import threading
 #  - Banned strings
 #  - Unpaged mode to support matmul attn
 #  - ExLlamaV2StreamingGenerator wrapper
-#  - Q4 cache
 #  - Input embeddings
 #  - Multi-threaded sampling
 #  - Faster hash algorithm (Murmur?)
@@ -145,7 +144,7 @@ class ExLlamaV2DynamicGenerator:
     def __init__(
         self,
         model: ExLlamaV2,
-        cache: ExLlamaV2Cache,
+        cache: ExLlamaV2CacheBase,
         tokenizer: ExLlamaV2Tokenizer,
         max_batch_size: int = 16,
         max_seq_len: int | None = None,
@@ -228,6 +227,9 @@ class ExLlamaV2DynamicGenerator:
                 "Draft model seq len must be >= model seq len"
 
         assert_paged_attn()
+
+        assert not isinstance(cache, ExLlamaV2Cache_8bit), \
+            "Dynamic generator does not currently work with 8-bit cache."
 
         model_max_q = cfg.max_batch_size * cfg.max_input_len
         req_max_q = max_q_size * max_batch_size

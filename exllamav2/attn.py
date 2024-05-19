@@ -504,8 +504,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
         v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
 
-        # TODO: Support paged Q4 cache and maybe FP8?
-        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 0)
+        cache_seqlens = attn_params.get_cache_seqlens(self.device())
+        block_table = attn_params.get_block_index(self.device())
+
+        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, PAGE_SIZE, cache_seqlens, block_table)
         k_cache = k_cache.view(k_cache.shape[1] // PAGE_SIZE, PAGE_SIZE, k_cache.shape[2], k_cache.shape[3])
         v_cache = v_cache.view(v_cache.shape[1] // PAGE_SIZE, PAGE_SIZE, v_cache.shape[2], v_cache.shape[3])
 
@@ -536,11 +538,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             v = v,
             k_cache = k_cache,
             v_cache = v_cache,
-            cache_seqlens = attn_params.get_cache_seqlens(self.device()),
-            block_table = attn_params.get_block_index(self.device()),
+            cache_seqlens = cache_seqlens,
+            block_table = block_table,
             causal = True
         )
         attn_output = attn_output.view((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+
+        cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, PAGE_SIZE, cache_seqlens, block_table)
 
         # Output projection
 

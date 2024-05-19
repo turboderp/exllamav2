@@ -12,7 +12,10 @@ void fp16_to_q4_kv
     torch::Tensor v_scales,
     int batch_size,
     int offset,
-    int width
+    int width,
+    int page_size,
+    torch::Tensor cache_seqlens,
+    torch::Tensor block_table
 );
 
 void q4_to_fp16_kv
@@ -25,7 +28,10 @@ void q4_to_fp16_kv
     torch::Tensor v_scales,
     int batch_size,
     int offset,
-    int width
+    int width,
+    int page_size,
+    torch::Tensor cache_seqlens,
+    torch::Tensor block_table
 );
 
 int count_match
