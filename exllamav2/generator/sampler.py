@@ -13,7 +13,7 @@ class ExLlamaV2Sampler:
     @dataclass
     class Settings:
 
-        token_repetition_penalty: float = 1.05
+        token_repetition_penalty: float = 1.025
         token_repetition_range: int = -1
         token_repetition_decay: int  = 0
 
@@ -46,13 +46,15 @@ class ExLlamaV2Sampler:
         post_sampling_hooks: list[ExLlamaV2PostSamplingHook] = field(default_factory = list)
 
         @staticmethod
-        def greedy() -> ExLlamaV2Sampler.Settings():
-            s = ExLlamaV2Sampler.Settings()
-            s.temperature = 1.0
-            s.token_repetition_penalty = 1.0
-            s.top_p = 0.0
-            s.top_k = 1
-            return s
+        def greedy(**kwargs) -> ExLlamaV2Sampler.Settings:
+            defaults = {
+                "temperature": 1.0,
+                "token_repetition_penalty": 1.0,
+                "top_p": 0.0,
+                "top_k": 1,
+            }
+            defaults.update(kwargs)
+            return ExLlamaV2Sampler.Settings(**defaults)
 
 
         def clone(self):
