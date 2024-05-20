@@ -18,7 +18,6 @@ import threading
 # from line_profiler import profile
 
 # TODO:
-#  - Interface for CFG + test CFG
 #  - Banned strings
 #  - Unpaged mode to support matmul attn
 #  - ExLlamaV2StreamingGenerator wrapper
@@ -354,10 +353,10 @@ class ExLlamaV2DynamicGenerator:
 
     def generate(
         self,
-        prompt: list | str,
+        prompt: list[tuple] | list[str] | tuple | str,
         max_new_tokens: int,
         seed: int or None = None,
-        gen_settings: ExLlamaV2Sampler.Settings | None = None,
+        gen_settings: ExLlamaV2Sampler.Settings | list[ExLlamaV2Sampler.Settings] | None = None,
         token_healing: bool = False,
         encode_special_tokens: bool = False,
         decode_special_tokens: bool = False,
@@ -373,11 +372,12 @@ class ExLlamaV2DynamicGenerator:
         Generate one or more completions.
 
         :param prompt:
-            String or list of strings. If this argument is a list, its length determinse the batch size, and
-            the output will be a list of strings as well.
+            If this argument is a list, its length determines the batch size, and the output will be a list of strings
+            as well. Each prompt is either a string or a pair of prompts for CFG sampling. If CFG is used, sampler
+            settings must contain cfg_scale.
 
         :param gen_settings:
-            ExLlamaV2Sampler.Settings
+            Sample settings for all prompts in batch or list of settings for each prompt.
 
         :param max_new_tokens:
             Max number of tokens to generate.
@@ -438,18 +438,38 @@ class ExLlamaV2DynamicGenerator:
         prompts = prompt if isinstance(prompt, list) else [prompt]
         batch_size = len(prompts)
         for idx, p in enumerate(prompts):
+
+            if isinstance(p, str):
+                input_ids = self.tokenizer.encode(p, encode_special_tokens = encode_special_tokens, add_bos = add_bos)
+            elif isinstance(p, tuple):
+                input_ids = [self.tokenizer.encode(p_, encode_special_tokens = encode_special_tokens, add_bos = add_bos) for p_ in p]
+            else:
+                assert False, "Unexpected type in prompt"
+
+            if gen_settings is None:
+                p_settings = ExLlamaV2Sampler.Settings()
+            elif isinstance(gen_settings, ExLlamaV2Sampler.Settings):
+                p_settings = gen_settings
+            elif isinstance(gen_settings, list):
+                assert len(gen_settings) == len(prompts)
+                p_settings = gen_settings[idx]
+            else:
+                assert False, "Unexpected type in gen_settings"
+
             job = ExLlamaV2DynamicJob(
-                input_ids = self.tokenizer.encode(p, encode_special_tokens = encode_special_tokens, add_bos = add_bos),
+                input_ids = input_ids,
                 max_new_tokens = max_new_tokens,
                 seed = seed,
                 stop_conditions = stop_conditions,
-                gen_settings = gen_settings or ExLlamaV2Sampler.Settings(),
+                gen_settings = p_settings,
                 filters = filters[idx] or [],
                 filter_prefer_eos = filter_prefer_eos,
                 token_healing = token_healing,
                 decode_special_tokens = decode_special_tokens,
             )
+
             if seed is not None: seed += 1
+
             serial = self.enqueue(job)
             order[serial] = idx
 
@@ -471,7 +491,7 @@ class ExLlamaV2DynamicGenerator:
         # Return results
 
         if not completion_only:
-            completions = [p + c for p, c in zip(prompts, completions)]
+            completions = [(p if p is str else p[0]) + c for p, c in zip(prompts, completions)]
 
         if isinstance(prompt, list):
             return completions
@@ -1014,7 +1034,8 @@ class ExLlamaV2DynamicJob:
         Create new job.
 
         :param input_ids:
-            Tokenized IDs of the input prompt, shape (1, n)
+            Tokenized IDs of the input prompt, shape (1, n). Alternatively, list of tokenized IDs to inference on
+            seperately but sample collectively (e.g. CFG prompt pair)
 
         :param max_new_tokens:
             Max no. output tokens to allow
