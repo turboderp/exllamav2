@@ -491,7 +491,7 @@ class ExLlamaV2DynamicGenerator:
         # Return results
 
         if not completion_only:
-            completions = [(p if p is str else p[0]) + c for p, c in zip(prompts, completions)]
+            completions = [(p if isinstance(p, str) else p[0]) + c for p, c in zip(prompts, completions)]
 
         if isinstance(prompt, list):
             return completions
