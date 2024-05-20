@@ -101,9 +101,9 @@ class NGramTrie:
 class ExLlamaV2DynamicGenerator:
 
     model: ExLlamaV2
-    cache: ExLlamaV2Cache
+    cache: ExLlamaV2CacheBase
     draft_model: ExLlamaV2
-    draft_cache: ExLlamaV2Cache
+    draft_cache: ExLlamaV2CacheBase
     tokenizer: ExLlamaV2Tokenizer
 
     max_batch_size: int
@@ -151,7 +151,7 @@ class ExLlamaV2DynamicGenerator:
         max_chunk_size: int | None = None,
         max_q_size: int = 16,
         draft_model: ExLlamaV2 | None = None,
-        draft_cache: ExLlamaV2Cache | None = None,
+        draft_cache: ExLlamaV2CacheBase | None = None,
         num_draft_tokens: int = 2,
         use_ngram_draft: bool = False,
         max_ngram: int = 4,
@@ -1287,7 +1287,7 @@ class ExLlamaV2DynamicJob:
 
         # Stream output
 
-        def emit(res: list, emit_eos: bool = False, eos_reason: str = None, emit_held = False):
+        def emit(results: list, emit_eos: bool = False, eos_reason: str = None, emit_held = False):
             r = {
                 "job": self,
                 "stage": "streaming",
