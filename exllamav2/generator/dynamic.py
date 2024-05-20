@@ -9,6 +9,7 @@ from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.cache import ExLlamaV2CacheBase, ExLlamaV2Cache_8bit
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from concurrent.futures import ThreadPoolExecutor
 
 import torch
 import random
@@ -22,7 +23,6 @@ import threading
 #  - Unpaged mode to support matmul attn
 #  - ExLlamaV2StreamingGenerator wrapper
 #  - Input embeddings
-#  - Multi-threaded sampling
 #  - Faster hash algorithm (Murmur?)
 
 PAGE_SIZE = 256
@@ -139,6 +139,12 @@ class ExLlamaV2DynamicGenerator:
 
     current_loras: list[ExLlamaV2Lora] | None
 
+    # Sampling threads
+
+    max_sampling_threads: int
+    min_sampling_threads: int
+    sampling_pool: ThreadPoolExecutor
+
 
     def __init__(
         self,
@@ -154,6 +160,8 @@ class ExLlamaV2DynamicGenerator:
         num_draft_tokens: int = 2,
         use_ngram_draft: bool = False,
         max_ngram: int = 4,
+        max_sampling_threads: int = 16,
+        min_sampling_threads: int = 3,
         **kwargs
     ):
         """
@@ -202,6 +210,13 @@ class ExLlamaV2DynamicGenerator:
 
         :param max_ngram:
             Longest n-gram to consider.
+
+        :param max_sampling_threads:
+            Maximum number of concurrent threads used by sampler.
+
+        :param min_sampling_threads:
+            Minimum number of threads to spawn at once. If the batch size for an iteration is lower than this
+            number, use single-threaded sampling instead to eliminate multithreading overhead.
 
         :param kwargs:
         """
@@ -328,6 +343,13 @@ class ExLlamaV2DynamicGenerator:
         # LoRAs
 
         self.current_loras = None
+
+        # Sampling threads
+
+        self.max_sampling_threads = max_sampling_threads
+        self.min_sampling_threads = min_sampling_threads
+        if max_sampling_threads > 1:
+            self.sampling_pool = ThreadPoolExecutor(max_workers = max_sampling_threads)
 
 
     def warmup(self):
@@ -842,13 +864,40 @@ class ExLlamaV2DynamicGenerator:
         batch_logits.copy_(device_logits, non_blocking = True)
         torch.cuda.synchronize()
 
+        if self.max_sampling_threads > 1 and len(self.active_jobs) >= self.min_sampling_threads:
+            mt_sample = True
+            futures = deque()
+            for job, a, b in zip(self.active_jobs, logit_mapping[:-1], logit_mapping[1:]):
+                if a == b: continue
+                job_logits = batch_logits[a:b, :1, :]
+                futures.append(self.sampling_pool.submit(job.receive_logits, job_logits))
+        else:
+            mt_sample = False
+
         completed_jobs = []
         j = 0
         for job, a, b in zip(self.active_jobs, logit_mapping[:-1], logit_mapping[1:]):
             if a == b: continue
             for i in range(batch_logits.shape[1]):
                 job_logits = batch_logits[a:b, i:i+1, :]
-                eos, sampled_token = job.receive_logits(job_logits, results)
+
+                if i == 0 and mt_sample:
+                    next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
+                    futures.popleft().result()
+                else:
+                    next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
+                    job.receive_logits(job_logits)
+
+                eos, sampled_token = job.receive_sample(
+                    job_logits,
+                    next_token,
+                    next_k_tokens,
+                    next_k_probs,
+                    next_prob,
+                    filter_eos,
+                    results
+                )
+
                 if eos:
                     completed_jobs.append(job)
                     break
@@ -1215,7 +1264,6 @@ class ExLlamaV2DynamicJob:
     def receive_logits(
         self,
         logits: torch.Tensor,
-        results: list
     ):
         # Support single seq and CFG for now
 
@@ -1243,6 +1291,20 @@ class ExLlamaV2DynamicJob:
             filters = self.filters if self.new_tokens >= 0 else None,
             filter_prefer_eos = self.filter_prefer_eos
         )
+
+        return next_token, next_k_tokens, next_k_probs, next_prob, filter_eos
+
+
+    def receive_sample(
+            self,
+            logits: torch.Tensor | None,
+            next_token: torch.Tensor | None,
+            next_k_tokens: torch.Tensor | None,
+            next_k_probs: torch.Tensor | None,
+            next_prob: torch.Tensor | None,
+            filter_eos: bool | None,
+            results: list
+    ):
 
         # Feed filters
 
