@@ -356,7 +356,7 @@ class ExLlamaV2DynamicGenerator:
         """
         Warm up the generator by generating some text, making sure kernel autotune has time to complete.
         """
-        self.generate("Once upon a time,", max_new_tokens = 200)
+        self.generate("Once upon a time,", max_new_tokens = 32)
 
 
     def set_loras(self, loras: list[ExLlamaV2Lora] | None):
