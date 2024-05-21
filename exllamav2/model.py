@@ -21,6 +21,12 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 #         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
 
 import torch
+
+if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
+    print("")
+    print(f" ## Warning: The installed version of PyTorch is {torch.__version__} and does not support CUDA or ROCm.")
+    print("")
+
 import math
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.cache import ExLlamaV2CacheBase
@@ -37,11 +43,12 @@ from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
-# from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 import gc
 import threading
 from typing import Callable
+# from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.util import get_basic_progress
+
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
