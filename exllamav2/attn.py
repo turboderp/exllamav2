@@ -190,12 +190,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     class PagedParams(Params):
 
         block_index: torch.Tensor
+        cache_seqlens: torch.Tensor
+        page_size: int
 
         def __init__(
             self,
             batch_size: int,
             block_index: torch.Tensor,
-            cache_seqlens: torch.Tensor
+            cache_seqlens: torch.Tensor,
+            page_size: int
         ):
             super().__init__(
                 batch_size = batch_size,
@@ -204,6 +207,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             self.block_index = block_index
             self.cache_seqlens = cache_seqlens
+            self.page_size = page_size
 
         def get_attn_mask(self, device):
             raise NotImplementedError()
@@ -497,7 +501,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cfg = self.model.config
         constants = self.model.get_device_tensors(self.device_idx)
 
-        PAGE_SIZE = 256
+        page_size = attn_params.page_size
 
         batch_size, q_len, _ = hidden_states.shape
         q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
@@ -507,9 +511,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cache_seqlens = attn_params.get_cache_seqlens(self.device())
         block_table = attn_params.get_block_index(self.device())
 
-        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, PAGE_SIZE, cache_seqlens, block_table)
-        k_cache = k_cache.view(k_cache.shape[1] // PAGE_SIZE, PAGE_SIZE, k_cache.shape[2], k_cache.shape[3])
-        v_cache = v_cache.view(v_cache.shape[1] // PAGE_SIZE, PAGE_SIZE, v_cache.shape[2], v_cache.shape[3])
+        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
+        k_cache = k_cache.view(k_cache.shape[1] // page_size, page_size, k_cache.shape[2], k_cache.shape[3])
+        v_cache = v_cache.view(v_cache.shape[1] // page_size, page_size, v_cache.shape[2], v_cache.shape[3])
 
         if loras is None or self.temp_lora_size == 0:
             pass_loras, pass_lora_temp = [], none_tensor
@@ -544,7 +548,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         )
         attn_output = attn_output.view((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
-        cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, PAGE_SIZE, cache_seqlens, block_table)
+        cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, page_size, cache_seqlens, block_table)
 
         # Output projection
 

@@ -835,8 +835,8 @@ class ExLlamaV2:
         if cache is not None:
             if isinstance(cache, ExLlamaV2CacheBase):
                 past_len = cache.current_seq_len
-            else:
-                past_len = [c.current_seq_len for c in cache]
+            # else:
+            #     past_len = [c.current_seq_len for c in cache]
 
         assert self.config.max_output_len is None or \
             preprocess_only or \
@@ -850,6 +850,10 @@ class ExLlamaV2:
 
         if not attn_params:
             attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
+        else:
+            if not isinstance(attn_params, ExLlamaV2Attention.PagedParams):
+                past_len = attn_params.past_len
+                cache.current_seq_len = past_len
         last_state = None
         last_module = None
 
