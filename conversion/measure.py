@@ -382,7 +382,7 @@ def print_status_box(*content_lines):
     print('-' * box_width)
 
 @torch.inference_mode()
-def measure_quant(job, save_fn, model):
+def measure_quant(job, save_fn, model, hidden_state_offload_layers):
 
     # vars for status box
     time_spent_list = []  
@@ -418,8 +418,9 @@ def measure_quant(job, save_fn, model):
 
     hidden_states = []
     with safe_open(states_filename, framework = "pt", device = "cpu") as f:
-        for k in sorted(f.keys()):
-            hidden_states.append(f.get_tensor(k))
+        for i, k in enumerate(sorted(f.keys())):
+            t = f.get_tensor(k)
+            hidden_states.append(t.to("cuda:0") if i < hidden_state_offload_layers else t)
 
     index = job["last_module_idx"]
     while True:
@@ -515,18 +516,19 @@ def measure_quant(job, save_fn, model):
 
             x = hidden_states[i].to("cuda:0")
             outputs = module.forward(x, cache, attn_params, intermediates = True)
+            target_device = "cuda:0" if i < hidden_state_offload_layers else "cpu"
 
             # Hessians
 
             if mode == "self_attn":
                 quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
                 quantizers["o_proj"].add_batch(outputs["attn_output"])
-                target_states.append(outputs["hidden_states"].to("cpu"))
+                target_states.append(outputs["hidden_states"].to(target_device))
 
             if mode == "mlp":
                 quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
-                target_states.append(outputs["hidden_states"].to("cpu"))
+                target_states.append(outputs["hidden_states"].to(target_device))
 
             if mode == "block_sparse_moe":
                 for j in range(model.config.num_experts):
@@ -537,19 +539,19 @@ def measure_quant(job, save_fn, model):
                             uncalibrated_experts[j] += 1
                     else:
                         uncalibrated_experts[j] += 1
-                target_states.append(outputs["hidden_states"].to("cpu"))
+                target_states.append(outputs["hidden_states"].to(target_device))
 
             if mode == "parallel_decoder":
                 quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K, V, up_proj and gate_proj
                 quantizers["o_proj"].add_batch(outputs["attn_output"])
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
                 hidden_states[i] = outputs["post_norm"]
-                target_states_attn.append(outputs["hidden_states_attn"].to("cpu"))
-                target_states_mlp.append(outputs["hidden_states_mlp"].to("cpu"))
-                target_states.append(outputs["hidden_states"].to("cpu"))
+                target_states_attn.append(outputs["hidden_states_attn"].to(target_device))
+                target_states_mlp.append(outputs["hidden_states_mlp"].to(target_device))
+                target_states.append(outputs["hidden_states"].to(target_device))
 
             if mode == "pos_emb":
-                target_states.append(outputs["hidden_states"].to("cpu"))
+                target_states.append(outputs["hidden_states"].to(target_device))
 
         # For MoE layers, warn if any layer received less than 10% of a calibration batch
 
