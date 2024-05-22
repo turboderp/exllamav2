@@ -149,7 +149,7 @@ catastrophically.
 
 ### Hardware requirements
 
-Roughly speaking, you'll need about 64 GB or RAM and 24 GB of VRAM to convert a 70B model, while 7B seems to require
+Roughly speaking, you'll need about 64 GB of RAM and 24 GB of VRAM to convert a 70B model, while 7B seems to require
 about 16 GB of RAM and about 8 GB of VRAM.
 
 The deciding factor for the memory requirement is the *width* of the model rather than the depth, so 120B models that
