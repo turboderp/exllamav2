@@ -219,6 +219,11 @@ class ExLlamaV2DynamicGenerator:
             Minimum number of threads to spawn at once. If the batch size for an iteration is lower than this
             number, use single-threaded sampling instead to eliminate multithreading overhead.
 
+        :param paged:
+            Enable paged mode, defaults to True. If this is False, the generator uses a fallback unpaged mode which
+            does not require paged attention support, but in which the max supported batch size is 1. CFG also will
+            not work in this mode.
+
         :param kwargs:
         """
 
@@ -272,7 +277,7 @@ class ExLlamaV2DynamicGenerator:
 
         assert self.cache.max_seq_len % PAGED_PAGE_SIZE == 0, \
             f"cache.max_seq_len must be multiple of {PAGED_PAGE_SIZE}, received {cache.max_seq_len}"
-        self.max_pages = cache.max_seq_len // self.page_size
+        self.max_pages = max(cache.max_seq_len // self.page_size, 1)
         self.max_total_tokens = cache.max_seq_len
 
         self.referenced_pages = {}
@@ -1544,8 +1549,8 @@ class ExLlamaV2DynamicJob:
 
         total_pages = len(self.all_unique_hashes) + seq.new_unique_pages
         assert total_pages <= self.generator.max_pages, \
-            f"Job requires {total_pages} pages, only {self.generator.max_pages} available and cannot " + \
-            f"be enqueued. Total cache allocated is is {self.generator.max_pages} * {page_size} = " + \
+            f"Job requires {total_pages} pages (only {self.generator.max_pages} available) and cannot " + \
+            f"be enqueued. Total cache allocated is {self.generator.max_pages} * {page_size} = " + \
             f"{self.generator.max_total_tokens} tokens"
         assert len(self.sequences) <= self.generator.max_batch_size, \
             f"Job requires a minimum batch size of {len(self.sequences)}. Max supported batch size in" + \
@@ -1654,16 +1659,19 @@ class ExLlamaV2DynamicJob:
 
             # In unpaged mode there is only one page to compare against
 
-            else:
+            elif seq.kv_position == 0:
                 page = self.generator.all_pages[0]
                 assert page.can_revert
                 match = ext_c.count_match(page.sequence, prefill_ids, page.kv_position_revert)
-                prefill_start += match
-                seq.kv_position += match
-                page.kv_position = match
-                page.can_revert = False
-                self.cached_tokens += match
-                progress += match
+                if match:
+                    prefill_start += match
+                    prefill_ids = prefill_ids[:, match:]
+                    prefill_end = min(prefill_end + match, len(seq.sequence_ids) - 1)
+                    seq.kv_position += match
+                    page.kv_position = match
+                    page.backup()
+                    self.cached_tokens += match
+                    progress += match
 
             # Inference
 
