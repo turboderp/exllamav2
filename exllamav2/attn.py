@@ -712,8 +712,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             if not direct:
                 batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
-                batch_keys[:batch_size, :past_len + q_len, :].copy_(k_states)
-                batch_values[:batch_size, :past_len + q_len, :].copy_(v_states)
+                batch_keys[:batch_size, past_len:past_len + q_len, :].copy_(k_states)
+                batch_values[:batch_size, past_len:past_len + q_len, :].copy_(v_states)
 
             k_states = batch_keys[:batch_size, :past_len + q_len, :]
             v_states = batch_values[:batch_size, :past_len + q_len, :]
