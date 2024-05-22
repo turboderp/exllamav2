@@ -30,7 +30,7 @@ generator = ExLlamaV2DynamicGenerator(
     tokenizer = tokenizer,
 )
 
-# Alpaca-style prompt
+# Prompt for the specific Alpaca/JSON format used by the above LoRA
 
 prompt_format = (
     """### INPUT:\n"""
@@ -54,6 +54,10 @@ prompt = prompt_format.replace("<INPUT>", inputs).replace("<INSTRUCTIONS>", inst
 
 # Without LoRA
 
+print("-----------------------------------------------------------------------------------")
+print("- Without LoRA")
+print("-----------------------------------------------------------------------------------")
+
 output = generator.generate(
     prompt = prompt,
     max_new_tokens = 500,
@@ -62,13 +66,14 @@ output = generator.generate(
     gen_settings = ExLlamaV2Sampler.Settings.greedy()
 )
 
-print("-----------------------------------------------------------------------------------")
-print("- Without LoRA")
-print("-----------------------------------------------------------------------------------")
 print(output)
 print()
 
 # With LoRA
+
+print("-----------------------------------------------------------------------------------")
+print("- With LoRA")
+print("-----------------------------------------------------------------------------------")
 
 generator.set_loras(lora)
 
@@ -80,8 +85,5 @@ output = generator.generate(
     gen_settings = ExLlamaV2Sampler.Settings.greedy()
 )
 
-print("-----------------------------------------------------------------------------------")
-print("- With LoRA")
-print("-----------------------------------------------------------------------------------")
 print(output)
 print()

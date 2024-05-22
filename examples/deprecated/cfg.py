@@ -1,13 +1,14 @@
 
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from exllamav2 import *
 from exllamav2.generator import *
 
 # Initialize model and cache
 
-model_directory = "/mnt/str/models/llama2-70b-chat-exl2/4.0bpw"
+model_directory = "/mnt/str/models/llama2-7b-chat-exl2/4.0bpw"
 
 config = ExLlamaV2Config()
 config.model_dir = model_directory

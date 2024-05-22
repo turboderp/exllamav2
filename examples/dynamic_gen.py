@@ -4,7 +4,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Cache, ExLlamaV2Tokenizer
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, ExLlamaV2Sampler
 from blessed import Terminal
+from util import format_prompt, get_stop_conditions
 import pprint
+
+# This is a demo and small stress to showcase some of the features of the dynamic batching generator.
 
 # Display modes for this demo:
 # 1: One line per job, updated continuously
@@ -12,6 +15,10 @@ import pprint
 # 3: Step over output iteration by iteration
 # 4: Space heater mode (no output)
 display_mode = 1
+
+# Whether to use paged mode or not. The generator is very handicapped in unpaged mode, does not support batching
+# or CFG, but it will work without flash-attn 2.5.7+
+paged = True
 
 # Where to find our model
 model_dir = "/mnt/str/models/mistral-7b-instruct-v0.2-exl2/4.0bpw"
@@ -26,7 +33,7 @@ use_draft_model = False
 draft_model_dir = "/mnt/str/models/tinyllama-1b-32k-exl2/4.0bpw"
 
 # Max number of batches to run at once, assuming the sequences will fit within total_context.
-max_batch_size = 20
+max_batch_size = 20 if paged else 1
 
 # Max chunk size. Determines the size of prefill operations. Can be reduced to reduce pauses whenever a
 # new job is started, but at the expense of overall prompt ingestion speed.
@@ -96,26 +103,6 @@ prompts = [
 ]
 
 term = Terminal()
-
-def format_prompt(sp, p):
-    if prompt_format == "llama":
-        return f"<s>[INST] <<SYS>>\n{sp}\n<</SYS>>\n\n{p} [/INST]"
-    elif prompt_format == "llama3":
-        return (
-            f"<|begin_of_text|>"
-            f"<|start_header_id|>system<|end_header_id|>\n\n"
-            f"{sp}<|eot_id|>"
-            f"<|start_header_id|>user<|end_header_id|>\n\n"
-            f"{p}<|eot_id|>"
-            f"<|start_header_id|>assistant<|end_header_id|>\n\n"
-        )
-
-def stop_conditions(tokenizer):
-    if prompt_format == "llama":
-        return [tokenizer.eos_token_id]
-    elif prompt_format == "llama3":
-        return [tokenizer.single_id("<|eot_id|>")]
-
 
 # Only import lmfe if json_mode is set
 
@@ -189,8 +176,13 @@ def main():
         tokenizer = tokenizer,
         max_batch_size = max_batch_size,
         use_ngram_draft = use_ngram,
-        max_chunk_size = max_chunk_size
+        max_chunk_size = max_chunk_size,
+        paged = paged,
     )
+
+    # Warmup generator. Can be a little slow for larger models. Only relevant for timing purposes.
+
+    generator.warmup()
 
     # Create jobs
 
@@ -207,7 +199,7 @@ def main():
             ]
         else:
             filters = None
-        fprompt =  format_prompt(system_prompt, prompt)
+        fprompt =  format_prompt(prompt_format, system_prompt, prompt)
         if healing:
             # To test/demonstrate healing, add a broken response prefix
             fprompt += " The an"
@@ -215,7 +207,7 @@ def main():
         job = ExLlamaV2DynamicJob(
             input_ids = input_ids,
             max_new_tokens = max_new_tokens,
-            stop_conditions = stop_conditions(tokenizer),
+            stop_conditions = get_stop_conditions(prompt_format, tokenizer),
             gen_settings = ExLlamaV2Sampler.Settings(),
             filters = filters,
             filter_prefer_eos = True,

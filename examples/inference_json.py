@@ -28,10 +28,6 @@ generator = ExLlamaV2DynamicGenerator(
     tokenizer = tokenizer,
 )
 
-# Warmup generator. Can be a little slow for larger models. Only relevant for timing purposes.
-
-generator.warmup()
-
 # JSON schema
 
 class SuperheroAppearance(BaseModel):

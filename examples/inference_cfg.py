@@ -4,6 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Cache, ExLlamaV2Tokenizer, Timer
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2Sampler
+from util import format_prompt, get_stop_conditions
 
 model_dir = "/mnt/str/models/llama3-8b-instruct-exl2/4.0bpw"
 config = ExLlamaV2Config(model_dir)
@@ -26,33 +27,16 @@ max_new_tokens = 100
 
 # Create our prompts
 
-def format_prompt(sp, p):
-    if prompt_format == "llama":
-        return f"<s>[INST] <<SYS>>\n{sp}\n<</SYS>>\n\n{p} [/INST]"
-    elif prompt_format == "llama3":
-        return (
-            f"<|begin_of_text|>"
-            f"<|start_header_id|>system<|end_header_id|>\n\n"
-            f"{sp}<|eot_id|>"
-            f"<|start_header_id|>user<|end_header_id|>\n\n"
-            f"{p}<|eot_id|>"
-            f"<|start_header_id|>assistant<|end_header_id|>\n\n"
-        )
-
-def stop_conditions(tokenizer):
-    if prompt_format == "llama":
-        return [tokenizer.eos_token_id]
-    elif prompt_format == "llama3":
-        return [tokenizer.single_id("<|eot_id|>")]
-
 prompt_format = "llama3"
 
 prompt_a = format_prompt(
+    prompt_format,
     "You are a cheerful, bubbly and respectful assistant.",
     "Can i base jump off the Eiffel Tower?"
 )
 
 prompt_b = format_prompt(
+    prompt_format,
     "You are a rude and obnoxious assistant.",
     "Can i base jump off the Eiffel Tower?"
 )
@@ -74,8 +58,9 @@ outputs = generator.generate(
     prompt = prompts,
     max_new_tokens = max_new_tokens,
     gen_settings = gen_settings,
+    stop_conditions = get_stop_conditions(prompt_format, tokenizer),
     completion_only = True,
-    add_bos = True
+    encode_special_tokens = True
 )
 
 for cfg_scale, output in zip(cfg_scales, outputs):
