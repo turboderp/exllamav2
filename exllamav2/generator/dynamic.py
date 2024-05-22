@@ -1081,6 +1081,20 @@ class ExLlamaV2DynamicJob:
     filters: list[ExLlamaV2Filter] | None
     filter_prefer_eos: bool
 
+    # Stop conditions
+
+    stop_strings: set
+    stop_strings_utf32_buffer: np.array or None
+    stop_strings_utf32_offsets: np.array or None
+    stop_tokens: set
+
+    # Banned strings
+
+    banned_strings: list[str]
+    banned_strings_utf32_buffer: np.array or None
+    banned_strings_utf32_offsets: np.array or None
+    checkpoint: dict | None
+
 
     def __init__(
         self,
@@ -1098,6 +1112,7 @@ class ExLlamaV2DynamicJob:
         filter_prefer_eos: bool = False,
         token_healing: bool = False,
         identifier: object | None = None,
+        banned_strings: list[str] | None = None,
         **kwargs
     ):
         """
@@ -1226,7 +1241,21 @@ class ExLlamaV2DynamicJob:
             self.stop_strings_utf32_buffer, self.stop_strings_utf32_offsets = \
                 _strings_to_utf32(list(self.stop_strings))
         else:
-            self.stop_strings_utf32_offsets, self.stop_strings_utf32_buffer = None, None
+            self.stop_strings_utf32_buffer, self.stop_strings_utf32_offsets = None, None
+
+        # Banned strings
+
+        if banned_strings:
+            assert filters is None or len(filters) == 0, \
+                "Cannot combine banned strings with filters"
+            self.banned_strings = [s.lower() for s in banned_strings]
+            self.banned_strings_utf32_buffer, self.banned_strings_utf32_offsets = \
+                _strings_to_utf32(self.banned_strings)
+        else:
+            self.banned_strings = []
+            self.banned_strings_utf32_buffer, self.banned_strings_utf32_offsets = None, None
+
+        self.checkpoint = None
 
         # Measurement
 
@@ -1299,6 +1328,11 @@ class ExLlamaV2DynamicJob:
 
         # Sample
 
+        if self.checkpoint and self.checkpoint["offset"] == 0:
+            blocked_tokens = self.checkpoint["explored_tokens"]
+        else:
+            blocked_tokens = None
+
         next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
         ExLlamaV2Sampler.sample(
             logits,
@@ -1308,7 +1342,7 @@ class ExLlamaV2DynamicJob:
             self.generator.tokenizer,
             self.prefix_token if self.new_tokens == -1 else None,
             self.return_top_tokens,
-            blocked_tokens = None,  # self.current_blocked_tokens
+            blocked_tokens = blocked_tokens,
             filters = self.filters if self.new_tokens >= 0 else None,
             filter_prefer_eos = self.filter_prefer_eos
         )
@@ -1392,7 +1426,16 @@ class ExLlamaV2DynamicJob:
 
         # Stream output
 
-        def emit(results: list, emit_eos: bool = False, eos_reason: str = None, emit_held = False):
+        def emit(
+            results: list,
+            emit_eos:
+            bool = False,
+            eos_reason:
+            str = None,
+            emit_held = False,
+            suppressed_text = None,
+            suppressed_tokens = None
+        ):
             r = {
                 "job": self,
                 "stage": "streaming",
@@ -1422,6 +1465,10 @@ class ExLlamaV2DynamicJob:
                 if self.held_logits:
                     r.update({ "logits": self.held_logits.torch() })
                     self.held_logits.clear()
+
+            if suppressed_text:
+                r.update({ "suppressed_text": suppressed_text })
+                r.update({ "suppressed_tokens": suppressed_tokens.torch() })
 
             if emit_eos:
                 self.is_finished = True
@@ -1493,6 +1540,75 @@ class ExLlamaV2DynamicJob:
                 self.held_text = test_decode
             else:
                 return emit(results)
+
+        # Hold text as long as it contains part of a banned string
+
+        def unset_checkpoint():
+            self.checkpoint = None
+
+        def set_checkpoint():
+            if self.checkpoint is None:
+                self.checkpoint = {
+                    "offset": 1,
+                    "held_text": self.held_text[:-len(new_text)],
+                    "held_tokens": self.held_tokens.clone(1),
+                    "held_probs": self.held_probs.clone(1),
+                    "held_k_tokens": self.held_k_tokens.clone(1),
+                    "held_k_probs": self.held_k_probs.clone(1),
+                    "held_logits": self.held_logits.clone(1),
+                    "explored_tokens": [next_token.item()],
+                }
+            else:
+                self.checkpoint["offset"] += 1
+                if self.checkpoint["offset"] == 1:
+                    self.checkpoint["explored_tokens"].append(next_token.item())
+
+        def rewind_checkpoint():
+            assert self.checkpoint is not None
+            offset = self.checkpoint["offset"]
+            self.new_tokens -= offset
+            for seq in self.sequences:
+                p_page = seq.kv_position // self.generator.page_size
+                seq.kv_position -= offset
+                seq.sequence_ids.truncate(len(seq.sequence_ids) - offset)
+                n_page = seq.kv_position // self.generator.page_size
+                for pi in range(n_page, p_page + 1):
+                    page = seq.allocated_pages[pi]
+                    if page.kv_position == self.generator.page_size:
+                        page.can_revert = False
+                        del self.generator.referenced_pages[page.phash]
+                        page.phash = _randomhash()
+                        self.generator.referenced_pages[page.phash] = page
+                    if pi == n_page:
+                        page.kv_position = seq.kv_position - pi * self.generator.page_size
+                    else:
+                        page.kv_position = 0
+            off_tokens = self.held_tokens.slice(len(self.checkpoint["held_tokens"]), None)
+            off_text = self.held_text[len(self.checkpoint["held_text"]):]
+            self.held_text = self.checkpoint["held_text"]
+            self.held_token = self.checkpoint["held_tokens"]
+            self.held_probs = self.checkpoint["held_probs"]
+            self.held_k_tokens = self.checkpoint["held_k_tokens"]
+            self.held_k_probs = self.checkpoint["held_k_probs"]
+            self.held_logits = self.checkpoint["held_logits"]
+            self.checkpoint["offset"] = 0
+            return off_tokens, off_text
+
+        if self.banned_strings_utf32_offsets is not None and self.new_tokens > 0:
+            match = ext_c.partial_strings_match(
+                np.frombuffer(self.held_text.lower().encode("utf-32-le"), dtype = np.uint8),
+                self.banned_strings_utf32_offsets,
+                self.banned_strings_utf32_buffer
+            )
+            if match >= 0:
+                set_checkpoint()
+                offending_tokens, offending_text = rewind_checkpoint()
+                return emit(results, suppressed_text = offending_text, suppressed_tokens = offending_tokens)
+            elif match == -2:
+                set_checkpoint()
+                return emit(results)
+            else:
+                unset_checkpoint()
 
         # End on stop strings
 

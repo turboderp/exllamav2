@@ -56,6 +56,12 @@ class SeqTensor:
         s.append(tensor)
         return s
 
+    def clone(self, drop: int | None = None):
+        if drop and drop <= self.seq_len:
+            return SeqTensor.from_tensor(self.torch_slice(None, self.seq_len - drop), self.seq_dim)
+        else:
+            return SeqTensor.from_tensor(self.torch(), self.seq_dim)
+
     def clear(self):
         self.seq_len = 0
 
@@ -89,8 +95,13 @@ class SeqTensor:
         s = self.tensor.narrow(self.seq_dim, 0, self.seq_len)
         return s
 
+    def slice(self, a: int | None, b: int | None):
+        return SeqTensor.from_tensor(self.torch_slice(a, b), self.seq_dim)
+
     def torch_slice(self, a: int | None, b: int | None):
-        if b is None:
+        if a is None and b is None:
+            return self.torch()
+        elif b is None:
             s = self.tensor.narrow(self.seq_dim, a, self.seq_len - a)
         elif a is None:
             s = self.tensor.narrow(self.seq_dim, 0, b)
