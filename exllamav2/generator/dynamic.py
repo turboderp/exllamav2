@@ -19,7 +19,6 @@ import threading
 # from line_profiler import profile
 
 # TODO:
-#  - Banned strings
 #  - ExLlamaV2StreamingGenerator wrapper
 #  - Input embeddings
 #  - Faster hash algorithm (Murmur?)
@@ -1679,7 +1678,7 @@ class ExLlamaV2DynamicJob:
         self.held_k_tokens = SeqTensor((1, 0, self.return_top_tokens), dtype = torch.long, seq_dim = 1)
         self.held_k_probs = SeqTensor((1, 0, self.return_top_tokens), dtype = torch.float, seq_dim = 1)
         self.held_probs = SeqTensor((1, 0), dtype = torch.float, seq_dim = -1)
-        self.held_logits = SeqTensor((0, self.generator.padded_vocab_size), dtype = torch.float, seq_dim = 0)
+        self.held_logits = SeqTensor((1, 0, self.generator.padded_vocab_size), dtype = torch.float, seq_dim = 1)
 
         self.full_completion = ""
 
