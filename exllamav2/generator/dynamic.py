@@ -613,8 +613,6 @@ class ExLlamaV2DynamicGenerator:
         elif job in self.active_jobs:
             job.deallocate_pages()
             self.active_jobs.remove(job)
-        else:
-            assert False, "Job is not enqueued or active, cannot cancel it"
 
 
     def get_paged_params(self, batch_size: int, block_index: torch.Tensor, cache_seqlens: torch.Tensor, q_len: int):
