@@ -979,6 +979,7 @@ class ExLlamaV2DynamicGenerator:
                 r = {
                     "job": job,
                     "stage": "started",
+                    "eos": False,
                     "serial": job.serial_number,
                 }
                 if job.identifier is not None:
@@ -1838,6 +1839,7 @@ class ExLlamaV2DynamicJob:
             r = {
                 "job": self,
                 "stage": "prefill",
+                "eos": False,
                 "curr_progress": sum(seq.kv_position for seq in self.sequences),
                 "max_progress": sum(len(seq.sequence_ids) - 1 for seq in self.sequences),
                 "serial": self.serial_number,
