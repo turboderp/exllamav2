@@ -29,11 +29,13 @@ async def main():
     prompts = [
         "Once upon a time, there was",
         "asyncio in Python is a great feature because",
-        "asyncio is Python is a pain to work with because",
+        "asyncio in Python is a pain to work with because",
     ]
 
     async def run_job(prompt: str, marker: str):
 
+        # Create an iterable, asynchronous job. The job will be transparently batched together with other concurrent
+        # jobs on the started on the same generator.
         job = ExLlamaV2DynamicJobAsync(
             generator,
             input_ids = tokenizer.encode(prompt, add_bos = False),
@@ -41,15 +43,20 @@ async def main():
         )
 
         full_completion = prompt
+
+        # Iterate through the job. Each returned result is a dictionary containing an update on the status of the
+        # job and/or part of the completion (see ExLlamaV2DynamicGenerator.iterate() for details)
         async for result in job:
 
-            # Collect streamed results
+            # We'll only collect text here, but the result could contain other updates
             full_completion += result.get("text", "")
 
             # Output marker to console to confirm tasks running asynchronously
             print(marker, end = ""); sys.stdout.flush()
 
-            # Cancel the second job after 300 characters
+            # Cancel the second job after 300 characters, to make the control flow a little less trivial.
+            # Normally, the last iteration of a job will free the cache pages allocated to it, so if we're ending
+            # the job prematurely we have to manually call job.cancel() here
             if marker == "1" and len(full_completion) > 300:
                 await job.cancel()
                 break
