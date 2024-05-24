@@ -1020,7 +1020,7 @@ class ExLlamaV2DynamicGenerator:
                             r = rejected
                             while r:
                                 pos = seq.kv_position + r
-                                page = seq.allocated_pages[(pos - 1) // 256]
+                                page = seq.allocated_pages[(pos - 1) // self.page_size]
                                 rp = min(page.kv_position, r)
                                 page.kv_position -= rp
                                 r -= rp
