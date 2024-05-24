@@ -216,7 +216,7 @@ class ExLlamaV2DynamicGenerator:
         max_q_size: int = 16,
         draft_model: ExLlamaV2 | None = None,
         draft_cache: ExLlamaV2CacheBase | None = None,
-        num_draft_tokens: int = 2,
+        num_draft_tokens: int = 4,
         use_ngram_draft: bool = False,
         max_ngram: int = 4,
         max_sampling_threads: int = 16,
@@ -859,7 +859,7 @@ class ExLlamaV2DynamicGenerator:
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
             for seq in job.sequences:
-                seq_block_index = job.get_block_index(seq, len(seq.sequence_ids))
+                seq_block_index = job.get_block_index(seq, len(seq.sequence_ids) + self.num_draft_tokens + 1)
                 block_index[batch, :seq_block_index.shape[-1]].copy_(seq_block_index)
                 cache_seqlens[batch] = seq.kv_position
                 batch += 1
@@ -876,7 +876,7 @@ class ExLlamaV2DynamicGenerator:
             input_ids_list += job_ids
 
         batch_ids = self.draft_input_ids_pinned[:batch_size, :]
-        batch_ids.copy_(torch.cat(input_ids_list, dim = 0), non_blocking = True)
+        batch_ids.copy_(torch.cat(input_ids_list, dim = 0))
 
         # Greedy sample draft IDs
 
@@ -888,15 +888,25 @@ class ExLlamaV2DynamicGenerator:
                 input_ids = batch_ids,
                 attn_params = attn_params,
                 cache = self.draft_cache,
-                loras = self.current_loras,
             )
 
             new_ids = torch.argmax(device_logits, dim = -1)
-            self.draft_ids_pinned[:batch_size, idx:idx+1].copy_(new_ids, non_blocking = True)
-            batch_ids.copy_(new_ids, non_blocking = True)
+            self.draft_ids_pinned[:batch_size, idx:idx+1].copy_(new_ids)
+            batch_ids.copy_(new_ids)
             cache_seqlens += 1
 
-        torch.cuda.synchronize()
+        # TODO: Need keys/values for the last token, but only if it's accepted. This could be delayed until after
+        #   sampling to skip one pass of the draft model sometimes.
+
+        attn_params = self.get_paged_params(batch_size, block_index, cache_seqlens, 1)
+
+        self.draft_model.forward_chunk(
+            input_ids = batch_ids,
+            attn_params = attn_params,
+            cache = self.draft_cache,
+            preprocess_only = True
+        )
+
         return self.draft_ids_pinned
 
 
@@ -921,7 +931,10 @@ class ExLlamaV2DynamicGenerator:
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
             for seq in job.sequences:
-                seq_block_index = job.get_block_index(seq, len(seq.sequence_ids))
+                t_len = len(seq.sequence_ids)
+                if draft_tokens is not None:
+                    t_len += draft_tokens.shape[-1]
+                seq_block_index = job.get_block_index(seq, t_len)
                 block_index[batch, :seq_block_index.shape[-1]].copy_(seq_block_index)
                 cache_seqlens[batch] = seq.kv_position
                 batch += 1
@@ -937,10 +950,11 @@ class ExLlamaV2DynamicGenerator:
                 torch.cuda.synchronize()
                 job.time_first_token = time.time()
             if draft_tokens is None:
-                job_ids = job.get_input_ids_list()
+                job_ids = job.get_input_ids_list(add_to_cache = True)
             else:
-                job_ids = job.get_input_ids_list(draft_tokens, len(input_ids_list))
+                job_ids = job.get_input_ids_list(draft_tokens, len(input_ids_list), add_to_cache = True)
             input_ids_list += job_ids
+
         logit_mapping.append(len(input_ids_list))
 
         batch_ids = torch.cat(input_ids_list, dim = 0)
@@ -959,8 +973,8 @@ class ExLlamaV2DynamicGenerator:
         # Pass logits to jobs for sampling
 
         batch_logits = self.logits_pinned[:device_logits.shape[0], :device_logits.shape[1], :]
-        batch_logits.copy_(device_logits, non_blocking = True)
-        torch.cuda.synchronize()
+        batch_logits.copy_(device_logits)
+        # torch.cuda.synchronize()
 
         if self.max_sampling_threads > 1 and len(self.active_jobs) >= self.min_sampling_threads:
             mt_sample = True
@@ -978,7 +992,6 @@ class ExLlamaV2DynamicGenerator:
             if a == b: continue
             for i in range(batch_logits.shape[1]):
                 job_logits = batch_logits[a:b, i:i+1, :]
-
                 if i == 0 and mt_sample:
                     next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
                     futures.popleft().result()
@@ -1719,7 +1732,7 @@ class ExLlamaV2DynamicJob:
             if match >= 0:
                 set_checkpoint()
                 offending_tokens, offending_text = rewind_checkpoint()
-                return emit(results, suppressed_text = offending_text, suppressed_tokens = offending_tokens)
+                return emit(results, emit_held = True, suppressed_text = offending_text, suppressed_tokens = offending_tokens)
             elif match == -2:
                 set_checkpoint()
                 return emit(results)
