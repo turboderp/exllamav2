@@ -615,6 +615,9 @@ class ExLlamaV2DynamicGenerator:
 
 
     def validate_cache(self):
+        pass
+
+    def ___validate_cache(self):
         try:
             assert len(self.referenced_pages) + len(self.unreferenced_pages) == self.max_pages, "sum"
             ref_counts = [0] * self.max_pages
@@ -1075,6 +1078,7 @@ class ExLlamaV2DynamicGenerator:
 
                 job.allocate_pages()
                 current_max_batch += len(job.sequences)
+                self.validate_cache()
 
                 r = {
                     "job": job,
@@ -1976,6 +1980,7 @@ class ExLlamaV2DynamicJob:
             if self.identifier is not None:
                 r.update({"identifier": self.identifier})
             results.append(r)
+            self.generator.validate_cache()
 
 
     def get_block_index(self, seq: Sequence, max_len) -> torch.Tensor:
@@ -2061,6 +2066,8 @@ class ExLlamaV2DynamicJob:
                 else:
                     break
 
+        self.generator.validate_cache()
+
 
     def deallocate_pages(self):
 
@@ -2069,10 +2076,4 @@ class ExLlamaV2DynamicJob:
                 page.sub_ref()
             seq.allocated_pages = []
 
-                assert page.ref_count > 0
-                page.ref_count -= 1
-                if page.ref_count == 0:
-                    del self.generator.referenced_pages[page.phash]
-                    if page.can_revert:
-                        page.restore()
-                    self.generator.unreferenced_pages[page.phash] = page
+        self.generator.validate_cache()
