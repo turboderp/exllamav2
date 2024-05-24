@@ -10,17 +10,17 @@ from util import format_prompt, get_stop_conditions
 
 total_cache_tokens = 16384
 
-model_dir = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
-config = ExLlamaV2Config(model_dir)
-model = ExLlamaV2(config)
-cache = ExLlamaV2Cache(model, max_seq_len = total_cache_tokens, lazy = True)
-model.load_autosplit(cache, progress = True)
-
 draft_model_dir = "/mnt/str/models/tinyllama-1b-32k-exl2/4.0bpw"
 draft_config = ExLlamaV2Config(draft_model_dir)
 draft_model = ExLlamaV2(draft_config)
 draft_cache = ExLlamaV2Cache(draft_model, max_seq_len = total_cache_tokens, lazy = True)
 draft_model.load_autosplit(draft_cache, progress = True)
+
+model_dir = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
+config = ExLlamaV2Config(model_dir)
+model = ExLlamaV2(config)
+cache = ExLlamaV2Cache(model, max_seq_len = total_cache_tokens, lazy = True)
+model.load_autosplit(cache, progress = True)
 
 print("Loading tokenizer...")
 tokenizer = ExLlamaV2Tokenizer(config)
