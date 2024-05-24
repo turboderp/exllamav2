@@ -449,6 +449,7 @@ class ExLlamaV2DynamicGenerator:
         self,
         prompt: list[tuple] | list[str] | tuple | str,
         max_new_tokens: int,
+        min_new_tokens: int = 0,
         seed: int or None = None,
         gen_settings: ExLlamaV2Sampler.Settings | list[ExLlamaV2Sampler.Settings] | None = None,
         token_healing: bool = False,
@@ -475,6 +476,10 @@ class ExLlamaV2DynamicGenerator:
 
         :param max_new_tokens:
             Max number of tokens to generate.
+
+        :param min_new_tokens:
+            Minimum number of tokens to generate before stop conditions become active. Until this number have been
+            sampled, stop strings are ignored and stop tokens are suppressed.
 
         :param seed:
             Seed for the sampling RNG. Doesn't guarantee perfect determinism from the implementation.
@@ -553,6 +558,7 @@ class ExLlamaV2DynamicGenerator:
             job = ExLlamaV2DynamicJob(
                 input_ids = input_ids,
                 max_new_tokens = max_new_tokens,
+                min_new_tokens = min_new_tokens,
                 seed = seed,
                 stop_conditions = stop_conditions,
                 gen_settings = p_settings,
@@ -839,7 +845,7 @@ class ExLlamaV2DynamicGenerator:
         max_seq_len = 0
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
-            max_seq_len = max(max_seq_len, job.get_max_seq_len() + self.num_draft_tokens)
+            max_seq_len = max(max_seq_len, job.get_max_seq_len() + self.num_draft_tokens + 1)
             batch_size += 1
 
         if batch_size == 0:
@@ -1118,6 +1124,7 @@ class ExLlamaV2DynamicJob:
     all_unique_hashes: list[bytes]
 
     max_new_tokens: int
+    min_new_tokens: int
     new_tokens: int
     gen_settings: ExLlamaV2Sampler.Settings
     rng: random.Random
@@ -1181,6 +1188,7 @@ class ExLlamaV2DynamicJob:
         self,
         input_ids: torch.Tensor | list[torch.Tensor],
         max_new_tokens: int,
+        min_new_tokens: int = 0,
         max_skips: int | None = 4,
         gen_settings: ExLlamaV2Sampler.Settings = ExLlamaV2Sampler.Settings(),
         seed: int = None,
@@ -1205,6 +1213,10 @@ class ExLlamaV2DynamicJob:
 
         :param max_new_tokens:
             Max no. output tokens to allow
+
+        :param min_new_tokens:
+            Minimum number of tokens to generate before stop conditions become active. Until this number have been
+            sampled, stop strings are ignored and stop tokens are suppressed.
 
         :param max_skips:
             In the event that the job is too large to fit in the cache at any given moment but there are
@@ -1299,6 +1311,7 @@ class ExLlamaV2DynamicJob:
         # Generation parameters
 
         self.max_new_tokens = max_new_tokens
+        self.min_new_tokens = min_new_tokens
         self.new_tokens = 0 if self.prefix_token is None else -1
         self.gen_settings = gen_settings
         self.rng = random.Random() if seed is None else random.Random(seed)
@@ -1427,6 +1440,12 @@ class ExLlamaV2DynamicJob:
             blocked_tokens = self.checkpoint["explored_tokens"]
         else:
             blocked_tokens = None
+
+        if self.new_tokens < self.min_new_tokens:
+            if blocked_tokens:
+                blocked_tokens += list(self.stop_tokens)
+            else:
+                blocked_tokens = list(self.stop_tokens)
 
         next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
         ExLlamaV2Sampler.sample(
@@ -1709,7 +1728,7 @@ class ExLlamaV2DynamicJob:
 
         # End on stop strings
 
-        if self.stop_strings_utf32_offsets is not None:
+        if self.stop_strings_utf32_offsets is not None and self.new_tokens >= self.min_new_tokens:
             match = ext_c.partial_strings_match(
                 np.frombuffer(self.held_text.encode("utf-32-le"), dtype = np.uint8),
                 self.stop_strings_utf32_offsets,
