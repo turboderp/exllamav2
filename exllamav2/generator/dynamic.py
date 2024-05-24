@@ -478,8 +478,8 @@ class ExLlamaV2DynamicGenerator:
             Max number of tokens to generate.
 
         :param min_new_tokens:
-            Minimum number of tokens to generate before stop conditions become active. Until this number have been
-            sampled, stop strings are ignored and stop tokens are suppressed.
+            Minimum number of tokens to generate before stop tokens become active. Until this number have been
+            sampled, stop tokens are suppressed but stop strings will still end response.
 
         :param seed:
             Seed for the sampling RNG. Doesn't guarantee perfect determinism from the implementation.
@@ -1232,8 +1232,8 @@ class ExLlamaV2DynamicJob:
             Max no. output tokens to allow
 
         :param min_new_tokens:
-            Minimum number of tokens to generate before stop conditions become active. Until this number have been
-            sampled, stop strings are ignored and stop tokens are suppressed.
+            Minimum number of tokens to generate before stop tokens become active. Until this number have been
+            sampled, stop tokens are suppressed but stop strings will still end response.
 
         :param max_skips:
             In the event that the job is too large to fit in the cache at any given moment but there are
@@ -1745,7 +1745,7 @@ class ExLlamaV2DynamicJob:
 
         # End on stop strings
 
-        if self.stop_strings_utf32_offsets is not None and self.new_tokens >= self.min_new_tokens:
+        if self.stop_strings_utf32_offsets is not None:
             match = ext_c.partial_strings_match(
                 np.frombuffer(self.held_text.encode("utf-32-le"), dtype = np.uint8),
                 self.stop_strings_utf32_offsets,
