@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
-import hashlib
-from dataclasses import dataclass
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer, SeqTensor, ExLlamaV2Lora
 from exllamav2.generator import ExLlamaV2Sampler
 from exllamav2.generator.filters import ExLlamaV2Filter
@@ -16,6 +13,11 @@ import random
 import numpy as np
 import time
 import threading
+import pprint
+from collections import deque
+import queue
+import hashlib
+from dataclasses import dataclass
 # from line_profiler import profile
 
 # TODO:
@@ -62,8 +64,11 @@ class CachePage:
     can_revert: bool
 
     def __repr__(self):
-        return (f"CachePage: idx = {self.page_index}, ref_count = {self.ref_count}, "
-                f"phash: ..{str(self.phash)[8:24]}.., prev_hash: ..{str(self.prev_hash)[8:24]}..")
+        return (
+            f"CachePage: idx = {self.page_index}, ref_count = {self.ref_count}, "
+            f"phash: ..{str(self.phash)[8:24]}.., prev_hash: ..{str(self.prev_hash)[8:24]}.., "
+            f"kvp {self.kv_position}"
+        )
 
     def backup(self):
         self.phash_revert = self.phash
@@ -625,14 +630,56 @@ class ExLlamaV2DynamicGenerator:
                 for seq in job.sequences:
                     for page in seq.allocated_pages:
                         ref_counts[page.page_index] += 1
-            for (h, page) in self.referenced_pages.items():
-                assert page.phash == h, "r hash " + str(page)
-                assert page.ref_count == ref_counts[page.page_index], "r refc " + str(page)
-                assert h not in self.unreferenced_pages, "r2u " + str(page)
+            page_refs = set()
+            for page in self.referenced_pages.values():
+                assert page.page_index not in page_refs
+                page_refs.add(page.page_index), "r dup " + str(page)
+            for page in self.unreferenced_pages.values():
+                assert page.page_index not in page_refs
+                page_refs.add(page.page_index), "u dup " + str(page)
+            assert len(page_refs) == self.max_pages
+            for page in self.all_pages:
+                assert page.ref_count >= 0, "ref_count < 0 " + str(page)
+                if page.ref_count == 0:
+                    assert page.phash in self.unreferenced_pages, "u not found" + str(page)
+                else:
+                    assert page.phash in self.referenced_pages, "r not found" + str(page)
+                n = 0
+                if page.phash in self.referenced_pages: n += 1
+                if page.phash in self.unreferenced_pages: n += 1
+                if n != 1:
+                    print("-- Referenced:")
+                    pprint.pprint(self.referenced_pages)
+                    print("-- Unreferenced:")
+                    pprint.pprint(self.unreferenced_pages)
+                    assert False, f"n == {n} " + str(page)
             for (h, page) in self.unreferenced_pages.items():
+                assert page.ref_count == 0, "u ref_count != 0 " + str(page)
                 assert page.phash == h, "u hash " + str(page)
                 assert page.ref_count == ref_counts[page.page_index], "u refc " + str(page)
                 assert h not in self.referenced_pages, "u2r " + str(page)
+            for (h, page) in self.referenced_pages.items():
+                assert page.ref_count > 0, "r ref_count == 0 " + str(page)
+                assert page.phash == h, "r hash " + str(page)
+                assert page.ref_count == ref_counts[page.page_index], "r refc " + str(page)
+                assert h not in self.unreferenced_pages, "r2u " + str(page)
+            # for job in self.active_jobs:
+            #     for seq in job.sequences:
+            #         spos = 0
+            #         prev_hash = None
+            #         for page in seq.allocated_pages:
+            #             spos2 = min(spos + self.page_size, seq.kv_position)
+            #             ids = seq.sequence_ids.torch()[:, spos:spos2]
+            #             assert page.kv_position >= ids.shape[-1]
+            #             if ids.shape[-1] > 0:
+            #                 assert page.prev_hash == prev_hash, "bad prev_hash " + str(job) + " -> " + str(page)
+            #             if ids.shape[-1] == self.page_size:
+            #                 phash = _tensor_blake2b_checksum(ids, prev_hash)
+            #                 assert page.phash == phash, "bad phash " + str(job) + " -> " + str(page)
+            #                 prev_hash = phash
+            #             spos = spos2
+
+
         except Exception as ex:
             print(ex)
             raise ex
@@ -678,11 +725,14 @@ class ExLlamaV2DynamicGenerator:
         self,
         job: ExLlamaV2DynamicJob
     ):
+
         if job in self.pending_jobs:
             self.pending_jobs.remove(job)
         elif job in self.active_jobs:
             job.deallocate_pages()
             self.active_jobs.remove(job)
+
+        self.validate_cache()
 
 
     def get_paged_params(self, batch_size: int, block_index: torch.Tensor, cache_seqlens: torch.Tensor, q_len: int):
@@ -924,7 +974,7 @@ class ExLlamaV2DynamicGenerator:
             batch_size += len(job.sequences)
 
         if batch_size == 0:
-            return # Nothing more to do this iteration
+            return  # Nothing more to do this iteration
 
         max_pages_batch = (max_seq_len + self.page_size - 1) // self.page_size
         block_index = torch.zeros((batch_size, max_pages_batch), dtype = torch.int32)
@@ -1078,6 +1128,7 @@ class ExLlamaV2DynamicGenerator:
 
                 job.allocate_pages()
                 current_max_batch += len(job.sequences)
+
                 self.validate_cache()
 
                 r = {
@@ -1424,6 +1475,7 @@ class ExLlamaV2DynamicJob:
                 skvp = seq.kv_position
                 while tokens_to_add:
                     page = seq.allocated_pages[skvp // self.generator.page_size]
+                    assert page.ref_count == 1
                     tokens_page = min(tokens_to_add, self.generator.page_size - page.kv_position)
                     page.sequence[:, page.kv_position:page.kv_position + tokens_page] = ids[:, :tokens_page]
                     if page.kv_position == 0:
@@ -1531,7 +1583,7 @@ class ExLlamaV2DynamicJob:
                 page_ids = seq.sequence_ids.torch_slice(page_before * page_size, page_after * page_size)
                 # assert page.sequence.shape[-1] == self.generator.page_size
                 # assert torch.all(page_ids == page.sequence)
-
+                # assert page_ids.shape[-1] == self.generator.page_size
                 new_hash = _tensor_blake2b_checksum(page_ids, last_hash)
 
                 # If another referenced page has the same hash, switch to referencing that instead
@@ -2037,6 +2089,10 @@ class ExLlamaV2DynamicJob:
                             available_pages.sort(key = lambda x: x.access_serial)
                             available_pages = deque(available_pages)
 
+                        # assert all((p.phash in self.generator.unreferenced_pages) for p in available_pages)
+                        # assert all((p.phash not in self.generator.referenced_pages) for p in available_pages)
+                        # assert all(p.ref_count == 0 for p in available_pages)
+
                         # Allocate oldest unreferenced page
 
                         np = available_pages.popleft()
@@ -2053,6 +2109,10 @@ class ExLlamaV2DynamicJob:
                     available_pages = list(self.generator.unreferenced_pages.values())
                     available_pages.sort(key = lambda x: x.access_serial)
                     available_pages = deque(available_pages)
+
+                # assert all((p.phash in self.generator.unreferenced_pages) for p in available_pages)
+                # assert all((p.phash not in self.generator.referenced_pages) for p in available_pages)
+                # assert all(p.ref_count == 0 for p in available_pages)
 
                 np = available_pages.popleft()
                 np.add_ref_unique(new_serial)
