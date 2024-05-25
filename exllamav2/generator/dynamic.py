@@ -452,8 +452,13 @@ class ExLlamaV2DynamicGenerator:
         assert not self.num_remaining_jobs(), \
             "LoRAs cannot be updated while there are jobs in the generator queue."
 
-        self.current_loras = loras if isinstance(loras, list) else [loras]
-
+        if loras is None:
+            self.current_loras = []
+        elif isinstance(loras, list):
+            self.current_loras = loras
+        else:
+            self.current_loras = [loras]
+        
 
     def generate(
         self,
