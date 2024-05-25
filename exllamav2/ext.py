@@ -20,11 +20,16 @@ def maybe_set_arch_list_env():
     if os.environ.get('TORCH_CUDA_ARCH_LIST', None):
         return
 
+    if not torch.version.cuda:
+        return
+
     arch_list = []
     for i in range(torch.cuda.device_count()):
         capability = torch.cuda.get_device_capability(i)
         supported_sm = [int(arch.split('_')[1])
                         for arch in torch.cuda.get_arch_list() if 'sm_' in arch]
+        if not supported_sm:
+            continue
         max_supported_sm = max((sm // 10, sm % 10) for sm in supported_sm)
         # Capability of the device may be higher than what's supported by the user's
         # NVCC, causing compilation error. User's NVCC is expected to match the one
