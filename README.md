@@ -3,17 +3,57 @@
 ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs.
 
 
-## Overview of differences compared to V1
+## New in v0.1.0:
 
-- Faster, better kernels
-- Cleaner and more versatile codebase
-- Support for a new quant format (see below)
+- ExLlamaV2 now supports paged attention via [Flash Attention](https://github.com/Dao-AILab/flash-attention) 2.5.7+
+- New generator with dynamic batching, smart prompt caching, K/V cache deduplication and simplified API
+
+![alt_text](doc/dynamic_gen.gif)
+
+## Dynamic generator examples
+
+The dynamic generator supports all inference, sampling and speculative decoding features of the previous two 
+generators, consolidated into one API (with the exception of FP8 cache, though the Q4 cache mode is supported and
+performs better anyway, see [here](doc/qcache_eval.md).)
+
+- Single generation:
+  ```python
+  output = generator.generate(prompt = "Hello, my name is", max_new_tokens = 200)
+  ```
+- Batched generation:
+    ```python
+    outputs = generator.generate(
+        prompt = [
+            "Hello, my name is",
+            "Once upon a time,",
+            "Large language models are",
+        ], 
+        max_new_tokens = 200
+    )
+    ```
+- Streamed generation with `asyncio`:
+    ```python
+    job = ExLlamaV2DynamicJobAsync(
+        generator,
+        input_ids = tokenizer.encode("You can lead a horse to water"),
+        banned_strings = ["make it drink"],
+        gen_settings = ExLlamaV2Sampler.Settings.greedy(),
+        max_new_tokens = 200
+    )  
+    async for result in job:
+        text = result.get("text", "")
+        print(text, end = "")       
+    ``` 
+See the full, updated examples [here](https://github.com/turboderp/exllamav2/tree/master/examples).
+
+
+
 
 
 ## Performance
 
-Some quick tests to compare performance with V1. There may be more performance optimizations in the future, and
-speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
+Some quick tests to compare performance with ExLlama V1. There may be more performance optimizations in the future,
+and speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
 
 | Model      | Mode         | Size  | grpsz | act | 3090Ti  | 4090        |
 |------------|--------------|-------|-------|-----|---------|-------------|
@@ -33,13 +73,11 @@ speeds will vary across GPUs, with slow CPUs still being a potential bottleneck:
 ## How to
 
 To install from the repo you'll need the CUDA Toolkit and either gcc on Linux or (Build Tools for) Visual Studio
-on Windows). Also make sure you have an appropriate version of [PyTorch](https://pytorch.org/get-started/locally/),
-then run:
+on Windows). Also make sure you have an appropriate version of [PyTorch](https://pytorch.org/get-started/locally/), then run:
 
 ```
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
-# Optionally, create and activate a new conda environment
 pip install -r requirements.txt
 pip install .
 
@@ -50,13 +88,11 @@ python test_inference.py -m <path_to_model> -p "Once upon a time,"
 A simple console chatbot is included. Run it with:
 
 ```
-python examples/chat.py -m <path_to_model> -mode llama
-# Append the '--gpu_split auto' flag for multi-GPU inference
+python examples/chat.py -m <path_to_model> -mode llama -gs auto
 ```
 
 
-The `-mode` argument chooses the prompt format to use. `llama` is for the Llama(2)-chat finetunes, while `codellama`
-probably works better for CodeLlama-instruct. `raw` will produce a simple chatlog-style chat that works with base 
+The `-mode` argument chooses the prompt format to use. `raw` will produce a simple chatlog-style chat that works with base 
 models and various other finetunes. Run with `-modes` for a list of all available prompt formats. You can also provide
 a custom system prompt with `-sp`. 
 
@@ -100,8 +136,11 @@ C++ extension in the process. Instead, the extension will be built the first tim
 
 ### Method 2: Install from release (with prebuilt extension)
 
-Releases are available [here](https://github.com/turboderp/exllamav2/releases), with prebuilt wheels that contain the
-extension binaries. Make sure to grab the right version, matching your platform, Python version (`cp`) and CUDA version.
+Releases are available [here](https://github.com/turboderp/exllamav2/releases), with prebuilt wheels that contain the extension binaries. Make sure to grab
+the right version, matching your platform, Python version (`cp`) and CUDA version. Crucially, you must also match
+the prebuilt wheel with your PyTorch version, since the Torch C++ extension ABI breaks with every new version of 
+PyTorch.
+
 Either download an appropriate wheel or install directly from the appropriate URL:
 
 ```
@@ -113,14 +152,11 @@ can also be installed this way, and it will build the extension while installing
 
 ### Method 3: Install from PyPI
 
-A PyPI package is available as well. It can be installed with:
+A PyPI package is available as well. This is the same as the JIT version (see above). It can be installed with:
 
 ```
 pip install exllamav2
 ```
-
-The version available through PyPI is the JIT version (see above). Still working on a solution for distributing
-prebuilt wheels via PyPI.
 
 
 ## EXL2 quantization
