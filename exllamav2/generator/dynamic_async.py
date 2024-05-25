@@ -10,6 +10,7 @@ class ExLlamaV2DynamicGeneratorAsync:
     generator: ExLlamaV2DynamicGenerator
     jobs: dict[ExLlamaV2DynamicJob: ExLlamaV2DynamicJobAsync]
     condition: asyncio.Condition
+    iteration_task: asyncio.Task
 
     def __init__(self, *args, **kwargs):
         self.generator = ExLlamaV2DynamicGenerator(*args, **kwargs)
@@ -39,6 +40,13 @@ class ExLlamaV2DynamicGeneratorAsync:
     async def _notify_condition(self):
         async with self.condition:
             self.condition.notify_all()
+
+    async def close(self):
+        self.iteration_task.cancel()
+        try:
+            await self.iteration_task
+        except asyncio.CancelledError:
+            pass
 
 
 class ExLlamaV2DynamicJobAsync:
