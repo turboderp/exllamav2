@@ -22,7 +22,7 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
 import torch
 
-if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
+if not (torch.version.cuda or torch.version.hip):
     print("")
     print(f" ## Warning: The installed version of PyTorch is {torch.__version__} and does not support CUDA or ROCm.")
     print("")
