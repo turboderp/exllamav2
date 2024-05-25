@@ -1954,7 +1954,7 @@ class ExLlamaV2DynamicJob:
                         for c in [self.generator.cache] if not self.generator.draft_model else \
                             [self.generator.cache, self.generator.draft_cache]:
                             c.copy_states(
-                                self.generator.cache,
+                                c,
                                 best_match_page.page_index * page_size, best_match,
                                 page.page_index * page_size, best_match,
                                 0, 1,

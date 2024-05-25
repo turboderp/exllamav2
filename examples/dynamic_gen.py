@@ -30,7 +30,9 @@ total_context = 16384
 # N-gram or draft model speculative decoding. Largely detrimental to performance at higher batch sizes.
 use_ngram = False
 use_draft_model = False
-draft_model_dir = "/mnt/str/models/tinyllama-1b-32k-exl2/4.0bpw"
+if use_draft_model:
+    model_dir = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
+    draft_model_dir = "/mnt/str/models/tinyllama-1b-32k-exl2/4.0bpw"
 
 # Max number of batches to run at once, assuming the sequences will fit within total_context.
 max_batch_size = 20 if paged else 1
