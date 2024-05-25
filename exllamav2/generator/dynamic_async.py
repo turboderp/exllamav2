@@ -48,6 +48,11 @@ class ExLlamaV2DynamicGeneratorAsync:
         except asyncio.CancelledError:
             pass
 
+    async def cancel(self, job: ExLlamaV2DynamicJobAsync):
+        assert job.job in self.jobs
+        self.generator.cancel(job.job)
+        del self.jobs[job.job]
+
 
 class ExLlamaV2DynamicJobAsync:
     """
@@ -75,4 +80,4 @@ class ExLlamaV2DynamicJobAsync:
                 break
 
     async def cancel(self):
-        self.generator.generator.cancel(self.job)
+        await self.generator.cancel(self)
