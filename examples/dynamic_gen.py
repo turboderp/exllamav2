@@ -48,6 +48,13 @@ json_mode = False
 # Demonstrate token healing
 healing = False
 
+# Ban some phrases maybe
+ban_strings = None
+# ban_strings = [
+#     "person to person",
+#     "one person to another"
+# ]
+
 # Some prompts to feed the generator
 prompt_format = "llama"
 system_prompt = "You are an AI assistant"
@@ -208,7 +215,8 @@ def main():
             input_ids = input_ids,
             max_new_tokens = max_new_tokens,
             stop_conditions = get_stop_conditions(prompt_format, tokenizer),
-            gen_settings = ExLlamaV2Sampler.Settings(),
+            gen_settings = ExLlamaV2Sampler.Settings.greedy(),
+            banned_strings = ban_strings,
             filters = filters,
             filter_prefer_eos = True,
             token_healing = healing
@@ -279,9 +287,10 @@ def main():
             if display_mode == 2:
                 if r["stage"] == "streaming" and r["eos"]:
                     job = r["job"]
+                    in_prompt = tokenizer.decode(job.sequences[0].input_ids.torch(), decode_special_tokens = True)[0]
                     print("\n")
                     print(term.black("Input: "))
-                    print(term.yellow(tokenizer.decode(job.sequences[0].input_ids.torch(), decode_special_tokens = True)[0]))
+                    print(term.yellow(in_prompt))
                     print()
                     print(term.black("Output:"))
                     if json_mode:
@@ -292,15 +301,16 @@ def main():
                     else:
                         print(r["full_completion"])
                     print()
-                    print(term.black("New tokens:  ") + term.green(f"{r['new_tokens']:7} t"))
-                    print(term.black("Enqueued:    ") + term.blue(f"{r['time_enqueued']:7.2f} s"))
-                    print(term.black("Prefill:     ") + term.blue(f"{r['time_prefill']:7.2f} s"))
-                    print(term.black("Generation:  ") + term.blue(f"{r['time_generate']:7.2f} s"))
+                    print(term.black("New tokens:    ") + term.green(f"{r['new_tokens']:7} t"))
+                    print(term.black("Cached tokens: ") + term.green(f"{r['cached_tokens']:7} t / {r['prompt_tokens']:7} t"))
+                    print(term.black("Enqueued:      ") + term.blue(f"{r['time_enqueued']:7.2f} s"))
+                    print(term.black("Prefill:       ") + term.blue(f"{r['time_prefill']:7.2f} s"))
+                    print(term.black("Generation:    ") + term.blue(f"{r['time_generate']:7.2f} s"))
                     if "accepted_draft_tokens" in r:
                         acc = r["accepted_draft_tokens"]
                         rej = r["rejected_draft_tokens"]
                         eff = acc / (acc + rej) * 100.0
-                        print(term.black("SD efficiency:") + term.bright_magenta(f"{eff:7.2f}%"))
+                        print(term.black("SD efficiency: ") + term.bright_magenta(f"{eff:7.2f}%"))
         if display_mode == 3 and len(r) > 0:
             print()
             pprint.pprint(results, indent = 4)
