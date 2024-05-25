@@ -215,7 +215,7 @@ def main():
             input_ids = input_ids,
             max_new_tokens = max_new_tokens,
             stop_conditions = get_stop_conditions(prompt_format, tokenizer),
-            gen_settings = ExLlamaV2Sampler.Settings.greedy(),
+            gen_settings = ExLlamaV2Sampler.Settings(),
             banned_strings = ban_strings,
             filters = filters,
             filter_prefer_eos = True,
