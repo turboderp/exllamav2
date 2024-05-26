@@ -521,7 +521,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_loras, pass_lora_temp = [id(x) for x in loras], torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
         ext_c.q_attn_forward_1(
-            0 if self.q_handle is None else self.q_handle,
+            self.q_handle,
             hidden_states,
             batch_size,
             q_len,
@@ -553,7 +553,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Output projection
 
         ext_c.q_attn_forward_2(
-            0 if self.q_handle is None else self.q_handle,
+            self.q_handle,
             hidden_states,
             attn_output,
             batch_size,
@@ -670,7 +670,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_past_len_2 = none_tensor
 
         ext_c.q_attn_forward_1(
-            0 if self.q_handle is None else self.q_handle,
+            self.q_handle,
             hidden_states,
             batch_size,
             q_len,
@@ -725,7 +725,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Output projection
 
         ext_c.q_attn_forward_2(
-            0 if self.q_handle is None else self.q_handle,
+            self.q_handle,
             hidden_states,
             attn_output,
             batch_size,
@@ -881,7 +881,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         o_proj_lora_a = { id(k): v for k, v in self.o_proj.lora_a_tensors.items() }
         o_proj_lora_b = { id(k): v for k, v in self.o_proj.lora_b_tensors.items() }
 
-        temp_lora_size = ext_c.q_attn_set_loras(0 if self.q_handle is None else self.q_handle,
+        temp_lora_size = ext_c.q_attn_set_loras(self.q_handle,
                                                 q_proj_lora_a,
                                                 q_proj_lora_b,
                                                 k_proj_lora_a,
