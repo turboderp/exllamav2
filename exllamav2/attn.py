@@ -13,7 +13,6 @@ from exllamav2.compat import safe_move_tensor
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
 import math
-# import xformers.ops as xops
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 # import torch.nn.functional as F
 
@@ -50,6 +49,16 @@ def assert_paged_attn():
     global has_flash_attn_with_paged
     assert has_flash_attn_with_paged, \
         "Paged attention required Flash Attention 2.5.7 or later"
+
+
+has_xformers = False
+try:
+    import xformers.ops as xops
+    # LowerTriangularFromBottomRightMask was added in xformers version 2.4
+    from xformers.ops.fmha import LowerTriangularFromBottomRightMask
+    has_xformers = True
+except ModuleNotFoundError:
+    pass
 
 
 class ExLlamaV2Attention(ExLlamaV2Module):
@@ -459,10 +468,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_attn_size(self):
         global has_flash_attn
+        global has_xformers
 
         att_max = min(self.model.config.max_attention_size, self.model.config.max_seq_len ** 2)
 
-        if has_flash_attn and not self.model.config.no_flash_attn:
+        if (has_flash_attn and not self.model.config.no_flash_attn) or (has_xformers and not self.model.config.no_xformers) :
+            #in sm>=80 devices, xformers uses the same memory as flash_attn
+            #todo: due to the different implementions. in sm<80 devices, xformers uses less memory than it in sm>=80. There may still be room for optimization.
             eff = self.model.config.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
             att_max //= eff
 
@@ -635,6 +647,25 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return attn_output
 
 
+    def _attn_xformers(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+
+        # xformers memory_efficient_attention, could be beneficial if your device's architecture is less than <sm_80
+        # xformer does not expand the kv automatically, we need to do it manually. The efficiency between xformers.memory_efficient_attention and flash_attn in >sm_80 are almost the same. But the martix operation make this implemention much slower.
+
+        k_states = k_states.transpose(1, 2)
+        v_states = v_states.transpose(1, 2)
+
+        k_states = self.repeat_kv(k_states, num_key_value_groups)
+        v_states = self.repeat_kv(v_states, num_key_value_groups)
+
+        k_states = k_states.transpose(1, 2)
+        v_states = v_states.transpose(1, 2)
+
+        attn_output = xops.memory_efficient_attention(q_states, k_states, v_states, attn_bias = LowerTriangularFromBottomRightMask())
+        attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads
+        return attn_output
+
+
     def forward(self,
                 hidden_states: torch.Tensor,
                 cache: ExLlamaV2CacheBase | None = None,
@@ -645,6 +676,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         global has_flash_attn
+        global has_xformers
 
         if isinstance(attn_params, ExLlamaV2Attention.PagedParams):
             return self.forward_paged(
@@ -779,6 +811,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                       intermediates: bool = False,
                       loras: list[ExLlamaV2Lora] | None = None,
                       **kwargs) -> torch.Tensor | dict:
+        global has_flash_attn
+        global has_xformers
 
         cfg = self.model.config
         num_attention_heads = cfg.num_attention_heads
@@ -840,9 +874,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             key_states = batch_keys.narrow(1, 0, past_len + q_len).narrow(0, 0, batch_size)
             value_states = batch_values.narrow(1, 0, past_len + q_len).narrow(0, 0, batch_size)
 
+        use_flash_attn = has_flash_attn and not cfg.no_flash_attn
+        use_xformers = has_xformers and not cfg.no_xformers
+
         # Torch matmul attention
 
-        if cfg.no_flash_attn or not has_flash_attn or not attn_params.is_causal():
+        if not (use_flash_attn or use_xformers) or not attn_params.is_causal():
 
             query_states = query_states.transpose(1, 2)
             key_states = key_states.transpose(1, 2)
@@ -868,7 +905,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Flash Attention 2
 
-        else:
+        elif use_flash_attn:
 
             attn_output = flash_attn_func(
                 query_states,
@@ -877,6 +914,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 # softmax_scale = None if self.scale_factor == 1 else self.scale_factor / math.sqrt(head_dim),
                 causal = True
             )
+            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+
+        # Xformers attention
+
+        else:
+
+            key_states = key_states.transpose(1, 2)
+            value_states = value_states.transpose(1, 2)
+
+            key_states = self.repeat_kv(key_states, num_key_value_groups)
+            value_states = self.repeat_kv(value_states, num_key_value_groups)
+
+            key_states = key_states.transpose(1, 2)
+            v_states = value_states.transpose(1, 2)
+
+            attn_output = xops.memory_efficient_attention(query_states, key_states, value_states, attn_bias = LowerTriangularFromBottomRightMask())
             attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
         # Update 8-bit/Q4 cache

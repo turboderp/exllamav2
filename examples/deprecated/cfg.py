@@ -14,6 +14,7 @@ config = ExLlamaV2Config()
 config.model_dir = model_directory
 config.max_batch_size = 2
 config.no_flash_attn = True
+config.no_xformers = True
 config.prepare()
 
 model = ExLlamaV2(config)
