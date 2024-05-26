@@ -7,6 +7,7 @@ from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from copy import copy
+# import line_profiler
 
 class ExLlamaV2Sampler:
 
@@ -91,6 +92,7 @@ class ExLlamaV2Sampler:
 
 
     @staticmethod
+    # @profile
     def sample(
         logits: torch.tensor,
         settings: Settings,
@@ -101,7 +103,8 @@ class ExLlamaV2Sampler:
         return_top_tokens: int = 0,
         blocked_tokens: list[int] | None = None,
         filters: list[ExLlamaV2Filter] | None = None,
-        filter_prefer_eos: bool = False
+        filter_prefer_eos: bool = False,
+        sync: bool = False
     ):
 
         """
@@ -139,6 +142,9 @@ class ExLlamaV2Sampler:
         :param filter_prefer_eos:
             If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
 
+        :param sync:
+            Synchronize CUDA right before using the logits
+
         :return:
             Tuple of:
             - Sampled tokens, tensor of shape (batch_size, 1)
@@ -162,6 +168,16 @@ class ExLlamaV2Sampler:
 
         logits = logits.squeeze(1)
 
+        # Prepare filter
+
+        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
+        ext_c.fast_fill_cpu_ones_bool(logit_filter)
+
+        # Sync
+
+        if sync:
+            torch.cuda.synchronize()
+
         # CFG
 
         if settings.cfg_scale is not None:
@@ -169,11 +185,6 @@ class ExLlamaV2Sampler:
             logits = settings.cfg_scale * logits[0] + (1 - settings.cfg_scale) * logits[1]
             logits = logits.unsqueeze(0)
             batch_size = 1
-
-        # Prepare filter
-
-        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
-        ext_c.fast_fill_cpu_ones_bool(logit_filter)
 
         # Repetition penalty
 
