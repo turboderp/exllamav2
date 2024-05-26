@@ -88,6 +88,7 @@ def init(args,
     if args.rope_scale: config.scale_pos_emb = args.rope_scale
     if args.rope_alpha: config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
+    config.no_xformers = args.no_xformers
     if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
 
     if max_batch_size: config.max_batch_size = max_batch_size

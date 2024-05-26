@@ -45,12 +45,6 @@ try:
 except ModuleNotFoundError:
     pass
 
-def assert_paged_attn():
-    global has_flash_attn_with_paged
-    assert has_flash_attn_with_paged, \
-        "Paged attention required Flash Attention 2.5.7 or later"
-
-
 has_xformers = False
 try:
     import xformers.ops as xops
@@ -59,6 +53,12 @@ try:
     has_xformers = True
 except ModuleNotFoundError:
     pass
+
+
+def assert_paged_attn():
+    global has_flash_attn_with_paged
+    assert has_flash_attn_with_paged, \
+        "Paged attention required Flash Attention 2.5.7 or later"
 
 
 class ExLlamaV2Attention(ExLlamaV2Module):
@@ -650,19 +650,27 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def _attn_xformers(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
         # xformers memory_efficient_attention, could be beneficial if your device's architecture is less than <sm_80
-        # xformer does not expand the kv automatically, we need to do it manually. The efficiency between xformers.memory_efficient_attention and flash_attn in >sm_80 are almost the same. But the martix operation make this implemention much slower.
+        # xformer does not expand the kv automatically, we need to do it manually. The efficiency between
+        # xformers.memory_efficient_attention and flash_attn in >sm_80 are almost the same. But the martix operation
+        # make this implemention much slower.
 
         k_states = k_states.transpose(1, 2)
         v_states = v_states.transpose(1, 2)
 
-        k_states = self.repeat_kv(k_states, num_key_value_groups)
-        v_states = self.repeat_kv(v_states, num_key_value_groups)
+        k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
+        v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
 
         k_states = k_states.transpose(1, 2)
         v_states = v_states.transpose(1, 2)
 
-        attn_output = xops.memory_efficient_attention(q_states, k_states, v_states, attn_bias = LowerTriangularFromBottomRightMask())
-        attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads
+        attn_output = xops.memory_efficient_attention(
+            q_states,
+            k_states,
+            v_states,
+            attn_bias = LowerTriangularFromBottomRightMask()
+        )
+        attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+
         return attn_output
 
 
@@ -753,10 +761,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Select attention function
 
-        if cfg.no_flash_attn or not has_flash_attn or not attn_params.is_causal():
-            attn_func = self._attn_matmul
-        else:
+        if (has_flash_attn and not cfg.no_flash_attn) and attn_params.is_causal():
             attn_func = self._attn_flash
+        elif (has_xformers and not cfg.no_xformers) and attn_params.is_causal():
+            attn_func = self._attn_xformers
+        else:
+            attn_func = self._attn_matmul
 
         # Straight attention without cache
 
@@ -925,9 +935,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             key_states = self.repeat_kv(key_states, num_key_value_groups)
             value_states = self.repeat_kv(value_states, num_key_value_groups)
-
             key_states = key_states.transpose(1, 2)
-            v_states = value_states.transpose(1, 2)
+            value_states = value_states.transpose(1, 2)
 
             attn_output = xops.memory_efficient_attention(query_states, key_states, value_states, attn_bias = LowerTriangularFromBottomRightMask())
             attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
