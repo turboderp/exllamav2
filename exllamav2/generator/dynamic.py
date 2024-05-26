@@ -2158,6 +2158,7 @@ class ExLlamaV2DynamicJob:
             for page in seq.allocated_pages:
                 if page.kv_position == page_size:
                     seq.kv_position += page_size
+                    self.cached_pages += 1
                 else:
                     break
 
