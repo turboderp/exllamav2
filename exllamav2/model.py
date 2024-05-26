@@ -17,11 +17,16 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 # if not "PYTORCH_CUDA_ALLOC_CONF" in os.environ:
 #     try:
 #         x = torch.__version__
-#         # TODO: Should maybe be a warning here?
 #     except NameError:
 #         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
 
 import torch
+
+if not (torch.version.cuda or torch.version.hip):
+    print("")
+    print(f" ## Warning: The installed version of PyTorch is {torch.__version__} and does not support CUDA or ROCm.")
+    print("")
+
 import math
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.cache import ExLlamaV2CacheBase
@@ -38,10 +43,12 @@ from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
-# from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 import gc
 import threading
 from typing import Callable
+# from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
+from exllamav2.util import get_basic_progress
+
 
 def _torch_device(idx):
     if idx == -1: return "cpu"
@@ -230,7 +237,8 @@ class ExLlamaV2:
                                self.config.vocab_size,
                                False,
                                max_out_len = self.config.max_output_len,
-                               prescale = self.config.logit_scale)
+                               prescale = self.config.logit_scale,
+                               is_sub_module = False)
         if self.config.arch.lm_head_key != "lm_head":
             head.alt_key = self.config.arch.lm_head_key
         self.modules += [head]
@@ -336,23 +344,41 @@ class ExLlamaV2:
         return [(ab - rb - rba) / 1024**3 for (ab, rb, rba) in zip(allocation_bytes, reserve_bytes, reserve_bytes_attn)]
 
 
-    def load(self,
-             gpu_split: list[float] | None = None,
-             lazy: bool = False,
-             stats: bool = False,
-             callback: Callable[[int, int], None] | None = None,
-             callback_gen: Callable[[int, int], None] | None = None):
+    def load(
+        self,
+        gpu_split: list[float] | None = None,
+        lazy: bool = False,
+        stats: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None,
+        progress: bool = False
+    ):
 
+        if progress:
+            progressbar = get_basic_progress()
+            progressbar.start()
+            task_id = progressbar.add_task("Loading: " + self.config.model_dir, total = len(self.modules))
+            module = 0
+            def callback_pb(a, b):
+                progressbar.update(task_id, advance = 1)
+            assert callback is None, \
+                "Cannot use callback function and console progress bar at the same time."
+            callback = callback_pb
         f = self.load_gen(gpu_split, lazy, stats, callback, callback_gen)
-        for item in f: x = item
+        for item in f:
+            pass
+        if progress:
+            progressbar.stop()
 
 
-    def load_gen(self,
-                 gpu_split: list[float] | None = None,
-                 lazy: bool = False,
-                 stats: bool = False,
-                 callback: Callable[[int, int], None] | None = None,
-                 callback_gen: Callable[[int, int], None] | None = None):
+    def load_gen(
+        self,
+        gpu_split: list[float] | None = None,
+        lazy: bool = False,
+        stats: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None
+    ):
 
         with torch.inference_mode():
 
@@ -383,22 +409,40 @@ class ExLlamaV2:
             # else: yield gpu_split
 
 
-    def load_autosplit(self,
-                       cache: ExLlamaV2CacheBase,
-                       reserve_vram: int | None = None,
-                       last_id_only: bool = False,
-                       callback: Callable[[int, int], None] | None = None,
-                       callback_gen: Callable[[int, int], None] | None = None):
+    def load_autosplit(
+        self,
+        cache: ExLlamaV2CacheBase,
+        reserve_vram: int | None = None,
+        last_id_only: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None,
+        progress: bool = False
+    ):
 
+        if progress:
+            progressbar = get_basic_progress()
+            progressbar.start()
+            task_id = progressbar.add_task("Loading: " + self.config.model_dir, total = len(self.modules))
+            module = 0
+            def callback_pb(a, b):
+                progressbar.update(task_id, advance = 1)
+            assert callback is None, \
+                "Cannot use callback function and console progress bar at the same time."
+            callback = callback_pb
         f = self.load_autosplit_gen(cache, reserve_vram, last_id_only, callback, callback_gen)
-        for item in f: x = item
+        for item in f:
+            pass
+        if progress:
+            progressbar.stop()
 
-    def load_autosplit_gen(self,
-                           cache: ExLlamaV2CacheBase,
-                           reserve_vram: int | None = None,
-                           last_id_only: bool = False,
-                           callback: Callable[[int, int], None] | None = None,
-                           callback_gen: Callable[[int, int], None] | None = None):
+    def load_autosplit_gen(
+        self,
+        cache: ExLlamaV2CacheBase,
+        reserve_vram: int | None = None,
+        last_id_only: bool = False,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None
+    ):
 
         # Limit model's max_input_len to max_seq_len if necessary
         self.config.max_input_len = min(self.config.max_input_len, self.config.max_seq_len)
@@ -407,7 +451,7 @@ class ExLlamaV2:
         last_touched_device = -1
         current_device = 0
         num_devices = torch.torch.cuda.device_count()
-        loras = None  # TODO:
+        loras = None  # TODO: Autosplit load with LoRAs
 
         with torch.inference_mode():
 
@@ -683,16 +727,16 @@ class ExLlamaV2:
 
             assert q_len <= effective_max_input_len, "Maximum input length exceeded in model.forward"
 
-            result, last_state = self._forward(input_ids = input_ids,
-                                               cache = cache,
-                                               input_mask = input_mask,
-                                               preprocess_only = preprocess_only,
-                                               last_id_only = last_id_only,
-                                               loras = loras,
-                                               return_last_state = return_last_state,
-                                               position_offsets = position_offsets,
-                                               abort_event = abort_event,
-                                               **kwargs)
+            result, last_state = self.forward_chunk(input_ids = input_ids,
+                                                    cache = cache,
+                                                    input_mask = input_mask,
+                                                    preprocess_only = preprocess_only,
+                                                    last_id_only = last_id_only,
+                                                    loras = loras,
+                                                    return_last_state = return_last_state,
+                                                    position_offsets = position_offsets,
+                                                    abort_event = abort_event,
+                                                    **kwargs)
 
             if abort_event and abort_event.is_set(): return
 
@@ -720,7 +764,7 @@ class ExLlamaV2:
 
             # Limit chunk_size to keep size of attention operation <= max_attention_size
 
-            if has_flash_attn:
+            if has_flash_attn and not self.config.no_flash_attn:
 
                 # Can't measure increase in VRAM usage with longer k_len, assume usage is constant
                 # for given chunk_size
@@ -744,16 +788,16 @@ class ExLlamaV2:
             _last_id_only = last_id_only
             _preprocess_only = preprocess_only or (chunk_end < q_len and last_id_only)
 
-            r, ls = self._forward(input_ids = input_ids[:, chunk_begin : chunk_end],
-                                  cache = cache,
-                                  input_mask = input_mask,
-                                  preprocess_only = _preprocess_only,
-                                  last_id_only = _last_id_only,
-                                  loras = loras,
-                                  return_last_state = return_last_state and remaining_q_len <= chunk_size,
-                                  position_offsets = position_offsets,
-                                  abort_event = abort_event,
-                                  **kwargs)
+            r, ls = self.forward_chunk(input_ids = input_ids[:, chunk_begin : chunk_end],
+                                       cache = cache,
+                                       input_mask = input_mask,
+                                       preprocess_only = _preprocess_only,
+                                       last_id_only = _last_id_only,
+                                       loras = loras,
+                                       return_last_state = return_last_state and remaining_q_len <= chunk_size,
+                                       position_offsets = position_offsets,
+                                       abort_event = abort_event,
+                                       **kwargs)
 
             if abort_event and abort_event.is_set(): return
 
@@ -772,17 +816,18 @@ class ExLlamaV2:
 
 
     @torch.inference_mode()
-    def _forward(self,
-                 input_ids: torch.Tensor,
-                 cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
-                 input_mask: torch.Tensor | None = None,
-                 preprocess_only: bool = False,
-                 last_id_only: bool = False,
-                 loras: list[ExLlamaV2Lora] | None = None,
-                 return_last_state: bool = False,
-                 position_offsets: torch.Tensor | None = None,
-                 abort_event: threading.Event | None = None,
-                 **kwargs) \
+    def forward_chunk(self,
+                      input_ids: torch.Tensor,
+                      cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
+                      input_mask: torch.Tensor | None = None,
+                      preprocess_only: bool = False,
+                      last_id_only: bool = False,
+                      loras: list[ExLlamaV2Lora] | None = None,
+                      return_last_state: bool = False,
+                      position_offsets: torch.Tensor | None = None,
+                      abort_event: threading.Event | None = None,
+                      attn_params: ExLlamaV2Attention.Params | None = None,
+                      **kwargs) \
         -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         batch_size, seq_len = input_ids.shape
@@ -790,8 +835,8 @@ class ExLlamaV2:
         if cache is not None:
             if isinstance(cache, ExLlamaV2CacheBase):
                 past_len = cache.current_seq_len
-            else:
-                past_len = [c.current_seq_len for c in cache]
+            # else:
+            #     past_len = [c.current_seq_len for c in cache]
 
         assert self.config.max_output_len is None or \
             preprocess_only or \
@@ -802,7 +847,13 @@ class ExLlamaV2:
         # assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
 
         x = input_ids
-        attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
+
+        if not attn_params:
+            attn_params = ExLlamaV2Attention.Params(batch_size, seq_len, past_len, input_mask, position_offsets)
+        else:
+            if not isinstance(attn_params, ExLlamaV2Attention.PagedParams):
+                past_len = attn_params.past_len
+                cache.current_seq_len = past_len
         last_state = None
         last_module = None
 

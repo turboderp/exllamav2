@@ -83,7 +83,10 @@ void fp16_to_q4_kv
     torch::Tensor v_scales,
     int batch_size,
     int offset,
-    int width
+    int width,
+    int page_size,
+    torch::Tensor cache_seqlens,
+    torch::Tensor block_table
 )
 {
     TORCH_CHECK_DTYPE(k_in, kHalf);
@@ -103,26 +106,55 @@ void fp16_to_q4_kv
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
     TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
 
-    int stride = k_in.size(1) * k_in.size(2) * k_in.size(3);
-    int height = batch_size;
+    if (page_size)
+    {
+        int dim = k_in.size(2) * k_in.size(3);
+        batch_size = block_table.size(0);
+        int pages_per_seq = block_table.size(1);
 
-    int tsize = k_in.size(2) * k_in.size(3);
-    offset *= tsize;
-    width *= tsize;
+        TORCH_CHECK_SHAPES(cache_seqlens, 0, block_table, 0, 1);
+        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
 
-    array_fp16_to_q4_kv_cuda
-    (
-        (const half*) k_in.data_ptr(),
-        (unsigned char*) k_out.data_ptr(),
-        (half*) k_scales.data_ptr(),
-        (const half*) v_in.data_ptr(),
-        (unsigned char*) v_out.data_ptr(),
-        (half*) v_scales.data_ptr(),
-        stride,
-        height,
-        offset,
-        width
-    );
+        array_fp16_to_q4_kv_paged_cuda
+        (
+            (const half*) k_in.data_ptr(),
+            (unsigned char*) k_out.data_ptr(),
+            (half*) k_scales.data_ptr(),
+            (const half*) v_in.data_ptr(),
+            (unsigned char*) v_out.data_ptr(),
+            (half*) v_scales.data_ptr(),
+            batch_size,
+            dim,
+            pages_per_seq,
+            (const int*) cache_seqlens.data_ptr(),
+            (const int*) block_table.data_ptr(),
+            page_size,
+            width
+        );
+    }
+    else
+    {
+        int stride = k_in.size(1) * k_in.size(2) * k_in.size(3);
+        int height = batch_size;
+
+        int tsize = k_in.size(2) * k_in.size(3);
+        offset *= tsize;
+        width *= tsize;
+
+        array_fp16_to_q4_kv_cuda
+        (
+            (const half*) k_in.data_ptr(),
+            (unsigned char*) k_out.data_ptr(),
+            (half*) k_scales.data_ptr(),
+            (const half*) v_in.data_ptr(),
+            (unsigned char*) v_out.data_ptr(),
+            (half*) v_scales.data_ptr(),
+            stride,
+            height,
+            offset,
+            width
+        );
+    }
 }
 
 void q4_to_fp16_kv
@@ -135,7 +167,10 @@ void q4_to_fp16_kv
     torch::Tensor v_scales,
     int batch_size,
     int offset,
-    int width
+    int width,
+    int page_size,
+    torch::Tensor cache_seqlens,
+    torch::Tensor block_table
 )
 {
     TORCH_CHECK_DTYPE(k_in, kUInt8);
@@ -155,26 +190,54 @@ void q4_to_fp16_kv
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
     TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
 
-    int stride = k_out.size(1) * k_out.size(2) * k_out.size(3);
-    int height = batch_size;
+    if (page_size)
+    {
+        int dim = k_out.size(2) * k_out.size(3);
+        batch_size = block_table.size(0);
+        int pages_per_seq = block_table.size(1);
 
-    int tsize = k_out.size(2) * k_out.size(3);
-    offset *= tsize;
-    width *= tsize;
+        TORCH_CHECK_SHAPES(cache_seqlens, 0, block_table, 0, 1);
+        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
 
-    array_q4_to_fp16_kv_cuda
-    (
-        (const unsigned char*) k_in.data_ptr(),
-        (const half*) k_scales.data_ptr(),
-        (half*) k_out.data_ptr(),
-        (const unsigned char*) v_in.data_ptr(),
-        (const half*) v_scales.data_ptr(),
-        (half*) v_out.data_ptr(),
-        stride,
-        height,
-        offset,
-        width
-    );
+        array_q4_to_fp16_kv_paged_cuda
+        (
+            (const unsigned char*) k_in.data_ptr(),
+            (const half*) k_scales.data_ptr(),
+            (half*) k_out.data_ptr(),
+            (const unsigned char*) v_in.data_ptr(),
+            (const half*) v_scales.data_ptr(),
+            (half*) v_out.data_ptr(),
+            batch_size,
+            dim,
+            pages_per_seq,
+            (const int*) cache_seqlens.data_ptr(),
+            (const int*) block_table.data_ptr(),
+            page_size
+        );
+    }
+    else
+    {
+        int stride = k_out.size(1) * k_out.size(2) * k_out.size(3);
+        int height = batch_size;
+
+        int tsize = k_out.size(2) * k_out.size(3);
+        offset *= tsize;
+        width *= tsize;
+
+        array_q4_to_fp16_kv_cuda
+        (
+            (const unsigned char*) k_in.data_ptr(),
+            (const half*) k_scales.data_ptr(),
+            (half*) k_out.data_ptr(),
+            (const unsigned char*) v_in.data_ptr(),
+            (const half*) v_scales.data_ptr(),
+            (half*) v_out.data_ptr(),
+            stride,
+            height,
+            offset,
+            width
+        );
+    }
 }
 
 //void array_fp16_to_fp8_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size)
@@ -190,3 +253,22 @@ void q4_to_fp16_kv
 //    TORCH_CHECK_DTYPE(out_tensor, kHalf);
 //    array_fp8_to_fp16_ref_cuda((const unsigned char*)(in_tensor.data_ptr()), (half*)(out_tensor.data_ptr()), size);
 //}
+
+int count_match
+(
+    torch::Tensor a,
+    torch::Tensor b,
+    int max_a
+)
+{
+    uint64_t* pa = (uint64_t*) a.data_ptr();
+    uint64_t* pb = (uint64_t*) b.data_ptr();
+    int max_b = b.size(1);
+    if (max_b < max_a) max_a = max_b;
+
+    int match = 0;
+    while (match < max_a && *pa++ == *pb++)
+        match++;
+
+    return match;
+}

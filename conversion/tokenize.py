@@ -3,6 +3,7 @@ import pandas, fastparquet
 import os
 from safetensors.torch import save_file
 import random
+from conversion.bot_status import print_stage
 
 def get_tokens(num_rows, length, filename, tokenizer):
 
@@ -37,6 +38,8 @@ def get_tokens(num_rows, length, filename, tokenizer):
 
 def tokenize(job, save_fn, tokenizer, measure = False):
 
+    print_stage(job, "Tokenizing (1)" if measure else "Tokenizing (2)", 0, 1)
+
     cal_ds = job["cal_dataset"]
 
     if cal_ds is not None:
@@ -50,6 +53,8 @@ def tokenize(job, save_fn, tokenizer, measure = False):
     cal_dict = { "input_ids": cal_tokens }
     save_file(cal_dict, cal_filename)
     job["cal_filename"] = cal_filename
+
+    print_stage(job, "Tokenizing (1)" if measure else "Tokenizing (2)", 1, 1)
 
 
 def get_standard_calibration(job, measure, tokenizer):

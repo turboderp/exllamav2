@@ -20,6 +20,7 @@ from torch import nn
 import os, time, math, json
 import torch.nn.functional as F
 import gc
+from conversion.bot_status import print_stage
 
 # graceful exiting
 import signal
@@ -69,6 +70,8 @@ def list_live_tensors():
 
 def embeddings(job, save_fn, model, measure = False):
 
+    print_stage(job, "Embeddings", 0, 1)
+
     module = model.modules[0]
     assert isinstance(module, ExLlamaV2Embedding)
 
@@ -82,6 +85,8 @@ def embeddings(job, save_fn, model, measure = False):
 
     embeddings_dict = { f"row.{i:05}": hidden_state[i:i+1, :, :].contiguous() for i in range(hidden_state.shape[0]) }
     save_file(embeddings_dict, os.path.join(job["out_dir"], "hidden_states.safetensors"))
+
+    print_stage(job, "Embeddings", 1, 1)
 
 
 # Test quantization options
@@ -419,6 +424,8 @@ def measure_quant(job, save_fn, model):
     index = job["last_module_idx"]
     while True:
 
+        print_stage(job, "Measuring", index, len(model.modules))
+
         # sig handler should catch it faster in most cases
         if interrupted:
             print("Measurement process was interrupted. Please decide:")
@@ -653,6 +660,8 @@ def measure_quant(job, save_fn, model):
             save_fn()
 
             last_snapshot_time = time.time()
+
+    print_stage(job, "Measuring", len(model.modules), len(model.modules))
 
     # Export measurement
 

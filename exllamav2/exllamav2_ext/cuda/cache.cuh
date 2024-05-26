@@ -37,6 +37,39 @@ void array_q4_to_fp16_kv_cuda
     int width
 );
 
+void array_fp16_to_q4_kv_paged_cuda
+(
+    const half* k_in,
+    unsigned char* k_out,
+    half* k_scales,
+    const half* v_in,
+    unsigned char* v_out,
+    half* v_scales,
+    int batch_size,
+    int dim,
+    int pages_per_seq,
+    const int* cache_seqlens,
+    const int* block_table,
+    int page_size,
+    int q_len
+);
+
+void array_q4_to_fp16_kv_paged_cuda
+(
+    const unsigned char* k_in,
+    const half* k_scales,
+    half* k_out,
+    const unsigned char* v_in,
+    const half* v_scales,
+    half* v_out,
+    int batch_size,
+    int dim,
+    int pages_per_seq,
+    const int* cache_seqlens,
+    const int* block_table,
+    int page_size
+);
+
 // void array_fp16_to_fp8_ref_cuda(const half* pIn, unsigned char *pOut, int size);
 // void array_fp8_to_fp16_ref_cuda(const unsigned char* pIn, half* pOut, int size);
 

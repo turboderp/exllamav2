@@ -507,7 +507,7 @@ class ExLlamaV2ArchParams:
             self.parallel_decoder_blocks = False
             self.requires_bos = False
             self.rope_style = RopeStyle.NONE
-            self.keymap = gpt2_keymap
+            self.keymap = bigcode_keymap
             self.fused_qkv_key = "c_attn"
             self.mqa = True
             self.learned_pos_emb_key = "model.wpe"

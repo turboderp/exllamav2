@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import torch
-from exllamav2.ext import exllamav2_ext as ext_c
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -18,6 +18,8 @@ class ExLlamaV2CacheBase:
 
     key_states: list[torch.Tensor | None]
     value_states: list[torch.Tensor | None]
+    key_scales: list[torch.Tensor | None]
+    value_scales: list[torch.Tensor | None]
     num_key_value_heads: int
     num_hidden_layers: int
     head_dim: int
@@ -134,14 +136,29 @@ class ExLlamaV2CacheBase:
         self.current_seq_len -= 1
 
 
-    def get_kv_state(self, layer_idx: int, batch_size: int, offset: int, width: int) -> (torch.Tensor, torch.Tensor):
+    def get_kv_state(self,
+                     layer_idx: int,
+                     batch_size: int,
+                     offset: int,
+                     width: int,
+                     page_size: int = 0,
+                     cache_seqlens: torch.Tensor | None = None,
+                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
         raise NotImplementedError
 
 
-    def store_kv_state(self, layer_idx: int, batch_size: int, offset: int, width: int):
+    def store_kv_state(self,
+                       layer_idx: int,
+                       batch_size: int,
+                       offset: int,
+                       width: int,
+                       page_size: int = 0,
+                       cache_seqlens: torch.Tensor | None = None,
+                       block_table: torch.Tensor | None = None):
         raise NotImplementedError
 
 
+    @torch.inference_mode
     def copy_states(self,
                     target: ExLlamaV2CacheBase,
                     from_column: int,
@@ -160,20 +177,23 @@ class ExLlamaV2CacheBase:
 
         num_hidden_layers = self.model.config.num_hidden_layers
 
+        tensors = [
+            (self.key_states, target.key_states),
+            (self.value_states, target.value_states),
+        ]
+        if self.has_scales:
+            tensors += [
+                (self.key_scales, target.key_scales),
+                (self.value_scales, target.value_scales),
+            ]
+
         for i in range(num_hidden_layers):
-
-            source_view_k = self.key_states[i].narrow(0, from_row, from_rows).narrow(2, from_column, from_columns)
-            source_view_v = self.value_states[i].narrow(0, from_row, from_rows).narrow(2, from_column, from_columns)
-            target_view_k = target.key_states[i].narrow(0, to_row, to_rows).narrow(2, to_column, to_columns)
-            target_view_v = target.value_states[i].narrow(0, to_row, to_rows).narrow(2, to_column, to_columns)
-
-            if to_rows > 1:
-
-                source_view_k = source_view_k.expand_as(target_view_k)
-                source_view_v = source_view_v.expand_as(target_view_v)
-
-            target_view_k.copy_(source_view_k)
-            target_view_v.copy_(source_view_v)
+            for (src, dst) in tensors:
+                src_view = src[i].narrow(0, from_row, from_rows).narrow(1, from_column, from_columns)
+                dst_view = dst[i].narrow(0, to_row, to_rows).narrow(1, to_column, to_columns)
+                if to_rows > 1:
+                    src_view = src_view.expand_as(dst_view)
+                dst_view.copy_(src_view, non_blocking = True)
 
 
     def touch_device(self, device):
@@ -201,7 +221,10 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
                      layer_idx: int,
                      batch_size: int,
                      offset: int,
-                     width: int) -> (torch.Tensor, torch.Tensor):
+                     width: int,
+                     page_size: int = 0,
+                     cache_seqlens: torch.Tensor | None = None,
+                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
 
         return self.key_states[layer_idx], self.value_states[layer_idx]
 
@@ -210,7 +233,10 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
                        layer_idx: int,
                        batch_size: int,
                        offset: int,
-                       width: int):
+                       width: int,
+                       page_size: int = 0,
+                       cache_seqlens: torch.Tensor | None = None,
+                       block_table: torch.Tensor | None = None):
 
         pass
 
@@ -266,7 +292,10 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
                      layer_idx: int,
                      batch_size: int,
                      offset: int,
-                     width: int) -> (torch.Tensor, torch.Tensor):
+                     width: int,
+                     page_size: int = 0,
+                     cache_seqlens: torch.Tensor | None = None,
+                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
@@ -279,7 +308,10 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
                        layer_idx: int,
                        batch_size: int,
                        offset: int,
-                       width: int):
+                       width: int,
+                       page_size: int = 0,
+                       cache_seqlens: torch.Tensor | None = None,
+                       block_table: torch.Tensor | None = None):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
@@ -341,7 +373,10 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
                      layer_idx: int,
                      batch_size: int,
                      offset: int,
-                     width: int) -> (torch.Tensor, torch.Tensor):
+                     width: int,
+                     page_size: int = 0,
+                     cache_seqlens: torch.Tensor | None = None,
+                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
@@ -353,7 +388,10 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
                                           self.value_scales[layer_idx],
                                           batch_size,
                                           offset,
-                                          width)
+                                          width,
+                                          page_size,
+                                          cache_seqlens if cache_seqlens is not None else none_tensor,
+                                          block_table if block_table is not None else none_tensor)
         return temp_key_state, temp_value_state
 
 
@@ -361,7 +399,10 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
                        layer_idx: int,
                        batch_size: int,
                        offset: int,
-                       width: int):
+                       width: int,
+                       page_size: int = 0,
+                       cache_seqlens: torch.Tensor | None = None,
+                       block_table: torch.Tensor | None = None):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
@@ -373,7 +414,10 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
                                           self.value_scales[layer_idx],
                                           batch_size,
                                           offset,
-                                          width)
+                                          width,
+                                          page_size,
+                                          cache_seqlens if cache_seqlens is not None else none_tensor,
+                                          block_table if block_table is not None else none_tensor)
 
 
     def footprint(self) -> list[int]:

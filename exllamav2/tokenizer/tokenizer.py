@@ -106,7 +106,6 @@ class ExLlamaV2Tokenizer:
         else: raise FileNotFoundError("No supported tokenizer found.")
 
         # Attempt to load added tokens from tokenizer.json
-        # TODO: Deal with rstrip and lstrip for added, non-control tokens
 
         self.extended_piece_to_id = {}
         self.unspecial_piece_to_id = {}
@@ -347,7 +346,6 @@ class ExLlamaV2Tokenizer:
 
 
     # Encode string or list of strings
-    # TODO: Deal with rstrip and lstrip for control tokens
 
     def encode(self,
                text: str | list[str],

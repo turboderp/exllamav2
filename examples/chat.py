@@ -199,17 +199,18 @@ def get_tokenized_context(max_len):
 generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer, draft_model, draft_cache)
 generator.speculative_ngram = args.ngram_decoding
 
-settings = ExLlamaV2Sampler.Settings()
-settings.temperature = args.temperature
-settings.top_k = args.top_k
-settings.top_p = args.top_p
-settings.top_a = args.top_a
-settings.typical = args.typical
-settings.skew = args.skew
-settings.token_repetition_penalty = args.repetition_penalty
-settings.token_frequency_penalty = args.frequency_penalty
-settings.token_presence_penalty = args.presence_penalty
-settings.smoothing_factor = args.smoothing_factor
+settings = ExLlamaV2Sampler.Settings(
+    temperature = args.temperature,
+    top_k = args.top_k,
+    top_p = args.top_p,
+    top_a = args.top_a,
+    typical = args.typical,
+    skew = args.skew,
+    token_repetition_penalty = args.repetition_penalty,
+    token_frequency_penalty = args.frequency_penalty,
+    token_presence_penalty = args.presence_penalty,
+    smoothing_factor = args.smoothing_factor,
+)
 
 if args.dynamic_temperature:
     dt_args = [float(alloc) for alloc in args.dynamic_temperature.split(",")]

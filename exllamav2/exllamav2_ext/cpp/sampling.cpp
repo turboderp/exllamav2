@@ -11,8 +11,8 @@
 
 const int top_k_heap_threshold = 500;
 
-bool* g_rep_mask = NULL;
-int g_vocab_size = 0;
+//bool* g_rep_mask = NULL;
+//int g_vocab_size = 0;
 
 // Repetition penalty
 
@@ -34,14 +34,14 @@ void apply_rep_penalty_cpu
 
     // Map of which logits have already had penalties applied
 
-    if (vocab_size > g_vocab_size)
-    {
-        if (g_rep_mask) free(g_rep_mask);
-        g_vocab_size = vocab_size;
-        g_rep_mask = (bool*) malloc(g_vocab_size * sizeof(bool));
-    }
-
-    memset(g_rep_mask, 0, g_vocab_size * sizeof(bool));
+//    if (vocab_size > g_vocab_size)
+//    {
+//        if (g_rep_mask) free(g_rep_mask);
+//        g_vocab_size = vocab_size;
+//        g_rep_mask = (bool*) malloc(g_vocab_size * sizeof(bool));
+//    }
+//    memset(g_rep_mask, 0, g_vocab_size * sizeof(bool));
+    bool* g_rep_mask = (bool*) calloc(vocab_size, sizeof(bool));
 
     // Penalties to apply
 
@@ -75,7 +75,7 @@ void apply_rep_penalty_cpu
     for (int i = seq_len; i > beg;)
     {
         uint64_t t = sequence[--i];
-        if (t < g_vocab_size)
+        if (t < vocab_size)
         {
 
             // If t has not been encountered before, apply rep_p and pres_p
@@ -105,6 +105,7 @@ void apply_rep_penalty_cpu
         }
     }
 
+    free(g_rep_mask);
     profile_stop();
 }
 

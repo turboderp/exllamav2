@@ -82,30 +82,6 @@ __global__ void fp8_to_fp16_kernel
     *out_ptr = out;
 }
 
-// __global__ void nv_fp32_to_fp16(const float* pIn, half* pOut, int size)
-// {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < size) {
-//         pOut[i] = __float2half(pIn[i]);
-//     }
-// }
-
-// __global__ void nv_fp16_to_fp8_ref(const half* pIn, unsigned char *pOut, int size)
-// {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < size) {
-//         pOut[i] = __nv_cvt_halfraw_to_fp8(pIn[i], __NV_SATFINITE, __NV_E4M3);
-//     }
-// }
-//
-// __global__ void nv_fp8_to_fp16_ref(const unsigned char* pIn, half* pOut, int size)
-// {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < size) {
-//         pOut[i] = __nv_cvt_fp8_to_halfraw(pIn[i], __NV_E4M3);
-//     }
-// }
-
 void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int stride, int height, int offset, int width)
 {
     int min = offset;
@@ -140,24 +116,15 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
 
 // Q4
 
-__global__ void fp16_to_q4_kv_kernel
+__device__ void fp16_to_q4
 (
-    const half* __restrict__ k_in,
-    unsigned char* __restrict__ k_out,
-    half* __restrict__ k_scales,
-    const half* __restrict__ v_in,
-    unsigned char* __restrict__ v_out,
-    half* __restrict__ v_scales,
-    int offset,
-    int stride
+    int t,
+    const half* in,
+    unsigned char* out,
+    half* scales,
+    int block_offset
 )
 {
-    int t = threadIdx.x;
-    const half* in = blockIdx.z ? v_in : k_in;
-    unsigned char* out = blockIdx.z ? v_out : k_out;
-    half* scales = blockIdx.z ? v_scales : k_scales;
-
-    int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
     const half2* in2 = (const half2*) (in + block_offset);
     __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
     __shared__ half s_buffer[BLOCKSIZE_Q / 32];
@@ -222,24 +189,15 @@ __global__ void fp16_to_q4_kv_kernel
     if (t < BLOCKSIZE_Q / 256) out_s[t] = ps[t];
 }
 
-__global__ void q4_to_fp16_kv_kernel
+__device__ void q4_to_fp16
 (
-    const unsigned char* __restrict__ k_in,
-    const half* __restrict__ k_scales,
-    half* __restrict__ k_out,
-    const unsigned char* __restrict__ v_in,
-    const half* __restrict__ v_scales,
-    half* __restrict__ v_out,
-    int offset,
-    int stride
+    int t,
+    const unsigned char* in,
+    const half* scales,
+    half* out,
+    int block_offset
 )
 {
-    int t = threadIdx.x;
-    const unsigned char* in = blockIdx.z ? v_in : k_in;
-    const half* scales = blockIdx.z ? v_scales : k_scales;
-    half* out = blockIdx.z ? v_out : k_out;
-
-    int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
     __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
     __shared__ half s_buffer[BLOCKSIZE_Q / 32];
 
@@ -295,6 +253,111 @@ __global__ void q4_to_fp16_kv_kernel
     out2[t] = w2;
 }
 
+// -------------- FP16 -> Q4
+
+__global__ void fp16_to_q4_kv_paged_kernel
+(
+    const half* __restrict__ k_in,
+    unsigned char* __restrict__ k_out,
+    half* __restrict__ k_scales,
+    const half* __restrict__ v_in,
+    unsigned char* __restrict__ v_out,
+    half* __restrict__ v_scales,
+    const int* __restrict__ cache_seqlens,
+    const int* __restrict__ block_table,
+    int pages_per_seq,
+    int page_size,
+    int dim,
+    int q_len
+)
+{
+    int t = threadIdx.x;
+    const half* in = blockIdx.z ? v_in : k_in;
+    half* scales = blockIdx.z ? v_scales : k_scales;
+    unsigned char* out = blockIdx.z ? v_out : k_out;
+
+    int x = blockIdx.x;
+    int y = blockIdx.y;
+
+    int page = block_table[pages_per_seq * y + x];
+    int seqlen = cache_seqlens[y];
+    int vx_a = page_size * x;
+    int px_a = seqlen - vx_a;
+    int px_b = px_a + q_len;
+    px_a = max(px_a, 0);
+    px_b = min(px_b, page_size);
+
+    int block_a = (page * page_size + px_a) * dim;
+    int block_b = (page * page_size + px_b) * dim;
+
+    for (int i = block_a; i < block_b; i += BLOCKSIZE_Q)
+    {
+//        if (!t) DBGI2(y, i);
+        fp16_to_q4(t, in, out, scales, i);
+    }
+}
+
+__global__ void fp16_to_q4_kv_kernel
+(
+    const half* __restrict__ k_in,
+    unsigned char* __restrict__ k_out,
+    half* __restrict__ k_scales,
+    const half* __restrict__ v_in,
+    unsigned char* __restrict__ v_out,
+    half* __restrict__ v_scales,
+    int offset,
+    int stride
+)
+{
+    int t = threadIdx.x;
+    const half* in = blockIdx.z ? v_in : k_in;
+    unsigned char* out = blockIdx.z ? v_out : k_out;
+    half* scales = blockIdx.z ? v_scales : k_scales;
+    int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
+
+    fp16_to_q4(t, in, out, scales, block_offset);
+}
+
+void array_fp16_to_q4_kv_paged_cuda
+(
+    const half* k_in,
+    unsigned char* k_out,
+    half* k_scales,
+    const half* v_in,
+    unsigned char* v_out,
+    half* v_scales,
+    int batch_size,
+    int dim,
+    int pages_per_seq,
+    const int* cache_seqlens,
+    const int* block_table,
+    int page_size,
+    int q_len
+)
+{
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_Q;
+    gridDim.x = pages_per_seq;
+    gridDim.y = batch_size;
+    gridDim.z = v_in ? 2 : 1;
+
+    fp16_to_q4_kv_paged_kernel<<<gridDim, blockDim>>>
+    (
+        k_in,
+        k_out,
+        k_scales,
+        v_in,
+        v_out,
+        v_scales,
+        cache_seqlens,
+        block_table,
+        pages_per_seq,
+        page_size,
+        dim,
+        q_len
+    );
+}
+
 void array_fp16_to_q4_kv_cuda
 (
     const half* k_in,
@@ -316,6 +379,104 @@ void array_fp16_to_q4_kv_cuda
     gridDim.z = v_in ? 2 : 1;
 
     fp16_to_q4_kv_kernel<<<gridDim, blockDim>>>(k_in, k_out, k_scales, v_in, v_out, v_scales, offset, stride);
+}
+
+// --------------- Q4 -> FP16
+
+__global__ void q4_to_fp16_kv_paged_kernel
+(
+    const unsigned char* __restrict__ k_in,
+    const half* __restrict__ k_scales,
+    half* __restrict__ k_out,
+    const unsigned char* __restrict__ v_in,
+    const half* __restrict__ v_scales,
+    half* __restrict__ v_out,
+    const int* __restrict__ cache_seqlens,
+    const int* __restrict__ block_table,
+    int pages_per_seq,
+    int page_size,
+    int dim
+)
+{
+    int t = threadIdx.x;
+    const unsigned char* in = blockIdx.z ? v_in : k_in;
+    const half* scales = blockIdx.z ? v_scales : k_scales;
+    half* out = blockIdx.z ? v_out : k_out;
+
+    int x = blockIdx.x;
+    int y = blockIdx.y;
+    int page = block_table[pages_per_seq * y + x];
+    int seqlen = cache_seqlens[y];
+    int vx_a = page_size * x;
+    int vx_b = min(vx_a + page_size, seqlen);
+    int vnum = max(vx_b - vx_a, 0);
+    int block_a = (page * page_size) * dim;
+    int block_b = (page * page_size + vnum) * dim;
+
+    for (int i = block_a; i < block_b; i += BLOCKSIZE_Q)
+    {
+//        if (!t) DBGI2(y, i);
+        q4_to_fp16(t, in, scales, out, i);
+    }
+}
+
+__global__ void q4_to_fp16_kv_kernel
+(
+    const unsigned char* __restrict__ k_in,
+    const half* __restrict__ k_scales,
+    half* __restrict__ k_out,
+    const unsigned char* __restrict__ v_in,
+    const half* __restrict__ v_scales,
+    half* __restrict__ v_out,
+    int offset,
+    int stride
+)
+{
+    int t = threadIdx.x;
+    const unsigned char* in = blockIdx.z ? v_in : k_in;
+    const half* scales = blockIdx.z ? v_scales : k_scales;
+    half* out = blockIdx.z ? v_out : k_out;
+    int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
+
+    q4_to_fp16(t, in, scales, out, block_offset);
+}
+
+void array_q4_to_fp16_kv_paged_cuda
+(
+    const unsigned char* k_in,
+    const half* k_scales,
+    half* k_out,
+    const unsigned char* v_in,
+    const half* v_scales,
+    half* v_out,
+    int batch_size,
+    int dim,
+    int pages_per_seq,
+    const int* cache_seqlens,
+    const int* block_table,
+    int page_size
+)
+{
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_Q;
+    gridDim.x = pages_per_seq;
+    gridDim.y = batch_size;
+    gridDim.z = v_in ? 2 : 1;
+
+    q4_to_fp16_kv_paged_kernel<<<gridDim, blockDim>>>
+    (
+        k_in,
+        k_scales,
+        k_out,
+        v_in,
+        v_scales,
+        v_out,
+        cache_seqlens,
+        block_table,
+        pages_per_seq,
+        page_size,
+        dim
+    );
 }
 
 void array_q4_to_fp16_kv_cuda
@@ -340,17 +501,3 @@ void array_q4_to_fp16_kv_cuda
 
     q4_to_fp16_kv_kernel<<<gridDim, blockDim>>>(k_in, k_scales, k_out, v_in, v_scales, v_out, offset, stride);
 }
-
-// void array_fp16_to_fp8_ref_cuda(const half* pIn, unsigned char *pOut, int size)
-// {
-//     const int threads = 512;
-//     int blocks = DIVIDE(size / 1, threads);
-//     nv_fp16_to_fp8_ref<<<blocks, threads>>>(pIn, pOut, size);
-// }
-//
-// void array_fp8_to_fp16_ref_cuda(const unsigned char* pIn, half* pOut, int size)
-// {
-//     const int threads = 512;
-//     int blocks = DIVIDE(size / 1, threads);
-//     nv_fp8_to_fp16_ref<<<blocks, threads>>>(pIn, pOut, size);
-// }

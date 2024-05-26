@@ -20,6 +20,7 @@ from torch import nn
 import os, time, math, json
 import torch.nn.functional as F
 import gc
+from conversion.bot_status import print_stage
 
 def list_live_tensors():
 
@@ -274,6 +275,8 @@ def quant(job, save_fn, model):
 
     index = job["q_last_module_idx"]
     while True:
+
+        print_stage(job, "Quantizing", index, len(model.modules))
 
         index += 1
         if index >= len(model.modules): break
@@ -531,3 +534,5 @@ def quant(job, save_fn, model):
             save_fn()
 
             last_snapshot_time = time.time()
+
+    print_stage(job, "Quantizing", len(model.modules), len(model.modules))

@@ -9,6 +9,7 @@ from exllamav2 import (
 from exllamav2.generator import (
     ExLlamaV2Sampler
 )
+from exllamav2.generator.filters import ExLlamaV2Filter
 import torch
 import random
 import threading
@@ -53,20 +54,24 @@ class ExLlamaV2BaseGenerator:
         return self.sequence_ids.shape[-1] >= self.model.config.max_seq_len
 
 
-    def generate_simple(self,
-                        prompt: str or list,
-                        gen_settings: ExLlamaV2Sampler.Settings,
-                        num_tokens: int,
-                        seed: int or None = None,
-                        token_healing: bool = False,
-                        encode_special_tokens: bool = False,
-                        decode_special_tokens: bool = False,
-                        loras: ExLlamaV2Lora or list[ExLlamaV2Lora] | None = None,
-                        stop_token: int or None = -1,
-                        add_bos: bool = False,
-                        abort_event: threading.Event | None = None,
-                        input_embeddings: torch.Tensor | None = None,
-                        completion_only: bool = False):
+    def generate_simple(
+        self,
+        prompt: str or list,
+        gen_settings: ExLlamaV2Sampler.Settings,
+        num_tokens: int,
+        seed: int or None = None,
+        token_healing: bool = False,
+        encode_special_tokens: bool = False,
+        decode_special_tokens: bool = False,
+        loras: ExLlamaV2Lora or list[ExLlamaV2Lora] | None = None,
+        stop_token: int or None = -1,
+        add_bos: bool = False,
+        abort_event: threading.Event | None = None,
+        input_embeddings: torch.Tensor | None = None,
+        completion_only: bool = False,
+        filters: list[ExLlamaV2Filter] | None = None,
+        filter_prefer_eos: bool = False,
+    ):
 
         """
         Generate one or more completions.
@@ -118,6 +123,12 @@ class ExLlamaV2BaseGenerator:
         :param completion_only:
             Only return completion. If False, returned string will include the input prompt.
 
+        :param filters:
+            List of ExLlamaV2Filters to apply during generation.
+
+        :param filter_prefer_eos:
+            If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
+
         :return:
             Completion(s) (str or list[str] depending on the type of the input prompt argument)
         """
@@ -125,6 +136,10 @@ class ExLlamaV2BaseGenerator:
 
         self.abort_event = abort_event
         if self.abort_event: self.abort_event.clear()
+
+        # Filters
+
+        if filters is None: filters = []
 
         # Default stop token
 
@@ -229,7 +244,8 @@ class ExLlamaV2BaseGenerator:
             heal = [id_to_piece[x] for x in unhealed_token_list]
         else:
             heal = None
-        gen_settings.begin_filters(heal)
+
+        for f in filters: f.begin(heal)
 
         # Generate tokens
 
@@ -247,12 +263,17 @@ class ExLlamaV2BaseGenerator:
                                         position_offsets = position_offsets,
                                         indexed_embeddings = input_embeddings).float().cpu()
 
-            token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(logits,
-                                                                        gen_settings,
-                                                                        self.sequence_ids,
-                                                                        random.random(),
-                                                                        self.tokenizer,
-                                                                        prefix_token = unhealed_token)
+            token, ptokens, pprobs, prob, eos = \
+            ExLlamaV2Sampler.sample(
+                logits,
+                gen_settings,
+                self.sequence_ids,
+                random.random(),
+                self.tokenizer,
+                prefix_token = unhealed_token,
+                filters = filters,
+                filter_prefer_eos = filter_prefer_eos
+            )
 
             if unhealed_token is not None:
                 unhealed_token_copy = unhealed_token
@@ -280,10 +301,9 @@ class ExLlamaV2BaseGenerator:
                     h(p)
                 token = p.sampled_token
                 if p.feed_filters:
-                    gen_settings.feed_filters(token)
-
+                    for f in filters: f.feed(token)
             else:
-                gen_settings.feed_filters(token)
+                for f in filters: f.feed(token)
 
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
 

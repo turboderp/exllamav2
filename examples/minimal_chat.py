@@ -10,9 +10,8 @@ cache = ExLlamaV2Cache(model, lazy = True)
 model.load_autosplit(cache)
 
 tokenizer = ExLlamaV2Tokenizer(config)
-generator = ExLlamaV2StreamingGenerator(model, cache, tokenizer)
-generator.set_stop_conditions([tokenizer.eos_token_id])
-gen_settings = ExLlamaV2Sampler.Settings()
+generator = ExLlamaV2DynamicGenerator(model, cache, tokenizer)
+context_ids = torch.empty((1, 0), dtype = torch.long)
 
 while True:
 
@@ -22,15 +21,26 @@ while True:
     print("Assistant:", end = "")
 
     instruction_ids = tokenizer.encode(f"[INST] {instruction} [/INST]", add_bos = True)
-    context_ids = instruction_ids if generator.sequence_ids is None \
-        else torch.cat([generator.sequence_ids, instruction_ids], dim = -1)
+    context_ids = torch.cat([context_ids, instruction_ids], dim = -1)
 
-    generator.begin_stream_ex(context_ids, gen_settings)
+    generator.enqueue(
+        ExLlamaV2DynamicJob(
+            input_ids = context_ids,
+            max_new_tokens = 1024,
+            stop_conditions = [tokenizer.eos_token_id],
+        )
+    )
 
-    while True:
-        res = generator.stream_ex()
-        if res["eos"]: break
-        print(res["chunk"], end = "")
-        sys.stdout.flush()
+    eos = False
+    while not eos:
+        results = generator.iterate()
+        for result in results:
+            if result["stage"] == "streaming":
+                eos = result["eos"]
+                if "text" in result:
+                    print(result["text"], end = "")
+                    sys.stdout.flush()
+                if "token_ids" in result:
+                    context_ids = torch.cat([context_ids, result["token_ids"]], dim = -1)
 
     print()
