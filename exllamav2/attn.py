@@ -498,15 +498,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                       loras: list[ExLlamaV2Lora] | None = None,
                       **kwargs) -> torch.Tensor:
 
+        is_q = self.q_handle is not None
         cfg = self.model.config
-        constants = self.model.get_device_tensors(self.device_idx)
+        constants = self.model.get_device_tensors(self.device_idx, scratch = is_q)
 
         page_size = attn_params.page_size
 
         batch_size, q_len, _ = hidden_states.shape
-        q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-        k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-        v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
 
         cache_seqlens = attn_params.get_cache_seqlens(self.device())
         block_table = attn_params.get_block_index(self.device())
@@ -515,26 +513,57 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_cache = k_cache.view(k_cache.shape[1] // page_size, page_size, k_cache.shape[2], k_cache.shape[3])
         v_cache = v_cache.view(v_cache.shape[1] // page_size, page_size, v_cache.shape[2], v_cache.shape[3])
 
-        if loras is None or self.temp_lora_size == 0:
-            pass_loras, pass_lora_temp = [], none_tensor
-        else:
-            pass_loras, pass_lora_temp = [id(x) for x in loras], torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
+        if is_q:
+            q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+            k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+            v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
 
-        ext_c.q_attn_forward_1(
-            self.q_handle,
-            hidden_states,
-            batch_size,
-            q_len,
-            0,
-            attn_params.get_cache_seqlens(self.device()),
-            q,
-            k,
-            v,
-            constants.sin,
-            constants.cos,
-            pass_loras,
-            pass_lora_temp
-        )
+            if loras is None or self.temp_lora_size == 0:
+                pass_loras = []
+                pass_lora_temp = none_tensor
+            else:
+                pass_loras = [id(x) for x in loras]
+                pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
+
+            ext_c.q_attn_forward_1(
+                self.q_handle,
+                hidden_states,
+                batch_size,
+                q_len,
+                0,
+                attn_params.get_cache_seqlens(self.device()),
+                q,
+                k,
+                v,
+                constants.sin,
+                constants.cos,
+                pass_loras,
+                pass_lora_temp
+            )
+        else:
+            residual = hidden_states
+            hidden_states = self.input_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+            q = self.q_proj.forward(hidden_states, loras = loras)
+            k = self.k_proj.forward(hidden_states, loras = loras)
+            v = self.v_proj.forward(hidden_states, loras = loras)
+            q = q.view(batch_size, q_len, cfg.num_attention_heads, cfg.head_dim)
+            k = k.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            v = v.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            if cfg.use_qk_norm:
+                q = self.q_norm.forward(q)
+                k = self.k_norm.forward(k)
+            if cfg.arch.rope_style != RopeStyle.NONE:
+                for t, heads in [(q, cfg.num_attention_heads), (k, cfg.num_key_value_heads)]:
+                    ext_c.rope_(
+                        t,
+                        constants.sin,
+                        constants.cos,
+                        0,
+                        heads,
+                        cfg.head_dim,
+                        attn_params.get_cache_seqlens(self.device()),
+                        cfg.arch.rope_style == RopeStyle.NEOX
+                    )
 
         attn_output = flash_attn_with_kvcache(
             q = q,
@@ -552,15 +581,20 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        ext_c.q_attn_forward_2(
-            self.q_handle,
-            hidden_states,
-            attn_output,
-            batch_size,
-            q_len,
-            pass_loras,
-            pass_lora_temp
-        )
+        if is_q:
+            ext_c.q_attn_forward_2(
+                self.q_handle,
+                hidden_states,
+                attn_output,
+                batch_size,
+                q_len,
+                pass_loras,
+                pass_lora_temp
+            )
+        else:
+            hidden_states = self.o_proj.forward(attn_output, loras = loras)
+            if self.has_residual:
+                hidden_states += residual
 
         return hidden_states
 
