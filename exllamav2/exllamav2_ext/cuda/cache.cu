@@ -6,6 +6,7 @@
 
 #define THREADS 32
 #define BLOCKSIZE_Q 256
+#define SUPER_BLOCKSIZE_Q 32768
 #define THREADS_Q (BLOCKSIZE_Q / 2)
 #define HADAMARD_Q4
 
@@ -116,7 +117,7 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
 
 // Q4
 
-__device__ void fp16_to_q4
+inline __device__ void fp16_to_q4
 (
     int t,
     const half* in,
@@ -189,7 +190,7 @@ __device__ void fp16_to_q4
     if (t < BLOCKSIZE_Q / 256) out_s[t] = ps[t];
 }
 
-__device__ void q4_to_fp16
+inline __device__ void q4_to_fp16
 (
     int t,
     const unsigned char* in,
@@ -209,7 +210,8 @@ __device__ void q4_to_fp16
     int4* ps = (int4*) s_buffer;
 
     if (t < BLOCKSIZE_Q / 32) pq[t] = in_q[t];
-    if (t < BLOCKSIZE_Q / 256) ps[t] = in_s[t];
+    int t2 = t - BLOCKSIZE_Q / 32;
+    if (t2 >= 0 && t2 < BLOCKSIZE_Q / 256) ps[t2] = in_s[t2];
     __syncthreads();
 
     // Get scale
@@ -272,12 +274,13 @@ __global__ void fp16_to_q4_kv_paged_kernel
 )
 {
     int t = threadIdx.x;
-    const half* in = blockIdx.z ? v_in : k_in;
-    half* scales = blockIdx.z ? v_scales : k_scales;
-    unsigned char* out = blockIdx.z ? v_out : k_out;
+    int kv = blockIdx.z & 1;
+    const half* in = kv ? v_in : k_in;
+    half* scales = kv ? v_scales : k_scales;
+    unsigned char* out = kv ? v_out : k_out;
 
     int x = blockIdx.x;
-    int y = blockIdx.y;
+    int y = blockIdx.z >> 1;
 
     int page = block_table[pages_per_seq * y + x];
     int seqlen = cache_seqlens[y];
@@ -290,10 +293,11 @@ __global__ void fp16_to_q4_kv_paged_kernel
     int block_a = (page * page_size + px_a) * dim;
     int block_b = (page * page_size + px_b) * dim;
 
-    for (int i = block_a; i < block_b; i += BLOCKSIZE_Q)
+    for (int i = block_a; i < block_b; i += SUPER_BLOCKSIZE_Q)
     {
-//        if (!t) DBGI2(y, i);
-        fp16_to_q4(t, in, out, scales, i);
+        int j = i + blockIdx.y * BLOCKSIZE_Q;
+        if (j >= block_b) continue;
+        fp16_to_q4(t, in, out, scales, j);
     }
 }
 
@@ -338,8 +342,8 @@ void array_fp16_to_q4_kv_paged_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_Q;
     gridDim.x = pages_per_seq;
-    gridDim.y = batch_size;
-    gridDim.z = v_in ? 2 : 1;
+    gridDim.y = SUPER_BLOCKSIZE_Q / BLOCKSIZE_Q;
+    gridDim.z = batch_size * 2;
 
     fp16_to_q4_kv_paged_kernel<<<gridDim, blockDim>>>
     (
@@ -399,12 +403,13 @@ __global__ void q4_to_fp16_kv_paged_kernel
 )
 {
     int t = threadIdx.x;
-    const unsigned char* in = blockIdx.z ? v_in : k_in;
-    const half* scales = blockIdx.z ? v_scales : k_scales;
-    half* out = blockIdx.z ? v_out : k_out;
+    int kv = blockIdx.z & 1;
+    const unsigned char* in = kv ? v_in : k_in;
+    const half* scales = kv ? v_scales : k_scales;
+    half* out = kv ? v_out : k_out;
 
     int x = blockIdx.x;
-    int y = blockIdx.y;
+    int y = blockIdx.z >> 1;
     int page = block_table[pages_per_seq * y + x];
     int seqlen = cache_seqlens[y];
     int vx_a = page_size * x;
@@ -413,10 +418,11 @@ __global__ void q4_to_fp16_kv_paged_kernel
     int block_a = (page * page_size) * dim;
     int block_b = (page * page_size + vnum) * dim;
 
-    for (int i = block_a; i < block_b; i += BLOCKSIZE_Q)
+    for (int i = block_a; i < block_b; i += SUPER_BLOCKSIZE_Q)
     {
-//        if (!t) DBGI2(y, i);
-        q4_to_fp16(t, in, scales, out, i);
+        int j = i + blockIdx.y * BLOCKSIZE_Q;
+        if (j >= block_b) continue;
+        q4_to_fp16(t, in, scales, out, j);
     }
 }
 
@@ -460,8 +466,8 @@ void array_q4_to_fp16_kv_paged_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_Q;
     gridDim.x = pages_per_seq;
-    gridDim.y = batch_size;
-    gridDim.z = v_in ? 2 : 1;
+    gridDim.y = SUPER_BLOCKSIZE_Q / BLOCKSIZE_Q;
+    gridDim.z = batch_size * 2;
 
     q4_to_fp16_kv_paged_kernel<<<gridDim, blockDim>>>
     (
