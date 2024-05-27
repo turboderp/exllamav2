@@ -348,29 +348,30 @@ void fast_copy_cpu(torch::Tensor dst, torch::Tensor src)
     }
     else
     {
-        std::function<void(int64_t, int64_t, int)> copy_recursive;
-        copy_recursive = [&](int64_t dst_offset, int64_t src_offset, int dim)
+        auto copy_recursive = [&](auto& self, int64_t dst_offset, int64_t src_offset, int dim) -> void
         {
             if (dim == sizes.size())
             {
-                std::memcpy(dst.data_ptr() + dst_offset * dst.element_size(),
-                            src.data_ptr() + src_offset * src.element_size(),
+                std::memcpy(static_cast<char*>(dst.data_ptr()) + dst_offset * dst.element_size(),
+                            static_cast<char*>(src.data_ptr()) + src_offset * src.element_size(),
                             dst.element_size());
                 return;
             }
 
             for (int64_t i = 0; i < sizes[dim]; ++i)
             {
-                copy_recursive(dst_offset + i * dst_strides[dim],
-                               src_offset + i * src_strides[dim],
-                               dim + 1);
+                self(self, dst_offset + i * dst_strides[dim],
+                     src_offset + i * src_strides[dim],
+                     dim + 1);
             }
         };
-        copy_recursive(0, 0, 0);
+
+        copy_recursive(copy_recursive, 0, 0, 0);
     }
 
     Py_END_ALLOW_THREADS
 }
+
 
 //void fast_copy_cpu(torch::Tensor a, torch::Tensor b)
 //{
