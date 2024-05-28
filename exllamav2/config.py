@@ -56,6 +56,7 @@ class ExLlamaV2Config:
     scale_alpha_value: float                    # Alpha value for NTK RoPE scaling. Similar to compress_pos_emb but works without finetuned model
 
     no_flash_attn: bool                         # Implementation will automatically use flash-attn-2 when available
+    no_xformers: bool                           # Implementation will automatically use xformers for sm<80 when available, unless flash-attn-2 is available
     fasttensors: bool                           # Experimental, Linux only
     load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
 
@@ -117,6 +118,7 @@ class ExLlamaV2Config:
         self.alt_rope_method = None
 
         self.no_flash_attn = False
+        self.no_xformers = False
         self.fasttensors = False
         self.load_in_q4 = False
 

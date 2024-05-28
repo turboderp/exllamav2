@@ -15,6 +15,7 @@ def add_args(parser):
     parser.add_argument("-rs", "--rope_scale", type = float, help = "RoPE scaling factor")
     parser.add_argument("-ra", "--rope_alpha", type = float, help = "RoPE alpha value (NTK)")
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
+    parser.add_argument("-nxf", "--no_xformers", action = "store_true", help = "Disable xformers, an alternative plan of flash attn for older devices")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
     parser.add_argument("-lq4", "--load_q4", action = "store_true", help = "Load weights in Q4 mode")
@@ -87,6 +88,7 @@ def init(args,
     if args.rope_scale: config.scale_pos_emb = args.rope_scale
     if args.rope_alpha: config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
+    config.no_xformers = args.no_xformers
     if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
 
     if max_batch_size: config.max_batch_size = max_batch_size

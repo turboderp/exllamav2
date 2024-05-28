@@ -5,7 +5,8 @@
 #include "compat.cuh"
 
 #define THREADS 32
-#define BLOCKSIZE_Q 256
+#define BLOCKSIZE_Q 512
+#define SUPER_BLOCKSIZE_Q (128 * 1024)
 #define THREADS_Q (BLOCKSIZE_Q / 2)
 #define HADAMARD_Q4
 
@@ -114,14 +115,14 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
     // cuda_check( cudaPeekAtLastError() );
 }
 
-// Q4
+// -------------- FP16 -> Q4
 
-__device__ void fp16_to_q4
+inline __device__ void fp16_to_q4
 (
     int t,
-    const half* in,
-    unsigned char* out,
-    half* scales,
+    const half* __restrict__ in,
+    unsigned char* __restrict__ out,
+    half* __restrict__ scales,
     int block_offset
 )
 {
@@ -189,72 +190,6 @@ __device__ void fp16_to_q4
     if (t < BLOCKSIZE_Q / 256) out_s[t] = ps[t];
 }
 
-__device__ void q4_to_fp16
-(
-    int t,
-    const unsigned char* in,
-    const half* scales,
-    half* out,
-    int block_offset
-)
-{
-    __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
-    __shared__ half s_buffer[BLOCKSIZE_Q / 32];
-
-    // Fetch
-
-    int4* in_q = (int4*) (in + block_offset / 2);
-    int4* in_s = (int4*) (scales + block_offset / 32);
-    int4* pq = (int4*) q_buffer;
-    int4* ps = (int4*) s_buffer;
-
-    if (t < BLOCKSIZE_Q / 32) pq[t] = in_q[t];
-    if (t < BLOCKSIZE_Q / 256) ps[t] = in_s[t];
-    __syncthreads();
-
-    // Get scale
-
-    half scale = s_buffer[t / 16];
-    half2 scale2 = __half2half2(scale);
-
-    // Dequantize
-
-    int shift0 = (t % 4) * 8;
-    int shift1 = shift0 + 4;
-    uint32_t q = q_buffer[t / 4];
-    int q0 = ((int) ((q >> shift0) & 0x0f)) - 8;
-    int q1 = ((int) ((q >> shift1) & 0x0f)) - 8;
-
-    half w0 = __int2half_rn(q0);
-    half w1 = __int2half_rn(q1);
-    half2 w2 = __halves2half2(w0, w1);
-    w2 = __hmul2(w2, scale2);
-
-    // Perform hadamard transform on two interleaved 32-element groups. Skipped scaling when quantizing, so result
-    // is scaled by 1/32 here
-
-    #ifdef HADAMARD_Q4
-
-        for (int i = 1; i < 32; i <<= 1)
-        {
-            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i);
-            uint32_t* w2i = reinterpret_cast<uint32_t*>(&w2);
-            int32_t sfm = -static_cast<int32_t>(t & i) >> 31;
-            *w2i ^= (sfm & 0x80008000);
-            w2 = __hadd2(w2, pw2);
-        }
-        w2 = __hmul2(w2, __float2half2_rn(1.0f/32.0f));
-
-    #endif
-
-    // Store
-
-    half2* out2 = (half2*) (out + block_offset);
-    out2[t] = w2;
-}
-
-// -------------- FP16 -> Q4
-
 __global__ void fp16_to_q4_kv_paged_kernel
 (
     const half* __restrict__ k_in,
@@ -272,12 +207,13 @@ __global__ void fp16_to_q4_kv_paged_kernel
 )
 {
     int t = threadIdx.x;
-    const half* in = blockIdx.z ? v_in : k_in;
-    half* scales = blockIdx.z ? v_scales : k_scales;
-    unsigned char* out = blockIdx.z ? v_out : k_out;
+    int kv = blockIdx.z & 1;
+    const half* in = kv ? v_in : k_in;
+    half* scales = kv ? v_scales : k_scales;
+    unsigned char* out = kv ? v_out : k_out;
 
     int x = blockIdx.x;
-    int y = blockIdx.y;
+    int y = blockIdx.z >> 1;
 
     int page = block_table[pages_per_seq * y + x];
     int seqlen = cache_seqlens[y];
@@ -290,10 +226,11 @@ __global__ void fp16_to_q4_kv_paged_kernel
     int block_a = (page * page_size + px_a) * dim;
     int block_b = (page * page_size + px_b) * dim;
 
-    for (int i = block_a; i < block_b; i += BLOCKSIZE_Q)
+    for (int i = block_a; i < block_b; i += SUPER_BLOCKSIZE_Q)
     {
-//        if (!t) DBGI2(y, i);
-        fp16_to_q4(t, in, out, scales, i);
+        int j = i + blockIdx.y * BLOCKSIZE_Q;
+        if (j >= block_b) continue;
+        fp16_to_q4(t, in, out, scales, j);
     }
 }
 
@@ -338,8 +275,8 @@ void array_fp16_to_q4_kv_paged_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_Q;
     gridDim.x = pages_per_seq;
-    gridDim.y = batch_size;
-    gridDim.z = v_in ? 2 : 1;
+    gridDim.y = SUPER_BLOCKSIZE_Q / BLOCKSIZE_Q;
+    gridDim.z = batch_size * 2;
 
     fp16_to_q4_kv_paged_kernel<<<gridDim, blockDim>>>
     (
@@ -383,6 +320,76 @@ void array_fp16_to_q4_kv_cuda
 
 // --------------- Q4 -> FP16
 
+inline __device__ void q4_to_fp16
+(
+    int t,
+    const unsigned char* __restrict__ in,
+    const half* __restrict__ scales,
+    half* __restrict__ out,
+    int block_offset
+)
+{
+//    __shared__ uint32_t q_buffer[BLOCKSIZE_Q / 8];
+//    __shared__ half s_buffer[BLOCKSIZE_Q / 32];
+
+    // Fetch
+
+//    int4* in_q = (int4*) (in + block_offset / 2);
+//    int4* in_s = (int4*) (scales + block_offset / 32);
+//    int4* pq = (int4*) q_buffer;
+//    int4* ps = (int4*) s_buffer;
+//
+//    if (t < BLOCKSIZE_Q / 32) pq[t] = in_q[t];
+//    int t2 = t - BLOCKSIZE_Q / 32;
+//    if (t2 >= 0 && t2 < BLOCKSIZE_Q / 256) ps[t2] = in_s[t2];
+//    __syncthreads();
+
+    const uint32_t* in_q = (const uint32_t*) (in + block_offset / 2);
+    const half* in_s = (const half*) (scales + block_offset / 32);
+
+    // Get scale
+
+//    half scale = s_buffer[t / 16];
+    half scale = __ldg(in_s + t / 16);
+    half2 scale2 = __half2half2(scale);
+
+    // Dequantize
+
+    int shift0 = (t % 4) * 8;
+    int shift1 = shift0 + 4;
+//    uint32_t q = q_buffer[t / 4];
+    uint32_t q = __ldg(in_q + t / 4);
+    int q0 = ((int) ((q >> shift0) & 0x0f)) - 8;
+    int q1 = ((int) ((q >> shift1) & 0x0f)) - 8;
+
+    half w0 = __int2half_rn(q0);
+    half w1 = __int2half_rn(q1);
+    half2 w2 = __halves2half2(w0, w1);
+    w2 = __hmul2(w2, scale2);
+
+    // Perform hadamard transform on two interleaved 32-element groups. Skipped scaling when quantizing, so result
+    // is scaled by 1/32 here
+
+    #ifdef HADAMARD_Q4
+
+        for (int i = 1; i < 32; i <<= 1)
+        {
+            half2 pw2 = __shfl_xor_sync(0xffffffff, w2, i);
+            uint32_t* w2i = reinterpret_cast<uint32_t*>(&w2);
+            int32_t sfm = -static_cast<int32_t>(t & i) >> 31;
+            *w2i ^= (sfm & 0x80008000);
+            w2 = __hadd2(w2, pw2);
+        }
+        w2 = __hmul2(w2, __float2half2_rn(1.0f/32.0f));
+
+    #endif
+
+    // Store
+
+    half2* out2 = (half2*) (out + block_offset);
+    out2[t] = w2;
+}
+
 __global__ void q4_to_fp16_kv_paged_kernel
 (
     const unsigned char* __restrict__ k_in,
@@ -399,12 +406,13 @@ __global__ void q4_to_fp16_kv_paged_kernel
 )
 {
     int t = threadIdx.x;
-    const unsigned char* in = blockIdx.z ? v_in : k_in;
-    const half* scales = blockIdx.z ? v_scales : k_scales;
-    half* out = blockIdx.z ? v_out : k_out;
+    int kv = blockIdx.z & 1;
+    const unsigned char* in = kv ? v_in : k_in;
+    const half* scales = kv ? v_scales : k_scales;
+    half* out = kv ? v_out : k_out;
 
     int x = blockIdx.x;
-    int y = blockIdx.y;
+    int y = blockIdx.z >> 1;
     int page = block_table[pages_per_seq * y + x];
     int seqlen = cache_seqlens[y];
     int vx_a = page_size * x;
@@ -413,10 +421,11 @@ __global__ void q4_to_fp16_kv_paged_kernel
     int block_a = (page * page_size) * dim;
     int block_b = (page * page_size + vnum) * dim;
 
-    for (int i = block_a; i < block_b; i += BLOCKSIZE_Q)
+    for (int i = block_a; i < block_b; i += SUPER_BLOCKSIZE_Q)
     {
-//        if (!t) DBGI2(y, i);
-        q4_to_fp16(t, in, scales, out, i);
+        int j = i + blockIdx.y * BLOCKSIZE_Q;
+        if (j >= block_b) continue;
+        q4_to_fp16(t, in, scales, out, j);
     }
 }
 
@@ -460,8 +469,8 @@ void array_q4_to_fp16_kv_paged_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_Q;
     gridDim.x = pages_per_seq;
-    gridDim.y = batch_size;
-    gridDim.z = v_in ? 2 : 1;
+    gridDim.y = SUPER_BLOCKSIZE_Q / BLOCKSIZE_Q;
+    gridDim.z = batch_size * 2;
 
     q4_to_fp16_kv_paged_kernel<<<gridDim, blockDim>>>
     (

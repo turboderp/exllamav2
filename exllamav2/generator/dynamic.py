@@ -296,6 +296,8 @@ class ExLlamaV2DynamicGenerator:
         :param kwargs:
         """
 
+        # torch.set_num_threads(1)
+
         self.model = model
         self.cache = cache
         self.tokenizer = tokenizer
@@ -1045,7 +1047,9 @@ class ExLlamaV2DynamicGenerator:
         # Pass logits to jobs for sampling
 
         batch_logits = self.logits_pinned[:device_logits.shape[0], :device_logits.shape[1], :]
-        batch_logits.copy_(device_logits)
+        batch_logits.copy_(device_logits, non_blocking = False)
+        # device_logits = device_logits.float().cpu()
+        # ext_c.fast_copy_cpu(batch_logits, device_logits)
         # torch.cuda.synchronize()
 
         if self.max_sampling_threads > 1 and len(self.active_jobs) >= self.min_sampling_threads:
@@ -1206,6 +1210,7 @@ class ExLlamaV2DynamicJob:
         new_unique_pages: int
         allocated_pages: list[CachePage] | None
         block_index_tensor: torch.Tensor | None
+        prefill_complete: bool
         live: bool
 
     sequences: list[Sequence]
@@ -1400,6 +1405,7 @@ class ExLlamaV2DynamicJob:
             seq.allocated_pages = None
             seq.block_index_tensor = None
             seq.live = True
+            seq.prefill_complete = False
             self.sequences.append(seq)
 
         # Generation parameters
@@ -1554,7 +1560,8 @@ class ExLlamaV2DynamicJob:
             self.return_top_tokens,
             blocked_tokens = blocked_tokens,
             filters = self.filters if self.new_tokens >= 0 else None,
-            filter_prefer_eos = self.filter_prefer_eos
+            filter_prefer_eos = self.filter_prefer_eos,
+            # sync = True
         )
 
         return next_token, next_k_tokens, next_k_probs, next_prob, filter_eos
@@ -1923,6 +1930,8 @@ class ExLlamaV2DynamicJob:
 
         progress = 0
         for seq in self.sequences:
+            if seq.prefill_complete:
+                continue
 
             prefill_start = seq.kv_position
             prefill_end = seq.kv_position + self.generator.max_chunk_size
@@ -2055,6 +2064,8 @@ class ExLlamaV2DynamicJob:
                     page.can_revert = False
 
                 progress += prefill_end - prefill_start
+                if progress >= len(seq.sequence_ids) - 1:
+                    seq.prefill_complete = True
 
         if progress:
             r = {
@@ -2166,6 +2177,7 @@ class ExLlamaV2DynamicJob:
             for page in seq.allocated_pages:
                 if page.kv_position == page_size:
                     seq.kv_position += page_size
+                    self.cached_pages += 1
                 else:
                     break
 
