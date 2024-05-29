@@ -2085,18 +2085,17 @@ class ExLlamaV2DynamicJob:
             seq.allocated_pages = []
             available_pages = None
 
-            self.generator.access_serial += 1
-            new_serial = self.generator.access_serial
-
             # Allocate whole pages
 
             for h in seq.page_hashes:
+
+                self.generator.access_serial += 1
 
                 # Find matching referenced page
 
                 rp = self.generator.referenced_pages.get(h)
                 if rp:
-                    rp.add_ref(new_serial)
+                    rp.add_ref(self.generator.access_serial)
                     seq.allocated_pages.append(rp)
 
                 # If possible, reuse an unreferenced page with matching hash
@@ -2104,7 +2103,7 @@ class ExLlamaV2DynamicJob:
                 else:
                     up = self.generator.unreferenced_pages.get(h)
                     if up:
-                        up.add_ref(new_serial)
+                        up.add_ref(self.generator.access_serial)
                         seq.allocated_pages.append(up)
 
                     # No matching pages
@@ -2128,12 +2127,14 @@ class ExLlamaV2DynamicJob:
                         # Allocate oldest unreferenced page
 
                         np = available_pages.popleft()
-                        np.add_ref_clear(new_serial, h)
+                        np.add_ref_clear(self.generator.access_serial, h)
                         seq.allocated_pages.append(np)
 
             # Allocate unique pages
 
             for npi in range(seq.new_unique_pages):
+
+                self.generator.access_serial += 1
 
                 # Get list of unreferenced pages in order of oldest to newest
 
@@ -2150,7 +2151,7 @@ class ExLlamaV2DynamicJob:
                 # assert all(p.ref_count == 0 for p in available_pages)
 
                 np = available_pages.popleft()
-                np.add_ref_unique(new_serial)
+                np.add_ref_unique(self.generator.access_serial)
                 seq.allocated_pages.append(np)
 
             # Advance cache over prefilled pages
