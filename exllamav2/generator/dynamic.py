@@ -783,6 +783,7 @@ class ExLlamaV2DynamicGenerator:
                 "stage": "started"
                 "identifier":  - optional identifier
                 "serial": int  - job serial number
+                "eos": bool  - always False at this stage
             }
 
             # Prefill is underway
@@ -793,6 +794,7 @@ class ExLlamaV2DynamicGenerator:
                 "max_progress": int  - total prompt tokens to ingest
                 "identifier":  - optional identifier
                 "serial": int   - job serial number
+                "eos": bool  - always False at this stage
             }
 
             # Generation is underway
