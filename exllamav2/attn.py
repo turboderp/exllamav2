@@ -538,13 +538,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         is_q = self.q_handle is not None
         cfg = self.model.config
         constants = self.model.get_device_tensors(self.device_idx, scratch = is_q)
-
         page_size = attn_params.page_size
-
         batch_size, q_len, _ = hidden_states.shape
-
         cache_seqlens = attn_params.get_cache_seqlens(self.device())
         block_table = attn_params.get_block_index(self.device())
+
+        # TODO: We only need keys/values when preprocess_only == True, so we could skip q projection and attention.
+        #   Would need custom kernel to update paged cache if not calling flash_attn_with_kvcache
+        # skip_attn = kwargs.get("kv_only")
+
+        # TODO: Potentially we could emulate paged cache when in Q4 mode, since that requires copying the active part
+        #   of the current cache layer anyway. Test if block diagonal masking works with lower-right aligned mask.
 
         k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
         k_cache = k_cache_f.view(k_cache_f.shape[1] // page_size, page_size, k_cache_f.shape[2], k_cache_f.shape[3])
