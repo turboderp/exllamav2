@@ -478,6 +478,7 @@ class ExLlamaV2DynamicGenerator:
         completion_only: bool = False,
         filters: list[list[ExLlamaV2Filter]] | list[ExLlamaV2Filter] | None = None,
         filter_prefer_eos: bool = False,
+        return_last_results: bool = False,
         **kwargs
     ):
         """
@@ -533,8 +534,12 @@ class ExLlamaV2DynamicGenerator:
         :param filter_prefer_eos:
             If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
 
+        :return_last_results:
+            If True, returns the last results dict for each job
+
         :return:
-            Completion(s) (str or list[str] depending on the type of the input prompt argument)
+            Completion(s): (str or list[str] depending on the type of the input prompt argument)
+            Optionally, last results: (dict or list[dict] depending on the type of the input prompt argument)
         """
 
         order = {}
@@ -593,6 +598,7 @@ class ExLlamaV2DynamicGenerator:
         # Collect outputs until all jobs finish
 
         completions = [""] * batch_size
+        last_results = [None] * batch_size
 
         while self.num_remaining_jobs():
             results = self.iterate()
@@ -601,6 +607,8 @@ class ExLlamaV2DynamicGenerator:
                 if r["stage"] == "streaming":
                     text = r.get("text", "")
                     completions[idx] += text
+                if r["eos"]:
+                    last_results[idx] = r
             if abort_event is not None and abort_event.is_set():
                 self.clear_queue()
                 return None
@@ -610,10 +618,14 @@ class ExLlamaV2DynamicGenerator:
         if not completion_only:
             completions = [(p if isinstance(p, str) else p[0]) + c for p, c in zip(prompts, completions)]
 
-        if isinstance(prompt, list):
-            return completions
+        if not isinstance(prompt, list):
+            completions = completions[0]
+            last_results = last_results[0]
+
+        if return_last_results:
+            return completions, last_results
         else:
-            return completions[0]
+            return completions
 
 
     def print_page_list(self, short: bool = True):
