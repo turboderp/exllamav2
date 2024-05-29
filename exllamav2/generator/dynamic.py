@@ -343,7 +343,7 @@ class ExLlamaV2DynamicGenerator:
         # Initialize cache/page table
 
         self.paged = paged
-        self.page_size = PAGED_PAGE_SIZE if paged else self.max_seq_len
+        self.page_size = PAGED_PAGE_SIZE if paged else self.cache.max_seq_len
 
         assert cache.batch_size == 1, \
             f"DynamicGenerator requires cache to have batch_size = 1"
