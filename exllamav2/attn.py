@@ -201,13 +201,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         block_index: torch.Tensor
         cache_seqlens: torch.Tensor
         page_size: int
+        is_sequential: bool
+        first_index: int
 
         def __init__(
             self,
             batch_size: int,
             block_index: torch.Tensor,
             cache_seqlens: torch.Tensor,
-            page_size: int
+            page_size: int,
+            q_len: int = 0
         ):
             super().__init__(
                 batch_size = batch_size,
@@ -217,6 +220,23 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.block_index = block_index
             self.cache_seqlens = cache_seqlens
             self.page_size = page_size
+
+            self.is_sequential = False
+            assert self.block_index.device.type == "cpu"
+            assert self.cache_seqlens.device.type == "cpu"
+            assert q_len > 0
+            if self.block_index.shape[0] == 1:
+                vi0 = self.cache_seqlens[0].item()
+                vi1 = vi0 + q_len
+                vp0 = vi0 // page_size
+                vp1 = (vi1 - 1) // page_size
+                for i in range(vp0 + 1, vp1 + 1):
+                    if self.block_index[0, i].item() != self.block_index[0, i - 1].item() + 1:
+                        break
+                else:
+                    self.is_sequential = True
+                    self.first_index = self.block_index[0, vp0].item() * page_size + vi0 - vp0 * page_size
+                    self.cache_seqlens_after = self.cache_seqlens + q_len
 
         def get_attn_mask(self, device):
             raise NotImplementedError()
@@ -230,6 +250,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             if self.cache_seqlens.device != device:
                 self.cache_seqlens = safe_move_tensor(self.cache_seqlens, device)
             return self.cache_seqlens
+
+        def get_cache_seqlens_after(self, device) -> torch.Tensor:
+            if self.cache_seqlens_after.device != device:
+                self.cache_seqlens_after = safe_move_tensor(self.cache_seqlens_after, device)
+            return self.cache_seqlens_after
 
 
     def __init__(self,
@@ -521,14 +546,19 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cache_seqlens = attn_params.get_cache_seqlens(self.device())
         block_table = attn_params.get_block_index(self.device())
 
-        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
-        k_cache = k_cache.view(k_cache.shape[1] // page_size, page_size, k_cache.shape[2], k_cache.shape[3])
-        v_cache = v_cache.view(v_cache.shape[1] // page_size, page_size, v_cache.shape[2], v_cache.shape[3])
+        k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
+        k_cache = k_cache_f.view(k_cache_f.shape[1] // page_size, page_size, k_cache_f.shape[2], k_cache_f.shape[3])
+        v_cache = v_cache_f.view(v_cache_f.shape[1] // page_size, page_size, v_cache_f.shape[2], v_cache_f.shape[3])
 
         if is_q:
             q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-            k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-            v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+            if attn_params.is_sequential:
+                assert batch_size == 1
+                k = k_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+                v = v_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+            else:
+                k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+                v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
 
             if loras is None or self.temp_lora_size == 0:
                 pass_loras = []
@@ -576,6 +606,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                         attn_params.get_cache_seqlens(self.device()),
                         cfg.arch.rope_style == RopeStyle.NEOX
                     )
+            if attn_params.is_sequential:
+                k_ = k_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+                v_ = v_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+                k_.copy_(k)
+                v_.copy_(v)
+
+        if attn_params.is_sequential:
+            k = None
+            v = None
+            cache_seqlens_a = attn_params.get_cache_seqlens_after(self.device())
+        else:
+            cache_seqlens_a = cache_seqlens
 
         attn_output = flash_attn_with_kvcache(
             q = q,
@@ -583,7 +625,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             v = v,
             k_cache = k_cache,
             v_cache = v_cache,
-            cache_seqlens = cache_seqlens,
+            cache_seqlens = cache_seqlens_a,
             block_table = block_table,
             causal = True
         )

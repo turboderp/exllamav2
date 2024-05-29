@@ -769,11 +769,13 @@ class ExLlamaV2DynamicGenerator:
         # )
 
         if self.paged:
+
             return ExLlamaV2Attention.PagedParams(
                 batch_size = batch_size,
                 block_index = block_index,
                 cache_seqlens = cache_seqlens,
-                page_size = self.page_size
+                page_size = self.page_size,
+                q_len = q_len
             )
         else:
             assert cache_seqlens.shape[0] == 1
