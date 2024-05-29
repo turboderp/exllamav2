@@ -319,6 +319,8 @@ class ExLlamaV2DynamicGenerator:
 
         if paged:
             assert_paged_attn()
+            assert not cfg.no_flash_attn, \
+                "Paged mode requires flash-attn, but flash-attn is disabled in model config."
 
         assert not isinstance(cache, ExLlamaV2Cache_8bit), \
             "Dynamic generator does not currently work with 8-bit cache. Use either FP16 or Q4."
