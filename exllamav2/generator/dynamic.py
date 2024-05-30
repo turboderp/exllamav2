@@ -1679,18 +1679,18 @@ class ExLlamaV2DynamicJob:
                     r.update({ "text": self.held_text })
                     self.held_text = ""
                 if self.held_tokens:
-                    r.update({ "token_ids": self.held_tokens.torch() })
+                    r.update({ "token_ids": self.held_tokens.torch().clone() })
                     self.held_tokens.clear()
                 if self.held_probs:
-                    r.update({ "token_probs": self.held_probs.torch() })
+                    r.update({ "token_probs": self.held_probs.torch().clone() })
                     self.held_probs.clear()
                 if self.held_k_tokens:
-                    r.update({ "top_k_tokens": self.held_k_tokens.torch() })
-                    r.update({ "top_k_probs": self.held_k_probs.torch() })
+                    r.update({ "top_k_tokens": self.held_k_tokens.torch().clone() })
+                    r.update({ "top_k_probs": self.held_k_probs.torch().clone() })
                     self.held_k_tokens.clear()
                     self.held_k_probs.clear()
                 if self.held_logits:
-                    r.update({ "logits": self.held_logits.torch() })
+                    r.update({ "logits": self.held_logits.torch().clone() })
                     self.held_logits.clear()
 
             if suppressed_text:
