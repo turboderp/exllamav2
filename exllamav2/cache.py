@@ -354,6 +354,21 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
         self.create_state_tensors(copy_from, lazy)
 
+        # Models with small key/value dims need to to quantize/dequantize in multi-token blocks
+
+        Q_CACHE_BLOCKSIZE_Q = 512
+        kv_dim = model.config.num_key_value_heads * model.config.head_dim
+        if kv_dim < Q_CACHE_BLOCKSIZE_Q:
+            self.q_block = Q_CACHE_BLOCKSIZE_Q // kv_dim
+            assert self.q_block * kv_dim == Q_CACHE_BLOCKSIZE_Q, \
+                f"Cannot create Q4 cache. " + \
+                f"{Q_CACHE_BLOCKSIZE_Q} does not split into blocks of num_key_value_heads * head_dim"
+        else:
+            self.q_block = 1
+            assert kv_dim % Q_CACHE_BLOCKSIZE_Q == 0, \
+                f"Cannot create Q4 cache. " + \
+                f"num_key_value_heads * head_dim does not split into blocks of {Q_CACHE_BLOCKSIZE_Q}"
+
         # Create temp FP16 tensors for accessing Q4 layers
 
         self.temp_tensors = {}
@@ -380,18 +395,30 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
-        if width > 0: ext_c.q4_to_fp16_kv(self.key_states[layer_idx],
-                                          temp_key_state,
-                                          self.key_scales[layer_idx],
-                                          self.value_states[layer_idx],
-                                          temp_value_state,
-                                          self.value_scales[layer_idx],
-                                          batch_size,
-                                          offset,
-                                          width,
-                                          page_size,
-                                          cache_seqlens if cache_seqlens is not None else none_tensor,
-                                          block_table if block_table is not None else none_tensor)
+        if width == 0: return temp_key_state, temp_value_state
+
+        if self.q_block > 1 and not page_size:
+            a = offset
+            b = offset + width
+            a = a // self.q_block * self.q_block
+            b = (b + self.q_block - 1) // self.q_block * self.q_block
+            offset = a
+            width = b - a
+
+        ext_c.q4_to_fp16_kv(
+            self.key_states[layer_idx],
+            temp_key_state,
+            self.key_scales[layer_idx],
+            self.value_states[layer_idx],
+            temp_value_state,
+            self.value_scales[layer_idx],
+            batch_size,
+            offset,
+            width,
+            page_size,
+            cache_seqlens if cache_seqlens is not None else none_tensor,
+            block_table if block_table is not None else none_tensor
+        )
         return temp_key_state, temp_value_state
 
 
@@ -404,20 +431,32 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
                        cache_seqlens: torch.Tensor | None = None,
                        block_table: torch.Tensor | None = None):
 
+        if width == 0: return
+
+        if self.q_block > 1 and not page_size:
+            a = offset
+            b = offset + width
+            a = a // self.q_block * self.q_block
+            b = (b + self.q_block - 1) // self.q_block * self.q_block
+            offset = a
+            width = b - a
+
         device = self.model.cache_map[layer_idx]
         temp_key_state, temp_value_state = self.temp_tensors[device]
-        if width > 0: ext_c.fp16_to_q4_kv(temp_key_state,
-                                          self.key_states[layer_idx],
-                                          self.key_scales[layer_idx],
-                                          temp_value_state,
-                                          self.value_states[layer_idx],
-                                          self.value_scales[layer_idx],
-                                          batch_size,
-                                          offset,
-                                          width,
-                                          page_size,
-                                          cache_seqlens if cache_seqlens is not None else none_tensor,
-                                          block_table if block_table is not None else none_tensor)
+        ext_c.fp16_to_q4_kv(
+            temp_key_state,
+            self.key_states[layer_idx],
+            self.key_scales[layer_idx],
+            temp_value_state,
+            self.value_states[layer_idx],
+            self.value_scales[layer_idx],
+            batch_size,
+            offset,
+            width,
+            page_size,
+            cache_seqlens if cache_seqlens is not None else none_tensor,
+            block_table if block_table is not None else none_tensor
+        )
 
 
     def footprint(self) -> list[int]:

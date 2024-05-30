@@ -15,4 +15,7 @@
 #define USE_AVX2
 //#define PROFILING
 
+#define Q_CACHE_BLOCKSIZE_Q 512
+#define Q_CACHE_SUPER_BLOCKSIZE_Q (128 * 1024)
+
 #endif

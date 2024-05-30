@@ -113,7 +113,7 @@ void fp16_to_q4_kv
         int pages_per_seq = block_table.size(1);
 
         TORCH_CHECK_SHAPES(cache_seqlens, 0, block_table, 0, 1);
-        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
+//        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
 
         array_fp16_to_q4_kv_paged_cuda
         (
@@ -197,7 +197,7 @@ void q4_to_fp16_kv
         int pages_per_seq = block_table.size(1);
 
         TORCH_CHECK_SHAPES(cache_seqlens, 0, block_table, 0, 1);
-        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
+//        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
 
         array_q4_to_fp16_kv_paged_cuda
         (

@@ -3,10 +3,11 @@
 #include "quant/qdq_util.cuh"
 #include "util.cuh"
 #include "compat.cuh"
+#include "../config.h"
 
 #define THREADS 32
-#define BLOCKSIZE_Q 512
-#define SUPER_BLOCKSIZE_Q (128 * 1024)
+#define BLOCKSIZE_Q Q_CACHE_BLOCKSIZE_Q
+#define SUPER_BLOCKSIZE_Q Q_CACHE_SUPER_BLOCKSIZE_Q
 #define THREADS_Q (BLOCKSIZE_Q / 2)
 #define HADAMARD_Q4
 
@@ -220,6 +221,15 @@ __global__ void fp16_to_q4_kv_paged_kernel
     int vx_a = page_size * x;
     int px_a = seqlen - vx_a;
     int px_b = px_a + q_len;
+
+    if (dim < BLOCKSIZE_Q)
+    {
+        int g = BLOCKSIZE_Q / dim;
+//        if (px_a > 0) DBGI4(px_a, px_b, px_a / g * g, DIVIDE(px_b, g) * g);
+        px_a = px_a / g * g;
+        px_b = DIVIDE(px_b, g) * g;
+    }
+
     px_a = max(px_a, 0);
     px_b = min(px_b, page_size);
 
@@ -415,8 +425,19 @@ __global__ void q4_to_fp16_kv_paged_kernel
     int y = blockIdx.z >> 1;
     int page = block_table[pages_per_seq * y + x];
     int seqlen = cache_seqlens[y];
+    if (!seqlen) return;
+
     int vx_a = page_size * x;
     int vx_b = min(vx_a + page_size, seqlen);
+
+    if (dim < BLOCKSIZE_Q)
+    {
+        int g = BLOCKSIZE_Q / dim;
+//        if (vx_a > 0) DBGI4(vx_a, vx_b, vx_a / g * g, DIVIDE(vx_b, g) * g);
+        vx_a = vx_a / g * g;
+        vx_b = DIVIDE(vx_b, g) * g;
+    }
+
     int vnum = max(vx_b - vx_a, 0);
     int block_a = (page * page_size) * dim;
     int block_b = (page * page_size + vnum) * dim;
