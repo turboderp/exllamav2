@@ -7,7 +7,6 @@ from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
 from typing import Any, Dict, List, TypeVar, Union, cast
 
-
 T = TypeVar('T')
 no_default = object()
 
