@@ -337,6 +337,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def load(self):
 
+        cfg = self.model.config
+
         if self.input_layernorm is not None: self.input_layernorm.load()
         self.q_proj.load()
         self.k_proj.load()
@@ -356,7 +358,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # self.temp_k = device_tensors.get_scratch_slice(self.temp_k_size())
             # self.temp_v = device_tensors.get_scratch_slice(self.temp_v_size())
             self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
-            # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if self.model.config.num_attention_heads != self.model.config.num_key_value_heads else None
+            # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
 
             if self.has_norm:
                 norm_weight = self.input_layernorm.weight if self.input_layernorm.weight is not None else none_tensor
@@ -393,14 +395,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 # self.temp_k,
                 # self.temp_v,
                 self.temp_dq,
-                self.model.config.max_input_len * self.model.config.max_batch_size,
-                self.model.config.hidden_size,
-                self.model.config.num_attention_heads,
-                self.model.config.num_key_value_heads,
-                self.model.config.head_dim,
-                self.model.config.max_seq_len,
+                cfg.max_input_len * cfg.max_batch_size,
+                cfg.hidden_size,
+                cfg.num_attention_heads,
+                cfg.num_key_value_heads,
+                cfg.head_dim,
+                cfg.max_seq_len,
                 self.has_residual,
-                self.model.config.arch.rope_style.value,
+                cfg.arch.rope_style.value,
                 q_norm,
                 k_norm
             )
@@ -459,22 +461,26 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_state_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
 
 
     def temp_q_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
 
 
     def temp_k_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_key_value_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_key_value_heads * cfg.head_dim * 2 + 128
 
 
     def temp_v_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_key_value_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_key_value_heads * cfg.head_dim * 2 + 128
 
 
     def temp_dq_size(self):
@@ -487,23 +493,25 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_kv_size(self):
 
-        if self.model.config.num_key_value_heads == self.model.config.num_attention_heads: return 0
-        return 2 * self.model.config.max_seq_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        if cfg.num_key_value_heads == cfg.num_attention_heads: return 0
+        return 2 * cfg.max_seq_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
 
 
     def temp_attn_size(self):
         global has_flash_attn
         global has_xformers
 
-        att_max = min(self.model.config.max_attention_size, self.model.config.max_seq_len ** 2)
+        cfg = self.model.config
+        att_max = min(cfg.max_attention_size, cfg.max_seq_len ** 2)
 
-        if (has_flash_attn and not self.model.config.no_flash_attn) or (has_xformers and not self.model.config.no_xformers) :
+        if (has_flash_attn and not cfg.no_flash_attn) or (has_xformers and not cfg.no_xformers) :
             #in sm>=80 devices, xformers uses the same memory as flash_attn
             #todo: due to the different implementions. in sm<80 devices, xformers uses less memory than it in sm>=80. There may still be room for optimization.
-            eff = self.model.config.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
+            eff = cfg.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
             att_max //= eff
 
-        return 2 * att_max * self.model.config.num_attention_heads * 2 + 128
+        return 2 * att_max * cfg.num_attention_heads * 2 + 128
 
 
     def set_device_idx(self, idx):
