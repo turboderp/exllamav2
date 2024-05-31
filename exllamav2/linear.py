@@ -89,6 +89,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.assumed_footprint = in_features * (out_features + self.padding) * 2 + 128
 
 
+    @torch.inference_mode
     def load(self,
              w: dict | nn.Parameter | tuple | None = None,
              device_tensors: bool = True):

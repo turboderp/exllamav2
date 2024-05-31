@@ -335,6 +335,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return numel
 
 
+    @torch.inference_mode
     def load(self):
 
         cfg = self.model.config

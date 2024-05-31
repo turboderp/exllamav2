@@ -29,6 +29,7 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         self.variance_epsilon = 1e-6
 
 
+    @torch.inference_mode
     def load(self):
 
         w = self.load_weight()

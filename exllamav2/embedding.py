@@ -28,6 +28,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         self.embedding = None
 
 
+    @torch.inference_mode
     def load(self):
 
         vocab_size = self.model.config.vocab_size

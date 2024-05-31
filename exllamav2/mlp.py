@@ -90,6 +90,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return numel
 
 
+    @torch.inference_mode
     def load(self):
 
         cfg = self.model.config

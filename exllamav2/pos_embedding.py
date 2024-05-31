@@ -26,6 +26,7 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
         self.embedding = None
 
 
+    @torch.inference_mode
     def load(self):
 
         w = self.load_weight()
