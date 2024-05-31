@@ -98,6 +98,7 @@ class ExLlamaV2ArchParams:
 
         self.default_inner_dim_mult = None
         self.orig_weights_transposed = False
+        self.logit_scale_basedim = False
 
         # Mistral
 
@@ -549,6 +550,41 @@ class ExLlamaV2ArchParams:
             self.scale_attn_weights = True
             self.default_inner_dim_mult = 4
             self.orig_weights_transposed = True
+
+        # MiniCPM
+
+        if arch_string == "MiniCPMForCausalLM":
+            arch_recognized = True
+            self.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.expect_keys += \
+                expect_keys_llama
+            self.norm_eps_key = "rms_norm_eps"
+            self.attention_bias_qkv = False
+            self.attention_bias_o = False
+            self.mlp_bias = False
+            self.mlp_gate = True
+            self.mlp_key_gate = ".mlp.gate_proj"
+            self.mlp_key_up = ".mlp.up_proj"
+            self.mlp_key_down = ".mlp.down_proj"
+            self.mlp_act_func = "silu"
+            self.is_moe = False
+            self.norm = "rmsnorm"
+            self.lm_head_key = "lm_head"
+            self.normalize_embeddings = False
+            self.norm_key_1 = ".input_layernorm"
+            self.norm_key_2 = ".post_attention_layernorm"
+            self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
+            self.requires_bos = False
+            self.rope_style = RopeStyle.NEOX
+            self.keymap = None
+            self.fused_qkv_key = None
+            self.mqa = False
+            self.scale_attn_weights = False
+            self.logit_scale_basedim = True
 
         # Llama (default + fallback)
 

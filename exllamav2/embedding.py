@@ -42,6 +42,8 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         self.native_vocab_size = w.shape[0]
 
         self.embedding = nn.Embedding(vocab_size, hidden_size, pad_token_id, device = "meta")
+        if self.model.config.scale_emb != 1:
+            w *= self.model.config.scale_emb
         self.embedding.weight = w
 
 
@@ -53,7 +55,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
     def get_weight(self) -> torch.Tensor:
 
-        return self.embedding.weight.data
+        if self.model.config.scale_emb != 1:
+            return self.embedding.weight.data / self.model.config.scale_emb
+        else:
+            return self.embedding.weight.data
 
 
     def weight_footprint(self) -> int:

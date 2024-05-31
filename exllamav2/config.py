@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import torch
+import math
 from exllamav2.fasttensors import STFile
 from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
@@ -95,6 +97,8 @@ class ExLlamaV2Config:
     num_experts: int | None
     num_experts_per_token: int | None
     logit_scale: float
+    scale_depth: float
+    scale_emb: float
     use_qk_norm: bool
 
     checkpoint_fused_mlp: bool
@@ -224,9 +228,19 @@ class ExLlamaV2Config:
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
         self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
-        # Logit scale
+        # Logit/embedding/residual scale
 
         self.logit_scale = read(read_config, float, "logit_scale", 1)
+        if self.arch.logit_scale_basedim:
+            dim_model_base = read(read_config, int, "dim_model_base", self.hidden_size)
+            self.logit_scale /= (self.hidden_size / dim_model_base)
+
+        self.scale_emb = read(read_config, float, "scale_emb", 1)
+        scale_depth = read(read_config, float, "scale_depth", None)
+        if scale_depth is None:
+            self.scale_depth = 1
+        else:
+            self.scale_depth = scale_depth / math.sqrt(self.num_hidden_layers)
 
         # Positional embeddings
 

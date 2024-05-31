@@ -28,7 +28,6 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     @torch.inference_mode
     def load(self):
 
-
         w = self.load_weight()
 
         if isinstance(w, tuple):
