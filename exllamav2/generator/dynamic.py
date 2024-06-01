@@ -15,9 +15,9 @@ import time
 import threading
 import pprint
 from collections import deque
-import queue
 import hashlib
 from dataclasses import dataclass
+# import xxhash
 # from line_profiler import profile
 
 # TODO:
@@ -33,6 +33,17 @@ def _tensor_blake2b_checksum(tensor: torch.Tensor, prev_hash: bytes | None) -> b
         hasher.update(prev_hash)
     hasher.update(tensor.numpy().tobytes())
     return hasher.digest()
+
+# xxhasher = xxhash.xxh128()
+# def _tensor_xxhash128_checksum(tensor: torch.Tensor, prev_hash: bytes | None) -> bytes:
+#     global xxhasher
+#     xxhasher.reset()
+#     if prev_hash is not None:
+#         xxhasher.update(prev_hash)
+#     xxhasher.update(tensor.numpy().tobytes())
+#     return xxhasher.digest()
+
+_tensor_hash_checksum = _tensor_blake2b_checksum
 
 _uniquehash = 0
 def _randomhash():
@@ -700,7 +711,7 @@ class ExLlamaV2DynamicGenerator:
             #             if ids.shape[-1] > 0:
             #                 assert page.prev_hash == prev_hash, "bad prev_hash " + str(job) + " -> " + str(page)
             #             if ids.shape[-1] == self.page_size:
-            #                 phash = _tensor_blake2b_checksum(ids, prev_hash)
+            #                 phash = _tensor_hash_checksum(ids, prev_hash)
             #                 assert page.phash == phash, "bad phash " + str(job) + " -> " + str(page)
             #                 prev_hash = phash
             #             spos = spos2
@@ -1624,7 +1635,7 @@ class ExLlamaV2DynamicJob:
                 # assert page.sequence.shape[-1] == self.generator.page_size
                 # assert torch.all(page_ids == page.sequence)
                 # assert page_ids.shape[-1] == self.generator.page_size
-                new_hash = _tensor_blake2b_checksum(page_ids, last_hash)
+                new_hash = _tensor_hash_checksum(page_ids, last_hash)
 
                 # If another referenced page has the same hash, switch to referencing that instead
 
@@ -1883,7 +1894,7 @@ class ExLlamaV2DynamicJob:
             for i in range(context_pages):
                 page_ids = seq.sequence_ids.torch_slice(i * page_size, (i + 1) * page_size)
                 assert page_ids.shape[-1] == self.generator.page_size
-                r_hash = _tensor_blake2b_checksum(page_ids, r_hash)
+                r_hash = _tensor_hash_checksum(page_ids, r_hash)
                 seq.page_hashes.append(r_hash)
                 all_unique_hashes.add(r_hash)
 
