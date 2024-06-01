@@ -126,7 +126,7 @@ if build_jit:
 
             msvc_dirs = \
             [
-                a + "\\Microsoft Visual Studio\\" + b + "\\" + c + "\\VC\Tools\\MSVC\\"
+                a + "\\Microsoft Visual Studio\\" + b + "\\" + c + "\\VC\\Tools\\MSVC\\"
                 for b in ["2022", "2019", "2017"]
                 for a in [program_files_x64, program_files_x86]
                 for c in ["BuildTools", "Community", "Professional", "Enterprise", "Preview"]
