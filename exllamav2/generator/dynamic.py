@@ -536,7 +536,7 @@ class ExLlamaV2DynamicGenerator:
         :param filter_prefer_eos:
             If True, always sample the tokenizer's defined EOS token as soon as it's allowed by the filters
 
-        :return_last_results:
+        :param return_last_results:
             If True, returns the last results dict for each job
 
         :return:
