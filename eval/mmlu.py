@@ -83,15 +83,12 @@ if args.subjects != "all":
 # Format
 
 def format_question(question: str, choices: list[str], answer: int | None):
-    f = "Question:\n\n"
-    f += question
-    f += "\n\nChoices:\n\n"
+    f = question + "\n"
     for i, c in enumerate(c_options):
-        f += c + ": " + choices[i] + "\n"
-    f += "\nCorrect answer:"
+        f += c + ". " + choices[i] + "\n"
+    f += "Answer:"
     if answer is not None:
         f += " " + c_options[answer] + "\n\n"
-        f += "----\n\n"
     return f
 
 # Fewshot preprompts
@@ -101,7 +98,7 @@ with util.get_progress() as progress:
     task1 = progress.add_task("[red]Preprompts", total = len(all_subjects), name = "Preparing preprompts")
     for subject in all_subjects:
 
-        preprompt = ""
+        preprompt = f"The following are multiple choice questions (with answers) about {subject.replace('_', ' ')}.\n\n"
         fewshots = 0
         for pq in dataset_dev:
             if fewshots == args.fewshot_examples: break
