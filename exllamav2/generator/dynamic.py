@@ -1649,6 +1649,9 @@ class ExLlamaV2DynamicJob:
 
                     page.update_hash(new_hash)
 
+                # if page_after >= len(seq.allocated_pages):
+                #     pass
+
                 page = seq.allocated_pages[page_after]
                 page.prev_hash = new_hash
                 page.can_revert = False
@@ -1871,6 +1874,8 @@ class ExLlamaV2DynamicJob:
             seq.page_hashes = []
 
             max_len = len(seq.sequence_ids) + self.max_new_tokens
+            if self.prefix_token:
+                max_len += 1
             context_pages = (len(seq.sequence_ids) - 1) // page_size
             total_pages = (max_len + page_size - 1) // page_size
 
@@ -1884,6 +1889,9 @@ class ExLlamaV2DynamicJob:
 
             seq.new_unique_pages = total_pages - context_pages
             all_unique_pages += seq.new_unique_pages
+
+            # seq.context_pages = context_pages
+            # seq.total_pages = total_pages
 
         self.all_unique_hashes = list(all_unique_hashes)
 
