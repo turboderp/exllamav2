@@ -1,11 +1,12 @@
+from __future__ import annotations
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from human_eval.data import write_jsonl, read_problems
-from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Tokenizer, model_init
-from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4, ExLlamaV2Cache_8bit
+from exllamav2 import model_init
+from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, ExLlamaV2Sampler
-import torch, argparse, contextlib
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+import argparse, contextlib
+import util
 
 # Args
 
@@ -61,7 +62,7 @@ else:
     print("\n".join(prompt_formats.keys()))
     sys.exit()
 
-# Init model
+# Init model and cache
 
 model_init.check_args(args)
 model_init.print_options(args)
@@ -73,8 +74,6 @@ model, tokenizer = model_init.init(
     max_input_len = 2048
 )
 
-# Create cache
-
 if args.cache_q4: cache_type = ExLlamaV2Cache_Q4
 else: cache_type = ExLlamaV2Cache
 cache = cache_type(
@@ -82,8 +81,6 @@ cache = cache_type(
     lazy = not model.loaded,
     max_seq_len = args.cache_size or model.config.max_seq_len
 )
-
-# Load model
 
 if not model.loaded:
     model.load_autosplit(cache, progress = True)
@@ -112,13 +109,7 @@ num_samples_per_task = args.samples_per_task
 
 # Create jobs
 
-with Progress(
-    TextColumn("[bold blue]{task.fields[name]}", justify = "left"),
-    BarColumn(bar_width = None),
-    "[progress.percentage]{task.percentage:>3.0f}%",
-    TextColumn("{task.completed: 4} of {task.total: 4}", justify = "right"),
-    TimeRemainingColumn()
-) as progress:
+with util.get_progress() as progress:
 
     task1 = progress.add_task("[red]Sample", total = len(problems) * num_samples_per_task, name = "Creating sample jobs")
     for problem_id, problem in problems.items():
@@ -146,22 +137,10 @@ with Progress(
 
 samples = []
 
-# Progress bar
-
-total_jobs = generator.num_remaining_jobs()
-if args.verbose:
-    cm = contextlib.nullcontext()
-else:
-    cm = Progress(
-        TextColumn("[bold blue]{task.fields[name]}", justify = "left"),
-        BarColumn(bar_width = None),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        TextColumn("{task.completed: 4} of {task.total: 4}", justify = "right"),
-        TimeRemainingColumn()
-    )
-
 # Work
 
+total_jobs = generator.num_remaining_jobs()
+cm = contextlib.nullcontext() if args.verbose else util.get_progress()
 with cm as progress:
 
     if not args.verbose:
