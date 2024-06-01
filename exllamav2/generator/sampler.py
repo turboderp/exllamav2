@@ -188,11 +188,6 @@ class ExLlamaV2Sampler:
 
         logits = logits.squeeze(1)
 
-        # Prepare filter
-
-        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
-        ext_c.fast_fill_cpu_ones_bool(logit_filter)
-
         # Sync
 
         if sync:
@@ -205,6 +200,11 @@ class ExLlamaV2Sampler:
             logits = settings.cfg_scale * logits[0] + (1 - settings.cfg_scale) * logits[1]
             logits = logits.unsqueeze(0)
             batch_size = 1
+
+        # Prepare filter
+
+        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
+        ext_c.fast_fill_cpu_ones_bool(logit_filter)
 
         # Repetition penalty
 
