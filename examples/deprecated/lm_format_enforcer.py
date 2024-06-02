@@ -53,8 +53,6 @@ def completion(prompt, filters = None, max_new_tokens = 200):
     settings.top_p = 0.5
     settings.token_repetition_penalty = 1.0
 
-    settings.filters = filters
-
     # Send prompt to generator to begin stream
 
     input_ids = tokenizer.encode(prompt)
