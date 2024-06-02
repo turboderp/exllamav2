@@ -421,7 +421,11 @@ void safetensors_read_fb(uintptr_t handle, size_t beg, size_t size, torch::Tenso
     c10::optional<torch::Device> device = torch::device_of(target);
     bool target_cpu = (device.has_value() && device->type() == torch::kCPU);
 
-    int r = fseek(file, beg, SEEK_SET);
+    #ifdef __linux__
+		int r = fseek(file, beg, SEEK_SET);
+	#else
+		int r = _fseeki64(file, static_cast<__int64>(beg), SEEK_SET);
+	#endif
     TORCH_CHECK(!r, "Error seeking safetensors file");
 
     if (target_cpu)
