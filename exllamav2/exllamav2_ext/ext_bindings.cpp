@@ -46,10 +46,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     // safetensors
 
     m.def("safetensors_open", &safetensors_open, "safetensors_open");
+    m.def("safetensors_open_fb", &safetensors_open_fb, "safetensors_open_fb");
     m.def("safetensors_close", &safetensors_close, "safetensors_close");
+    m.def("safetensors_close_fb", &safetensors_close_fb, "safetensors_close_fb");
     m.def("safetensors_load", &safetensors_load, "safetensors_load");
     m.def("safetensors_pinned_buffer", &safetensors_pinned_buffer, "safetensors_pinned_buffer");
     m.def("safetensors_free_pinned_buffer", &safetensors_free_pinned_buffer, "safetensors_free_pinned_buffer");
+    m.def("safetensors_read_fb", &safetensors_read_fb, "safetensors_read_fb");
 
     // qmatrix
 

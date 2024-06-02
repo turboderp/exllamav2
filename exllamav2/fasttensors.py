@@ -47,6 +47,7 @@ class STFile:
     header_size: int
     metadata: object
     handle: int
+    handle_fb: int
     fast: bool
     st_context = None
     tensor_remap: dict | None
@@ -60,6 +61,7 @@ class STFile:
 
         self.metadata = None
         self.handle = 0
+        self.handle_fb = 0
         self.filename = filename
         self.st_context = None
         self.tensor_remap = None
@@ -80,13 +82,20 @@ class STFile:
                 self.tensor_remap[nkey] = key
             self.header = nheader
 
+        # TODO: Create platform-independent multithreaded loader to replace direct IO loader on Linux and fallback
+        #   cstdio loader on Windows
+
         if fast and os.name == "nt":
-            print(" !! Warning, fasttensors disabled on Windows")
+            self.fast_fb = True
             fast = False
+        else:
+            self.fast_fb = False
 
         self.fast = fast
         if self.fast:
             self.handle = ext_c.safetensors_open(filename)
+        if self.fast_fb:
+            self.handle_fb = ext_c.safetensors_open_fb(filename)
 
         global_stfiles.append(self)
 
@@ -122,6 +131,7 @@ class STFile:
         Close file handle (if necessary)
         """
         if self.fast: ext_c.safetensors_close(self.handle)
+        if self.fast_fb: ext_c.safetensors_close_fb(self.handle_fb)
 
 
     def read_dict(self):
@@ -187,24 +197,23 @@ class STFile:
             for (k, v) in global_tensorcache:
                 if k == cachekey: return v
 
-        if not_fast or not self.fast:
-            # h = self.header[key]
-            # dtype, esize = convert_dtype(h["dtype"])
-            # beg, end = h["data_offsets"]
-            # size = end - beg
-            # numel = size // esize
-            # shape = h["shape"]
-            # with open(self.filename, "rb") as f:
-            #     f.seek(beg)
-            #     buffer = bytearray(f.read(size))
-            #     tensor = torch.frombuffer(buffer, dtype = dtype, count = numel)
-            #     tensor = tensor.reshape(shape)
-            #     tensor = tensor.contiguous()
-            #     tensor = tensor.to(device)
+        if not_fast or (not self.fast and not self.fast_fb):
 
             # with safe_open(self.filename, framework = "pt", device = device) as f:
             f = self.get_cm(device)
             tensor = f.get_tensor(key)
+
+        elif self.fast_fb:
+
+            h = self.header[key]
+            dtype, esize = convert_dtype(h["dtype"])
+            beg, end = h["data_offsets"]
+            size = end - beg
+            numel = size // esize
+            shape = h["shape"]
+            tensor = torch.zeros(shape, dtype = dtype, device = device)
+            assert tensor.is_contiguous, "Non-contiguous tensor"
+            ext_c.safetensors_read_fb(self.handle_fb, beg + self.header_size, size, tensor)
 
         else:
 
