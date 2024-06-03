@@ -354,20 +354,15 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
         self.create_state_tensors(copy_from, lazy)
 
-        # Models with small key/value dims need to to quantize/dequantize in multi-token blocks
+        # Models with odd key/value dims need to to quantize/dequantize in multi-token blocks. Make sure the quant
+        # blocksize aligns with a whole number of tokens
 
         Q_CACHE_BLOCKSIZE_Q = 512
         kv_dim = model.config.num_key_value_heads * model.config.head_dim
-        if kv_dim < Q_CACHE_BLOCKSIZE_Q:
-            self.q_block = Q_CACHE_BLOCKSIZE_Q // kv_dim
-            assert self.q_block * kv_dim == Q_CACHE_BLOCKSIZE_Q, \
-                f"Cannot create Q4 cache. " + \
-                f"{Q_CACHE_BLOCKSIZE_Q} does not split into blocks of num_key_value_heads * head_dim"
-        else:
-            self.q_block = 1
-            assert kv_dim % Q_CACHE_BLOCKSIZE_Q == 0, \
-                f"Cannot create Q4 cache. " + \
-                f"num_key_value_heads * head_dim does not split into blocks of {Q_CACHE_BLOCKSIZE_Q}"
+        self.q_block = 1
+        while (kv_dim * self.q_block) % Q_CACHE_BLOCKSIZE_Q:
+            self.q_block += 1
+        self.max_seq_len = (self.max_seq_len + self.q_block - 1) // self.q_block * self.q_block
 
         # Create temp FP16 tensors for accessing Q4 layers
 
