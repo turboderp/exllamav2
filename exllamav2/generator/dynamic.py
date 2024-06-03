@@ -983,11 +983,11 @@ class ExLlamaV2DynamicGenerator:
 
             attn_params = self.get_paged_params(batch_size, block_index, cache_seqlens, 1)
 
-            device_logits, _ = self.draft_model.forward_chunk(
+            device_logits = self.draft_model.forward_chunk(
                 input_ids = batch_ids,
                 attn_params = attn_params,
                 cache = self.draft_cache,
-            )
+            )["logits"]
 
             new_ids = torch.argmax(device_logits, dim = -1)
             self.draft_ids_pinned[:batch_size, idx:idx+1].copy_(new_ids)
@@ -1062,12 +1062,12 @@ class ExLlamaV2DynamicGenerator:
 
         attn_params = self.get_paged_params(batch_size, block_index, cache_seqlens, batch_ids.shape[-1])
 
-        device_logits, _ = self.model.forward_chunk(
+        device_logits = self.model.forward_chunk(
             input_ids = batch_ids,
             attn_params = attn_params,
             cache = self.cache,
             loras = self.current_loras,
-        )
+        )["logits"]
 
         # Pass logits to jobs for sampling
 
