@@ -61,7 +61,7 @@ for p in i_prompts:
     prompts.append(p)
     filters.append([
         ExLlamaV2TokenEnforcerFilter(schema_parser, tokenizer),
-        ExLlamaV2PrefixFilter(model, tokenizer, "{")
+        ExLlamaV2PrefixFilter(model, tokenizer, ["{", " {"])
     ])
 
 # Generate
@@ -91,5 +91,5 @@ for i in range(len(i_prompts)):
     print()
     print("With filter:")
     print("------------")
-    print(json.dumps(json.loads(outputs[i * 2 + 1]), indent = 4))
+    print(json.dumps(json.loads(outputs[i * 2 + 1]), indent = 4).strip())
     print()
