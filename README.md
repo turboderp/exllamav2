@@ -203,11 +203,12 @@ pip install datasets
 
 #install flash attention
 pip install flash-attn --no-build-isolation
-´´´
+```
+
 To run the benchmark:
 ```
 python eval/mmlu.py -m /path/to/model
-´´´
+```
 
 ### Community
 
