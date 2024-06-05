@@ -1244,6 +1244,7 @@ class ExLlamaV2DynamicGenerator:
 
         if self.access_serial < self.last_defrag_serial + self.max_pages:
             return
+        self.last_defrag_serial = self.access_serial
 
         assert not self.referenced_pages
 
