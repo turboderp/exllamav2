@@ -200,6 +200,10 @@ class ExLlamaV2CacheBase:
         pass
 
 
+    def all_tensors(self):
+        raise NotImplementedError()
+
+
 class ExLlamaV2Cache(ExLlamaV2CacheBase):
     """
     FP16 cache
@@ -255,6 +259,9 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
 
         new = ExLlamaV2Cache(self.model, self.batch_size, self.max_seq_len, self)
         return new
+
+    def all_tensors(self):
+        return self.key_states + self.value_states
 
 
 class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
@@ -336,6 +343,9 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
 
         new = ExLlamaV2Cache_8bit(self.model, self.batch_size, self.max_seq_len, self)
         return new
+
+    def all_tensors(self):
+        return self.key_states + self.value_states
 
 
 class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
@@ -475,4 +485,9 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
         new = ExLlamaV2Cache_Q4(self.model, self.batch_size, self.max_seq_len, self)
         return new
+
+
+    def all_tensors(self):
+        return self.key_states + self.value_states + self.key_scales, self.value_scales
+
 
