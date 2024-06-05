@@ -1242,8 +1242,8 @@ class ExLlamaV2DynamicGenerator:
         if not self.paged:
             return
 
-        # if self.access_serial < self.last_defrag_serial + self.max_pages:
-        #     return
+        if self.access_serial < self.last_defrag_serial + self.max_pages:
+            return
 
         assert not self.referenced_pages
 
@@ -1280,12 +1280,12 @@ class ExLlamaV2DynamicGenerator:
                 node.parent.age = min(node.parent.left_page, node.left_page)
                 node = node.parent
 
-        # Remove leftmost branch until tree is empty
+        # Remove oldest branch until tree is empty
 
         new_page_index = 0
         while root_node.children:
-            leftmost = min(root_node.children, key = lambda x: x.left_page)
-            node = leftmost
+            oldest = min(root_node.children, key = lambda x: x.left_page)
+            node = oldest
             skipped_nodes = set()
             while True:
                 node.page.new_page_index = new_page_index
@@ -1294,7 +1294,7 @@ class ExLlamaV2DynamicGenerator:
                 next_node = min(node.children, key = lambda x: x.left_page)
                 skipped_nodes |= set([n for n in node.children if n != next_node])
                 node = next_node
-            root_node.children.remove(leftmost)
+            root_node.children.remove(oldest)
             root_node.children |= skipped_nodes
 
         # Order of operations
