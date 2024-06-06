@@ -188,6 +188,28 @@ will fit alongside a desktop environment. For now.
 A script is provided to quantize models. Converting large models can be somewhat slow, so be warned. The conversion
 script and its options are explained in [detail here](doc/convert.md)
 
+### Evaluation
+
+A script is provided to run the MMLU benchmark. In order to run it you first need to install these packages:
+
+```
+#optional - create a python env
+python -m venv .venv
+#activate the enviroment
+source .venv/bin/activate
+
+#install datasets 
+pip install datasets
+
+#install flash attention
+pip install flash-attn --no-build-isolation
+```
+
+To run the benchmark:
+```
+python eval/mmlu.py -m /path/to/model
+```
+
 ### Community
 
 A test community is provided at https://discord.gg/NSFwVuCjRq 
