@@ -75,7 +75,7 @@ and speeds will vary across GPUs, with slow CPUs still being a potential bottlen
 To install from the repo you'll need the CUDA Toolkit and either gcc on Linux or (Build Tools for) Visual Studio
 on Windows). Also make sure you have an appropriate version of [PyTorch](https://pytorch.org/get-started/locally/), then run:
 
-```
+```sh
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
 pip install -r requirements.txt
@@ -192,16 +192,16 @@ script and its options are explained in [detail here](doc/convert.md)
 
 A script is provided to run the MMLU benchmark. In order to run it you first need to install these packages:
 
-```
-#optional - create a python env
+```sh
+# Optional - create a python env
 python -m venv .venv
-#activate the enviroment
+# Activate the enviroment
 source .venv/bin/activate
 
-#install datasets 
+# Install datasets 
 pip install datasets
 
-#install flash attention
+# Install flash attention
 pip install flash-attn --no-build-isolation
 ```
 
