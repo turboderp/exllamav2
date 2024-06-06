@@ -137,6 +137,7 @@ jobs:
 
           pip3 install torch==${{ matrix.torch }} --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
+          pip3 install --upgrade setuptools==65.5.0
           pip3 cache purge
 
           # --- Build wheel 
