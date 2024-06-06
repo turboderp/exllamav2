@@ -7,6 +7,7 @@ from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, 
 import argparse, contextlib
 import torch
 import util
+import random
 
 # Args
 
@@ -15,6 +16,7 @@ parser.add_argument("-cs", "--cache_size", type = int, default = None)
 parser.add_argument("-cq4", "--cache_q4", action = "store_true", help = "Use Q4 cache")
 parser.add_argument("-sub", "--subjects", type = str, default = "all", help = "Comma-separated list of categories to test, or 'all'")
 parser.add_argument("-fs", "--fewshot_examples", type = int, default = 5, help = "Number of examples for fewshot examples, max 5")
+parser.add_argument("-shf", "--shuffle", action = "store_true", help = "Shuffle choices randomly")
 model_init.add_args(parser)
 args = parser.parse_args()
 
@@ -79,6 +81,15 @@ if args.subjects != "all":
             print(f"Subject: {s} is not present in dataset")
             sys.exit()
     all_subjects = set(sel_subjects)
+
+# Optionally shuffle
+
+if args.shuffle:
+    for problem in dataset_all:
+        if problem["subject"] in all_subjects:
+            perm = random.sample(range(4), k = 4)
+            problem["choices"] = [problem["choices"][i] for i in perm]
+            problem["answer"] = perm.index(problem["answer"])
 
 # Format
 
