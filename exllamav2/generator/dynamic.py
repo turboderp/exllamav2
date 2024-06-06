@@ -1237,6 +1237,7 @@ class ExLlamaV2DynamicGenerator:
                 results.append(r)
 
 
+    @torch.inference_mode
     def defrag_cache(self):
 
         if not self.paged:
