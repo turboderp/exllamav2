@@ -488,6 +488,6 @@ class ExLlamaV2Cache_Q4(ExLlamaV2CacheBase):
 
 
     def all_tensors(self):
-        return self.key_states + self.value_states + self.key_scales, self.value_scales
+        return self.key_states + self.value_states + self.key_scales + self.value_scales
 
 
