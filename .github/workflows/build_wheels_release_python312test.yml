@@ -143,6 +143,7 @@ jobs:
 
           # --- Install dependencies
 
+          python3 -m ensurepip --upgrade
           pip3 install torch==${{ matrix.torch }} --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
           pip3 install --upgrade build wheel safetensors sentencepiece ninja
           pip3 install --upgrade setuptools==65.5.0
@@ -188,6 +189,7 @@ jobs:
           
           # --- Install dependencies
           
+          python -m ensurepip --upgrade
           python -m pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           python -m pip install --upgrade setuptools==65.5.1
           python -m pip install --upgrade build wheel safetensors sentencepiece ninja
