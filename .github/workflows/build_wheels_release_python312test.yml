@@ -78,11 +78,8 @@ jobs:
 
     steps:
 
-      - name: Uninstall VS2022
-        run: choco uninstall visualstudio2022enterprise
-        if: runner.os == 'Windows'
-      - name: Install VS2022 17.9
-        run: choco install visualstudio2022enterprise --version=117.9.7.0
+      - name: Install VS Build Tools 17.9
+        run: choco install -y visualstudio2022buildtools --version=117.9.7.0 --params "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --installChannelUri https://aka.ms/vs/17/release/180911598_-255012421/channel"
         if: runner.os == 'Windows'
 
       # Free disk space
