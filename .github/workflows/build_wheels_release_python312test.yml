@@ -78,6 +78,9 @@ jobs:
 
     steps:
 
+      - run: choco install visualstudio2022community --version=117.9.7.0
+        if: runner.os == 'Windows'
+
       # Free disk space
 
       - name: Free Disk Space
