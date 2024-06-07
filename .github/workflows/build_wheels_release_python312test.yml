@@ -78,7 +78,11 @@ jobs:
 
     steps:
 
-      - run: choco upgrade visualstudio2022enterprise --version=117.9.7.0
+      - name: Uninstall VS2022
+        run: choco uninstall visualstudio2022enterprise
+        if: runner.os == 'Windows'
+      - name: Install VS2022 17.9
+        run: choco install visualstudio2022enterprise --version=117.9.7.0
         if: runner.os == 'Windows'
 
       # Free disk space
