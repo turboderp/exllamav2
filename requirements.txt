@@ -9,6 +9,6 @@ sentencepiece>=0.1.97
 pygments
 websockets
 regex
-numpy
+numpy~=1.26.4
 tokenizers
 rich
