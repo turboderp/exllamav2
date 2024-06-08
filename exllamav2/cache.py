@@ -25,7 +25,8 @@ class ExLlamaV2CacheBase:
     head_dim: int
 
     dtype: torch.dtype
-    weights_per_element: int
+    weights_per_element_k: int
+    weights_per_element_v: int
     has_scales: bool
 
 
@@ -34,14 +35,16 @@ class ExLlamaV2CacheBase:
                  batch_size: int,
                  max_seq_len: int,
                  dtype: torch.dtype,
-                 weights_per_element: int,
+                 weights_per_element_k: int,
+                 weights_per_element_v: int,
                  has_scales: bool):
 
         self.model = model
         self.max_seq_len = max_seq_len if max_seq_len != -1 else self.model.config.max_seq_len
         self.batch_size = batch_size
         self.dtype = dtype
-        self.weights_per_element = weights_per_element
+        self.weights_per_element_k = weights_per_element_k
+        self.weights_per_element_v = weights_per_element_v
         self.has_scales = has_scales
 
         self.key_states = []
@@ -55,7 +58,8 @@ class ExLlamaV2CacheBase:
 
         self.current_seq_len = 0
         self.shape_basic = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim)
-        self.shape_w = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element)
+        self.shape_wk = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element_k)
+        self.shape_wv = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element_v)
         self.shape_s = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32)
 
 
@@ -74,8 +78,8 @@ class ExLlamaV2CacheBase:
 
                 if copy_from is None:
                     device = self.model.cache_map[i]
-                    p_key_states = torch.zeros(self.shape_w, dtype = self.dtype, device = device).contiguous()
-                    p_value_states = torch.zeros(self.shape_w, dtype = self.dtype, device = device).contiguous()
+                    p_key_states = torch.zeros(self.shape_wk, dtype = self.dtype, device = device).contiguous()
+                    p_value_states = torch.zeros(self.shape_wv, dtype = self.dtype, device = device).contiguous()
                     if self.has_scales:
                         p_key_scales = torch.zeros(self.shape_s, dtype = torch.float16, device = device).contiguous()
                         p_value_scales = torch.zeros(self.shape_s, dtype = torch.float16, device = device).contiguous()
@@ -115,8 +119,8 @@ class ExLlamaV2CacheBase:
                 self.key_states[k] = None
                 self.value_states[k] = None
 
-            p_key_states = torch.zeros(self.shape_w, dtype = self.dtype, device = v).contiguous()
-            p_value_states = torch.zeros(self.shape_w, dtype = self.dtype, device = v).contiguous()
+            p_key_states = torch.zeros(self.shape_wk, dtype = self.dtype, device = v).contiguous()
+            p_value_states = torch.zeros(self.shape_wv, dtype = self.dtype, device = v).contiguous()
             self.key_states[k] = p_key_states
             self.value_states[k] = p_value_states
             if self.has_scales:
@@ -220,7 +224,7 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
                  copy_from: ExLlamaV2Cache | None = None,
                  lazy: bool = False):
 
-        super().__init__(model, batch_size, max_seq_len, torch.half, 1, False)
+        super().__init__(model, batch_size, max_seq_len, torch.half, 1, 1, False)
 
         self.create_state_tensors(copy_from, lazy)
 
@@ -280,7 +284,7 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
                  copy_from: ExLlamaV2Cache_8bit | None = None,
                  lazy: bool = False):
 
-        super().__init__(model, batch_size, max_seq_len, torch.uint8, 1, False)
+        super().__init__(model, batch_size, max_seq_len, torch.uint8, 1, 1, False)
 
         self.create_state_tensors(copy_from, lazy)
 
@@ -365,9 +369,10 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
                  max_seq_len: int = -1,
                  copy_from: ExLlamaV2Cache_Q4 | None = None,
                  lazy: bool = False,
-                 weights_per_byte: int = -1):
+                 weights_per_byte_k: int = -1,
+                 weights_per_byte_v: int = -1):
 
-        super().__init__(model, batch_size, max_seq_len, torch.uint8, weights_per_byte, True)
+        super().__init__(model, batch_size, max_seq_len, torch.uint8, weights_per_byte_k, weights_per_byte_v, True)
         cfg = self.model.config
 
         self.create_state_tensors(copy_from, lazy)
@@ -607,8 +612,21 @@ class ExLlamaV2Cache_Q4(ExLlamaV2Cache_Q):
                  copy_from: ExLlamaV2Cache_Q4 | None = None,
                  lazy: bool = False):
 
-        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 2)
+        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 2, 2)
         self.wbits = 4
+
+
+class ExLlamaV2Cache_Q6(ExLlamaV2Cache_Q):
+
+    def __init__(self,
+                 model: ExLlamaV2,
+                 batch_size: int = 1,
+                 max_seq_len: int = -1,
+                 copy_from: ExLlamaV2Cache_Q6 | None = None,
+                 lazy: bool = False):
+
+        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 1, 2)
+        self.wbits = 6
 
 
 class ExLlamaV2Cache_Q8(ExLlamaV2Cache_Q):
@@ -617,8 +635,8 @@ class ExLlamaV2Cache_Q8(ExLlamaV2Cache_Q):
                  model: ExLlamaV2,
                  batch_size: int = 1,
                  max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache_Q4 | None = None,
+                 copy_from: ExLlamaV2Cache_Q8 | None = None,
                  lazy: bool = False):
 
-        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 1)
+        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 1, 1)
         self.wbits = 8

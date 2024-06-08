@@ -107,7 +107,7 @@ void fp16_to_q_kv
     TORCH_CHECK_SHAPES(k_in, 0, v_in, 0, 1);
     TORCH_CHECK_SHAPES(k_in, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
-    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
+//    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
 
     if (!cal_k.device().is_meta())
         TORCH_CHECK_SHAPES_OPT(cal_k, 0, k_in, 2, 1);
@@ -207,7 +207,7 @@ void q_to_fp16_kv
     TORCH_CHECK_SHAPES(k_in, 0, v_in, 0, 1);
     TORCH_CHECK_SHAPES(k_in, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
-    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
+//    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
 
     if (!cal_k.device().is_meta())
         TORCH_CHECK_SHAPES_OPT(cal_k, 0, k_out, 2, 1);

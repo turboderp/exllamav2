@@ -8,6 +8,7 @@ from exllamav2 import(
     ExLlamaV2Cache,
     ExLlamaV2Cache_8bit,
     ExLlamaV2Cache_Q4,
+    ExLlamaV2Cache_Q6,
     ExLlamaV2Cache_Q8,
     ExLlamaV2Tokenizer,
     model_init,
@@ -55,6 +56,7 @@ parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help 
 
 parser.add_argument("-c8", "--cache_8bit", action = "store_true", help = "Use 8-bit (FP8) cache")
 parser.add_argument("-cq4", "--cache_q4", action = "store_true", help = "Use Q4 cache")
+parser.add_argument("-cq6", "--cache_q6", action = "store_true", help = "Use Q6 cache")
 parser.add_argument("-cq8", "--cache_q8", action = "store_true", help = "Use Q8 cache")
 
 parser.add_argument("-ngram", "--ngram_decoding", action = "store_true", help = "Use n-gram speculative decoding")
@@ -130,6 +132,8 @@ if args.draft_model_dir:
         draft_cache = ExLlamaV2Cache_8bit(draft_model)
     elif args.cache_q4:
         draft_cache = ExLlamaV2Cache_Q4(draft_model)
+    elif args.cache_q6:
+        draft_cache = ExLlamaV2Cache_Q6(draft_model)
     elif args.cache_q8:
         draft_cache = ExLlamaV2Cache_Q8(draft_model)
     else:
@@ -141,6 +145,8 @@ if args.cache_8bit:
     cache = ExLlamaV2Cache_8bit(model, lazy = not model.loaded)
 elif args.cache_q4:
     cache = ExLlamaV2Cache_Q4(model, lazy = not model.loaded)
+elif args.cache_q6:
+    cache = ExLlamaV2Cache_Q6(model, lazy=not model.loaded)
 elif args.cache_q8:
     cache = ExLlamaV2Cache_Q8(model, lazy = not model.loaded)
 else:

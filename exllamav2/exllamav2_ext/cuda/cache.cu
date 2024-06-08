@@ -119,7 +119,7 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
 
 // -------------- FP16 -> Q
 
-template <int wbits>
+template <int wbits_k, int wbits_v>
 __global__ void fp16_to_q_kv_paged_kernel
 (
     const half* __restrict__ k_in,
@@ -172,11 +172,14 @@ __global__ void fp16_to_q_kv_paged_kernel
     {
         int j = i + blockIdx.y * BLOCKSIZE_Q;
         if (j >= block_b) continue;
-        fp16_to_q<wbits>(t, in, out, scales, j, cal, dim);
+        if (kv)
+            fp16_to_q<wbits_v>(t, in, out, scales, j, cal, dim);
+        else
+            fp16_to_q<wbits_k>(t, in, out, scales, j, cal, dim);
     }
 }
 
-template <int wbits>
+template <int wbits_k, int wbits_v>
 __global__ void fp16_to_q_kv_kernel
 (
     const half* __restrict__ k_in,
@@ -193,13 +196,17 @@ __global__ void fp16_to_q_kv_kernel
 )
 {
     int t = threadIdx.x;
-    const half* in = blockIdx.z ? v_in : k_in;
-    unsigned char* out = blockIdx.z ? v_out : k_out;
-    half* scales = blockIdx.z ? v_scales : k_scales;
-    const half* cal = blockIdx.z ? cal_v : cal_k;
+    int kv = blockIdx.z & 1;
+    const half* in = kv ? v_in : k_in;
+    unsigned char* out = kv ? v_out : k_out;
+    half* scales = kv ? v_scales : k_scales;
+    const half* cal = kv ? cal_v : cal_k;
     int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
 
-    fp16_to_q<wbits>(t, in, out, scales, block_offset, cal, dim);
+    if (kv)
+        fp16_to_q<wbits_v>(t, in, out, scales, block_offset, cal, dim);
+    else
+        fp16_to_q<wbits_k>(t, in, out, scales, block_offset, cal, dim);
 }
 
 void array_fp16_to_q_kv_paged_cuda
@@ -229,7 +236,17 @@ void array_fp16_to_q_kv_paged_cuda
     gridDim.z = batch_size * 2;
 
     if (wbits == 4)
-        fp16_to_q_kv_paged_kernel<4><<<gridDim, blockDim>>>
+        fp16_to_q_kv_paged_kernel<4, 4><<<gridDim, blockDim>>>
+        (
+            k_in, k_out, k_scales,
+            v_in, v_out, v_scales,
+            cache_seqlens, block_table,
+            pages_per_seq, page_size,
+            dim, q_len,
+            cal_k, cal_v
+        );
+    else if (wbits == 6)
+        fp16_to_q_kv_paged_kernel<8, 4><<<gridDim, blockDim>>>
         (
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
@@ -239,7 +256,7 @@ void array_fp16_to_q_kv_paged_cuda
             cal_k, cal_v
         );
     else if (wbits == 8)
-        fp16_to_q_kv_paged_kernel<8><<<gridDim, blockDim>>>
+        fp16_to_q_kv_paged_kernel<8, 8><<<gridDim, blockDim>>>
         (
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
@@ -275,14 +292,21 @@ void array_fp16_to_q_kv_cuda
     gridDim.z = v_in ? 2 : 1;
 
     if (wbits == 4)
-        fp16_to_q_kv_kernel<4><<<gridDim, blockDim>>>(
+        fp16_to_q_kv_kernel<4, 4><<<gridDim, blockDim>>>(
+            k_in, k_out, k_scales,
+            v_in, v_out, v_scales,
+            dim, offset, stride,
+            cal_k, cal_v
+        );
+    else if (wbits == 6)
+        fp16_to_q_kv_kernel<8, 4><<<gridDim, blockDim>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
             dim, offset, stride,
             cal_k, cal_v
         );
     else if (wbits == 8)
-        fp16_to_q_kv_kernel<8><<<gridDim, blockDim>>>(
+        fp16_to_q_kv_kernel<8, 8><<<gridDim, blockDim>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
             dim, offset, stride,
@@ -292,7 +316,7 @@ void array_fp16_to_q_kv_cuda
 
 // --------------- Q -> FP16
 
-template <int wbits>
+template <int wbits_k, int wbits_v>
 __global__ void q_to_fp16_kv_paged_kernel
 (
     const unsigned char* __restrict__ k_in,
@@ -342,11 +366,14 @@ __global__ void q_to_fp16_kv_paged_kernel
     {
         int j = i + blockIdx.y * BLOCKSIZE_Q;
         if (j >= block_b) continue;
-        q_to_fp16<wbits>(t, in, scales, out, j, cal, dim);
+        if (kv)
+            q_to_fp16<wbits_v>(t, in, scales, out, j, cal, dim);
+        else
+            q_to_fp16<wbits_k>(t, in, scales, out, j, cal, dim);
     }
 }
 
-template <int wbits>
+template <int wbits_k, int wbits_v>
 __global__ void q_to_fp16_kv_kernel
 (
     const unsigned char* __restrict__ k_in,
@@ -363,13 +390,17 @@ __global__ void q_to_fp16_kv_kernel
 )
 {
     int t = threadIdx.x;
-    const unsigned char* in = blockIdx.z ? v_in : k_in;
-    const half* scales = blockIdx.z ? v_scales : k_scales;
-    half* out = blockIdx.z ? v_out : k_out;
-    const half* cal = blockIdx.z ? cal_v : cal_k;
+    int kv = blockIdx.z & 1;
+    const unsigned char* in = kv ? v_in : k_in;
+    const half* scales = kv ? v_scales : k_scales;
+    half* out = kv ? v_out : k_out;
+    const half* cal = kv ? cal_v : cal_k;
     int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
 
-    q_to_fp16<wbits>(t, in, scales, out, block_offset, cal, dim);
+    if (kv)
+        q_to_fp16<wbits_v>(t, in, scales, out, block_offset, cal, dim);
+    else
+        q_to_fp16<wbits_k>(t, in, scales, out, block_offset, cal, dim);
 }
 
 void array_q_to_fp16_kv_paged_cuda
@@ -398,7 +429,17 @@ void array_q_to_fp16_kv_paged_cuda
     gridDim.z = batch_size * 2;
 
     if (wbits == 4)
-        q_to_fp16_kv_paged_kernel<4><<<gridDim, blockDim>>>
+        q_to_fp16_kv_paged_kernel<4, 4><<<gridDim, blockDim>>>
+        (
+            k_in, k_scales, k_out,
+            v_in, v_scales, v_out,
+            cache_seqlens, block_table,
+            pages_per_seq, page_size,
+            dim,
+            cal_k, cal_v
+        );
+    else if (wbits == 6)
+        q_to_fp16_kv_paged_kernel<8, 4><<<gridDim, blockDim>>>
         (
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
@@ -408,7 +449,7 @@ void array_q_to_fp16_kv_paged_cuda
             cal_k, cal_v
         );
     else if (wbits == 8)
-        q_to_fp16_kv_paged_kernel<8><<<gridDim, blockDim>>>
+        q_to_fp16_kv_paged_kernel<8, 8><<<gridDim, blockDim>>>
         (
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
@@ -444,14 +485,21 @@ void array_q_to_fp16_kv_cuda
     gridDim.z = v_in ? 2 : 1;
 
     if (wbits == 4)
-        q_to_fp16_kv_kernel<4><<<gridDim, blockDim>>>(
+        q_to_fp16_kv_kernel<4, 4><<<gridDim, blockDim>>>(
+            k_in, k_scales, k_out,
+            v_in, v_scales, v_out,
+            dim, offset, stride,
+            cal_k, cal_v
+        );
+    else if (wbits == 6)
+        q_to_fp16_kv_kernel<8, 4><<<gridDim, blockDim>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
             dim, offset, stride,
             cal_k, cal_v
         );
     else if (wbits == 8)
-        q_to_fp16_kv_kernel<8><<<gridDim, blockDim>>>(
+        q_to_fp16_kv_kernel<8, 8><<<gridDim, blockDim>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
             dim, offset, stride,

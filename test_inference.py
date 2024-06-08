@@ -5,6 +5,7 @@ from exllamav2 import(
     ExLlamaV2Cache,
     ExLlamaV2Cache_8bit,
     ExLlamaV2Cache_Q4,
+    ExLlamaV2Cache_Q6,
     ExLlamaV2Cache_Q8,
     ExLlamaV2Tokenizer,
     model_init,
@@ -47,6 +48,7 @@ parser.add_argument("-el", "--eval_length", type = int, default = 2048, help = "
 parser.add_argument("-et", "--eval_token", action = "store_true", help = "Evaluate perplexity on token-by-token inference using cache")
 parser.add_argument("-e8", "--eval_token_8bit", action = "store_true", help = "Evaluate perplexity on token-by-token inference using 8-bit (FP8) cache")
 parser.add_argument("-eq4", "--eval_token_q4", action = "store_true", help = "Evaluate perplexity on token-by-token inference using Q4 cache")
+parser.add_argument("-eq6", "--eval_token_q6", action = "store_true", help = "Evaluate perplexity on token-by-token inference using Q6 cache")
 parser.add_argument("-eq8", "--eval_token_q8", action = "store_true", help = "Evaluate perplexity on token-by-token inference using Q8 cache")
 # parser.add_argument("-eb", "--eval_bos", action = "store_true", help = "Add BOS token to every row in perplexity test (required by Gemma and maybe other models.)")
 parser.add_argument("-p", "--prompt", type = str, help = "Generate from prompt (basic sampling settings)")
@@ -69,7 +71,7 @@ args = parser.parse_args()
 # Check conflicting settings
 
 if args.stream_layers:
-    if args.eval_token or args.eval_token_8bit or args.eval_token_q4 or args.eval_token_q8:
+    if args.eval_token or args.eval_token_8bit or args.eval_token_q4 or args.eval_token_q6 or args.eval_token_q8:
         print(" ## Can't test token ppl while streaming layers")
         sys.exit()
     if args.prompt:
@@ -448,6 +450,16 @@ if args.eval_dataset or args.standard_perplexity:
                 print(f" -- Inference (token, Q4 cache)", end = "")
                 sys.stdout.flush()
                 cache = ExLlamaV2Cache_Q4(model, max_seq_len = eval_length)
+                # cache.calibrate(tokenizer)
+                test_ppl_token()
+
+        if args.eval_token_q6:
+            if args.standard_perplexity:
+                print(f" !! Note, can't evalutate token perplexity on standard test")
+            else:
+                print(f" -- Inference (token, Q6 cache)", end = "")
+                sys.stdout.flush()
+                cache = ExLlamaV2Cache_Q6(model, max_seq_len = eval_length)
                 # cache.calibrate(tokenizer)
                 test_ppl_token()
 
