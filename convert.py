@@ -14,6 +14,7 @@ import torch
 parser = argparse.ArgumentParser(description = "Convert model to ExLlamaV2")
 parser.add_argument("-i", "--in_dir", type = str, help = "Input directory", default = "")
 parser.add_argument("-o", "--out_dir", type = str, help = "Output (working) directory")
+parser.add_argument("-res", "--resume", action = "store_true", help = "Resume job from specified output directory (without specifying other options)")
 parser.add_argument("-nr", "--no_resume", action = "store_true", help = "Do not resume an interrupted job (deletes all files in the output directory)")
 parser.add_argument("-cf", "--compile_full", type = str, help = "Output folder for compiled model with all config/tokenizer files")
 parser.add_argument("-c", "--cal_dataset", type = str, help = "Calibration dataset (.parquet file)")
@@ -37,12 +38,17 @@ torch.set_printoptions(precision = 7, sci_mode = False, linewidth = 200)
 
 # Check some args
 
-if not args.in_dir:
-    print(" ## Please specify input model directory (-i, --in_dir)")
+resuming = False
+if args.out_dir:
+    if not args.no_resume:
+        if os.path.exists(os.path.join(args.out_dir, "job_new.json")):
+            resuming = True
+else:
+    print(" ## Please specify output/working directory (-o, --out_dir)")
     sys.exit()
 
-if not args.out_dir:
-    print(" ## Please specify output/working directory (-o, --out_dir)")
+if not args.in_dir and not resuming:
+    print(" ## Please specify input model directory (-i, --in_dir)")
     sys.exit()
 
 if args.length > 2048 or args.measurement_length > 2048:
@@ -62,17 +68,6 @@ if args.bits < 2 or args.bits > 8:
 if not os.path.exists(args.out_dir):
     print(f" ## Error: Directory not found: {args.out_dir}")
     sys.exit()
-
-# Create config
-
-config = ExLlamaV2Config()
-config.model_dir = args.in_dir
-config.qkv_embed = False
-config.prepare()
-
-# Tokenizer
-
-tokenizer = ExLlamaV2Tokenizer(config)
 
 # Create job
 
@@ -133,7 +128,8 @@ if args.no_resume or not os.path.exists(job_file):
 
 else:
     print(f" -- Resuming job")
-    print(f" !! Note: Overriding options with settings from existing job")
+    if args.in_dir:
+        print(f" !! Note: Overriding options with settings from existing job")
 
     with open(job_file, "r", encoding = "utf8") as f:
         resume_job = json.load(f)
@@ -144,6 +140,10 @@ else:
     job.update(resume_job)
     if "invalid" in job:
         print(" ** Error: Corrupted job")
+        sys.exit()
+
+    if job["progress"] == "finished":
+        print(" !! Job is already finished")
         sys.exit()
 
 # Feedback
@@ -160,7 +160,6 @@ if job["output_measurement"] is None:
 else:
     print(f" -- Measurement will be saved to {job['output_measurement']}")
     print(f" !! Conversion script will end after measurement pass")
-
 
 if job['rope_scale']: print(f" -- RoPE scale: {job['rope_scale']:.2f}")
 if job['rope_alpha']: print(f" -- RoPE alpha: {job['rope_alpha']:.2f}")
@@ -179,6 +178,17 @@ if job.get("compile_full"):
 out_tensor_dir = os.path.join(job["out_dir"], "out_tensor")
 if not os.path.exists(out_tensor_dir):
     os.makedirs(out_tensor_dir)
+
+# Create config
+
+config = ExLlamaV2Config()
+config.model_dir = job['in_dir']
+config.qkv_embed = False
+config.prepare()
+
+# Tokenizer
+
+tokenizer = ExLlamaV2Tokenizer(config)
 
 # Set scaling for input model
 
