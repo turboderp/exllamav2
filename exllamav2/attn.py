@@ -14,13 +14,13 @@ from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
 import math
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
-# import torch.nn.functional as F
+import torch.nn.functional as F
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
-# Detect flash-attn
+# Detect available options for attention
 
 has_flash_attn = False
 has_flash_attn_with_paged = False
@@ -54,6 +54,12 @@ try:
 except ModuleNotFoundError:
     pass
 
+has_lower_right_sdpa = False
+try:
+    from torch.nn.attention.bias import causal_lower_right
+    has_lower_right_sdpa = True
+except ImportError:
+    pass
 
 def assert_paged_attn():
     global has_flash_attn_with_paged
@@ -666,24 +672,38 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def _attn_matmul(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+    def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        q_states = q_states.transpose(1, 2)
-        k_states = k_states.transpose(1, 2)
-        v_states = v_states.transpose(1, 2)
+        if has_lower_right_sdpa and attn_params.is_causal():
 
-        k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
-        k_states = k_states.transpose(-1, -2)
+            q_states = q_states.transpose(1, 2)
+            k_states = k_states.transpose(1, 2)
+            v_states = v_states.transpose(1, 2)
 
-        attn_weights = torch.matmul(q_states, k_states)
+            k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
+            v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
 
-        attn_weights *= 1 / math.sqrt(cfg.head_dim)
-        attn_mask = attn_params.get_attn_mask(attn_weights.device)
-        if attn_mask is not None: attn_weights = attn_weights + attn_mask
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float16)
+            attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
+            attn_output = F.scaled_dot_product_attention(q_states, k_states, v_states, attn_mask_lr)
 
-        v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
-        attn_output = torch.matmul(attn_weights, v_states)
+        else:
+
+            q_states = q_states.transpose(1, 2)
+            k_states = k_states.transpose(1, 2)
+            v_states = v_states.transpose(1, 2)
+
+            k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
+            k_states = k_states.transpose(-1, -2)
+
+            attn_weights = torch.matmul(q_states, k_states)
+
+            attn_weights *= 1 / math.sqrt(cfg.head_dim)
+            attn_mask = attn_params.get_attn_mask(attn_weights.device)
+            if attn_mask is not None: attn_weights = attn_weights + attn_mask
+            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
+
+            v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
+            attn_output = torch.matmul(attn_weights, v_states)
 
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
@@ -821,7 +841,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         elif (has_xformers and not cfg.no_xformers) and attn_params.is_causal():
             attn_func = self._attn_xformers
         else:
-            attn_func = self._attn_matmul
+            attn_func = self._attn_torch
 
         # Straight attention without cache
 
@@ -942,59 +962,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         use_flash_attn = has_flash_attn and not cfg.no_flash_attn
         use_xformers = has_xformers and not cfg.no_xformers
 
-        # Torch matmul attention
+        # Select attention function
 
         if not (use_flash_attn or use_xformers) or not attn_params.is_causal():
-
-            query_states = query_states.transpose(1, 2)
-            key_states = key_states.transpose(1, 2)
-            value_states = value_states.transpose(1, 2)
-
-            key_states = self.repeat_kv(key_states, cfg.num_key_value_groups)
-            key_states = key_states.transpose(-1, -2)
-
-            attn_weights = torch.matmul(query_states, key_states)
-            # attn_weights *= self.scale_factor / math.sqrt(head_dim)
-            # attn_mask = attn_params.get_attn_mask(hidden_states.device)
-            # if self.scale_factor != 1: attn_weights *= self.unscale_factor
-            attn_weights *= 1 / math.sqrt(head_dim)
-            attn_mask = attn_params.get_attn_mask(hidden_states.device)
-            if attn_mask is not None: attn_weights = attn_weights + attn_mask
-            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
-
-            value_states = self.repeat_kv(value_states, cfg.num_key_value_groups)
-            attn_output = torch.matmul(attn_weights, value_states)
-
-            attn_output = attn_output.transpose(1, 2)
-            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
-
-        # Flash Attention 2
-
+            attn_func = self._attn_torch
         elif use_flash_attn:
-
-            attn_output = flash_attn_func(
-                query_states,
-                key_states,
-                value_states,
-                # softmax_scale = None if self.scale_factor == 1 else self.scale_factor / math.sqrt(head_dim),
-                causal = True
-            )
-            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
-
-        # Xformers attention
-
+            attn_func = self._attn_flash
         else:
+            attn_func = self._attn_xformers
 
-            key_states = key_states.transpose(1, 2)
-            value_states = value_states.transpose(1, 2)
+        # Attention
 
-            key_states = self.repeat_kv(key_states, num_key_value_groups)
-            value_states = self.repeat_kv(value_states, num_key_value_groups)
-            key_states = key_states.transpose(1, 2)
-            value_states = value_states.transpose(1, 2)
-
-            attn_output = xops.memory_efficient_attention(query_states, key_states, value_states, attn_bias = LowerTriangularFromBottomRightMask())
-            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+        attn_output = attn_func(batch_size, q_len, query_states, key_states, value_states, attn_params, cfg)
 
         # Update 8-bit/Q4 cache
 

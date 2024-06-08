@@ -3,18 +3,20 @@
 ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs.
 
 
-## New in v0.1.0:
+## New in v0.1.0+:
 
 - ExLlamaV2 now supports paged attention via [Flash Attention](https://github.com/Dao-AILab/flash-attention) 2.5.7+
 - New generator with dynamic batching, smart prompt caching, K/V cache deduplication and simplified API
 
 ![alt_text](doc/dynamic_gen.gif)
 
-## Dynamic generator examples
+## Dynamic generator
 
 The dynamic generator supports all inference, sampling and speculative decoding features of the previous two 
 generators, consolidated into one API (with the exception of FP8 cache, though the Q4 cache mode is supported and
 performs better anyway, see [here](doc/qcache_eval.md).)
+
+The generator is explained in detail [here](doc/dynamic.md).
 
 - Single generation:
   ```python
@@ -45,9 +47,6 @@ performs better anyway, see [here](doc/qcache_eval.md).)
         print(text, end = "")       
     ``` 
 See the full, updated examples [here](https://github.com/turboderp/exllamav2/tree/master/examples).
-
-
-
 
 
 ## Performance
@@ -190,25 +189,7 @@ script and its options are explained in [detail here](doc/convert.md)
 
 ### Evaluation
 
-A script is provided to run the MMLU benchmark. In order to run it you first need to install these packages:
-
-```sh
-# Optional - create a python env
-python -m venv .venv
-# Activate the enviroment
-source .venv/bin/activate
-
-# Install datasets 
-pip install datasets
-
-# Install flash attention
-pip install flash-attn --no-build-isolation
-```
-
-To run the benchmark:
-```
-python eval/mmlu.py -m /path/to/model
-```
+A number of evaluaion scripts are provided. See [here](doc/eval.md) for details.
 
 ### Community
 

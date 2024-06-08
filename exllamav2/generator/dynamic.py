@@ -16,6 +16,7 @@ import threading
 import pprint
 from collections import deque
 import hashlib
+import itertools
 from dataclasses import dataclass
 # import xxhash
 # from line_profiler import profile
@@ -73,6 +74,8 @@ class CachePage:
     # Specific tokens for which KV is valid assuming prev_hash
     sequence: torch.Tensor
     can_revert: bool
+    # Used by defragmenter
+    new_page_index: int
 
     def __repr__(self):
         return (
@@ -203,6 +206,9 @@ class ExLlamaV2DynamicGenerator:
     all_pages: list[CachePage]
     access_serial: int
     job_serial: int
+
+    last_defrag_serial: int
+    defrag_buffers: dict[tuple, torch.Tensor]
 
     # Job queue
 
@@ -364,28 +370,7 @@ class ExLlamaV2DynamicGenerator:
         self.max_pages = max(cache.max_seq_len // self.page_size, 1)
         self.max_total_tokens = cache.max_seq_len
 
-        self.referenced_pages = {}
-        self.unreferenced_pages = {}
-        self.all_pages = []
-        for idx in range(self.max_pages):
-            h = _randomhash()
-            cp = CachePage(
-                generator = self,
-                page_index = idx,
-                phash = h,
-                phash_revert = h,
-                prev_hash = None,
-                prev_hash_revert = None,
-                sequence = torch.empty((1, self.page_size), dtype = torch.long),
-                ref_count = 0,
-                access_serial = 0,
-                access_serial_revert = 0,
-                kv_position = 0,
-                kv_position_revert = 0,
-                can_revert = False
-            )
-            self.all_pages.append(cp)
-            self.unreferenced_pages[h] = cp
+        self.reset_page_table()
 
         # Chunking
 
@@ -400,8 +385,6 @@ class ExLlamaV2DynamicGenerator:
         if paged:
             assert self.max_chunk_size % self.page_size == 0, \
                 f"max_chunk_size must be multiple of {self.page_size}, received {max_chunk_size}"
-
-        self.access_serial = 0
 
         # Jobs
 
@@ -448,12 +431,62 @@ class ExLlamaV2DynamicGenerator:
         if max_sampling_threads > 1:
             self.sampling_pool = ThreadPoolExecutor(max_workers = max_sampling_threads)
 
+        # Temp buffers for defrag
+
+        if self.paged:
+
+            self.defrag_buffer = {}
+            cache_tensors = self.cache.all_tensors()
+            if self.draft_cache:
+                cache_tensors += self.draft_cache.all_tensors()
+
+            for c in cache_tensors:
+                key = (c.device.index, c.dtype, c.shape[2], c.shape[3])
+                if key not in self.defrag_buffer:
+                    t = torch.empty((1, self.page_size, c.shape[2], c.shape[3]), dtype = c.dtype, device = c.device)
+                    self.defrag_buffer[key] = t
+
+        else:
+            self.defrag_buffer = None
+
+
+    def reset_page_table(self):
+        """
+        Reset the page table.
+        """
+        self.referenced_pages = {}
+        self.unreferenced_pages = {}
+        self.all_pages = []
+        for idx in range(self.max_pages):
+            h = _randomhash()
+            cp = CachePage(
+                generator = self,
+                page_index = idx,
+                phash = h,
+                phash_revert = h,
+                prev_hash = None,
+                prev_hash_revert = None,
+                sequence = torch.empty((1, self.page_size), dtype = torch.long),
+                ref_count = 0,
+                access_serial = idx,
+                access_serial_revert = 0,
+                kv_position = 0,
+                kv_position_revert = 0,
+                can_revert = False,
+                new_page_index = 0
+            )
+            self.all_pages.append(cp)
+            self.unreferenced_pages[h] = cp
+        self.access_serial = self.max_pages
+        self.last_defrag_serial = self.access_serial
+
 
     def warmup(self):
         """
         Warm up the generator by generating some text, making sure kernel autotune has time to complete.
         """
         self.generate("Once upon a time,", max_new_tokens = 32)
+        self.reset_page_table()
 
 
     def set_loras(self, loras: list[ExLlamaV2Lora] | None):
@@ -728,11 +761,15 @@ class ExLlamaV2DynamicGenerator:
 
     def clear_queue(self):
 
+        num_jobs = self.num_remaining_jobs()
+
         for job in self.active_jobs + self.pending_jobs:
             job.deallocate_pages()
         self.active_jobs.clear()
         self.pending_jobs.clear()
 
+        if num_jobs and not self.num_remaining_jobs():
+            self.defrag_cache()
 
     def enqueue(
         self,
@@ -763,11 +800,16 @@ class ExLlamaV2DynamicGenerator:
         job: ExLlamaV2DynamicJob
     ):
 
+        num_jobs = self.num_remaining_jobs()
+
         if job in self.pending_jobs:
             self.pending_jobs.remove(job)
         elif job in self.active_jobs:
             job.deallocate_pages()
             self.active_jobs.remove(job)
+
+        if num_jobs and not self.num_remaining_jobs():
+            self.defrag_cache()
 
         self.validate_cache()
 
@@ -1132,9 +1174,14 @@ class ExLlamaV2DynamicGenerator:
 
         # Release pages for completed jobs
 
+        num_jobs = self.num_remaining_jobs()
+
         for job in completed_jobs:
             job.deallocate_pages()
             self.active_jobs.remove(job)
+
+        if num_jobs and not self.num_remaining_jobs():
+            self.defrag_cache()
 
 
     def iterate_start_jobs(self, results: list):
@@ -1188,6 +1235,110 @@ class ExLlamaV2DynamicGenerator:
                 if job.identifier is not None:
                     r.update({ "identifier": job.identifier })
                 results.append(r)
+
+
+    @torch.inference_mode
+    def defrag_cache(self):
+
+        if not self.paged:
+            return
+
+        if self.access_serial < self.last_defrag_serial + self.max_pages:
+            return
+        self.last_defrag_serial = self.access_serial
+
+        assert not self.referenced_pages
+
+        @dataclass
+        class CacheNode:
+            page: CachePage | None
+            parent: CachePage | None = None
+            children: set[CacheNode] = None
+            left_page: int = len(self.all_pages)
+            def __init__(self, page_):
+                self.page = page_
+                if self.page:
+                    self.left_page = page_.access_serial
+                self.children = set()
+            def __hash__(self):
+                return id(self)
+            def __eq__(self, other):
+                return self is other
+
+        # Build a tree of the current cache
+
+        root_node = CacheNode(None)
+        node_index = {}
+
+        for page in self.all_pages:
+            assert page.phash is not None
+            node_index[page.phash] = CacheNode(page)
+
+        for node in node_index.values():
+            parent = node_index.get(node.page.prev_hash, root_node)
+            node.parent = parent
+            parent.children.add(node)
+            while node.parent:
+                node.parent.age = min(node.parent.left_page, node.left_page)
+                node = node.parent
+
+        # Remove oldest branch until tree is empty
+
+        new_page_index = 0
+        while root_node.children:
+            oldest = min(root_node.children, key = lambda x: x.left_page)
+            node = oldest
+            skipped_nodes = set()
+            while True:
+                node.page.new_page_index = new_page_index
+                new_page_index += 1
+                if not node.children: break
+                next_node = min(node.children, key = lambda x: x.left_page)
+                skipped_nodes |= set([n for n in node.children if n != next_node])
+                node = next_node
+            root_node.children.remove(oldest)
+            root_node.children |= skipped_nodes
+
+        # Order of operations
+
+        defrag_map = {}
+        for page in self.all_pages:
+            if page.page_index != page.new_page_index:
+                defrag_map[page.new_page_index] = page.page_index
+
+        # Shuffle pages
+
+        cache_tensors = self.cache.all_tensors()
+        if self.draft_cache:
+            cache_tensors += self.draft_cache.all_tensors()
+        defrag_buffers = [self.defrag_buffer[c.device.index, c.dtype, c.shape[2], c.shape[3]] for c in cache_tensors]
+
+        while defrag_map:
+            assert len(defrag_map) >= 2
+            target = next(iter(defrag_map))
+            source = defrag_map[target]
+            del defrag_map[target]
+
+            rotation = [target]
+            while source != rotation[0]:
+                rotation.append(source)
+                target = source
+                source = defrag_map[target]
+                del defrag_map[target]
+
+            rotation = [r * self.page_size for r in rotation]
+            for cache, buffer in zip(cache_tensors, defrag_buffers):
+                buffer[:, :, :, :].copy_(cache[:, rotation[0] : rotation[0] + self.page_size, :, :])
+                for a, b in itertools.pairwise(rotation):
+                    cache[:, a : a + self.page_size, :, :].copy_(cache[:, b : b + self.page_size, :, :])
+                cache[:, rotation[-1] : rotation[-1] + self.page_size, :, :].copy_(buffer[:, :, :, :])
+
+        # Update page table
+
+        for page in self.all_pages:
+            page.page_index = page.new_page_index
+
+        self.validate_cache()
 
 
 # Convert list of strings to UTF32 format to pass by reference to partial matching function
@@ -1264,6 +1415,8 @@ class ExLlamaV2DynamicJob:
     cached_pages: int
     cached_tokens: int
     is_finished: bool
+    non_sequential_pages: int
+    total_pages: int
 
     # Output buffers
 
@@ -1480,6 +1633,8 @@ class ExLlamaV2DynamicJob:
         self.cached_pages = 0
         self.cached_tokens = 0
         self.is_finished = False
+        self.non_sequential_pages = 0
+        self.total_pages = 0
 
         # Ngram
 
@@ -2199,6 +2354,13 @@ class ExLlamaV2DynamicJob:
                     self.cached_pages += 1
                 else:
                     break
+
+            # Metrics
+
+            self.total_pages += len(seq.allocated_pages)
+            for page_a, page_b in itertools.pairwise(seq.allocated_pages):
+                if page_b.page_index != page_a.page_index + 1:
+                    self.non_sequential_pages += 1
 
         self.generator.validate_cache()
 
