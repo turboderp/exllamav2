@@ -74,7 +74,7 @@ and speeds will vary across GPUs, with slow CPUs still being a potential bottlen
 To install from the repo you'll need the CUDA Toolkit and either gcc on Linux or (Build Tools for) Visual Studio
 on Windows). Also make sure you have an appropriate version of [PyTorch](https://pytorch.org/get-started/locally/), then run:
 
-```
+```sh
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
 pip install -r requirements.txt
