@@ -10,11 +10,13 @@ ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs
 
 ![alt_text](doc/dynamic_gen.gif)
 
-## Dynamic generator examples
+## Dynamic generator
 
 The dynamic generator supports all inference, sampling and speculative decoding features of the previous two 
 generators, consolidated into one API (with the exception of FP8 cache, though the Q4 cache mode is supported and
 performs better anyway, see [here](doc/qcache_eval.md).)
+
+The generator is explained in detail [here](doc/dynamic.md).
 
 - Single generation:
   ```python
