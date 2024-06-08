@@ -2,7 +2,7 @@
 void fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_size, int offset, int width);
 void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_size, int offset, int width);
 
-void fp16_to_q4_kv
+void fp16_to_q_kv
 (
     torch::Tensor k_in,
     torch::Tensor k_out,
@@ -15,10 +15,13 @@ void fp16_to_q4_kv
     int width,
     int page_size,
     torch::Tensor cache_seqlens,
-    torch::Tensor block_table
+    torch::Tensor block_table,
+    torch::Tensor cal_k,
+    torch::Tensor cal_v,
+    int wbits
 );
 
-void q4_to_fp16_kv
+void q_to_fp16_kv
 (
     torch::Tensor k_in,
     torch::Tensor k_out,
@@ -31,7 +34,10 @@ void q4_to_fp16_kv
     int width,
     int page_size,
     torch::Tensor cache_seqlens,
-    torch::Tensor block_table
+    torch::Tensor block_table,
+    torch::Tensor cal_k,
+    torch::Tensor cal_v,
+    int wbits
 );
 
 int count_match

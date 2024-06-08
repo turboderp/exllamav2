@@ -9,7 +9,7 @@
 void array_fp16_to_fp8_cuda(const half* pIn, unsigned char* pOut, int stride, int height, int offset, int width);
 void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, int height, int offset, int width);
 
-void array_fp16_to_q4_kv_cuda
+void array_fp16_to_q_kv_cuda
 (
     const half* k_in,
     unsigned char* k_out,
@@ -17,13 +17,17 @@ void array_fp16_to_q4_kv_cuda
     const half* v_in,
     unsigned char* v_out,
     half* v_scales,
+    int dim,
     int stride,
     int height,
     int offset,
-    int width
+    int width,
+    const half* cal_k,
+    const half* cal_v,
+    int wbits
 );
 
-void array_q4_to_fp16_kv_cuda
+void array_q_to_fp16_kv_cuda
 (
     const unsigned char* k_in,
     const half* k_scales,
@@ -31,13 +35,17 @@ void array_q4_to_fp16_kv_cuda
     const unsigned char* v_in,
     const half* v_scales,
     half* v_out,
+    int dim,
     int stride,
     int height,
     int offset,
-    int width
+    int width,
+    const half* cal_k,
+    const half* cal_v,
+    int wbits
 );
 
-void array_fp16_to_q4_kv_paged_cuda
+void array_fp16_to_q_kv_paged_cuda
 (
     const half* k_in,
     unsigned char* k_out,
@@ -51,10 +59,13 @@ void array_fp16_to_q4_kv_paged_cuda
     const int* cache_seqlens,
     const int* block_table,
     int page_size,
-    int q_len
+    int q_len,
+    const half* cal_k,
+    const half* cal_v,
+    int wbits
 );
 
-void array_q4_to_fp16_kv_paged_cuda
+void array_q_to_fp16_kv_paged_cuda
 (
     const unsigned char* k_in,
     const half* k_scales,
@@ -67,7 +78,10 @@ void array_q4_to_fp16_kv_paged_cuda
     int pages_per_seq,
     const int* cache_seqlens,
     const int* block_table,
-    int page_size
+    int page_size,
+    const half* cal_k,
+    const half* cal_v,
+    int wbits
 );
 
 // void array_fp16_to_fp8_ref_cuda(const half* pIn, unsigned char *pOut, int size);
