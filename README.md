@@ -86,7 +86,7 @@ python test_inference.py -m <path_to_model> -p "Once upon a time,"
 
 A simple console chatbot is included. Run it with:
 
-```
+```sh
 python examples/chat.py -m <path_to_model> -mode llama -gs auto
 ```
 
@@ -115,7 +115,7 @@ and **exllamav2_HF** loaders.
 
 To install the current dev version, clone the repo and run the setup script:
 
-```
+```sh
 git clone https://github.com/turboderp/exllamav2
 cd exllamav2
 pip install -r requirements.txt
@@ -125,7 +125,7 @@ pip install .
 By default this will also compile and install the Torch C++ extension (`exllamav2_ext`) that the library relies on. 
 You can skip this step by setting the `EXLLAMA_NOCOMPILE` environment variable:
 
-```
+```sh
 EXLLAMA_NOCOMPILE= pip install .
 ```
 
@@ -142,7 +142,7 @@ PyTorch.
 
 Either download an appropriate wheel or install directly from the appropriate URL:
 
-```
+```sh
 pip install https://github.com/turboderp/exllamav2/releases/download/v0.0.12/exllamav2-0.0.12+cu121-cp311-cp311-linux_x86_64.whl
 ```
 
@@ -153,7 +153,7 @@ can also be installed this way, and it will build the extension while installing
 
 A PyPI package is available as well. This is the same as the JIT version (see above). It can be installed with:
 
-```
+```sh
 pip install exllamav2
 ```
 

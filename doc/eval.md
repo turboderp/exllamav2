@@ -29,7 +29,7 @@ in which ExLlama runs out of system memory when loading large models.
 This is the standard [HumanEval](https://github.com/openai/human-eval) test implemented for ExLlamaV2 with
 dynamic batching.
 
-```
+```sh
 pip install human-eval
 python eval/humaneval.py -m <model_dir> -o humaneval_output.json
 evaluate-functional-correctness humaneval_output.json
@@ -64,7 +64,7 @@ performance.
 This is the standard [MMLU](https://github.com/hendrycks/test) test implemented for ExLlamaV2 with
 dynamic batching.
 
-```
+```sh
 pip install datasets
 python eval/mmlu.py -m <model_dir>
 ```
