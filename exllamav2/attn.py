@@ -206,6 +206,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         block_index: torch.Tensor
         cache_seqlens: torch.Tensor
+        max_cache_seqlen: int
         page_size: int
         is_sequential: bool
         first_index: int
@@ -215,6 +216,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             batch_size: int,
             block_index: torch.Tensor,
             cache_seqlens: torch.Tensor,
+            max_cache_seqlen: int,
             page_size: int,
             q_len: int = 0
         ):
@@ -225,6 +227,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             self.block_index = block_index
             self.cache_seqlens = cache_seqlens
+            self.max_cache_seqlen = max_cache_seqlen
             self.page_size = page_size
 
             self.is_sequential = False
@@ -565,7 +568,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # TODO: Potentially we could emulate paged cache when in Q4 mode, since that requires copying the active part
         #   of the current cache layer anyway. Test if block diagonal masking works with lower-right aligned mask.
 
-        k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
+        k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
+
         k_cache = k_cache_f.view(k_cache_f.shape[1] // page_size, page_size, k_cache_f.shape[2], k_cache_f.shape[3])
         v_cache = v_cache_f.view(v_cache_f.shape[1] // page_size, page_size, v_cache_f.shape[2], v_cache_f.shape[3])
 

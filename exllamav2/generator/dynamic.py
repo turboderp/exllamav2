@@ -827,8 +827,9 @@ class ExLlamaV2DynamicGenerator:
                 batch_size = batch_size,
                 block_index = block_index,
                 cache_seqlens = cache_seqlens,
+                max_cache_seqlen = cache_seqlens.max().item(),
                 page_size = self.page_size,
-                q_len = q_len
+                q_len = q_len,
             )
         else:
             assert cache_seqlens.shape[0] == 1
