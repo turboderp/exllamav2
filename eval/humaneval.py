@@ -3,7 +3,7 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from human_eval.data import write_jsonl, read_problems
 from exllamav2 import model_init
-from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4
+from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4, ExLlamaV2Cache_Q6, ExLlamaV2Cache_Q8
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, ExLlamaV2Sampler
 import argparse, contextlib
 import util
@@ -15,6 +15,8 @@ parser.add_argument("-o", "--output", type = str, help = "Output .jsonl filename
 parser.add_argument("-cs", "--cache_size", type = int, default = None)
 parser.add_argument("-spt", "--samples_per_task", type = int, default = 200)
 parser.add_argument("-cq4", "--cache_q4", action = "store_true", help = "Use Q4 cache")
+parser.add_argument("-cq6", "--cache_q6", action = "store_true", help = "Use Q6 cache")
+parser.add_argument("-cq8", "--cache_q8", action = "store_true", help = "Use Q8 cache")
 parser.add_argument("--max_tokens", type = int, default = 768, help = "Max number of tokens for each completion")
 parser.add_argument("-pf", "--prompt_format", type = str, help = "Instruct format to apply. Default is raw completion (for base models) ")
 parser.add_argument("-v", "--verbose", action = "store_true", help = "Spam completions to console while generating")
@@ -75,6 +77,8 @@ model, tokenizer = model_init.init(
 )
 
 if args.cache_q4: cache_type = ExLlamaV2Cache_Q4
+elif args.cache_q6: cache_type = ExLlamaV2Cache_Q6
+elif args.cache_q8: cache_type = ExLlamaV2Cache_Q8
 else: cache_type = ExLlamaV2Cache
 cache = cache_type(
     model,

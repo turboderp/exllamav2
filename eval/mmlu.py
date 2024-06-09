@@ -2,7 +2,7 @@ from __future__ import annotations
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from exllamav2 import model_init
-from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4
+from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4, ExLlamaV2Cache_Q6, ExLlamaV2Cache_Q8
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, ExLlamaV2Sampler
 import argparse, contextlib
 import torch
@@ -14,6 +14,8 @@ import random
 parser = argparse.ArgumentParser(description = "Run MMLU evaluation on EXL2 model")
 parser.add_argument("-cs", "--cache_size", type = int, default = None)
 parser.add_argument("-cq4", "--cache_q4", action = "store_true", help = "Use Q4 cache")
+parser.add_argument("-cq6", "--cache_q6", action = "store_true", help = "Use Q6 cache")
+parser.add_argument("-cq8", "--cache_q8", action = "store_true", help = "Use Q8 cache")
 parser.add_argument("-sub", "--subjects", type = str, default = "all", help = "Comma-separated list of categories to test, or 'all'")
 parser.add_argument("-fs", "--fewshot_examples", type = int, default = 5, help = "Number of examples for fewshot examples, max 5")
 parser.add_argument("-shf", "--shuffle", action = "store_true", help = "Shuffle choices randomly")
@@ -33,6 +35,8 @@ model, tokenizer = model_init.init(
 )
 
 if args.cache_q4: cache_type = ExLlamaV2Cache_Q4
+elif args.cache_q6: cache_type = ExLlamaV2Cache_Q6
+elif args.cache_q8: cache_type = ExLlamaV2Cache_Q8
 else: cache_type = ExLlamaV2Cache
 cache = cache_type(
     model,

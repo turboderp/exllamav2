@@ -58,6 +58,10 @@ prefix for the response.
 performance.
 
 - **-cq4 / --cache_q4**: Use Q4 cache
+  
+- **-cq6 / --cache_q6**: Use Q6 cache
+
+- **-cq8 / --cache_q8**: Use Q8 cache
 
 ## MMLU
 
@@ -83,3 +87,7 @@ the full list of subjects.
 performance.
 
 - **-cq4 / --cache_q4**: Use Q4 cache
+
+- **-cq6 / --cache_q6**: Use Q6 cache
+
+- **-cq8 / --cache_q8**: Use Q8 cache
