@@ -561,14 +561,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cache_seqlens = attn_params.get_cache_seqlens(self.device())
         block_table = attn_params.get_block_index(self.device())
 
-        # TODO: We only need keys/values when preprocess_only == True, so we could skip q projection and attention.
-        #   Would need custom kernel to update paged cache if not calling flash_attn_with_kvcache
+        # TODO: We only need keys/values when preprocess_only == True, so we could skip q projection and attention
+        #   on the last layer. Would need custom kernel to update paged cache if not calling flash_attn_with_kvcache
         # skip_attn = kwargs.get("kv_only")
 
         # TODO: Potentially we could emulate paged cache when in Q4 mode, since that requires copying the active part
         #   of the current cache layer anyway. Test if block diagonal masking works with lower-right aligned mask.
 
-        k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
+        if cache.q_block > 1:
+            k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
+        else:
+            k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, 0, page_size, cache_seqlens, block_table)
 
         k_cache = k_cache_f.view(k_cache_f.shape[1] // page_size, page_size, k_cache_f.shape[2], k_cache_f.shape[3])
         v_cache = v_cache_f.view(v_cache_f.shape[1] // page_size, page_size, v_cache_f.shape[2], v_cache_f.shape[3])
@@ -641,6 +644,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             cache_seqlens_a = attn_params.get_cache_seqlens_after(self.device())
         else:
             cache_seqlens_a = cache_seqlens
+
+        if cache.q_block == 1:
+            cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
 
         attn_output = flash_attn_with_kvcache(
             q = q,

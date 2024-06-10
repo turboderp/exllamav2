@@ -62,6 +62,7 @@ class ExLlamaV2CacheBase:
         self.shape_wv = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element_v)
         self.shape_s = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32)
 
+        self.q_block = 1
 
     def create_state_tensors(self,
                              copy_from: ExLlamaV2CacheBase | None,
