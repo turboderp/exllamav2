@@ -50,6 +50,7 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
                self.input_layernorm.numel()
 
 
+    @torch.inference_mode
     def load(self):
 
         self.input_layernorm.load()

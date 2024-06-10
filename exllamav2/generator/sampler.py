@@ -91,6 +91,26 @@ class ExLlamaV2Sampler:
             self.token_bias[tokens] = float("-inf")
 
 
+        def allow_tokens(
+            self,
+            tokenizer: ExLlamaV2Tokenizer,
+            tokens: list[int | str]
+        ):
+            """Utility function to set/update the logit bias, disallowing all but specific tokens in the supplied list"""
+
+            if self.token_bias is None:
+                padding = -tokenizer.config.vocab_size % 32
+                self.token_bias = torch.full((tokenizer.config.vocab_size + padding,), float("-inf"), dtype = torch.float)
+
+            for t in tokens:
+                if isinstance(t, int):
+                    self.token_bias[t] = 0.0
+                elif isinstance(t, str):
+                    self.token_bias[tokenizer.single_id(t)] = 0.0
+                else:
+                    raise ValueError("Incorrect type in allow_tokens list")
+
+
     @staticmethod
     # @profile
     def sample(
@@ -168,11 +188,6 @@ class ExLlamaV2Sampler:
 
         logits = logits.squeeze(1)
 
-        # Prepare filter
-
-        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
-        ext_c.fast_fill_cpu_ones_bool(logit_filter)
-
         # Sync
 
         if sync:
@@ -185,6 +200,11 @@ class ExLlamaV2Sampler:
             logits = settings.cfg_scale * logits[0] + (1 - settings.cfg_scale) * logits[1]
             logits = logits.unsqueeze(0)
             batch_size = 1
+
+        # Prepare filter
+
+        logit_filter = torch.empty((batch_size, vocab_size), dtype = torch.bool)
+        ext_c.fast_fill_cpu_ones_bool(logit_filter)
 
         # Repetition penalty
 

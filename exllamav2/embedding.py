@@ -28,6 +28,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         self.embedding = None
 
 
+    @torch.inference_mode
     def load(self):
 
         vocab_size = self.model.config.vocab_size
@@ -36,10 +37,13 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         w = self.load_weight()
         assert isinstance(w, nn.Parameter)
-        w.pin_memory()
+        # TODO: Figure out why pinning this tensor allocates GPU memory??
+        # w.pin_memory()
         self.native_vocab_size = w.shape[0]
 
         self.embedding = nn.Embedding(vocab_size, hidden_size, pad_token_id, device = "meta")
+        if self.model.config.scale_emb != 1:
+            w *= self.model.config.scale_emb
         self.embedding.weight = w
 
 
@@ -51,7 +55,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
     def get_weight(self) -> torch.Tensor:
 
-        return self.embedding.weight.data
+        if self.model.config.scale_emb != 1:
+            return self.embedding.weight.data / self.model.config.scale_emb
+        else:
+            return self.embedding.weight.data
 
 
     def weight_footprint(self) -> int:

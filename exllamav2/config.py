@@ -1,10 +1,11 @@
 from __future__ import annotations
+
 import torch
+import math
 from exllamav2.fasttensors import STFile
 from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
 from typing import Any, Dict, List, TypeVar, Union, cast
-
 
 T = TypeVar('T')
 no_default = object()
@@ -57,7 +58,7 @@ class ExLlamaV2Config:
 
     no_flash_attn: bool                         # Implementation will automatically use flash-attn-2 when available
     no_xformers: bool                           # Implementation will automatically use xformers for sm<80 when available, unless flash-attn-2 is available
-    fasttensors: bool                           # Experimental, Linux only
+    fasttensors: bool                           # Use alternative .safetensors loader (aio on Linux, cstdio on Windows). Not always faster but can address excessive use of system RAM in some situations
     load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
 
     max_dq_size: int                            # Max number of elements to dequantize at once
@@ -95,6 +96,8 @@ class ExLlamaV2Config:
     num_experts: int | None
     num_experts_per_token: int | None
     logit_scale: float
+    scale_depth: float
+    scale_emb: float
     use_qk_norm: bool
 
     checkpoint_fused_mlp: bool
@@ -117,9 +120,9 @@ class ExLlamaV2Config:
         self.scale_short_factor = None
         self.alt_rope_method = None
 
-        self.no_flash_attn = False
-        self.no_xformers = False
-        self.fasttensors = False
+        self.no_flash_attn = 'EXLLAMA_NO_FLASH_ATTN' in os.environ
+        self.no_xformers = 'EXLLAMA_NO_XFORMERS' in os.environ
+        self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
         self.load_in_q4 = False
 
         if model_dir is not None:
@@ -220,9 +223,19 @@ class ExLlamaV2Config:
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
         self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
-        # Logit scale
+        # Logit/embedding/residual scale
 
         self.logit_scale = read(read_config, float, "logit_scale", 1)
+        if self.arch.logit_scale_basedim:
+            dim_model_base = read(read_config, int, "dim_model_base", self.hidden_size)
+            self.logit_scale /= (self.hidden_size / dim_model_base)
+
+        self.scale_emb = read(read_config, float, "scale_emb", 1)
+        scale_depth = read(read_config, float, "scale_depth", None)
+        if scale_depth is None:
+            self.scale_depth = 1
+        else:
+            self.scale_depth = scale_depth / math.sqrt(self.num_hidden_layers)
 
         # Positional embeddings
 

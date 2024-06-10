@@ -93,6 +93,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         return sum(l.numel() for l in self.w1 + self.w2 + self.w3)
 
 
+    @torch.inference_mode
     def load(self):
 
         self.post_attention_layernorm.load()

@@ -15,6 +15,9 @@
 #include <unistd.h>
 #endif
 
+#include <cstdio>
+#include <cuda_runtime.h>
+
 #define MAX_BLOCK_SIZE (128*1024)
 #define MAX_PAGES 4
 #define PAGESIZE (16*1024*1024)
@@ -374,3 +377,80 @@ void safetensors_load
     #endif
 }
 
+// Fallback routines for Windows
+
+void* read_buffer;
+int read_buffer_refcount = 0;
+
+#define READ_BUFFER_SIZE (1024*1024)
+
+uintptr_t safetensors_open_fb(const char* filename)
+{
+    FILE* file = fopen(filename, "rb");
+    TORCH_CHECK(file != nullptr, "Can't open safetensors file");
+
+    read_buffer_refcount++;
+    if (read_buffer_refcount == 1)
+    {
+        read_buffer = malloc(READ_BUFFER_SIZE);
+    }
+
+    return reinterpret_cast<uintptr_t> (file);
+}
+
+void safetensors_close_fb(uintptr_t handle)
+{
+    FILE* file = reinterpret_cast<FILE*> (handle);
+    fclose(file);
+
+    read_buffer_refcount--;
+    if (read_buffer_refcount == 0)
+    {
+        free(read_buffer);
+        read_buffer = NULL;
+    }
+}
+
+void safetensors_read_fb(uintptr_t handle, size_t beg, size_t size, torch::Tensor target)
+{
+    TORCH_CHECK(read_buffer, "No read buffer");
+
+    FILE* file = reinterpret_cast<FILE*> (handle);
+
+    char* output = (char*) target.data_ptr();
+    c10::optional<torch::Device> device = torch::device_of(target);
+    bool target_cpu = (device.has_value() && device->type() == torch::kCPU);
+
+    #ifdef __linux__
+		int r = fseek(file, beg, SEEK_SET);
+	#else
+		int r = _fseeki64(file, static_cast<__int64>(beg), SEEK_SET);
+	#endif
+    TORCH_CHECK(!r, "Error seeking safetensors file");
+
+    if (target_cpu)
+    {
+        size_t bytes_read = fread(output, 1, size, file);
+        TORCH_CHECK(bytes_read == size, "Error reading safetensors file (EOF)");
+    }
+    else
+    {
+        const at::cuda::OptionalCUDAGuard device_guard(device);
+
+        size_t remaining = size;
+        while (remaining)
+        {
+            size_t chunk = READ_BUFFER_SIZE;
+            if (remaining < chunk) chunk = remaining;
+
+            size_t bytes_read = fread(read_buffer, 1, chunk, file);
+            TORCH_CHECK(bytes_read == chunk, "Error reading safetensors file (EOF)");
+
+            cudaError_t cr = cudaMemcpy(output, read_buffer, chunk, cudaMemcpyHostToDevice);
+            TORCH_CHECK(cr == cudaSuccess, "Failed to copy tensor data to device memory");
+
+            output += chunk;
+            remaining -= chunk;
+        }
+    }
+}

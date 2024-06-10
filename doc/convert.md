@@ -4,7 +4,7 @@
 
 Here are the arguments to `convert.py`:
 
-- **-i / --in_dir *directory***: _(required)_ The source model to convert, in HF format (FP16). The directory should 
+- **-i / --in_dir *directory***: _(required if not resuming)_ The source model to convert, in HF format (FP16). The directory should 
 contain at least a `config.json` file, a `tokenizer.model` file and one or more `.safetensors` files containing weights.
 If there are multiple weights files, they will all be indexed and searched for the neccessary tensors, so sharded models are 
 supported.
@@ -94,7 +94,7 @@ measurement pass on subsequent quants of the same model.
 
 Convert a model and create a directory containing the quantized version with all of its original files:
 
-```
+```sh
 python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
@@ -104,7 +104,7 @@ python convert.py \
 
 Run just the measurement pass on a model, clearing the working directory first:
 
-```
+```sh
 python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
@@ -114,7 +114,7 @@ python convert.py \
 
 Use that measurement to quantize the model at two different bitrates:
 
-```
+```sh
 python convert.py \
     -i /mnt/models/llama2-7b-fp16/ \
     -o /mnt/temp/exl2/ \
@@ -130,6 +130,13 @@ python convert.py \
     -m /mnt/models/llama2-7b-exl2/measurement.json \
     -cf /mnt/models/llama2-7b-exl2/4.5bpw/ \
     -b 4.5
+```
+
+If the working `-o` directory is not empty and you do not specify `-nr`, any existing job in that directory
+will be resumed. You can resume a job with no other arguments:
+
+```sh
+python convert.py -o /mnt/temp/exl2/
 ```
 
 ### Notes

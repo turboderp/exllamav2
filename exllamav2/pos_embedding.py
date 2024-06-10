@@ -26,6 +26,7 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
         self.embedding = None
 
 
+    @torch.inference_mode
     def load(self):
 
         w = self.load_weight()
@@ -85,16 +86,19 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
             bsz, q_len, dim = hidden_states.shape
             for b in range(bsz):
 
-                if attn_params.past_len is not None:
-                    past_len = attn_params.past_len
-                else:
-                    assert attn_params.past_lens is not None
-                    past_len = attn_params.past_lens[b]
-
-                if attn_params.position_offsets is not None:
-                    offset = attn_params.position_offsets[b].item()
-                else:
+                if isinstance(attn_params, ExLlamaV2Attention.PagedParams):
+                    past_len = attn_params.cache_seqlens[b]
                     offset = 0
+                else:
+                    if attn_params.past_len is not None:
+                        past_len = attn_params.past_len
+                    else:
+                        assert attn_params.past_lens is not None
+                        past_len = attn_params.past_lens[b]
+                    if attn_params.position_offsets is not None:
+                        offset = attn_params.position_offsets[b].item()
+                    else:
+                        offset = 0
 
                 slice_a = past_len + offset
                 slice_b = past_len + q_len + offset

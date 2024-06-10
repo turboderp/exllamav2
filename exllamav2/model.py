@@ -727,23 +727,23 @@ class ExLlamaV2:
 
             assert q_len <= effective_max_input_len, "Maximum input length exceeded in model.forward"
 
-            result, last_state = self.forward_chunk(input_ids = input_ids,
-                                                    cache = cache,
-                                                    input_mask = input_mask,
-                                                    preprocess_only = preprocess_only,
-                                                    last_id_only = last_id_only,
-                                                    loras = loras,
-                                                    return_last_state = return_last_state,
-                                                    position_offsets = position_offsets,
-                                                    abort_event = abort_event,
-                                                    **kwargs)
+            result = self.forward_chunk(input_ids = input_ids,
+                                        cache = cache,
+                                        input_mask = input_mask,
+                                        preprocess_only = preprocess_only,
+                                        last_id_only = last_id_only,
+                                        loras = loras,
+                                        return_last_state = return_last_state,
+                                        position_offsets = position_offsets,
+                                        abort_event = abort_event,
+                                        **kwargs)
 
             if abort_event and abort_event.is_set(): return
 
-            if last_state is None:
-                return result
+            if "last_state" in result:
+                return result.get("logits"), result["last_state"]
             else:
-                return result, last_state
+                return result.get("logits")
 
         # Confirm that the input fits within the allocated cache space
 
@@ -789,26 +789,27 @@ class ExLlamaV2:
             _last_id_only = last_id_only
             _preprocess_only = preprocess_only or (chunk_end < q_len and last_id_only)
 
-            r, ls = self.forward_chunk(input_ids = input_ids[:, chunk_begin : chunk_end],
-                                       cache = cache,
-                                       input_mask = input_mask,
-                                       preprocess_only = _preprocess_only,
-                                       last_id_only = _last_id_only,
-                                       loras = loras,
-                                       return_last_state = return_last_state and remaining_q_len <= chunk_size,
-                                       position_offsets = position_offsets,
-                                       abort_event = abort_event,
-                                       **kwargs)
+            r = self.forward_chunk(
+                input_ids = input_ids[:, chunk_begin : chunk_end],
+                cache = cache,
+                input_mask = input_mask,
+                preprocess_only = _preprocess_only,
+                last_id_only = _last_id_only,
+                loras = loras,
+                return_last_state = return_last_state and remaining_q_len <= chunk_size,
+                position_offsets = position_offsets,
+                abort_event = abort_event,
+                **kwargs
+            )
 
             if abort_event and abort_event.is_set(): return
 
             if not _preprocess_only:
-                result = r if result is None else torch.cat((result, r), dim = 1)
-                r = None
+                result = r["logits"] if result is None else torch.cat((result, r["logits"]), dim = 1)
 
             chunk_begin = chunk_end
             remaining_q_len -= chunk_size
-            last_state = ls
+            last_state = r.get("last_state")
 
         if last_state is None:
             return result
@@ -828,6 +829,7 @@ class ExLlamaV2:
                       position_offsets: torch.Tensor | None = None,
                       abort_event: threading.Event | None = None,
                       attn_params: ExLlamaV2Attention.Params | None = None,
+                      extract_state_indices: list[int] | None = None,
                       **kwargs) \
         -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
@@ -845,6 +847,15 @@ class ExLlamaV2:
             seq_len <= self.config.max_output_len, \
             "seq_len exceeds max_output_len"
 
+        # Output
+
+        r = {}
+        extract_state_indices = set(extract_state_indices or [])
+        if return_last_state:
+            extract_state_indices.add(self.head_layer_idx - 1)
+        if extract_state_indices:
+            r["states"] = {}
+
         # assert cache is None or isinstance(cache, list) or batch_size <= cache.batch_size
 
         x = input_ids
@@ -855,27 +866,25 @@ class ExLlamaV2:
             if not isinstance(attn_params, ExLlamaV2Attention.PagedParams):
                 past_len = attn_params.past_len
                 cache.current_seq_len = past_len
-        last_state = None
-        last_module = None
 
         for idx, module in enumerate(self.modules):
 
+            if idx == self.head_layer_idx and last_id_only:
+                x = x.narrow(-2, -1, 1)
+
+            if idx in extract_state_indices:
+                r["states"][idx] = x.clone()
+                if idx == self.head_layer_idx - 1:
+                    r["last_state"] = r["states"][idx]
+
             # Respect abort signal
 
-            if abort_event and abort_event.is_set(): return None, None
+            if abort_event and abort_event.is_set():
+                return None, None
 
             # Onward
 
             device = _torch_device(module.device_idx)
-
-            if idx == self.head_layer_idx:
-                if last_id_only and return_last_state:
-                    x = x.narrow(-2, -1, 1)
-                    last_state = x
-                elif last_id_only:
-                    x = x.narrow(-2, -1, 1)
-                elif return_last_state:
-                    last_state = x.narrow(-2, -1, 1)
 
             x = safe_move_tensor(x, device)
             x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras, **kwargs)
@@ -903,5 +912,6 @@ class ExLlamaV2:
             head_padding = self.modules[-1].padding
             if head_padding > 0:
                 x[:, :, -head_padding:] = -65504.
+            r["logits"] = x
 
-        return x, last_state
+        return r

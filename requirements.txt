@@ -4,11 +4,11 @@ wheel
 setuptools
 fastparquet
 torch>=2.2.0
-safetensors>=0.3.2
+safetensors>=0.4.3
 sentencepiece>=0.1.97
 pygments
 websockets
 regex
-numpy
+numpy~=1.26.4
 tokenizers
 rich

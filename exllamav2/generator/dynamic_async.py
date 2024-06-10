@@ -19,17 +19,22 @@ class ExLlamaV2DynamicGeneratorAsync:
         self.iteration_task = asyncio.create_task(self._run_iteration())
 
     async def _run_iteration(self):
-        while True:
-            async with self.condition:
-                await self.condition.wait_for(lambda: len(self.jobs) > 0)
-            results = self.generator.iterate()
-            for result in results:
-                job = result["job"]
-                async_job = self.jobs[job]
-                await async_job.put_result(result)
-                if result["eos"]:
-                    del self.jobs[job]
-            await asyncio.sleep(0)
+        try:
+            while True:
+                async with self.condition:
+                    await self.condition.wait_for(lambda: len(self.jobs) > 0)
+                results = self.generator.iterate()
+                for result in results:
+                    job = result["job"]
+                    async_job = self.jobs[job]
+                    await async_job.put_result(result)
+                    if result["eos"]:
+                        del self.jobs[job]
+                await asyncio.sleep(0)
+        except Exception as e:
+            # If the generator throws an exception it won't pertain to any one ongoing job, so push it to all of them
+            for async_job in self.jobs.values():
+                await async_job.put_result(e)
 
     def enqueue(self, job: ExLlamaV2DynamicJobAsync):
         assert job.job not in self.jobs
@@ -75,6 +80,8 @@ class ExLlamaV2DynamicJobAsync:
     async def __aiter__(self):
         while True:
             result = await self.queue.get()
+            if isinstance(result, Exception):
+                raise result
             yield result
             if result["eos"]:
                 break

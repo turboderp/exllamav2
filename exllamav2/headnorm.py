@@ -37,6 +37,7 @@ class ExLlamaV2HeadNorm(ExLlamaV2Module):
         self.num_heads = num_heads
 
 
+    @torch.inference_mode
     def load(self):
 
         w = self.load_weight()

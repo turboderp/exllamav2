@@ -19,8 +19,7 @@ def add_args(parser):
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
     parser.add_argument("-lq4", "--load_q4", action = "store_true", help = "Load weights in Q4 mode")
-    if os.name != "nt":
-        parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Optimized safetensors loading with direct I/O (experimental!)")
+    parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Use alternative safetensors loader (with direct I/O when available)")
 
 
 def print_options(args):
@@ -73,7 +72,9 @@ def init(args,
          skip_load: bool = False,
          benchmark: bool = False,
          max_batch_size: int = None,
-         max_output_len: int = None):
+         max_input_len: int = None,
+         max_output_len: int = None,
+         progress: bool = False):
 
     # Create config
 
@@ -93,6 +94,7 @@ def init(args,
 
     if max_batch_size: config.max_batch_size = max_batch_size
     config.max_output_len = max_output_len
+    if max_input_len: config.max_input_len = max_input_len
 
     # Set low-mem options
 
@@ -110,9 +112,9 @@ def init(args,
         split = [float(alloc) for alloc in args.gpu_split.split(",")]
 
     if args.gpu_split != "auto" and not skip_load:
-        if not quiet: print(" -- Loading model...")
+        if not quiet and not progress: print(" -- Loading model...")
         t = time.time()
-        model.load(split)
+        model.load(split, progress = progress)
         t = time.time() - t
         if benchmark and not quiet:
             print(f" -- Loaded model in {t:.4f} seconds")

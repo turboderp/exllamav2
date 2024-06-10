@@ -73,7 +73,7 @@ void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_si
     );
 }
 
-void fp16_to_q4_kv
+void fp16_to_q_kv
 (
     torch::Tensor k_in,
     torch::Tensor k_out,
@@ -86,7 +86,10 @@ void fp16_to_q4_kv
     int width,
     int page_size,
     torch::Tensor cache_seqlens,
-    torch::Tensor block_table
+    torch::Tensor block_table,
+    torch::Tensor cal_k,
+    torch::Tensor cal_v,
+    int wbits
 )
 {
     TORCH_CHECK_DTYPE(k_in, kHalf);
@@ -96,15 +99,21 @@ void fp16_to_q4_kv
     TORCH_CHECK_SHAPES(k_in, 0, k_out, 0, 1);
     TORCH_CHECK_SHAPES(k_in, 1, k_out, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, k_out, 2, 1);
-    TORCH_CHECK_SHAPES(k_in, 3, k_out, 3, 2);
+//    TORCH_CHECK_SHAPES(k_in, 3, k_out, 3, 2);
     TORCH_CHECK_SHAPES(v_in, 0, v_out, 0, 1);
     TORCH_CHECK_SHAPES(v_in, 1, v_out, 1, 1);
     TORCH_CHECK_SHAPES(v_in, 2, v_out, 2, 1);
-    TORCH_CHECK_SHAPES(v_in, 3, v_out, 3, 2);
+//    TORCH_CHECK_SHAPES(v_in, 3, v_out, 3, 2);
     TORCH_CHECK_SHAPES(k_in, 0, v_in, 0, 1);
     TORCH_CHECK_SHAPES(k_in, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
-    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
+//    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
+
+    if (!cal_k.device().is_meta())
+        TORCH_CHECK_SHAPES_OPT(cal_k, 0, k_in, 2, 1);
+        TORCH_CHECK_SHAPES_OPT(cal_k, 1, k_in, 3, 1);
+        TORCH_CHECK_SHAPES_OPT(cal_v, 0, v_in, 2, 1);
+        TORCH_CHECK_SHAPES_OPT(cal_v, 1, v_in, 3, 1);
 
     if (page_size)
     {
@@ -113,9 +122,9 @@ void fp16_to_q4_kv
         int pages_per_seq = block_table.size(1);
 
         TORCH_CHECK_SHAPES(cache_seqlens, 0, block_table, 0, 1);
-        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
+//        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
 
-        array_fp16_to_q4_kv_paged_cuda
+        array_fp16_to_q_kv_paged_cuda
         (
             (const half*) k_in.data_ptr(),
             (unsigned char*) k_out.data_ptr(),
@@ -129,7 +138,10 @@ void fp16_to_q4_kv
             (const int*) cache_seqlens.data_ptr(),
             (const int*) block_table.data_ptr(),
             page_size,
-            width
+            width,
+            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
+            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
+            wbits
         );
     }
     else
@@ -141,7 +153,7 @@ void fp16_to_q4_kv
         offset *= tsize;
         width *= tsize;
 
-        array_fp16_to_q4_kv_cuda
+        array_fp16_to_q_kv_cuda
         (
             (const half*) k_in.data_ptr(),
             (unsigned char*) k_out.data_ptr(),
@@ -149,15 +161,19 @@ void fp16_to_q4_kv
             (const half*) v_in.data_ptr(),
             (unsigned char*) v_out.data_ptr(),
             (half*) v_scales.data_ptr(),
+            tsize,
             stride,
             height,
             offset,
-            width
+            width,
+            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
+            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
+            wbits
         );
     }
 }
 
-void q4_to_fp16_kv
+void q_to_fp16_kv
 (
     torch::Tensor k_in,
     torch::Tensor k_out,
@@ -170,7 +186,10 @@ void q4_to_fp16_kv
     int width,
     int page_size,
     torch::Tensor cache_seqlens,
-    torch::Tensor block_table
+    torch::Tensor block_table,
+    torch::Tensor cal_k,
+    torch::Tensor cal_v,
+    int wbits
 )
 {
     TORCH_CHECK_DTYPE(k_in, kUInt8);
@@ -180,15 +199,21 @@ void q4_to_fp16_kv
     TORCH_CHECK_SHAPES(k_out, 0, k_in, 0, 1);
     TORCH_CHECK_SHAPES(k_out, 1, k_in, 1, 1);
     TORCH_CHECK_SHAPES(k_out, 2, k_in, 2, 1);
-    TORCH_CHECK_SHAPES(k_out, 3, k_in, 3, 2);
+//    TORCH_CHECK_SHAPES(k_out, 3, k_in, 3, 2);
     TORCH_CHECK_SHAPES(v_out, 0, v_in, 0, 1);
     TORCH_CHECK_SHAPES(v_out, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(v_out, 2, v_in, 2, 1);
-    TORCH_CHECK_SHAPES(v_out, 3, v_in, 3, 2);
+//    TORCH_CHECK_SHAPES(v_out, 3, v_in, 3, 2);
     TORCH_CHECK_SHAPES(k_in, 0, v_in, 0, 1);
     TORCH_CHECK_SHAPES(k_in, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
-    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
+//    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
+
+    if (!cal_k.device().is_meta())
+        TORCH_CHECK_SHAPES_OPT(cal_k, 0, k_out, 2, 1);
+        TORCH_CHECK_SHAPES_OPT(cal_k, 1, k_out, 3, 1);
+        TORCH_CHECK_SHAPES_OPT(cal_v, 0, v_out, 2, 1);
+        TORCH_CHECK_SHAPES_OPT(cal_v, 1, v_out, 3, 1);
 
     if (page_size)
     {
@@ -197,9 +222,9 @@ void q4_to_fp16_kv
         int pages_per_seq = block_table.size(1);
 
         TORCH_CHECK_SHAPES(cache_seqlens, 0, block_table, 0, 1);
-        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
+//        TORCH_CHECK(dim % 256 == 0, "(num_kv_heads * head_dim) must be divisible by 256");
 
-        array_q4_to_fp16_kv_paged_cuda
+        array_q_to_fp16_kv_paged_cuda
         (
             (const unsigned char*) k_in.data_ptr(),
             (const half*) k_scales.data_ptr(),
@@ -212,7 +237,10 @@ void q4_to_fp16_kv
             pages_per_seq,
             (const int*) cache_seqlens.data_ptr(),
             (const int*) block_table.data_ptr(),
-            page_size
+            page_size,
+            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
+            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
+            wbits
         );
     }
     else
@@ -224,7 +252,7 @@ void q4_to_fp16_kv
         offset *= tsize;
         width *= tsize;
 
-        array_q4_to_fp16_kv_cuda
+        array_q_to_fp16_kv_cuda
         (
             (const unsigned char*) k_in.data_ptr(),
             (const half*) k_scales.data_ptr(),
@@ -232,10 +260,14 @@ void q4_to_fp16_kv
             (const unsigned char*) v_in.data_ptr(),
             (const half*) v_scales.data_ptr(),
             (half*) v_out.data_ptr(),
+            tsize,
             stride,
             height,
             offset,
-            width
+            width,
+            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
+            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
+            wbits
         );
     }
 }

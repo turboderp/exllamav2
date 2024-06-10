@@ -62,7 +62,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.post_attention_layernorm = None
 
         self.up_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_up, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c)
-        self.down_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_down, cfg.intermediate_size, cfg.hidden_size, self.model.config.arch.mlp_bias)
+        self.down_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_down, cfg.intermediate_size, cfg.hidden_size, self.model.config.arch.mlp_bias, prescale = cfg.scale_depth)
 
         self.submodules = [self.up_proj,
                            self.down_proj]
@@ -90,6 +90,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return numel
 
 
+    @torch.inference_mode
     def load(self):
 
         cfg = self.model.config
@@ -181,7 +182,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def scratch_space(self) -> int:
 
-        assert self.model.config.intermediate_size >= self.model.config.hidden_size
+        cfg = self.model.config
+        assert cfg.intermediate_size >= cfg.hidden_size
         return self.temp_state_size() + \
                self.temp_a_size() + \
                self.temp_b_size() + \
@@ -190,17 +192,20 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def temp_state_size(self) -> int:
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.hidden_size * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.hidden_size * 2 + 128
 
 
     def temp_a_size(self) -> int:
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.intermediate_size * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.intermediate_size * 2 + 128
 
 
     def temp_b_size(self) -> int:
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.intermediate_size * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.intermediate_size * 2 + 128
 
 
     def temp_dq_size(self) -> int:
@@ -256,24 +261,26 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                       loras: list[ExLlamaV2Lora] | None = None,
                       **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
+        cfg = self.model.config
+
         residual = hidden_states
         post_norm = self.post_attention_layernorm.forward(hidden_states) \
             if self.has_norm else hidden_states
 
         if self.gate_proj is not None:
             gate = self.gate_proj.forward(post_norm, loras = loras)
-            if self.model.config.arch.mlp_act_func == "silu":
+            if cfg.arch.mlp_act_func == "silu":
                 y = F.silu(gate)
-            elif self.model.config.arch.mlp_act_func == "gelu":
+            elif cfg.arch.mlp_act_func == "gelu":
                 y = F.gelu(gate)
             up = self.up_proj.forward(post_norm, loras = loras)
             y *= up
             y.clamp_(min = -65504.0, max = 65504.0)
         else:
             up = self.up_proj.forward(post_norm, loras = loras)
-            if self.model.config.arch.mlp_act_func == "silu":
+            if cfg.arch.mlp_act_func == "silu":
                 y = F.silu(up)
-            elif self.model.config.arch.mlp_act_func == "gelu":
+            elif cfg.arch.mlp_act_func == "gelu":
                 y = F.gelu(up)
 
         down = self.down_proj.forward(y, loras = loras)

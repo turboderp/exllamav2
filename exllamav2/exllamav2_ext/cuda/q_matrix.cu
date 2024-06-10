@@ -751,7 +751,7 @@ void matrix_q4_to_fp16_cuda
     int numel
 )
 {
-    array_q4_to_fp16_kv_cuda
+    array_q_to_fp16_kv_cuda
     (
         in_ptr,
         scales_ptr,
@@ -760,9 +760,13 @@ void matrix_q4_to_fp16_cuda
         NULL,
         NULL,
         0,
+        0,
         1,
         0,
-        numel
+        numel,
+        NULL,
+        NULL,
+        4
     );
 }
 
@@ -774,7 +778,7 @@ void matrix_fp16_to_q4_cuda
     int numel
 )
 {
-    array_fp16_to_q4_kv_cuda
+    array_fp16_to_q_kv_cuda
     (
         in_ptr,
         out_ptr,
@@ -783,9 +787,13 @@ void matrix_fp16_to_q4_cuda
         NULL,
         NULL,
         0,
+        0,
         1,
         0,
-        numel
+        numel,
+        NULL,
+        NULL,
+        4
     );
 }
 

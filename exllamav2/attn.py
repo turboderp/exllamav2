@@ -14,13 +14,13 @@ from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
 import math
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
-# import torch.nn.functional as F
+import torch.nn.functional as F
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
-# Detect flash-attn
+# Detect available options for attention
 
 has_flash_attn = False
 has_flash_attn_with_paged = False
@@ -54,6 +54,12 @@ try:
 except ModuleNotFoundError:
     pass
 
+has_lower_right_sdpa = False
+try:
+    from torch.nn.attention.bias import causal_lower_right
+    has_lower_right_sdpa = True
+except ImportError:
+    pass
 
 def assert_paged_attn():
     global has_flash_attn_with_paged
@@ -201,13 +207,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         block_index: torch.Tensor
         cache_seqlens: torch.Tensor
         page_size: int
+        is_sequential: bool
+        first_index: int
 
         def __init__(
             self,
             batch_size: int,
             block_index: torch.Tensor,
             cache_seqlens: torch.Tensor,
-            page_size: int
+            page_size: int,
+            q_len: int = 0
         ):
             super().__init__(
                 batch_size = batch_size,
@@ -217,6 +226,23 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.block_index = block_index
             self.cache_seqlens = cache_seqlens
             self.page_size = page_size
+
+            self.is_sequential = False
+            assert self.block_index.device.type == "cpu"
+            assert self.cache_seqlens.device.type == "cpu"
+            assert q_len > 0
+            if self.block_index.shape[0] == 1:
+                vi0 = self.cache_seqlens[0].item()
+                vi1 = vi0 + q_len
+                vp0 = vi0 // page_size
+                vp1 = (vi1 - 1) // page_size
+                for i in range(vp0 + 1, vp1 + 1):
+                    if self.block_index[0, i].item() != self.block_index[0, i - 1].item() + 1:
+                        break
+                else:
+                    self.is_sequential = True
+                    self.first_index = self.block_index[0, vp0].item() * page_size + vi0 - vp0 * page_size
+                    self.cache_seqlens_after = self.cache_seqlens + q_len
 
         def get_attn_mask(self, device):
             raise NotImplementedError()
@@ -230,6 +256,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             if self.cache_seqlens.device != device:
                 self.cache_seqlens = safe_move_tensor(self.cache_seqlens, device)
             return self.cache_seqlens
+
+        def get_cache_seqlens_after(self, device) -> torch.Tensor:
+            if self.cache_seqlens_after.device != device:
+                self.cache_seqlens_after = safe_move_tensor(self.cache_seqlens_after, device)
+            return self.cache_seqlens_after
 
 
     def __init__(self,
@@ -269,7 +300,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b)
         self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c)
         self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d)
-        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, cfg.arch.attention_bias_o)
+        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, cfg.arch.attention_bias_o, prescale = cfg.scale_depth)
 
         if cfg.use_qk_norm:
             self.q_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.q_norm", cfg.num_attention_heads, cfg.head_dim)
@@ -310,7 +341,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return numel
 
 
+    @torch.inference_mode
     def load(self):
+
+        cfg = self.model.config
 
         if self.input_layernorm is not None: self.input_layernorm.load()
         self.q_proj.load()
@@ -331,7 +365,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # self.temp_k = device_tensors.get_scratch_slice(self.temp_k_size())
             # self.temp_v = device_tensors.get_scratch_slice(self.temp_v_size())
             self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
-            # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if self.model.config.num_attention_heads != self.model.config.num_key_value_heads else None
+            # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
 
             if self.has_norm:
                 norm_weight = self.input_layernorm.weight if self.input_layernorm.weight is not None else none_tensor
@@ -368,14 +402,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 # self.temp_k,
                 # self.temp_v,
                 self.temp_dq,
-                self.model.config.max_input_len * self.model.config.max_batch_size,
-                self.model.config.hidden_size,
-                self.model.config.num_attention_heads,
-                self.model.config.num_key_value_heads,
-                self.model.config.head_dim,
-                self.model.config.max_seq_len,
+                cfg.max_input_len * cfg.max_batch_size,
+                cfg.hidden_size,
+                cfg.num_attention_heads,
+                cfg.num_key_value_heads,
+                cfg.head_dim,
+                cfg.max_seq_len,
                 self.has_residual,
-                self.model.config.arch.rope_style.value,
+                cfg.arch.rope_style.value,
                 q_norm,
                 k_norm
             )
@@ -434,22 +468,26 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_state_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
 
 
     def temp_q_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
 
 
     def temp_k_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_key_value_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_key_value_heads * cfg.head_dim * 2 + 128
 
 
     def temp_v_size(self):
 
-        return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_key_value_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        return cfg.max_input_len * cfg.max_batch_size * cfg.num_key_value_heads * cfg.head_dim * 2 + 128
 
 
     def temp_dq_size(self):
@@ -462,23 +500,25 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_kv_size(self):
 
-        if self.model.config.num_key_value_heads == self.model.config.num_attention_heads: return 0
-        return 2 * self.model.config.max_seq_len * self.model.config.max_batch_size * self.model.config.num_attention_heads * self.model.config.head_dim * 2 + 128
+        cfg = self.model.config
+        if cfg.num_key_value_heads == cfg.num_attention_heads: return 0
+        return 2 * cfg.max_seq_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
 
 
     def temp_attn_size(self):
         global has_flash_attn
         global has_xformers
 
-        att_max = min(self.model.config.max_attention_size, self.model.config.max_seq_len ** 2)
+        cfg = self.model.config
+        att_max = min(cfg.max_attention_size, cfg.max_seq_len ** 2)
 
-        if (has_flash_attn and not self.model.config.no_flash_attn) or (has_xformers and not self.model.config.no_xformers) :
+        if (has_flash_attn and not cfg.no_flash_attn) or (has_xformers and not cfg.no_xformers) :
             #in sm>=80 devices, xformers uses the same memory as flash_attn
             #todo: due to the different implementions. in sm<80 devices, xformers uses less memory than it in sm>=80. There may still be room for optimization.
-            eff = self.model.config.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
+            eff = cfg.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
             att_max //= eff
 
-        return 2 * att_max * self.model.config.num_attention_heads * 2 + 128
+        return 2 * att_max * cfg.num_attention_heads * 2 + 128
 
 
     def set_device_idx(self, idx):
@@ -513,22 +553,31 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         is_q = self.q_handle is not None
         cfg = self.model.config
         constants = self.model.get_device_tensors(self.device_idx, scratch = is_q)
-
         page_size = attn_params.page_size
-
         batch_size, q_len, _ = hidden_states.shape
-
         cache_seqlens = attn_params.get_cache_seqlens(self.device())
         block_table = attn_params.get_block_index(self.device())
 
-        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
-        k_cache = k_cache.view(k_cache.shape[1] // page_size, page_size, k_cache.shape[2], k_cache.shape[3])
-        v_cache = v_cache.view(v_cache.shape[1] // page_size, page_size, v_cache.shape[2], v_cache.shape[3])
+        # TODO: We only need keys/values when preprocess_only == True, so we could skip q projection and attention.
+        #   Would need custom kernel to update paged cache if not calling flash_attn_with_kvcache
+        # skip_attn = kwargs.get("kv_only")
+
+        # TODO: Potentially we could emulate paged cache when in Q4 mode, since that requires copying the active part
+        #   of the current cache layer anyway. Test if block diagonal masking works with lower-right aligned mask.
+
+        k_cache_f, v_cache_f = cache.get_kv_state(self.layer_idx, batch_size, 0, 1, page_size, cache_seqlens, block_table)
+        k_cache = k_cache_f.view(k_cache_f.shape[1] // page_size, page_size, k_cache_f.shape[2], k_cache_f.shape[3])
+        v_cache = v_cache_f.view(v_cache_f.shape[1] // page_size, page_size, v_cache_f.shape[2], v_cache_f.shape[3])
 
         if is_q:
             q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-            k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-            v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+            if attn_params.is_sequential:
+                assert batch_size == 1
+                k = k_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+                v = v_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+            else:
+                k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+                v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
 
             if loras is None or self.temp_lora_size == 0:
                 pass_loras = []
@@ -576,6 +625,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                         attn_params.get_cache_seqlens(self.device()),
                         cfg.arch.rope_style == RopeStyle.NEOX
                     )
+            if attn_params.is_sequential:
+                k_ = k_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+                v_ = v_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
+                k_.copy_(k)
+                v_.copy_(v)
+
+        if attn_params.is_sequential:
+            k = None
+            v = None
+            cache_seqlens_a = attn_params.get_cache_seqlens_after(self.device())
+        else:
+            cache_seqlens_a = cache_seqlens
 
         attn_output = flash_attn_with_kvcache(
             q = q,
@@ -583,7 +644,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             v = v,
             k_cache = k_cache,
             v_cache = v_cache,
-            cache_seqlens = cache_seqlens,
+            cache_seqlens = cache_seqlens_a,
             block_table = block_table,
             causal = True
         )
@@ -611,24 +672,38 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def _attn_matmul(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+    def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        q_states = q_states.transpose(1, 2)
-        k_states = k_states.transpose(1, 2)
-        v_states = v_states.transpose(1, 2)
+        if has_lower_right_sdpa and attn_params.is_causal():
 
-        k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
-        k_states = k_states.transpose(-1, -2)
+            q_states = q_states.transpose(1, 2)
+            k_states = k_states.transpose(1, 2)
+            v_states = v_states.transpose(1, 2)
 
-        attn_weights = torch.matmul(q_states, k_states)
+            k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
+            v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
 
-        attn_weights *= 1 / math.sqrt(cfg.head_dim)
-        attn_mask = attn_params.get_attn_mask(attn_weights.device)
-        if attn_mask is not None: attn_weights = attn_weights + attn_mask
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float16)
+            attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
+            attn_output = F.scaled_dot_product_attention(q_states, k_states, v_states, attn_mask_lr)
 
-        v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
-        attn_output = torch.matmul(attn_weights, v_states)
+        else:
+
+            q_states = q_states.transpose(1, 2)
+            k_states = k_states.transpose(1, 2)
+            v_states = v_states.transpose(1, 2)
+
+            k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
+            k_states = k_states.transpose(-1, -2)
+
+            attn_weights = torch.matmul(q_states, k_states)
+
+            attn_weights *= 1 / math.sqrt(cfg.head_dim)
+            attn_mask = attn_params.get_attn_mask(attn_weights.device)
+            if attn_mask is not None: attn_weights = attn_weights + attn_mask
+            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
+
+            v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
+            attn_output = torch.matmul(attn_weights, v_states)
 
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
@@ -766,7 +841,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         elif (has_xformers and not cfg.no_xformers) and attn_params.is_causal():
             attn_func = self._attn_xformers
         else:
-            attn_func = self._attn_matmul
+            attn_func = self._attn_torch
 
         # Straight attention without cache
 
@@ -887,59 +962,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         use_flash_attn = has_flash_attn and not cfg.no_flash_attn
         use_xformers = has_xformers and not cfg.no_xformers
 
-        # Torch matmul attention
+        # Select attention function
 
         if not (use_flash_attn or use_xformers) or not attn_params.is_causal():
-
-            query_states = query_states.transpose(1, 2)
-            key_states = key_states.transpose(1, 2)
-            value_states = value_states.transpose(1, 2)
-
-            key_states = self.repeat_kv(key_states, cfg.num_key_value_groups)
-            key_states = key_states.transpose(-1, -2)
-
-            attn_weights = torch.matmul(query_states, key_states)
-            # attn_weights *= self.scale_factor / math.sqrt(head_dim)
-            # attn_mask = attn_params.get_attn_mask(hidden_states.device)
-            # if self.scale_factor != 1: attn_weights *= self.unscale_factor
-            attn_weights *= 1 / math.sqrt(head_dim)
-            attn_mask = attn_params.get_attn_mask(hidden_states.device)
-            if attn_mask is not None: attn_weights = attn_weights + attn_mask
-            attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
-
-            value_states = self.repeat_kv(value_states, cfg.num_key_value_groups)
-            attn_output = torch.matmul(attn_weights, value_states)
-
-            attn_output = attn_output.transpose(1, 2)
-            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
-
-        # Flash Attention 2
-
+            attn_func = self._attn_torch
         elif use_flash_attn:
-
-            attn_output = flash_attn_func(
-                query_states,
-                key_states,
-                value_states,
-                # softmax_scale = None if self.scale_factor == 1 else self.scale_factor / math.sqrt(head_dim),
-                causal = True
-            )
-            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
-
-        # Xformers attention
-
+            attn_func = self._attn_flash
         else:
+            attn_func = self._attn_xformers
 
-            key_states = key_states.transpose(1, 2)
-            value_states = value_states.transpose(1, 2)
+        # Attention
 
-            key_states = self.repeat_kv(key_states, num_key_value_groups)
-            value_states = self.repeat_kv(value_states, num_key_value_groups)
-            key_states = key_states.transpose(1, 2)
-            value_states = value_states.transpose(1, 2)
-
-            attn_output = xops.memory_efficient_attention(query_states, key_states, value_states, attn_bias = LowerTriangularFromBottomRightMask())
-            attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+        attn_output = attn_func(batch_size, q_len, query_states, key_states, value_states, attn_params, cfg)
 
         # Update 8-bit/Q4 cache
 
