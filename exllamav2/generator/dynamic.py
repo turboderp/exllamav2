@@ -1478,7 +1478,7 @@ class ExLlamaV2DynamicJob:
         return_top_tokens: int = 0,
         return_logits: bool = False,
         return_probs: bool = False,
-        return_hidden_state: bool = False,
+        return_last_state: bool = False,
         filters: list[ExLlamaV2Filter] | None = None,
         filter_prefer_eos: bool = False,
         token_healing: bool = False,
@@ -1531,8 +1531,8 @@ class ExLlamaV2DynamicJob:
         :param return_probs:
             Return final sampling probability for each chosen token.
             
-        :param return_hidden_state:
-            Return final hidden state for the last token.
+        :param return_last_state:
+            Return hidden state for the last token.
 
         :param filters:
             List of ExLlamaV2Filters to apply during generation.
@@ -1609,7 +1609,7 @@ class ExLlamaV2DynamicJob:
         self.return_top_tokens = return_top_tokens
         self.return_logits = return_logits
         self.return_probs = return_probs
-        self.return_last_state = return_hidden_state
+        self.return_last_state = return_last_state
 
         # Stop conditions
 
@@ -1880,7 +1880,7 @@ class ExLlamaV2DynamicJob:
                     r.update({ "logits": self.held_logits.torch().clone() })
                     self.held_logits.clear()
                 if self.last_state is not None:
-                    r.update({ "hidden_state": self.last_state })
+                    r.update({ "last_state": self.last_state })
                     self.last_state = None
 
             if suppressed_text:
