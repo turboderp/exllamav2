@@ -1056,13 +1056,13 @@ class ExLlamaV2DynamicGenerator:
 
         batch_size = 0
         max_seq_len = 0
-        return_hidden_state = False
+        return_last_state = False
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
             max_seq_len = max(max_seq_len, job.get_max_seq_len() + self.num_draft_tokens)
             batch_size += len(job.sequences)
-            if job.return_hidden_state:
-                return_hidden_state = True
+            if job.return_last_state:
+                return_last_state = True
 
         if batch_size == 0:
             return  # Nothing more to do this iteration
@@ -1107,12 +1107,18 @@ class ExLlamaV2DynamicGenerator:
 
         attn_params = self.get_paged_params(batch_size, block_index, cache_seqlens, batch_ids.shape[-1])
 
-        device_logits = self.model.forward_chunk(
+        forward_output = self.model.forward_chunk(
             input_ids = batch_ids,
             attn_params = attn_params,
             cache = self.cache,
             loras = self.current_loras,
-        )["logits"]
+            return_last_state=return_last_state
+        )
+        device_logits = forward_output["logits"]
+
+        last_state = None
+        if return_last_state:
+            last_state = forward_output["last_state"]
 
         # Pass logits to jobs for sampling
 
@@ -1152,7 +1158,7 @@ class ExLlamaV2DynamicGenerator:
                     next_k_probs,
                     next_prob,
                     filter_eos,
-                    hidden_state,
+                    last_state,
                     results
                 )
 
@@ -1432,7 +1438,7 @@ class ExLlamaV2DynamicJob:
     held_logits: SeqTensor
 
     full_completion: str
-    hidden_state: torch.Tensor | None
+    last_state: torch.Tensor | None
 
     # Ngrams
 
@@ -1557,7 +1563,7 @@ class ExLlamaV2DynamicJob:
 
         self.max_skips = max_skips
         self.allocated_pages = None
-        self.hidden_state = None
+        self.last_state = None
 
         # Prepare sequences
 
@@ -1603,7 +1609,7 @@ class ExLlamaV2DynamicJob:
         self.return_top_tokens = return_top_tokens
         self.return_logits = return_logits
         self.return_probs = return_probs
-        self.return_hidden_state = return_hidden_state
+        self.return_last_state = return_hidden_state
 
         # Stop conditions
 
@@ -1758,7 +1764,7 @@ class ExLlamaV2DynamicJob:
             next_k_probs: torch.Tensor | None,
             next_prob: torch.Tensor | None,
             filter_eos: bool | None,
-            hidden_state: torch.Tensor | None,
+            last_state: torch.Tensor | None,
             results: list
     ):
         page_size = self.generator.page_size
@@ -1873,9 +1879,9 @@ class ExLlamaV2DynamicJob:
                 if self.held_logits:
                     r.update({ "logits": self.held_logits.torch().clone() })
                     self.held_logits.clear()
-                if self.hidden_state is not None:
-                    r.update({ "hidden_state": self.hidden_state })
-                    self.hidden_state = None
+                if self.last_state is not None:
+                    r.update({ "hidden_state": self.last_state })
+                    self.last_state = None
 
             if suppressed_text:
                 r.update({ "suppressed_text": suppressed_text })
@@ -1929,9 +1935,9 @@ class ExLlamaV2DynamicJob:
             self.held_k_probs.append(next_k_probs)
         if self.return_logits:
             self.held_logits.append(logits)
-        if self.return_hidden_state:
-            if self.hidden_state is None:
-                self.hidden_state = hidden_state
+        if self.return_last_state:
+            if self.last_state is None:
+                self.last_state = last_state
 
         # Stop if we reach max_new_tokens
 
