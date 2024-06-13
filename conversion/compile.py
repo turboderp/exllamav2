@@ -149,7 +149,7 @@ def compile_model(job, save_fn, model):
             if len(save_dict) == 0:
 
                 print(f" ## Error: Unable to fit output tensor in single shard.")
-                os._exit(0)
+                os._exit(1)
 
             while True:
 
