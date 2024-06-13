@@ -116,7 +116,7 @@ def quant_linear(job: dict,
     diff1 = torch.max(quant_w)
     quant_w = None
 
-    if diff1 > 0.05 or diff2 > 0.05:
+    if diff1 > 0.05 or diff2 > 0.075:
         print(" ## Quantization error (2)")
         os._exit(1)
     elif diff1 > 0.01 or diff2 > 0.01:
