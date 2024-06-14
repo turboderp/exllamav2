@@ -1057,10 +1057,12 @@ class ExLlamaV2DynamicGenerator:
         batch_size = 0
         max_seq_len = 0
         return_last_state = False
+        
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
             max_seq_len = max(max_seq_len, job.get_max_seq_len() + self.num_draft_tokens)
             batch_size += len(job.sequences)
+            # check if any jobs are requesting last state
             if job.return_last_state:
                 return_last_state = True
 
@@ -1116,9 +1118,9 @@ class ExLlamaV2DynamicGenerator:
         )
         device_logits = forward_output["logits"]
 
-        last_state = None
+        batch_last_states = None
         if return_last_state:
-            last_state = forward_output["last_state"]
+            batch_last_states = forward_output["last_state"]
 
         # Pass logits to jobs for sampling
 
@@ -1151,6 +1153,10 @@ class ExLlamaV2DynamicGenerator:
                     next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
                     job.receive_logits(job_logits)
 
+                job_last_state = None
+                if job.return_last_state is True and batch_last_states is not None:
+                    job_last_state = batch_last_states[a].squeeze()
+
                 eos, sampled_token = job.receive_sample(
                     job_logits,
                     next_token,
@@ -1158,7 +1164,7 @@ class ExLlamaV2DynamicGenerator:
                     next_k_probs,
                     next_prob,
                     filter_eos,
-                    last_state,
+                    job_last_state,
                     results
                 )
 
