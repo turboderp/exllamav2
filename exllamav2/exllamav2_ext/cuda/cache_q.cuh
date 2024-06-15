@@ -106,9 +106,7 @@ inline __device__ void fp16_to_q
         int4* out_s = (int4*) (scales + block_offset / 32);
 
         if (t < BLOCKSIZE_Q / 16) __stwb(&out_q[t], pq[t]);
-        // out_q[t] = pq[t];
         if (t < BLOCKSIZE_Q / 256) __stwb(&out_s[t], ps[t]);
-        // out_s[t] = ps[t];
     }
 }
 
@@ -188,7 +186,6 @@ inline __device__ void q_to_fp16
     half2* out2 = (half2*) (out + block_offset);
     if (cal) w2 = __hmul2(w2, *((half2*)(cal + (block_offset + t * 2) % dim)));
     __stcg(&out2[t], w2);
-//    out2[t] = w2;
 }
 
 

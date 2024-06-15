@@ -108,6 +108,9 @@ __device__ __forceinline__ __half2 __compat_hmax2(__half2 x, __half2 y)
 }
 #define __hmax2 __compat_hmax2
 
+#define __stwb(dst, src) *dst = src
+#define __stcg(dst, src) *dst = src
+
 #endif
 
 #endif
