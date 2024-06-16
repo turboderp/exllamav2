@@ -21,11 +21,15 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 #         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
 
 import torch
-
 if not (torch.version.cuda or torch.version.hip):
     print("")
     print(f" ## Warning: The installed version of PyTorch is {torch.__version__} and does not support CUDA or ROCm.")
     print("")
+
+# PyTorch, especially v2.3.1, gets confused when working with small CPU tensors and likes to use way too many worker
+# threads for small operations, adding considerable overhead. Limit it to a single thread to avoid that (globally
+# because that seems to be the only way)
+torch.set_num_threads(1)
 
 import math
 from exllamav2.config import ExLlamaV2Config
