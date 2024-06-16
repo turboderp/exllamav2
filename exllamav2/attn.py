@@ -40,6 +40,8 @@ try:
 
     if [2, 5, 7] <= flash_attn_ver:
         from flash_attn import flash_attn_func, flash_attn_with_kvcache
+        import flash_attn_2_cuda as flash_attn_cuda
+
         has_flash_attn = True
         has_flash_attn_with_paged = True
 
@@ -650,15 +652,29 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cache.q_block == 1:
             cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
 
-        attn_output = flash_attn_with_kvcache(
-            q = q,
-            k = k,
-            v = v,
-            k_cache = k_cache,
-            v_cache = v_cache,
-            cache_seqlens = cache_seqlens_a,
-            block_table = block_table,
-            causal = True
+        # attn_output = flash_attn_with_kvcache(
+        #     q = q,
+        #     k = k,
+        #     v = v,
+        #     k_cache = k_cache,
+        #     v_cache = v_cache,
+        #     cache_seqlens = cache_seqlens_a,
+        #     block_table = block_table,
+        #     causal = True
+        # )
+        attn_output, _ = flash_attn_cuda.fwd_kvcache(
+            q, k_cache, v_cache, k, v,
+            cache_seqlens_a,
+            None, None,
+            None,
+            block_table,
+            None,
+            None,
+            1 / math.sqrt(cfg.head_dim),
+            True,
+            -1, -1,
+            True,
+            0,
         )
         attn_output = attn_output.view((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
