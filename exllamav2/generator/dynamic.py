@@ -397,19 +397,19 @@ class ExLlamaV2DynamicGenerator:
         self.logits_pinned = torch.empty(
             (max_batch_size, max_q_size, self.padded_vocab_size),
             dtype = torch.float,
-            pin_memory = True
+            pin_memory = False
         )
 
         if draft_model:
             self.draft_input_ids_pinned = torch.empty(
                 (max_batch_size, 1),
                 dtype = torch.long,
-                pin_memory = True
+                pin_memory = False
             )
             self.draft_ids_pinned = torch.empty(
                 (max_batch_size, num_draft_tokens),
                 dtype = torch.long,
-                pin_memory = True
+                pin_memory = False
             )
 
         # Ngram
