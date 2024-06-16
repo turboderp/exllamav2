@@ -170,7 +170,10 @@ if build_jit:
 
     # gcc / cl.exe flags
 
-    extra_cflags = ["/Ox"] if windows else ["-O3"]
+    if windows:
+        extra_cflags = ["/Ox"]
+    else:
+        extra_cflags = ["-Ofast"]
 
     if ext_debug:
         extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
