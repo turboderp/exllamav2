@@ -10,13 +10,13 @@ from util import format_prompt, get_stop_conditions
 
 total_cache_tokens = 16384
 
-draft_model_dir = "/mnt/str/models/tinyllama-1b-32k-exl2/4.0bpw"
+draft_model_dir = "/mnt/str/models/qwen2-1.5b-instruct-exl2/4.0bpw"
 draft_config = ExLlamaV2Config(draft_model_dir)
 draft_model = ExLlamaV2(draft_config)
 draft_cache = ExLlamaV2Cache(draft_model, max_seq_len = total_cache_tokens, lazy = True)
 draft_model.load_autosplit(draft_cache, progress = True)
 
-model_dir = "/mnt/str/models/codellama-34b-instruct-exl2/4.0bpw"
+model_dir = "/mnt/str/models/qwen2-72b-instruct-exl2/6.0bpw"
 config = ExLlamaV2Config(model_dir)
 model = ExLlamaV2(config)
 cache = ExLlamaV2Cache(model, max_seq_len = total_cache_tokens, lazy = True)
@@ -27,13 +27,16 @@ tokenizer = ExLlamaV2Tokenizer(config)
 
 # Create prompt. Don't use stop condition so we can measure speed over a set number of output tokens
 
-prompt_format = "llama"
+prompt_format = "chatml"
 prompt = format_prompt(
     prompt_format,
     "You are an AI coding model",
     "Implement QuickSort in Java, C# and Rust."
+    # "You are an AI writing assistant",
+    # "Write a short story about the Scottish town of Auchtermuchty."
 )
-max_new_tokens = 300
+max_new_tokens = 250
+gen_settings = ExLlamaV2Sampler.Settings.greedy()
 
 # Initialize generator without draft model, warm up to make sure we get correct timing results
 
@@ -53,7 +56,7 @@ with Timer() as t_no_draft:
         prompt = prompt,
         max_new_tokens = max_new_tokens,
         encode_special_tokens = True,
-        gen_settings = ExLlamaV2Sampler.Settings.greedy()
+        gen_settings = gen_settings
     )
 
 print(output)
@@ -71,6 +74,7 @@ generator = ExLlamaV2DynamicGenerator(
     draft_model = draft_model,
     draft_cache = draft_cache,
     tokenizer = tokenizer,
+    num_draft_tokens = 4,
 )
 generator.warmup()
 
@@ -79,7 +83,7 @@ with Timer() as t_draft:
         prompt = prompt,
         max_new_tokens = max_new_tokens,
         encode_special_tokens = True,
-        gen_settings = ExLlamaV2Sampler.Settings.greedy()
+        gen_settings = gen_settings
     )
 
 print(output)
