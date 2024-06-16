@@ -24,7 +24,7 @@ void apply_rep_penalty_cpu
     float* logits
 );
 
-void softmax_cpu
+int softmax_cpu
 (
     const int vocab_size,
     const float temperature,
@@ -60,7 +60,8 @@ int top_k_cpu
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    int top_k
+    int top_k,
+    int maxlogit = -1
 );
 
 int top_p_cpu

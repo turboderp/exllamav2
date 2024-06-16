@@ -110,7 +110,7 @@ void apply_rep_penalty_cpu
 }
 
 AVX2_TARGET_OPTIONAL
-void softmax_cpu_nonavx2
+int softmax_cpu_nonavx2
 (
     const int vocab_size,
     const float temperature,
@@ -125,11 +125,16 @@ void softmax_cpu_nonavx2
     float esum = 0.0f;
     float itemp = 1.0f / temperature;
     float maxl = -1e38;
+    int maxi;
 
     for (int i = 0; i < vocab_size; i++)
     {
         if (!logits_filter[i]) continue;
-        maxl = fmaxf(logits[i], maxl);
+        if (logits[i] > maxl)
+        {
+            maxl = logits[i];
+            maxi = i;
+        }
     }
 
     for (int i = 0; i < vocab_size; i++)
@@ -154,6 +159,7 @@ void softmax_cpu_nonavx2
     }
 
     profile_stop();
+    return maxi;
 
 //    printf("Softmax:");
 //    float summ = 0.0f;
@@ -169,7 +175,7 @@ void softmax_cpu_nonavx2
 //    printf("sum: %f\n\n", summ);
 }
 
-void softmax_cpu
+int softmax_cpu
 (
     const int vocab_size,
     const float temperature,
@@ -439,7 +445,8 @@ int top_k_cpu
     const int num_candidates,
     float* temp_probs,
     int* temp_indices,
-    int top_k
+    int top_k,
+    int maxlogit
 )
 {
     profile_start("top_k_cpu");
@@ -448,20 +455,28 @@ int top_k_cpu
 
     if (top_k == 1)
     {
-        int maxidx = -1;
-        float max = -1e38;
-
-        for(int i = 0; i < num_candidates; i++)
+        if (maxlogit >= 0)
         {
-            if (maxidx == -1 || temp_probs[i] > max)
-            {
-                max = temp_probs[i];
-                maxidx = i;
-            }
+            swap<float>(temp_probs[0], temp_probs[maxlogit]);
+            swap<int>(temp_indices[0], temp_indices[maxlogit]);
         }
+        else
+        {
+            int maxidx = -1;
+            float max = -1e38;
 
-        swap<float>(temp_probs[0], temp_probs[maxidx]);
-        swap<int>(temp_indices[0], temp_indices[maxidx]);
+            for(int i = 0; i < num_candidates; i++)
+            {
+                if (maxidx == -1 || temp_probs[i] > max)
+                {
+                    max = temp_probs[i];
+                    maxidx = i;
+                }
+            }
+
+            swap<float>(temp_probs[0], temp_probs[maxidx]);
+            swap<int>(temp_indices[0], temp_indices[maxidx]);
+        }
     }
 
     // Use min-heap for lower values of K

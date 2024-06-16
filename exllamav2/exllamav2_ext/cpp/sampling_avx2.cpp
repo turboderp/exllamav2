@@ -13,7 +13,7 @@
 #include "profiling.h"
 
 AVX2_TARGET
-void softmax_cpu_avx2
+int softmax_cpu_avx2
 (
     const int vocab_size,
     const float temperature,
@@ -30,6 +30,7 @@ void softmax_cpu_avx2
     float itemp = 1.0f / temperature;
     const float minf = -1e38;
     float maxl = minf;
+    float maxi;
 
     // Apply logit filter and find max logit
 
@@ -39,7 +40,11 @@ void softmax_cpu_avx2
         float l = logits[i];
         bool f = logits_filter[i];
         l = f ? l : minf;
-        maxl = fmaxf(l, maxl);
+        if (l > maxl)
+        {
+            maxl = l;
+            maxi = i;
+        }
         output[i] = l;
     }
     for (; i < vocab_size_aligned; i++)
@@ -124,4 +129,5 @@ void softmax_cpu_avx2
 //        }
 //    }
 //    printf("sum: %f\n\n", summ);
+    return maxi;
 }

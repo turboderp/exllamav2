@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <string>
 
-void softmax_cpu_avx2
+int softmax_cpu_avx2
 (
     const int vocab_size,
     const float temperature,

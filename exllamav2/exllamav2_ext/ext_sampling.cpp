@@ -131,7 +131,7 @@ std::vector<float> sample_basic
             temperature /= smoothing_factor;
         }
 
-        softmax_cpu
+        int maxlogit = softmax_cpu
         (
              vocab_size,
              temperature,
@@ -146,7 +146,7 @@ std::vector<float> sample_basic
 
         if (top_k > 0 && top_k < vocab_size)
         {
-            num_candidates = top_k_cpu(num_candidates, temp_probs, temp_indices, top_k);
+            num_candidates = top_k_cpu(num_candidates, temp_probs, temp_indices, top_k, maxlogit);
             normalize_cpu(num_candidates, temp_probs);
         }
 
