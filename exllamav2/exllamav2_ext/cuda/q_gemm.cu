@@ -203,6 +203,8 @@ void gemm_half_q_half_cuda
     bool mul_r_weights
 )
 {
+    if (b->cuda_bias && clear) cuda_vector_set_(c, b->cuda_bias, size_m, size_n);
+
     // Here we force CUDA matmul for matrices that are too big to dequantize. This is necessary for the
     // extremely large output layers of some models. Splitting along K and dequantizing/multiplying in
     // chunks would work also except the remapping of EXL2 matrices complicates it.
@@ -229,7 +231,7 @@ void gemm_half_q_half_cuda
             b->reconstruct(temp_dq, row_a, row_b);
 
             const half alpha = __float2half(1.0f);
-            const half beta = (clear && row_a == 0) ? __float2half(0.0f) : __float2half(1.0f);
+            const half beta = (clear && !b->cuda_bias && row_a == 0) ? __float2half(0.0f) : __float2half(1.0f);
             cublasHgemm(cublas_handle,
                         CUBLAS_OP_N,
                         CUBLAS_OP_N,
@@ -273,10 +275,19 @@ void gemm_half_q_half_cuda
 
         int block_m_size_max = b->is_gptq ? GPTQ_BLOCK_M_SIZE_MAX : EXL2_BLOCK_M_SIZE_MAX;
         int block_m = min(size_m, block_m_size_max);
-        gemm_half_q_half_cuda_part(a, b, c, size_m, size_n, size_k, block_m, clear, r_weights, r_weights_stride, mul_r_weights);
+        gemm_half_q_half_cuda_part
+        (
+            a, b, c,
+            size_m, size_n, size_k,
+            block_m,
+            clear && !b->cuda_bias,
+            r_weights,
+            r_weights_stride,
+            mul_r_weights
+        );
     }
 
-    if (b->cuda_bias) cuda_vector_add_(c, b->cuda_bias, size_m, size_n);
+    if (b->cuda_bias && !clear) cuda_vector_add_(c, b->cuda_bias, size_m, size_n);
 }
 
 __global__ void clear_kernel

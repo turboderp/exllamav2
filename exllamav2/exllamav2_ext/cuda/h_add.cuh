@@ -15,4 +15,12 @@ void cuda_vector_add_
     int height
 );
 
+void cuda_vector_set_
+(
+    half* dest,
+    const half* source,
+    int width,
+    int height
+);
+
 #endif
