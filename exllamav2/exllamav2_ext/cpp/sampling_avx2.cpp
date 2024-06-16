@@ -88,14 +88,28 @@ int softmax_cpu_avx2
     else
     {
         i = 0;
-        for (; i < vocab_size_aligned; i += 8)
+        if (itemp == 1.0f)
         {
-            __m256 x = _mm256_load_ps(&output[i]);
-            x = _mm256_sub_ps(x, maxl8);
-            x = _mm256_mul_ps(x, itemp8);
-            x = exp256_ps(x);
-            _mm256_store_ps(&output[i], x);
-            esum8 = _mm256_add_ps(esum8, x);
+            for (; i < vocab_size_aligned; i += 8)
+            {
+                __m256 x = _mm256_load_ps(&output[i]);
+                x = _mm256_sub_ps(x, maxl8);
+                x = exp256_ps(x);
+                _mm256_store_ps(&output[i], x);
+                esum8 = _mm256_add_ps(esum8, x);
+            }
+        }
+        else
+        {
+            for (; i < vocab_size_aligned; i += 8)
+            {
+                __m256 x = _mm256_load_ps(&output[i]);
+                x = _mm256_sub_ps(x, maxl8);
+                x = _mm256_mul_ps(x, itemp8);
+                x = exp256_ps(x);
+                _mm256_store_ps(&output[i], x);
+                esum8 = _mm256_add_ps(esum8, x);
+            }
         }
     }
 
