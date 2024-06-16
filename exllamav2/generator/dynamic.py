@@ -1444,9 +1444,11 @@ class ExLlamaV2DynamicJob:
     # Stop conditions
 
     stop_strings: set
+    stop_strings_list: list
     stop_strings_utf32_buffer: np.array or None
     stop_strings_utf32_offsets: np.array or None
     stop_tokens: set
+    stop_tokens_list: list
 
     # Banned strings
 
@@ -1610,6 +1612,9 @@ class ExLlamaV2DynamicJob:
         else:
             self.stop_strings_utf32_buffer, self.stop_strings_utf32_offsets = None, None
 
+        self.stop_tokens_list = list(self.stop_tokens)
+        self.stop_strings_list = list(self.stop_strings)
+
         # Banned strings
 
         if banned_strings:
@@ -1719,9 +1724,9 @@ class ExLlamaV2DynamicJob:
 
         if self.new_tokens < self.min_new_tokens:
             if blocked_tokens:
-                blocked_tokens += list(self.stop_tokens)
+                blocked_tokens += self.stop_tokens_list
             else:
-                blocked_tokens = list(self.stop_tokens)
+                blocked_tokens = self.stop_tokens_list
 
         next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
         ExLlamaV2Sampler.sample(
