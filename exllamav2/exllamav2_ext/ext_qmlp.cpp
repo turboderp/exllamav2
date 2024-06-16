@@ -84,15 +84,18 @@ void q_mlp_forward_
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
 
-    TORCH_CHECK(x.size(1) == mlp->up->height, "x is wrong shape");
-    TORCH_CHECK(x.size(0) <= mlp->max_rows, "Too many rows in x");
+    int dim = x.size(-1);
+    int rows = x.numel() / dim;
+
+    TORCH_CHECK(dim == mlp->up->height, "x is wrong shape");
+    TORCH_CHECK(rows <= mlp->max_rows, "Too many rows in x");
 
     mlp->forward_
     (
         at::cuda::getCurrentCUDABlasHandle(),
         (half*) x.data_ptr(),
-        x.size(0), // rows
-        x.size(1), // columns == hidden_size
+        rows,
+        dim,
         loras,
         loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
     );

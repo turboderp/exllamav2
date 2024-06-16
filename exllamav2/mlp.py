@@ -8,6 +8,7 @@ from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.lora import ExLlamaV2Lora
+# from line_profiler import profile
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -225,6 +226,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.down_proj.set_device_idx(idx)
 
 
+    # @profile
     def forward(self,
                 hidden_states: torch.Tensor,
                 cache = None,
@@ -245,7 +247,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
         ext_c.q_mlp_forward_(self.q_handle,
-                             hidden_states.view(-1, hidden_states.shape[-1]),
+                             hidden_states,
                              pass_loras,
                              pass_lora_temp)
 
