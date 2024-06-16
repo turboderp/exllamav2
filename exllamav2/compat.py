@@ -37,14 +37,15 @@ def test_gpu_peer_copy(device_a: torch.Device,
 
 
 def safe_move_tensor(tensor: torch.Tensor | tuple[torch.Tensor],
-                     device: torch.Device | str):
+                     device: torch.Device | str | int,
+                     non_blocking = False):
 
     # Accept tensor or tuple of tensors
 
     if isinstance(tensor, tuple):
         return tuple(safe_move_tensor(x, device) for x in tensor)
 
-    # Accept torch.device or string
+    # Accept torch.device, string or int
 
     device = torch.device(device)
 
@@ -56,13 +57,13 @@ def safe_move_tensor(tensor: torch.Tensor | tuple[torch.Tensor],
     # Copies to/from system RAM are always fine
 
     if tensor.device.type == "cpu" or device.type == "cpu":
-        return tensor.to(device)
+        return tensor.to(device, non_blocking = non_blocking)
 
     # Source and dest are distinct CUDA devices
     # Test tensor.to (once) and if it seems to be working, let Torch decide
 
     if test_gpu_peer_copy(tensor.device, device):
-        return tensor.to(device)
+        return tensor.to(device, non_blocking = non_blocking)
 
     # Force move tensor via CPU
 
