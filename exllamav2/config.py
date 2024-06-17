@@ -140,7 +140,7 @@ class ExLlamaV2Config:
 
         self.max_input_len = 1024
         self.max_attention_size = 1024 ** 2
-        self.max_output_len = min(self.max_output_len, 1024)
+        self.max_output_len = None if self.max_output_len is None else min(self.max_output_len, 1024)
 
 
     # Populate config with required files from model_dir
