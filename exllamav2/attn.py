@@ -52,7 +52,7 @@ has_xformers = False
 try:
     import xformers.ops as xops
     # LowerTriangularFromBottomRightMask was added in xformers version 2.4
-    from xformers.ops.fmha import LowerTriangularFromBottomRightMask
+    from xformers.ops.fmha.attn_bias import LowerTriangularFromBottomRightMask
     has_xformers = True
 except ModuleNotFoundError:
     pass
