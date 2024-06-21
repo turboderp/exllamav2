@@ -3,7 +3,7 @@ import pandas, fastparquet
 import os
 from safetensors.torch import save_file
 import random
-from conversion.bot_status import print_stage
+from exllamav2.conversion.bot_status import print_stage
 
 def get_tokens(num_rows, length, filename, tokenizer):
 

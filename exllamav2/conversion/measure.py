@@ -13,14 +13,14 @@ from exllamav2.model import \
 
 from safetensors import safe_open
 from safetensors.torch import save_file
-from conversion.qparams import QParams, qparams_headoptions, qparams_attn, qparams_mlp, get_qparams_reduced
-from conversion.adaptivegptq import AdaptiveGPTQ
+from exllamav2.conversion.qparams import QParams, qparams_headoptions, qparams_attn, qparams_mlp, get_qparams_reduced
+from exllamav2.conversion.adaptivegptq import AdaptiveGPTQ
 import torch
 from torch import nn
 import os, time, math, json
 import torch.nn.functional as F
 import gc
-from conversion.bot_status import print_stage
+from exllamav2.conversion.bot_status import print_stage
 
 # graceful exiting
 import signal

@@ -1,9 +1,9 @@
-from conversion.qparams import QParams
+from exllamav2.conversion.qparams import QParams
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 import math
 import itertools
 import time
-from conversion.bot_status import print_stage
+from exllamav2.conversion.bot_status import print_stage
 
 def optimize(job, save_fn, model):
 

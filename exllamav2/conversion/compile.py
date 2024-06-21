@@ -17,7 +17,7 @@ import torch
 import os, glob, shutil, json
 from safetensors import safe_open
 from safetensors.torch import save_file
-from conversion.bot_status import print_stage
+from exllamav2.conversion.bot_status import print_stage
 
 def _tsize(t):
 
