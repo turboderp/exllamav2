@@ -152,7 +152,7 @@ jobs:
 
           python3 -m ensurepip --upgrade
           pip3 install torch==${{ matrix.torch }} --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
-          pip3 install --upgrade setuptools>=70.0.0 build wheel safetensors sentencepiece ninja
+          pip3 install --upgrade setuptools==69.5.1 build wheel safetensors sentencepiece ninja
           pip3 cache purge
 
           # --- Build wheel 
@@ -200,7 +200,7 @@ jobs:
           
           python -m ensurepip --upgrade
           python -m pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
-          python -m pip install --upgrade setuptools>=70.0.0 build wheel safetensors sentencepiece ninja
+          python -m pip install --upgrade setuptools==69.5.1 build wheel safetensors sentencepiece ninja
 
           # --- Build wheel
                   
