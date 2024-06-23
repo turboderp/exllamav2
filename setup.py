@@ -115,7 +115,8 @@ setup(
         "pygments",
         "websockets",
         "regex",
-        "numpy"
+        "numpy",
+        "rich"
     ],
     include_package_data = True,
     verbose = verbose,
