@@ -24,8 +24,8 @@ from exllamav2.parallel_decoder import ExLlamaV2ParallelDecoder
 import argparse, os, math, time
 import torch
 import torch.nn.functional as F
-from conversion.tokenize import get_tokens
-from conversion.quantize import list_live_tensors
+from exllamav2.conversion.tokenize import get_tokens
+from exllamav2.conversion.quantize import list_live_tensors
 import gc
 
 # from exllamav2.mlp import set_catch
