@@ -383,9 +383,9 @@ class ExLlamaV2Tokenizer:
 
             list_ids = [self.encode_special(t) for t in text] if encode_special_tokens else [self.encode_unspecial(t) for t in text]
 
-            if add_bos:
+            if add_bos and self.bos_token_id is not None:
                 for ids in list_ids: ids.insert(0, self.bos_token_id)
-            if add_eos:
+            if add_eos and self.eos_token_id is not None:
                 for ids in list_ids: ids.append(self.eos_token_id)
 
             max_length = max([len(ids) for ids in list_ids])
@@ -410,8 +410,10 @@ class ExLlamaV2Tokenizer:
             # text is a single string
 
             ids = self.encode_special(text) if encode_special_tokens else self.encode_unspecial(text)
-            if add_bos: ids.insert(0, self.bos_token_id)
-            if add_eos: ids.append(self.eos_token_id)
+            if add_bos and self.bos_token_id is not None:
+                ids.insert(0, self.bos_token_id)
+            if add_eos and self.eos_token_id is not None:
+                ids.append(self.eos_token_id)
 
             ids = torch.tensor(ids).to(torch.long).unsqueeze(0)
             if return_offsets:
@@ -440,7 +442,6 @@ class ExLlamaV2Tokenizer:
                 end += 1
         if end > start: text += self.tokenizer_model.decode(seq[start: end])
         return text
-
 
 
     # Decode sequence with or without special tokens
