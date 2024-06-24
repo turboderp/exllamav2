@@ -16,6 +16,7 @@ def add_args(parser):
     parser.add_argument("-ra", "--rope_alpha", type = float, help = "RoPE alpha value (NTK)")
     parser.add_argument("-nfa", "--no_flash_attn", action = "store_true", help = "Disable Flash Attention")
     parser.add_argument("-nxf", "--no_xformers", action = "store_true", help = "Disable xformers, an alternative plan of flash attn for older devices")
+    parser.add_argument("-nsdpa", "--no_sdpa", action = "store_true", help = "Disable Torch SDPA")
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
     parser.add_argument("-lq4", "--load_q4", action = "store_true", help = "Load weights in Q4 mode")
@@ -32,6 +33,8 @@ def print_options(args):
     if args.rope_scale is not None: print_opts += [f"rope_scale: {args.rope_scale}"]
     if args.rope_alpha is not None: print_opts += [f"rope_alpha: {args.rope_alpha}"]
     if args.no_flash_attn: print_opts += ["no_flash_attn"]
+    if args.no_xformers: print_opts += ["no_xformers"]
+    if args.no_sdpa: print_opts += ["no_sdpa"]
     if args.low_mem: print_opts += ["low_mem"]
     if hasattr(args, "fast_safetensors") and args.fast_safetensors: print_opts += ["fast_safetensors"]
     if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
@@ -90,6 +93,7 @@ def init(args,
     if args.rope_alpha: config.scale_alpha_value = args.rope_alpha
     config.no_flash_attn = args.no_flash_attn
     config.no_xformers = args.no_xformers
+    config.no_sdpa = args.no_sdpa
     if args.experts_per_token: config.num_experts_per_token = args.experts_per_token
 
     if max_batch_size: config.max_batch_size = max_batch_size

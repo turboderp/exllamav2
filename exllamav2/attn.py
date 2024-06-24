@@ -702,7 +702,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        if has_lower_right_sdpa and attn_params.is_causal():
+        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa:
 
             q_states = q_states.transpose(1, 2)
             k_states = k_states.transpose(1, 2)
