@@ -8,6 +8,7 @@ from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from concurrent.futures import ThreadPoolExecutor
 
+from exllamav2.compat import pairwise
 import torch
 import random
 import numpy as np
@@ -1331,7 +1332,7 @@ class ExLlamaV2DynamicGenerator:
             rotation = [r * self.page_size for r in rotation]
             for cache, buffer in zip(cache_tensors, defrag_buffers):
                 buffer[:, :, :, :].copy_(cache[:, rotation[0] : rotation[0] + self.page_size, :, :])
-                for a, b in itertools.pairwise(rotation):
+                for a, b in pairwise(rotation):
                     cache[:, a : a + self.page_size, :, :].copy_(cache[:, b : b + self.page_size, :, :])
                 cache[:, rotation[-1] : rotation[-1] + self.page_size, :, :].copy_(buffer[:, :, :, :])
 
@@ -2392,7 +2393,7 @@ class ExLlamaV2DynamicJob:
             # Metrics
 
             self.total_pages += len(seq.allocated_pages)
-            for page_a, page_b in itertools.pairwise(seq.allocated_pages):
+            for page_a, page_b in pairwise(seq.allocated_pages):
                 if page_b.page_index != page_a.page_index + 1:
                     self.non_sequential_pages += 1
 

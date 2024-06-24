@@ -1,5 +1,16 @@
 from __future__ import annotations
 import torch
+import itertools
+
+# Emulate pairwise on Python <3.10
+
+try:
+    pairwise = itertools.pairwise
+except AttributeError:
+    def pairwise(iterable):
+        a, b = itertools.tee(iterable)
+        next(b, None)
+        return zip(a, b)
 
 # On some setups Torch will attempt to use GPU peer-to-peer copies even when they are not supported. This is either
 # a driver issue, a bug in Torch, or both. Either way, the result is that .to() will create an empty tensor on the
