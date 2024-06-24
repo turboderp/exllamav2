@@ -123,6 +123,7 @@ class ExLlamaV2Config:
 
         self.no_flash_attn = 'EXLLAMA_NO_FLASH_ATTN' in os.environ
         self.no_xformers = 'EXLLAMA_NO_XFORMERS' in os.environ
+        self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
         self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
         self.load_in_q4 = False
 
