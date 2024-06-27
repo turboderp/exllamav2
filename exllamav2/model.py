@@ -417,7 +417,7 @@ class ExLlamaV2:
     def load_autosplit(
         self,
         cache: ExLlamaV2CacheBase,
-        reserve_vram: int | None = None,
+        reserve_vram: int | list[int] | None = None,
         last_id_only: bool = False,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
@@ -443,7 +443,7 @@ class ExLlamaV2:
     def load_autosplit_gen(
         self,
         cache: ExLlamaV2CacheBase,
-        reserve_vram: int | None = None,
+        reserve_vram: int | list[int] | None = None,
         last_id_only: bool = False,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None
@@ -466,6 +466,8 @@ class ExLlamaV2:
 
             if reserve_vram is None:
                 reserve_vram = [192 * 1024**2] + [64 * 1024**2] * (num_devices - 1)
+            elif isinstance(reserve_vram, int):
+                reserve_vram = [reserve_vram] * num_devices
 
             reserved_vram_tensors = []
             minimum_reserve_tensor = None
