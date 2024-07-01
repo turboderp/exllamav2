@@ -6,6 +6,7 @@ from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.cache import ExLlamaV2CacheBase, ExLlamaV2Cache_8bit
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.util import cuda_sync_active
 from concurrent.futures import ThreadPoolExecutor
 
 from exllamav2.compat import pairwise
@@ -1013,7 +1014,7 @@ class ExLlamaV2DynamicGenerator:
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
             if job.time_first_token is None:
-                torch.cuda.synchronize()
+                cuda_sync_active()
                 job.time_first_token = time.time()
             job_ids = job.get_input_ids_list()
             input_ids_list += job_ids
@@ -1091,7 +1092,7 @@ class ExLlamaV2DynamicGenerator:
             logit_mapping.append(len(input_ids_list))
             if not job.is_prefill_done(): continue
             if job.time_first_token is None:
-                torch.cuda.synchronize()
+                cuda_sync_active()
                 job.time_first_token = time.time()
             if draft_tokens is None:
                 job_ids = job.get_input_ids_list(add_to_cache = True)
