@@ -61,7 +61,7 @@ parser.add_argument("-cq8", "--cache_q8", action = "store_true", help = "Use Q8 
 
 parser.add_argument("-ngram", "--ngram_decoding", action = "store_true", help = "Use n-gram speculative decoding")
 
-parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings after each prompt")
+parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings/stats after each prompt")
 parser.add_argument("-amnesia", "--amnesia", action = "store_true", help = "Forget context after every response")
 
 # Arrrgs
@@ -393,8 +393,9 @@ while True:
         else:
             sd_stats = ""
 
+        ctx_tokens = active_context.shape[-1]
         print()
-        print(col_sysprompt + f"(Response: {response_tokens} tokens, {speed:.2f} tokens/second{sd_stats})" + col_default)
+        print(col_sysprompt + f"(Context: {ctx_tokens} tokens, response: {response_tokens} tokens, {speed:.2f} tokens/second{sd_stats})" + col_default)
 
     # Optionally forget context after each response
 
