@@ -229,6 +229,7 @@ class PromptFormat_chatml(PromptFormat):
     def stop_conditions(self, tokenizer):
         return \
             [tokenizer.eos_token_id,
+             tokenizer.single_id("<|im_end|>"),
              """<|im_end|>"""]
 
     def encoding_options(self):
