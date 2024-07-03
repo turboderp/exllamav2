@@ -175,8 +175,7 @@ class ExLlamaV2Config:
                         self.generation_config['eos_token_id'] = [eos_token_id_as_int]
                     else:
                         self.generation_config['eos_token_id'] = None
-                    
-        
+
         # Model architecture
 
         assert len(read_config["architectures"]) == 1, "Multiple architectures defined in config.json"

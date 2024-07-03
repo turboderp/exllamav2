@@ -9,6 +9,8 @@ layer_keys_gpt2_norms = [["ln_1"],
                          ["ln_2"]]
 layer_keys_yi_norms = [["ln1", "input_layernorm"],
                        ["ln2", "post_attention_layernorm"]]
+layer_keys_internlm2_norms = [["attention_norm"],
+                              ["ffn_norm"]]
 layer_keys_llama_attn = [["self_attn.q_proj"],
                          ["self_attn.k_proj"],
                          ["self_attn.v_proj"],
@@ -17,6 +19,10 @@ layer_keys_gpt2_attn = [["self_attn.c_attn", "self_attn.q_proj"],
                         ["self_attn.c_attn", "self_attn.k_proj"],
                         ["self_attn.c_attn", "self_attn.v_proj"],
                         ["self_attn.o_proj"]]
+layer_keys_internlm2_attn = [["self_attn.wqkv", "self_attn.q_proj"],
+                             ["self_attn.wqkv", "self_attn.k_proj"],
+                             ["self_attn.wqkv", "self_attn.v_proj"],
+                             ["self_attn.o_proj"]]
 layer_keys_dbrx_attn = [["self_attn.Wqkv", "self_attn.q_proj"],
                         ["self_attn.Wqkv", "self_attn.k_proj"],
                         ["self_attn.Wqkv", "self_attn.v_proj"],
@@ -28,6 +34,9 @@ layer_keys_phi3_attn = [["self_attn.qkv_proj", "self_attn.q_proj"],
 layer_keys_llama_mlp = [["mlp.down_proj"],
                         ["mlp.gate_proj"],
                         ["mlp.up_proj"]]
+layer_keys_internlm2_mlp = [["feed_forward.w1"],
+                            ["feed_forward.w2"],
+                            ["feed_forward.w3"]]
 layer_keys_phi3_mlp = [["mlp.down_proj"],
                        ["mlp.gate_up_proj", "mlp.gate_proj"],
                        ["mlp.gate_up_proj", "mlp.up_proj"]]
@@ -76,6 +85,10 @@ gpt2_keymap = [("$ln_f.", "model.norm."),
                ("$h.", "model.layers."),
                ("$wte.", "model.embed_tokens."),
                ("$wpe.", "model.wpe.")]
+internlm2_keymap = [("$output.", "lm_head."),
+                    ("$model.tok_embeddings.", "model.embed_tokens."),
+                    (".attention.", ".self_attn."),
+                    (".wo.", ".o_proj.")]
 
 class RopeStyle(Enum):
     NONE = 0
@@ -99,6 +112,8 @@ class ExLlamaV2ArchParams:
         self.default_inner_dim_mult = None
         self.orig_weights_transposed = False
         self.logit_scale_basedim = False
+
+        self.fused_qkv_altpack = False
 
         # Mistral
 
@@ -585,6 +600,41 @@ class ExLlamaV2ArchParams:
             self.mqa = False
             self.scale_attn_weights = False
             self.logit_scale_basedim = True
+
+        # InternLM2
+
+        if arch_string == "InternLM2ForCausalLM":
+            arch_recognized = True
+            self.layer_keys += \
+                layer_keys_internlm2_norms + \
+                layer_keys_internlm2_attn + \
+                layer_keys_internlm2_mlp
+            self.expect_keys += \
+                expect_keys_llama
+            self.norm_eps_key = "rms_norm_eps"
+            self.attention_bias_qkv = False
+            self.attention_bias_o = False
+            self.mlp_bias = False
+            self.mlp_gate = True
+            self.mlp_key_gate = ".feed_forward.w1"
+            self.mlp_key_up = ".feed_forward.w3"
+            self.mlp_key_down = ".feed_forward.w2"
+            self.mlp_act_func = "silu"
+            self.is_moe = False
+            self.norm = "rmsnorm"
+            self.lm_head_key = "lm_head"
+            self.normalize_embeddings = False
+            self.norm_key_1 = ".attention_norm"
+            self.norm_key_2 = ".ffn_norm"
+            self.norm_constant_bias = 0
+            self.parallel_decoder_blocks = False
+            self.requires_bos = False
+            self.rope_style = RopeStyle.NEOX
+            self.keymap = internlm2_keymap
+            self.fused_qkv_key = "wqkv"
+            self.fused_qkv_altpack = True
+            self.mqa = False
+            self.scale_attn_weights = False
 
         # Llama (default + fallback)
 

@@ -144,25 +144,41 @@ class ExLlamaV2Module:
                           f_beg: int,
                           f_end: int,
                           in_feat: int,
-                          out_feat: int):
+                          out_feat: int,
+                          altpack_qkv: bool):
 
         res = []
         for key in [f_key, f_key + ".weight", f_key + ".bias"]:
 
-            filename = self.model.config.tensor_file_map.get(key)
+            cfg = self.model.config
+            filename = cfg.tensor_file_map.get(key)
             if not filename: continue
 
-            stfile = STFile.open(filename, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
+            stfile = STFile.open(filename, fast = cfg.fasttensors, keymap = cfg.arch.keymap)
             # tensor = stfile.get_tensor(key, device = self.device()).half()
             tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
-            if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
+
+            if cfg.arch.orig_weights_transposed and len(tensor.shape) == 2:
                 tensor = tensor.T
+
+            if altpack_qkv:
+                ts = tensor.shape
+                h, gs, d = cfg.num_key_value_heads, cfg.num_key_value_groups + 2, cfg.head_dim
+                tensor = tensor.view(h, gs, d, -1).transpose(0, 1).reshape(ts)
+
             tensor = tensor[f_beg:f_end]
+
+            if altpack_qkv:
+                ts = tensor.shape
+                h, gs, d = cfg.num_key_value_heads, (f_end - f_beg) // cfg.num_key_value_heads // cfg.head_dim, cfg.head_dim
+                tensor = tensor.view(gs, h, d, -1).transpose(0, 1).reshape(ts)
+
             if not key.endswith(".bias"):
                 if in_feat != out_feat and \
                     tensor.shape[1] == out_feat and \
                     tensor.shape[0] == in_feat:
                     tensor = tensor.T
+
             tensor = tensor.contiguous().to(self.device())
             res.append(nn.Parameter(tensor))
 
