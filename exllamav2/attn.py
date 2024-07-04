@@ -98,6 +98,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     has_norm: bool
     has_residual: bool
+    scaling: float
+    sliding_window: int
 
 
     class Params:
@@ -165,9 +167,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.past_lens_tensor = safe_move_tensor(self.past_lens_tensor, device)
             return self.past_lens_tensor
 
-        def get_attn_mask(self, device) -> torch.Tensor | None:
+        def get_attn_mask(self, device, force: bool = False) -> torch.Tensor | None:
             if self.attn_mask is None:
-                self.attn_mask = self.build_attn_mask(device)
+                self.attn_mask = self.build_attn_mask(device, force)
             elif self.attn_mask.device != device:
                 self.attn_mask = safe_move_tensor(self.attn_mask, device)
             return self.attn_mask
@@ -190,9 +192,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
             return attn_mask
 
-        def build_attn_mask(self, device) -> torch.Tensor | None:
+        def build_attn_mask(self, device, force: bool = False) -> torch.Tensor | None:
             assert not self.multi_cache, "Building single mask for multiple caches"
-            if self.input_mask is None and self.seq_len == 1: return None
+            if self.input_mask is None and self.seq_len == 1 and not force: return None
             return self.build_single_attn_mask(self.batch_size, self.seq_len, self.past_len, device, self.input_mask)
 
         def build_attn_masks(self, device) -> torch.Tensor | None:
@@ -330,12 +332,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cfg.use_qk_norm:
             self.submodules += [self.q_norm, self.k_norm]
 
-        # if cfg.arch.scale_attn_weights:
-        #     self.unscale_factor = self.layer_idx + 1
-        #     self.scale_factor = 1 / self.unscale_factor
-        # else:
-        self.unscale_factor = 1
-        self.scale_factor = 1
+        if cfg.query_pre_attn_scalar:
+            self.scaling = cfg.query_pre_attn_scalar ** (-0.5)
+        else:
+            self.scaling = 1 / math.sqrt(cfg.head_dim)
 
 
     def numel(self) -> int:
@@ -690,7 +690,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             block_table,
             None,
             None,
-            1 / math.sqrt(cfg.head_dim),
+            self.scaling,
             True,
             -1, -1,
             True,
@@ -724,31 +724,32 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa:
+        q_states = q_states.transpose(1, 2)
+        k_states = k_states.transpose(1, 2)
+        v_states = v_states.transpose(1, 2)
 
-            q_states = q_states.transpose(1, 2)
-            k_states = k_states.transpose(1, 2)
-            v_states = v_states.transpose(1, 2)
+        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa:
 
             k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
             v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
 
             attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
-            attn_output = F.scaled_dot_product_attention(q_states, k_states, v_states, attn_mask_lr)
+            attn_output = F.scaled_dot_product_attention(
+                q_states,
+                k_states,
+                v_states,
+                attn_mask_lr,
+                scale = self.scaling
+            )
 
         else:
-
-            q_states = q_states.transpose(1, 2)
-            k_states = k_states.transpose(1, 2)
-            v_states = v_states.transpose(1, 2)
 
             k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
             k_states = k_states.transpose(-1, -2)
 
             attn_weights = torch.matmul(q_states, k_states)
 
-            attn_weights *= 1 / math.sqrt(cfg.head_dim)
-            attn_mask = attn_params.get_attn_mask(attn_weights.device)
+            attn_weights *= self.scaling
             if attn_mask is not None: attn_weights = attn_weights + attn_mask
             attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
@@ -767,6 +768,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             k_states,
             v_states,
             causal = True
+            causal = True,
+            softmax_scale = self.scaling,
         )
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
         return attn_output
@@ -792,7 +795,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             q_states,
             k_states,
             v_states,
-            attn_bias = LowerTriangularFromBottomRightMask()
+            attn_bias = LowerTriangularFromBottomRightMask(),
+            scale = self.scaling
         )
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 

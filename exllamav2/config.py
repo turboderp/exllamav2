@@ -100,6 +100,7 @@ class ExLlamaV2Config:
     scale_depth: float
     scale_emb: float
     use_qk_norm: bool
+    query_pre_attn_scalar: float | None
     final_logit_softcapping: float | None
 
     checkpoint_fused_mlp: bool
@@ -217,6 +218,8 @@ class ExLlamaV2Config:
             self.num_key_value_heads = read(read_config, int, ["num_key_value_heads", "attn_config->kv_n_heads"], self.num_attention_heads)
         self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
         self.use_qk_norm = read(read_config, bool, ["use_qk_norm"], False)
+
+        self.query_pre_attn_scalar = read(read_config, float, "query_pre_attn_scalar", None)
 
         # MLP params
 
