@@ -23,7 +23,8 @@ typedef void (*fp_rms_norm_kernel)
     const float,
     const float,
     const int,
-    const int
+    const int,
+    const bool
 );
 
 template <int blocks_per_warp>
@@ -35,7 +36,8 @@ __global__ void rms_norm_kernel
     const float epsilon,
     const float r_dim,
     const int rows,
-    const int dim
+    const int dim,
+    const bool add_residual
 )
 {
     int warp_id = threadIdx.x / WARP_SIZE;
@@ -103,7 +105,10 @@ __global__ void rms_norm_kernel
         float w_itemf1 = __half2float(__high2half(w2_));
         float n0 = x_itemf0 * w_itemf0 * rmf;
         float n1 = x_itemf1 * w_itemf1 * rmf;
-        y_row[column] = __halves2half2(__float2half_rn(n0), __float2half_rn(n1));
+        if (add_residual)
+            y_row[column] = __hadd2(y_row[column], __halves2half2(__float2half_rn(n0), __float2half_rn(n1)));
+        else
+            y_row[column] = __halves2half2(__float2half_rn(n0), __float2half_rn(n1));
     }
 }
 
@@ -138,7 +143,8 @@ void rms_norm_cuda
     half* y,
     const float epsilon,
     const int rows,
-    const int dim
+    const int dim,
+    const bool add_residual
 )
 {
     dim3 blockDim, gridDim;
@@ -151,5 +157,5 @@ void rms_norm_cuda
 
     int blocks_per_warp = DIVIDE(dim, NUM_THREADS * 2);
     fp_rms_norm_kernel kernel = pick_rms_norm_kernel(blocks_per_warp);
-    kernel<<<gridDim, blockDim>>>(x, w, y, epsilon, r_dim, rows, dim);
+    kernel<<<gridDim, blockDim>>>(x, w, y, epsilon, r_dim, rows, dim, add_residual);
 }

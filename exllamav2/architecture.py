@@ -113,6 +113,9 @@ class ExLlamaV2ArchParams:
         self.orig_weights_transposed = False
         self.logit_scale_basedim = False
 
+        self.norm_key_1_post = None
+        self.norm_key_2_post = None
+
         self.fused_qkv_altpack = False
 
         # Mistral

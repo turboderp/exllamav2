@@ -20,7 +20,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     name: str = "MLP"
 
     layer_idx: int
-    post_attention_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    pre_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    post_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
     gate_proj: ExLlamaV2Linear | None
     up_proj: ExLlamaV2Linear | None
     down_proj: ExLlamaV2Linear | None
@@ -56,19 +57,24 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         if self.has_norm:
             if cfg.arch.norm == "layernorm":
-                self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_2)
+                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_2)
+                self.post_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_2_post) if cfg.arch.norm_key_2_post else None
             elif cfg.arch.norm == "rmsnorm":
-                self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_2)
+                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_2)
+                self.post_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_2_post) if cfg.arch.norm_key_2_post else None
         else:
-            self.post_attention_layernorm = None
+            self.pre_layernorm = None
+            self.post_layernorm = None
 
         self.up_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_up, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c)
         self.down_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_down, cfg.intermediate_size, cfg.hidden_size, self.model.config.arch.mlp_bias, prescale = cfg.scale_depth)
 
         self.submodules = [self.up_proj,
                            self.down_proj]
-        if self.has_norm:
-            self.submodules += [self.post_attention_layernorm]
+        if self.pre_layernorm:
+            self.submodules += [self.pre_layernorm]
+        if self.post_layernorm:
+            self.submodules += [self.post_layernorm]
 
         if cfg.arch.mlp_gate:
             self.gate_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_gate, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_a, f_end = f_b)
@@ -85,8 +91,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if self.model.config.arch.mlp_gate:
             numel += self.gate_proj.numel()
 
-        if self.post_attention_layernorm is not None:
-            numel += self.post_attention_layernorm.numel()
+        if self.pre_layernorm is not None:
+            numel += self.pre_layernorm.numel()
+        if self.post_layernorm is not None:
+            numel += self.pre_layernorm.numel()
 
         return numel
 
@@ -96,8 +104,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         cfg = self.model.config
 
-        if self.post_attention_layernorm is not None:
-            self.post_attention_layernorm.load()
+        if self.pre_layernorm is not None:
+            self.pre_layernorm.load()
+        if self.post_layernorm is not None:
+            self.post_layernorm.load()
 
         if cfg.checkpoint_fused_mlp:
             w12 = self.load_weight(self.key + cfg.arch.fused_mlp_key_12)
@@ -119,15 +129,22 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             device_tensors.begin_scratch_alloc()
 
             if self.has_norm:
-                norm_weight = self.post_attention_layernorm.weight if self.post_attention_layernorm.weight is not None else none_tensor
-                norm_bias = self.post_attention_layernorm.bias if self.post_attention_layernorm.bias is not None else none_tensor
-                is_rms = isinstance(self.post_attention_layernorm, ExLlamaV2RMSNorm)
-                eps = self.post_attention_layernorm.variance_epsilon
+                norm_weight = self.pre_layernorm.weight if self.pre_layernorm.weight is not None else none_tensor
+                norm_bias = self.pre_layernorm.bias if self.pre_layernorm.bias is not None else none_tensor
+                is_rms = isinstance(self.pre_layernorm, ExLlamaV2RMSNorm)
+                eps = self.pre_layernorm.variance_epsilon
             else:
                 norm_weight = none_tensor
                 norm_bias = none_tensor
                 is_rms = False
                 eps = 0
+
+            if self.post_layernorm is not None:
+                post_norm_weight = self.post_layernorm.weight if self.post_layernorm.weight is not None else none_tensor
+                post_norm_bias = self.post_layernorm.bias if self.post_layernorm.bias is not None else none_tensor
+            else:
+                post_norm_weight = none_tensor
+                post_norm_bias = none_tensor
 
             self.q_handle = ext_c.make_q_mlp(norm_weight,
                                              norm_bias,
@@ -142,7 +159,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              device_tensors.get_scratch_slice(self.temp_dq_size()),
                                              cfg.max_input_len * cfg.max_batch_size,
                                              cfg.arch.mlp_act_func == "gelu",
-                                             self.has_residual)
+                                             self.has_residual,
+                                             post_norm_weight,
+                                             post_norm_bias)
 
 
     def unload(self):
@@ -151,7 +170,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             ext_c.free_q_mlp(self.q_handle)
             self.q_handle = None
 
-        if self.post_attention_layernorm is not None: self.post_attention_layernorm.unload()
+        if self.pre_layernorm is not None: self.pre_layernorm.unload()
+        if self.post_layernorm is not None: self.post_layernorm.unload()
         if self.gate_proj is not None: self.gate_proj.unload()
         self.up_proj.unload()
         self.down_proj.unload()
@@ -167,8 +187,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             if self.gate_proj is not None:
                 fp += self.gate_proj.weight_footprint()
 
-        if self.post_attention_layernorm is not None:
-            fp += self.post_attention_layernorm.weight_footprint()
+        if self.pre_layernorm is not None:
+            fp += self.pre_layernorm.weight_footprint()
+        if self.post_layernorm is not None:
+            fp += self.post_layernorm.weight_footprint()
 
         return fp
 
@@ -219,8 +241,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     def set_device_idx(self, idx: int):
         super().set_device_idx(idx)
 
-        if self.post_attention_layernorm is not None:
-            self.post_attention_layernorm.set_device_idx(idx)
+        if self.pre_layernorm is not None:
+            self.pre_layernorm.set_device_idx(idx)
+        if self.post_layernorm is not None:
+            self.post_layernorm.set_device_idx(idx)
         if self.gate_proj is not None: self.gate_proj.set_device_idx(idx)
         self.up_proj.set_device_idx(idx)
         self.down_proj.set_device_idx(idx)
@@ -266,8 +290,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         cfg = self.model.config
 
         residual = hidden_states
-        post_norm = self.post_attention_layernorm.forward(hidden_states) \
-            if self.has_norm else hidden_states
+        post_norm = self.pre_layernorm.forward(hidden_states) \
+            if self.pre_layernorm else hidden_states
 
         if self.gate_proj is not None:
             gate = self.gate_proj.forward(post_norm, loras = loras)
@@ -286,6 +310,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 y = F.gelu(up)
 
         down = self.down_proj.forward(y, loras = loras)
+        if self.post_layernorm:
+            down = self.post_layernorm.forward(down)
         hidden_states = down + residual if self.has_residual else down
 
         if intermediates:

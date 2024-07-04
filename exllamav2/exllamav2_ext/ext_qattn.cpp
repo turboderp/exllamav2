@@ -39,7 +39,9 @@ uintptr_t make_q_attn
     bool has_residual,
     int rope_style,
     torch::Tensor q_norm,
-    torch::Tensor k_norm
+    torch::Tensor k_norm,
+    torch::Tensor post_layernorm,
+    torch::Tensor post_layernorm_bias
 )
 {
     QMatrix* qm_q_proj = reinterpret_cast<QMatrix*> (q_q_proj);
@@ -48,6 +50,7 @@ uintptr_t make_q_attn
     QMatrix* qm_o_proj = reinterpret_cast<QMatrix*> (q_o_proj);
 
     TORCH_CHECK_DTYPE_OPT(layernorm, kHalf);
+    TORCH_CHECK_DTYPE_OPT(post_layernorm, kHalf);
 
     if (qm_q_proj && !layernorm.is_meta()) TORCH_CHECK(qm_q_proj->height == layernorm.size(0), "q_proj is wrong shape")
     if (qm_k_proj && !layernorm.is_meta()) TORCH_CHECK(qm_k_proj->height == layernorm.size(0), "k_proj is wrong shape")
@@ -78,7 +81,9 @@ uintptr_t make_q_attn
         has_residual,
         rope_style,
         (half*) q_norm.is_meta() ? NULL : (half*) q_norm.data_ptr(),
-        (half*) k_norm.is_meta() ? NULL : (half*) k_norm.data_ptr()
+        (half*) k_norm.is_meta() ? NULL : (half*) k_norm.data_ptr(),
+        (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
+        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr()
     );
 
     return reinterpret_cast<uintptr_t> (attn);

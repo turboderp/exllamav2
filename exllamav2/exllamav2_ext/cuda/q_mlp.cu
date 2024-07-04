@@ -32,7 +32,9 @@ QMLP::QMLP
     half* _temp_dq,
     int _max_rows,
     bool _act_gelu,
-    bool _has_residual
+    bool _has_residual,
+    half* _post_layernorm,
+    half* _post_layernorm_bias
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -47,7 +49,9 @@ QMLP::QMLP
     temp_dq(_temp_dq),
     max_rows(_max_rows),
     act_gelu(_act_gelu),
-    has_residual(_has_residual)
+    has_residual(_has_residual),
+    post_layernorm(_post_layernorm),
+    post_layernorm_bias(_post_layernorm_bias)
 {
 }
 
@@ -114,9 +118,23 @@ void QMLP::forward_
         kernel<<<gridDim, blockDim>>>(temp_a, rows, intermediate_size, NULL, 0);
     }
 
-    // Down proj
+    // Down proj without post_layernorm
 
-    gemm_half_q_half_cuda(cublas_handle, temp_a, down, x, rows, columns, intermediate_size, !has_residual, temp_dq);
+    if (!post_layernorm)
+    {
+        gemm_half_q_half_cuda(cublas_handle, temp_a, down, x, rows, columns, intermediate_size, !has_residual, temp_dq);
+    }
+
+    // Down proj with post_layernorm
+
+    else
+    {
+        gemm_half_q_half_cuda(cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq);
+        if (layernorm_is_rms)
+            rms_norm_cuda(temp_state, post_layernorm, x, norm_epsilon, rows, columns, true);
+        else
+            layer_norm_cuda(temp_state, post_layernorm, post_layernorm_bias, x, norm_epsilon, rows, columns, true);
+    }
 
     apply_loras_cuda(cublas_handle, down_proj_lora, loras, down, temp_a, x, lora_temp, rows);
 }

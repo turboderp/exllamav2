@@ -13,7 +13,8 @@ void rms_norm_cuda
     half* y,
     const float epsilon,
     const int rows,
-    const int dim
+    const int dim,
+    const bool add_residual = false
 );
 
 #endif

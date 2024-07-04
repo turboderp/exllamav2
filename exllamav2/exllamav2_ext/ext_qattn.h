@@ -23,7 +23,9 @@ uintptr_t make_q_attn
     bool has_residual,
     int rope_style,
     torch::Tensor q_norm,
-    torch::Tensor k_norm
+    torch::Tensor k_norm,
+    torch::Tensor post_layernorm,
+    torch::Tensor post_layernorm_bias
 );
 
 void free_q_attn

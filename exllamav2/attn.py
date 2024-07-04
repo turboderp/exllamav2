@@ -75,7 +75,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     name: str = "Attention"
 
     layer_idx: int
-    input_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    pre_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    post_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
     q_proj: ExLlamaV2Linear | None
     k_proj: ExLlamaV2Linear | None
     v_proj: ExLlamaV2Linear | None
@@ -291,11 +292,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if self.has_norm:
             if cfg.arch.norm == "layernorm":
-                self.input_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1)
+                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1)
+                self.post_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1_post) if cfg.arch.norm_key_1_post else None
             elif cfg.arch.norm == "rmsnorm":
-                self.input_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1)
+                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1)
+                self.post_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1_post) if cfg.arch.norm_key_1_post else None
         else:
-            self.input_layernorm = None
+            self.pre_layernorm = None
+            self.post_layernorm = None
 
         f_a = 0
         f_b = cfg.num_attention_heads * cfg.head_dim
@@ -319,11 +323,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                            self.k_proj,
                            self.v_proj,
                            self.o_proj]
-        if self.has_norm:
-            self.submodules += [self.input_layernorm]
+        if self.pre_layernorm:
+            self.submodules += [self.pre_layernorm]
+        if self.post_layernorm:
+            self.submodules += [self.post_layernorm]
         if cfg.use_qk_norm:
-            self.submodules += [self.q_norm,
-                                self.k_norm]
+            self.submodules += [self.q_norm, self.k_norm]
 
         # if cfg.arch.scale_attn_weights:
         #     self.unscale_factor = self.layer_idx + 1
@@ -340,7 +345,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.v_proj.numel() + \
                 self.o_proj.numel()
 
-        if self.input_layernorm is not None: numel += self.input_layernorm.numel()
+        if self.pre_layernorm is not None: numel += self.pre_layernorm.numel()
+        if self.post_layernorm is not None: numel += self.post_layernorm.numel()
         if self.q_norm is not None: numel += self.q_norm.numel()
         if self.k_norm is not None: numel += self.k_norm.numel()
 
@@ -352,7 +358,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         cfg = self.model.config
 
-        if self.input_layernorm is not None: self.input_layernorm.load()
+        if self.pre_layernorm is not None: self.pre_layernorm.load()
+        if self.post_layernorm is not None: self.post_layernorm.load()
         self.q_proj.load()
         self.k_proj.load()
         self.v_proj.load()
@@ -374,15 +381,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
 
             if self.has_norm:
-                norm_weight = self.input_layernorm.weight if self.input_layernorm.weight is not None else none_tensor
-                norm_bias = self.input_layernorm.bias if self.input_layernorm.bias is not None else none_tensor
-                is_rms = isinstance(self.input_layernorm, ExLlamaV2RMSNorm)
-                eps = self.input_layernorm.variance_epsilon
+                norm_weight = self.pre_layernorm.weight if self.pre_layernorm.weight is not None else none_tensor
+                norm_bias = self.pre_layernorm.bias if self.pre_layernorm.bias is not None else none_tensor
+                is_rms = isinstance(self.pre_layernorm, ExLlamaV2RMSNorm)
+                eps = self.pre_layernorm.variance_epsilon
             else:
                 norm_weight = none_tensor
                 norm_bias = none_tensor
                 is_rms = False
                 eps = 0
+
+            if self.post_layernorm is not None:
+                post_norm_weight = self.post_layernorm.weight if self.post_layernorm.weight is not None else none_tensor
+                post_norm_bias = self.post_layernorm.bias if self.post_layernorm.bias is not None else none_tensor
+            else:
+                post_norm_weight = none_tensor
+                post_norm_bias = none_tensor
 
             if self.q_norm is None:
                 q_norm = none_tensor
@@ -417,7 +431,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.has_residual,
                 cfg.arch.rope_style.value,
                 q_norm,
-                k_norm
+                k_norm,
+                post_norm_weight,
+                post_norm_bias,
             )
 
 
@@ -426,7 +442,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             ext_c.free_q_attn(self.q_handle)
             self.q_handle = None
 
-        if self.input_layernorm is not None: self.input_layernorm.unload()
+        if self.pre_layernorm is not None: self.pre_layernorm.unload()
+        if self.post_layernorm is not None: self.post_layernorm.unload()
         if self.q_proj is not None: self.q_proj.unload()
         if self.k_proj is not None: self.k_proj.unload()
         if self.v_proj is not None: self.v_proj.unload()
@@ -445,8 +462,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
              self.k_proj.weight_footprint() + \
              self.v_proj.weight_footprint() + \
              self.o_proj.weight_footprint()
-        if self.input_layernorm is not None:
-            fp += self.input_layernorm.weight_footprint()
+        if self.pre_layernorm is not None:
+            fp += self.pre_layernorm.weight_footprint()
+        if self.post_layernorm is not None:
+            fp += self.post_layernorm.weight_footprint()
         if self.q_norm is not None:
             fp += self.q_norm.weight_footprint()
         if self.k_norm is not None:
@@ -530,7 +549,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def set_device_idx(self, idx):
         super().set_device_idx(idx)
 
-        if self.input_layernorm is not None: self.input_layernorm.set_device_idx(idx)
+        if self.pre_layernorm is not None: self.pre_layernorm.set_device_idx(idx)
+        if self.post_layernorm is not None: self.post_layernorm.set_device_idx(idx)
         self.q_proj.set_device_idx(idx)
         self.k_proj.set_device_idx(idx)
         self.v_proj.set_device_idx(idx)
@@ -614,7 +634,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
         else:
             residual = hidden_states
-            hidden_states = self.input_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+            hidden_states = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
             q = self.q_proj.forward(hidden_states, loras = loras)
             k = self.k_proj.forward(hidden_states, loras = loras)
             v = self.v_proj.forward(hidden_states, loras = loras)
@@ -694,6 +714,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
         else:
             hidden_states = self.o_proj.forward(attn_output, loras = loras)
+            if self.post_layernorm:
+                hidden_states = self.post_layernorm.forward(hidden_states)
             if self.has_residual:
                 hidden_states += residual
 
@@ -942,7 +964,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Project q, k, v
 
         residual = hidden_states
-        post_norm = self.input_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+        post_norm = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
 
         query_states = self.q_proj.forward(post_norm, loras = loras)
         key_states = self.k_proj.forward(post_norm, loras = loras)
@@ -1012,6 +1034,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Output projection
 
         attn_proj = self.o_proj.forward(attn_output, loras = loras)
+
+        # Post layernorm
+
+        if self.post_layernorm:
+            attn_proj = self.post_layernorm.forward(attn_proj)
 
         # Add residual connection
 

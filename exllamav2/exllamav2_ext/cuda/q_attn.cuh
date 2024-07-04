@@ -19,6 +19,8 @@ public:
 
     half* layernorm;
     half* layernorm_bias;
+    half* post_layernorm;
+    half* post_layernorm_bias;
     bool layernorm_is_rms;
     float norm_epsilon;
 
@@ -55,7 +57,7 @@ public:
     QAttn
     (
         half* _layernorm,
-        half* _layermorm_bias,
+        half* _layernorm_bias,
         bool _layernorm_is_rms,
         float _norm_epsilon,
         QMatrix* _q_proj,
@@ -76,7 +78,9 @@ public:
         bool _has_residual,
         int _rope_style,
         half* _q_norm,
-        half* _k_norm
+        half* _k_norm,
+        half* _post_layernorm,
+        half* _post_layernorm_bias
     );
 
     ~QAttn();
