@@ -116,6 +116,9 @@ class ExLlamaV2ArchParams:
         self.norm_key_1_post = None
         self.norm_key_2_post = None
 
+        self.swa = False
+        self.alternating_swa = False
+
         self.fused_qkv_altpack = False
 
         # Mistral

@@ -102,6 +102,7 @@ class ExLlamaV2Config:
     use_qk_norm: bool
     query_pre_attn_scalar: float | None
     final_logit_softcapping: float | None
+    sliding_window: int
 
     checkpoint_fused_mlp: bool
 
@@ -258,6 +259,8 @@ class ExLlamaV2Config:
                                                   "max_seq_len",
                                                   "n_positions"], 2048)
         self.original_max_seq_len = self.max_seq_len
+
+        self.sliding_window = read(read_config, int, ["sliding_window", "sliding_window_size"], 0)
 
         rs = read(read_config, dict, "rope_scaling", None)
         if rs:

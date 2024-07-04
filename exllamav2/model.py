@@ -227,7 +227,13 @@ class ExLlamaV2:
                 pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx)
                 self.modules += [pd]
             else:
-                attn = ExLlamaV2Attention(self, layer_key, layer_idx)
+                if self.config.arch.alternating_swa:
+                    swa = self.config.sliding_window if not bool(layer_idx % 2) else 0
+                elif self.config.arch.swa:
+                    swa = self.config.sliding_window
+                else:
+                    swa = 0
+                attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
                 if self.config.arch.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)
                 else: mlp = ExLlamaV2MLP(self, layer_key, layer_idx)
                 self.modules += [attn, mlp]
