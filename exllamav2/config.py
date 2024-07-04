@@ -100,6 +100,7 @@ class ExLlamaV2Config:
     scale_depth: float
     scale_emb: float
     use_qk_norm: bool
+    final_logit_softcapping: float | None
 
     checkpoint_fused_mlp: bool
 
@@ -241,6 +242,8 @@ class ExLlamaV2Config:
             self.scale_depth = 1
         else:
             self.scale_depth = scale_depth / math.sqrt(self.num_hidden_layers)
+
+        self.final_logit_softcapping = read(read_config, float, "final_logit_softcapping", None)
 
         # Positional embeddings
 

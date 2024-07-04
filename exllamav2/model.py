@@ -53,6 +53,7 @@ from typing import Callable
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.util import get_basic_progress
 # from line_profiler import profile
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 
 def _torch_device(idx):
@@ -916,6 +917,9 @@ class ExLlamaV2:
 
         # if x is not None and self.config.logit_scale != 1:
         #     x.mul_(self.config.logit_scale)
+
+        if x is not None and self.config.final_logit_softcapping:
+            ext_c.softcap_(x, self.config.final_logit_softcapping)
 
         # Set padding logits to -inf
 
