@@ -137,6 +137,17 @@ class ExLlamaV2Tokenizer:
             with open(added_tokens_path, encoding = "utf8") as f:
                 self.extended_piece_to_id.update(json.load(f))
 
+        # Add special tokens from tokenizer_config.json
+
+        if self.tokenizer_config_dict and "added_tokens_decoder" in self.tokenizer_config_dict:
+            atd = self.tokenizer_config_dict["added_tokens_decoder"]
+            for (k, v) in atd.items():
+                if not v["special"]:
+                    continue
+                token_id = int(k)
+                token_str = v["content"]
+                self.extended_piece_to_id[token_str] = token_id
+
         # Remove unspecial added tokens that exist in the base tokenizer already, but only if they decode correctly
         # see https://github.com/huggingface/tokenizers/issues/1392
 
