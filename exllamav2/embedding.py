@@ -124,7 +124,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                     standard_mask_ = standard_mask[i]
                     input_ids_ = input_ids[i]
                     standard_ids_ = input_ids_[standard_mask_]
-                    standard_embeddings_ = self.embedding(standard_ids_)
+                    if loras is not None and loras[0].embed_tokens is not None:
+                        standard_embeddings_ = loras[0].embed_tokens(standard_ids_)
+                    else:
+                        standard_embeddings_ = self.embedding(standard_ids_)
                     standard_embeddings_ = safe_move_tensor(standard_embeddings_, indexed_embeddings.device)
                     combined_embeddings[i][standard_mask_] = standard_embeddings_
 
@@ -144,7 +147,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         # Call embedding module if no indexed embeddings
 
         else:
-            hidden_states = self.embedding.forward(hidden_states)
+            if loras is not None and loras[0].embed_tokens is not None:
+                hidden_states = loras[0].embed_tokens(hidden_states)
+            else:
+                hidden_states = self.embedding(hidden_states)
 
             if self.model.config.arch.normalize_embeddings:
                 hidden_states *= self.model.config.hidden_size ** 0.5
