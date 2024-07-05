@@ -9,10 +9,6 @@ layer_keys_gpt2_norms = [["ln_1"],
                          ["ln_2"]]
 layer_keys_yi_norms = [["ln1", "input_layernorm"],
                        ["ln2", "post_attention_layernorm"]]
-layer_keys_gemma2_norms = [["input_layernorm"],
-                           ["post_attention_layernorm"],
-                           ["post_feedforward_layernorm"],
-                           ["pre_feedforward_layernorm"]]
 layer_keys_llama_attn = [["self_attn.q_proj"],
                          ["self_attn.k_proj"],
                          ["self_attn.v_proj"],
@@ -47,6 +43,8 @@ layer_keys_llama_mlp_swiglu = [["mlp.swiglu.w12"],
                                ["mlp.swiglu.w3"]]
 layer_keys_starcoder2_mlp = [["mlp.c_fc"],
                              ["mlp.c_proj"]]
+layer_keys_gemma2_mlp_norm = [["pre_feedforward_layernorm"],
+                              ["post_feedforward_layernorm"]]
 layer_keys_gpt2_mlp = [["mlp.c_fc"],
                        ["mlp.c_proj"]]
 expect_keys_llama = [["lm_head"],
@@ -314,19 +312,96 @@ class ExLlamaV2ArchParams:
         # todo: 
         #   support pre- / post_feedforward_layernorm
         #   support attn_logit_softcapping and final_logit_softcapping
+        #   query_pre_attn_scalar ?
+        #   sliding_window_size ?
         #
-        # what the stuff should do:
-        #   pro_feedforward_layernorm:   ...
+        a = '''
+        # what the stuff does in transformers lib:
+        #   pre_feedforward_layernorm:   ...
         #   post_feedforward_layernorm:  ...
+                in Gemma2DecoderLayer.forward():
+                hidden_states = self.pre_feedforward_layernorm(hidden_states)
+                hidden_states = self.mlp(hidden_states)
+                hidden_states = self.post_feedforward_layernorm(hidden_states)
+
+                self.mlp = GemmaMLP, forward:
+                    return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+                (3 linear layers)
+
+                both pre and post ff layernorm are Gemma2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                Gemma2RMSNorm = GemmaRMSNorm
+                same as input_layernorm and post_attn_layernorm
+
+                basically:
+                input_layernorm
+                do attention
+                post_attn_layernorm
+                pre_feedforward_layernorm
+                do mlp
+                post_feedforward_layernorm
+
+                -> two sets of norms
+
+                -> added the keys of 2nd set of norms to layer_keys_gemma2_mlp_norm
+                -> added them as norm_key_3 and norm_key_4 as well
+
+                in exllamav2:
+
+                attn contains input_layernorm (norm_key_1)
+                mlp contains post_attn_layernorm (norm_key_2)
+
+                -> add norm_key_3 and norm_key_4 both to mlp
+
+                made modifications to mlp.py, ext_qmlp.h, ext_qmlp.cpp, q_mlp.cuh and q_mlp.cu to add optional 2 norm layers for pre_ff and post_ff + their temp_states
+
+                
+        
         #   attn_logit_softcapping:      ...
+
+                added in attn.py after caluclating attn_weights and before getting attn_mask:
+                
+                if hasattr(cfg, "attn_logit_softcapping"):
+                    attn_weights = attn_weights / cfg.attn_logit_softcapping
+                    attn_weights = torch.tanh(attn_weights)
+                    attn_weights = attn_weights * cfg.attn_logit_softcapping
+                    
         #   final_logit_softcapping:     ...
+
+                added in model.py after getting logits:
+                
+                if hasattr(self.config.arch, "final_logit_softcapping"):
+                    logits = logits / self.config.arch.final_logit_softcapping
+                    logits = torch.tanh(logits)
+                    logits = logits * self.config.arch.final_logit_softcapping
+                    
+        #   gelu_pytorch_tanh activation:
+
+                added this to mlp.py:
+                
+                elif cfg.arch.mlp_act_func == "gelu_pytorch_tanh":
+                    y = F.gelu(gate, approximate="tanh")
+                
+        #   query_pre_attn_scalar:       ...
+
+                added this to attn.py after calculating attn_weights:
+
+                if hasattr(cfg, "query_pre_attn_scalar"):
+                    scaling = cfg.query_pre_attn_scalar**-0.5
+                    attn_weights = attn_weights * scaling
+    
+                else:
+                    attn_weights *= 1 / math.sqrt(cfg.head_dim)
+                
+        #   sliding_window_size:         ...
+        '''
 
         if arch_string == "Gemma2ForCausalLM":
             arch_recognized = True
             self.layer_keys += \
-                layer_keys_gemma2_norms + \
+                layer_keys_llama_norms + \
                 layer_keys_llama_attn + \
-                layer_keys_llama_mlp
+                layer_keys_llama_mlp + \
+                layer_keys_gemma2_mlp_norm
             self.expect_keys += \
                 expect_keys_gemma
             self.norm_eps_key = "rms_norm_eps"
@@ -344,6 +419,8 @@ class ExLlamaV2ArchParams:
             self.normalize_embeddings = True
             self.norm_key_1 = ".input_layernorm"
             self.norm_key_2 = ".post_attention_layernorm"
+            self.norm_key_3 = ".pre_feedforward_layernorm"
+            self.norm_key_4 = ".post_feedforward_layernorm"
             self.norm_constant_bias = 1
             self.parallel_decoder_blocks = False
             self.requires_bos = True
@@ -354,6 +431,8 @@ class ExLlamaV2ArchParams:
             self.scale_attn_weights = False
             self.attn_logit_softcapping = 50.0
             self.final_logit_softcapping = 30.0
+            self.query_pre_attn_scalar = 144
+            self.sliding_window_size = 4096
 
         # StarCoder2
 
