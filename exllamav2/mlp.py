@@ -298,7 +298,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             if cfg.arch.mlp_act_func == "silu":
                 y = F.silu(gate)
             elif cfg.arch.mlp_act_func == "gelu":
-                y = F.gelu(gate)
+                y = F.gelu(gate, approximate = "tanh")
             up = self.up_proj.forward(post_norm, loras = loras)
             y *= up
             y.clamp_(min = -65504.0, max = 65504.0)
@@ -307,7 +307,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             if cfg.arch.mlp_act_func == "silu":
                 y = F.silu(up)
             elif cfg.arch.mlp_act_func == "gelu":
-                y = F.gelu(up)
+                y = F.gelu(up, approximate = "tanh")
 
         down = self.down_proj.forward(y, loras = loras)
         if self.post_layernorm:
