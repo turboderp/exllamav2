@@ -260,7 +260,7 @@ class ExLlamaV2Config:
             if scaling_type == "linear":
                 assert "factor" in rs, "'factor' missing from 'rope_scaling' config"
                 self.scale_pos_emb = rs.get("factor", 1.0)
-            if scaling_type == "su":
+            if scaling_type == "su" or scaling_type == "longrope":
                 assert "long_factor" in rs, "'long_factor' missing from 'rope_scaling' config"
                 assert "short_factor" in rs, "'short_factor' missing from 'rope_scaling' config"
                 assert "original_max_position_embeddings" in read_config, \
