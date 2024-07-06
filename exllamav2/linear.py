@@ -241,6 +241,14 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         # Linear forward
 
+        if self.key == 'lm_head' and loras is not None and loras[0].lm_head is not None:
+            hidden_states_out = loras[0].lm_head(hidden_states)
+
+            if intermediates:
+                return {"hidden_states": hidden_states_out}
+            else:
+                return hidden_states_out
+
         if self.q_handle is not None and not force_recons:
 
             output_shape = hidden_states.shape[:-1] + (self.out_features,)
