@@ -6,6 +6,7 @@ __pycache__/
 .idea
 venv
 dist
+*.ipynb_checkpoints*
 
 # produced by `pip install -e .`
 exllamav2_ext.cpython-*.so
