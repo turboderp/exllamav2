@@ -102,6 +102,7 @@ class ExLlamaV2Config:
     use_qk_norm: bool
     query_pre_attn_scalar: float | None
     final_logit_softcapping: float | None
+    attn_logit_softcapping: float | None
     sliding_window: int
 
     checkpoint_fused_mlp: bool
@@ -165,9 +166,9 @@ class ExLlamaV2Config:
 
         # Load generation_config.json
 
-        self.generation_config_path = os.path.join(self.model_dir, "generation_config.json")
-        if os.path.exists(self.generation_config_path):
-            with open(self.generation_config_path, encoding = "utf8") as f:
+        generation_config_path = os.path.join(self.model_dir, "generation_config.json")
+        if os.path.exists(generation_config_path):
+            with open(generation_config_path, encoding = "utf8") as f:
                 gen_config = json.load(f)
                 self.generation_config = {}
                 try:
@@ -247,6 +248,7 @@ class ExLlamaV2Config:
         else:
             self.scale_depth = scale_depth / math.sqrt(self.num_hidden_layers)
 
+        self.attn_logit_softcapping = read(read_config, float, "attn_logit_softcapping", None)
         self.final_logit_softcapping = read(read_config, float, "final_logit_softcapping", None)
 
         # Positional embeddings

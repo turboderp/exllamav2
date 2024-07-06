@@ -766,7 +766,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_weights *= self.scaling
             attn_mask = attn_params.get_attn_mask(attn_weights.device)
 
-            if attn_mask is not None: attn_weights = attn_weights + attn_mask
+            if cfg.attn_logit_softcapping:
+                ext_c.softcap_(attn_weights, cfg.attn_logit_softcapping)
+            if attn_mask is not None:
+                attn_weights = attn_weights + attn_mask
             if self.sliding_window and k_states.shape[-1] >= self.sliding_window:
                 attn_weights = attn_weights[:, :, :, -self.sliding_window:]
                 v_states = v_states[:, :, -self.sliding_window:, :]
