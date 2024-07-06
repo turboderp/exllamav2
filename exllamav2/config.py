@@ -343,3 +343,22 @@ class ExLlamaV2Config:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
         x = 0
+
+
+    def arch_compat_overrides(self, quiet: bool = False, warn_only = False):
+
+        warnings = []
+
+        if self.arch.eager_attn_only:
+            warnings.append(" !! Warning: Architecture currently supports only eager attention")
+            if not warn_only:
+                warnings.append(" !! Warning: flash-attn, xformers and SDPA are disabled")
+                self.no_flash_attn = True
+                self.no_xformers = True
+                self.no_sdpa = True
+            else:
+                warnings.append(" !! Warning: flash-attn, xformers and SDPA should be disabled for correct inference")
+
+        if not quiet:
+            for w in warnings:
+                print(w)

@@ -123,6 +123,8 @@ class ExLlamaV2ArchParams:
         self.swa = False
         self.alternating_swa = False
 
+        self.eager_attn_only = False
+
         self.fused_qkv_altpack = False
 
         # Mistral
@@ -367,6 +369,7 @@ class ExLlamaV2ArchParams:
             self.scale_attn_weights = False
             self.pre_post_layernorm = True
             self.alternating_swa = True
+            self.eager_attn_only = True
 
         # StarCoder2
 

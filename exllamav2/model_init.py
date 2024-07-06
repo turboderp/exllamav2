@@ -105,6 +105,10 @@ def init(args,
     if args.low_mem: config.set_low_mem()
     if args.load_q4: config.load_in_q4 = True
 
+    # Compatibility warnings
+
+    config.arch_compat_overrides(warn_only = True)
+
     # Load model
     # If --gpu_split auto, return unloaded model. Model must be loaded with model.load_autosplit() supplying cache
     # created in lazy mode
