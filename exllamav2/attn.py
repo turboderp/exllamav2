@@ -502,7 +502,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def temp_state_size(self):
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * max(cfg.num_attention_heads * cfg.head_dim, cfg.hidden_size) * 2 + 128
 
 
     def temp_q_size(self):
