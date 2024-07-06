@@ -124,6 +124,7 @@ class ExLlamaV2ArchParams:
         self.alternating_swa = False
 
         self.eager_attn_only = False
+        self.clamp_hidden_states = False
 
         self.fused_qkv_altpack = False
 
@@ -370,6 +371,7 @@ class ExLlamaV2ArchParams:
             self.pre_post_layernorm = True
             self.alternating_swa = True
             self.eager_attn_only = True
+            self.clamp_hidden_states = True
 
         # StarCoder2
 

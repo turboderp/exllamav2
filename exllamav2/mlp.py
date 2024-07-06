@@ -260,6 +260,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 loras: list[ExLlamaV2Lora] | None = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
+        cfg = self.model.config
+
         if self.q_handle is None or intermediates:
             return self.forward_torch(hidden_states, cache, attn_params, past_len, intermediates, loras = loras, **kwargs)
 
@@ -274,6 +276,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                              hidden_states,
                              pass_loras,
                              pass_lora_temp)
+
+        if cfg.arch.clamp_hidden_states:
+            hidden_states.clamp_(-65504, 65504)
 
         return hidden_states
 
@@ -313,6 +318,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if self.post_layernorm:
             down = self.post_layernorm.forward(down)
         hidden_states = down + residual if self.has_residual else down
+
+        if cfg.arch.clamp_hidden_states:
+            hidden_states = hidden_states.clamp(-65504, 65504)
 
         if intermediates:
             return {"post_norm": post_norm,

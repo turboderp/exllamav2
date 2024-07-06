@@ -973,6 +973,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_lora_temp
         )
 
+        if cfg.arch.clamp_hidden_states:
+            hidden_states.clamp_(-65504, 65504)
+
         return hidden_states
 
 
@@ -1080,6 +1083,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Add residual connection
 
         hidden_states = (attn_proj + residual) if self.has_residual else attn_proj
+
+        if cfg.arch.clamp_hidden_states:
+            hidden_states.clamp_(-65504, 65504)
 
         if intermediates:
             return {"post_norm": post_norm,
