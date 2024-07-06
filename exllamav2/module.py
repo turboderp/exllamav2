@@ -126,13 +126,13 @@ class ExLlamaV2Module:
                     bias = tensors["bias"].half()
                     if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
                         tensor = tensor.T
-                    return nn.Parameter(tensor), nn.Parameter(bias)
+                    return nn.Parameter(tensor, requires_grad = False), nn.Parameter(bias, requires_grad = False)
                 else:
                     tensors = self.load_multi(key, ["weight"])
                     tensor = tensors["weight"].half()
                     # if self.model.config.arch.orig_weights_transposed:
                     #     tensor = tensor.T
-                    return nn.Parameter(tensor)
+                    return nn.Parameter(tensor, requires_grad = False)
 
             # No weights found for key
 
@@ -180,7 +180,7 @@ class ExLlamaV2Module:
                     tensor = tensor.T
 
             tensor = tensor.contiguous().to(self.device())
-            res.append(nn.Parameter(tensor))
+            res.append(nn.Parameter(tensor, requires_grad = False))
 
         if len(res) == 2: return res[0], res[1]
         if len(res) == 1: return res[0]
