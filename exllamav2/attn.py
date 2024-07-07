@@ -16,6 +16,7 @@ import math
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 import torch.nn.functional as F
 import inspect
+import os
 # from line_profiler import profile
 
 from typing import TYPE_CHECKING
@@ -27,47 +28,53 @@ if TYPE_CHECKING:
 has_flash_attn = False
 has_flash_attn_with_paged = False
 has_flash_attn_with_window = False
+if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
 
-try:
-    import flash_attn
-    flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".") if t.isdigit()]
-    is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
+    try:
+        import flash_attn
+        flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".") if t.isdigit()]
+        is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
 
-    if not is_ampere_or_newer_gpu:
-        print(" ## Warning: Flash Attention is installed but unsupported GPUs were detected.")
+        if not is_ampere_or_newer_gpu:
+            print(" ## Warning: Flash Attention is installed but unsupported GPUs were detected.")
 
-    if [2, 2, 1] <= flash_attn_ver < [2, 5, 7]:
-        from flash_attn import flash_attn_func
-        has_flash_attn = True
+        if [2, 2, 1] <= flash_attn_ver < [2, 5, 7]:
+            from flash_attn import flash_attn_func
+            has_flash_attn = True
 
-    if [2, 5, 7] <= flash_attn_ver:
-        from flash_attn import flash_attn_func, flash_attn_with_kvcache
-        import flash_attn_2_cuda as flash_attn_cuda
+        if [2, 5, 7] <= flash_attn_ver:
+            from flash_attn import flash_attn_func, flash_attn_with_kvcache
+            import flash_attn_2_cuda as flash_attn_cuda
 
-        has_flash_attn = True
-        has_flash_attn_with_paged = True
+            has_flash_attn = True
+            has_flash_attn_with_paged = True
 
-    has_flash_attn_with_window = "window_size" in list(inspect.signature(flash_attn_func).parameters)
+        has_flash_attn_with_window = "window_size" in list(inspect.signature(flash_attn_func).parameters)
 
+    except ModuleNotFoundError:
+        pass
 
-except ModuleNotFoundError:
-    pass
 
 has_xformers = False
-try:
-    import xformers.ops as xops
-    # LowerTriangularFromBottomRightMask was added in xformers version 2.4
-    from xformers.ops.fmha.attn_bias import LowerTriangularFromBottomRightMask
-    has_xformers = True
-except ModuleNotFoundError:
-    pass
+if 'EXLLAMA_NO_XFORMERS' not in os.environ:
+
+    try:
+        import xformers.ops as xops
+        # LowerTriangularFromBottomRightMask was added in xformers version 2.4
+        from xformers.ops.fmha.attn_bias import LowerTriangularFromBottomRightMask
+        has_xformers = True
+    except ModuleNotFoundError:
+        pass
+
 
 has_lower_right_sdpa = False
-try:
-    from torch.nn.attention.bias import causal_lower_right
-    has_lower_right_sdpa = True
-except ImportError:
-    pass
+if 'EXLLAMA_NO_SDPA' not in os.environ:
+    try:
+        from torch.nn.attention.bias import causal_lower_right
+        has_lower_right_sdpa = True
+    except ImportError:
+        pass
+
 
 def assert_paged_attn():
     global has_flash_attn_with_paged
