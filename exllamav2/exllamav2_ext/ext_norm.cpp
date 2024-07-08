@@ -28,9 +28,9 @@ void rms_norm
     float epsilon
 )
 {
-    TORCH_CHECK_DTYPE(x, kHalf);
+    bool input_fp32 = x.dtype() == torch::kFloat;
+    bool output_fp32 = y.dtype() == torch::kFloat;
     TORCH_CHECK_DTYPE(w, kHalf);
-    TORCH_CHECK_DTYPE(y, kHalf);
     TORCH_CHECK_SHAPES(x, 1, w, 0, 1);
     TORCH_CHECK_SHAPES(x, 0, y, 0, 1);
     TORCH_CHECK_SHAPES(x, 1, y, 1, 1);
@@ -42,12 +42,15 @@ void rms_norm
 
     rms_norm_cuda
     (
-        (half*) x.data_ptr(),
+        (void*) x.data_ptr(),
         (half*) w.data_ptr(),
-        (half*) y.data_ptr(),
+        (void*) y.data_ptr(),
         epsilon,
         rows,
-        dim
+        dim,
+        false,
+        input_fp32,
+        output_fp32
     );
 }
 

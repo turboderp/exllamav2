@@ -449,6 +449,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 k_norm,
                 post_norm_weight,
                 post_norm_bias,
+                cfg.arch.residual_stream_fp32
             )
 
 
@@ -1085,13 +1086,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Post layernorm
 
         if self.post_layernorm:
-            attn_proj = self.post_layernorm.forward(attn_proj)
+            attn_proj = self.post_layernorm.forward(attn_proj, output_fp32 = cfg.arch.residual_stream_fp32)
 
         # Add residual connection
 
         hidden_states = (attn_proj + residual) if self.has_residual else attn_proj
 
-        if cfg.arch.clamp_hidden_states:
+        if cfg.arch.residual_stream_fp32:
+            hidden_states = hidden_states.float()
+        elif cfg.arch.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
         if intermediates:

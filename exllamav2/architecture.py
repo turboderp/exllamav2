@@ -125,6 +125,7 @@ class ExLlamaV2ArchParams:
 
         self.eager_attn_only = False
         self.clamp_hidden_states = False
+        self.residual_stream_fp32 = False
 
         self.fused_qkv_altpack = False
 
@@ -371,7 +372,8 @@ class ExLlamaV2ArchParams:
             self.pre_post_layernorm = True
             self.alternating_swa = True
             self.eager_attn_only = True
-            self.clamp_hidden_states = True
+            self.clamp_hidden_states = False
+            self.residual_stream_fp32 = True
 
         # StarCoder2
 
@@ -740,6 +742,11 @@ class ExLlamaV2ArchParams:
                 self.expect_keys.remove(["lm_head"])
                 self.lm_head_key = "model.embed_tokens"
 
+        # Sanity checks
+
+        if self.residual_stream_fp32:
+            assert self.norm_key_1_post and self.norm_key_2_post, \
+                "FP32 residual stream only implement for arch with post layernorms"
 
     def make_fused_mlp(self):
 

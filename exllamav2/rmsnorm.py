@@ -97,11 +97,17 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
                 past_len = None,
                 intermediates: bool = False,
                 loras = None,
+                output_fp32 = False,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        norm = torch.empty_like(hidden_states)
+
+        if not output_fp32:
+            norm = torch.empty_like(hidden_states, dtype = torch.half)
+        else:
+            norm = torch.empty_like(hidden_states, dtype = torch.float)
+
         ext_c.rms_norm(hidden_states, self.weight, norm, self.variance_epsilon)
         hidden_states = norm.view(output_shape)
 
@@ -118,13 +124,17 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
                       past_len = None,
                       intermediates: bool = False,
                       loras = None,
+                      output_fp32 = False,
                       **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        hidden_states.clamp_(-65504.0, 65504.0)
+        # hidden_states.clamp_(-65504.0, 65504.0)
 
         variance = hidden_states.to(torch.float32).pow(2).mean(-1, keepdim = True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        hidden_states = hidden_states.to(self.weight.dtype)
+
+        if not output_fp32:
+            hidden_states = hidden_states.to(self.weight.dtype)
+
         hidden_states *= self.weight
 
         if intermediates:

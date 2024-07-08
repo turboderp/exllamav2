@@ -38,6 +38,7 @@ public:
 
     bool act_gelu;
     bool has_residual;
+    bool residual_fp32;
 
     QMLP
     (
@@ -56,7 +57,8 @@ public:
         bool _act_gelu,
         bool _has_residual,
         half* _post_layernorm,
-        half* _post_layernorm_bias
+        half* _post_layernorm_bias,
+        bool _residual_fp32
     );
 
     ~QMLP();
@@ -64,7 +66,7 @@ public:
     void forward_
     (
         cublasHandle_t cublas_handle,
-        half* x,
+        void* x,
         int rows,
         int columns,
         const std::vector<uintptr_t>& loras,

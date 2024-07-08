@@ -17,34 +17,36 @@
 
 typedef void (*fp_rms_norm_kernel)
 (
+    const void*,
     const half*,
-    const half*,
-    half*,
+    void*,
     const float,
     const float,
     const int,
     const int,
+    const bool,
+    const bool,
     const bool
 );
 
 template <int blocks_per_warp>
 __global__ void rms_norm_kernel
 (
-    const half* __restrict__ x,
+    const void* __restrict__ x,
     const half* __restrict__ w,
-    half* __restrict__ y,
+    void* __restrict__ y,
     const float epsilon,
     const float r_dim,
     const int rows,
     const int dim,
-    const bool add_residual
+    const bool add_residual,
+    const bool input_fp32,
+    const bool output_fp32
 )
 {
     int warp_id = threadIdx.x / WARP_SIZE;
     int lane_id = threadIdx.x % WARP_SIZE;
     int row = blockIdx.x;
-    const half2* x_row = (const half2*) (x + row * dim);
-    half2* y_row = (half2*) (y + row * dim);
     const half2* w2 = (const half2*) w;
 
     // Compute sum of squares for each block
@@ -52,21 +54,45 @@ __global__ void rms_norm_kernel
     float sum = 0.0f;
     float itemf[blocks_per_warp][2];
 
-    #pragma unroll
-    for (int i = 0; i < blocks_per_warp; i++)
+    if (!input_fp32)
     {
-        int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
-        if (column >= dim / 2) break;
+        const half2* x_row = (const half2*) (((half*)x) + row * dim);
 
-        half2 x2 = x_row[column];
-        float f0 = __half2float(__low2half(x2));
-        float f1 = __half2float(__high2half(x2));
-        f0 = fmaxf(-65504.0f, fminf(f0, 65504.0f));
-        f1 = fmaxf(-65504.0f, fminf(f1, 65504.0f));
-        itemf[i][0] = f0;
-        itemf[i][1] = f1;
-        sum = fma(f0, f0, sum);
-        sum = fma(f1, f1, sum);
+        #pragma unroll
+        for (int i = 0; i < blocks_per_warp; i++)
+        {
+            int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
+            if (column >= dim / 2) break;
+
+            half2 x2 = x_row[column];
+            float f0 = __half2float(__low2half(x2));
+            float f1 = __half2float(__high2half(x2));
+            f0 = fmaxf(-65504.0f, fminf(f0, 65504.0f));
+            f1 = fmaxf(-65504.0f, fminf(f1, 65504.0f));
+            itemf[i][0] = f0;
+            itemf[i][1] = f1;
+            sum = fma(f0, f0, sum);
+            sum = fma(f1, f1, sum);
+        }
+    }
+    else
+    {
+        const float2* x_row = (const float2*) (((float*)x) + row * dim);
+
+        #pragma unroll
+        for (int i = 0; i < blocks_per_warp; i++)
+        {
+            int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
+            if (column >= dim / 2) break;
+
+            float2 x2 = x_row[column];
+            float f0 = x2.x;
+            float f1 = x2.y;
+            itemf[i][0] = f0;
+            itemf[i][1] = f1;
+            sum = fma(f0, f0, sum);
+            sum = fma(f1, f1, sum);
+        }
     }
 
     // Shuffle to sum across lanes
@@ -92,23 +118,58 @@ __global__ void rms_norm_kernel
 
     // Normalize x, scaling by w
 
-    #pragma unroll
-    for (int i = 0; i < blocks_per_warp; i++)
+    if (!output_fp32)
     {
-        int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
-        if (column >= dim / 2) return;
-        half2 w2_ = w2[column];
+        half2* y_row = (half2*) (((half*)y) + row * dim);
 
-        float x_itemf0 = itemf[i][0];
-        float x_itemf1 = itemf[i][1];
-        float w_itemf0 = __half2float(__low2half(w2_));
-        float w_itemf1 = __half2float(__high2half(w2_));
-        float n0 = x_itemf0 * w_itemf0 * rmf;
-        float n1 = x_itemf1 * w_itemf1 * rmf;
-        if (add_residual)
-            y_row[column] = __hadd2(y_row[column], __halves2half2(__float2half_rn(n0), __float2half_rn(n1)));
-        else
-            y_row[column] = __halves2half2(__float2half_rn(n0), __float2half_rn(n1));
+        #pragma unroll
+        for (int i = 0; i < blocks_per_warp; i++)
+        {
+            int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
+            if (column >= dim / 2) return;
+            half2 w2_ = w2[column];
+
+            float x_itemf0 = itemf[i][0];
+            float x_itemf1 = itemf[i][1];
+            float w_itemf0 = __half2float(__low2half(w2_));
+            float w_itemf1 = __half2float(__high2half(w2_));
+            float n0 = x_itemf0 * w_itemf0 * rmf;
+            float n1 = x_itemf1 * w_itemf1 * rmf;
+            if (add_residual)
+                y_row[column] = __hadd2(y_row[column], __halves2half2(__float2half_rn(n0), __float2half_rn(n1)));
+            else
+                y_row[column] = __halves2half2(__float2half_rn(n0), __float2half_rn(n1));
+        }
+    }
+    else
+    {
+        float2* y_row = (float2*) (((float*)y) + row * dim);
+
+        #pragma unroll
+        for (int i = 0; i < blocks_per_warp; i++)
+        {
+            int column = warp_id * WARP_SIZE + lane_id + NUM_THREADS * i;
+            if (column >= dim / 2) return;
+            half2 w2_ = w2[column];
+
+            float x_itemf0 = itemf[i][0];
+            float x_itemf1 = itemf[i][1];
+            float w_itemf0 = __half2float(__low2half(w2_));
+            float w_itemf1 = __half2float(__high2half(w2_));
+            float n0 = x_itemf0 * w_itemf0 * rmf;
+            float n1 = x_itemf1 * w_itemf1 * rmf;
+            if (add_residual)
+            {
+                float2 y2 = y_row[column];
+                y2.x += n0;
+                y2.y += n1;
+                y_row[column] = y2;
+            }
+            else
+            {
+                y_row[column] = make_float2(n0, n1);
+            }
+        }
     }
 }
 
@@ -138,13 +199,15 @@ fp_rms_norm_kernel pick_rms_norm_kernel(const int blocks_per_warp)
 
 void rms_norm_cuda
 (
-    const half* x,
+    const void* x,
     const half* w,
-    half* y,
+    void* y,
     const float epsilon,
     const int rows,
     const int dim,
-    const bool add_residual
+    const bool add_residual,
+    const bool input_fp32,
+    const bool output_fp32
 )
 {
     dim3 blockDim, gridDim;
@@ -157,5 +220,5 @@ void rms_norm_cuda
 
     int blocks_per_warp = DIVIDE(dim, NUM_THREADS * 2);
     fp_rms_norm_kernel kernel = pick_rms_norm_kernel(blocks_per_warp);
-    kernel<<<gridDim, blockDim>>>(x, w, y, epsilon, r_dim, rows, dim, add_residual);
+    kernel<<<gridDim, blockDim>>>(x, w, y, epsilon, r_dim, rows, dim, add_residual, input_fp32, output_fp32);
 }

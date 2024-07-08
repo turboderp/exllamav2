@@ -32,7 +32,8 @@ uintptr_t make_q_mlp
     bool act_gelu,
     bool has_residual,
     torch::Tensor post_layernorm,
-    torch::Tensor post_layernorm_bias
+    torch::Tensor post_layernorm_bias,
+    bool residual_fp32
 )
 {
     QMatrix* qm_gate = reinterpret_cast<QMatrix*> (q_gate);
@@ -61,7 +62,8 @@ uintptr_t make_q_mlp
         act_gelu,
         has_residual,
         (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
-        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr()
+        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
+        residual_fp32
     );
 
     return reinterpret_cast<uintptr_t> (mlp);
@@ -85,7 +87,8 @@ void q_mlp_forward_
 )
 {
     QMLP* mlp = reinterpret_cast<QMLP*> (q_mlp);
-    TORCH_CHECK_DTYPE(x, kHalf);
+    if (mlp->residual_fp32) { TORCH_CHECK_DTYPE(x, kFloat); }
+    else                    { TORCH_CHECK_DTYPE(x, kHalf); }
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
 
@@ -98,7 +101,7 @@ void q_mlp_forward_
     mlp->forward_
     (
         at::cuda::getCurrentCUDABlasHandle(),
-        (half*) x.data_ptr(),
+        (void*) x.data_ptr(),
         rows,
         dim,
         loras,

@@ -41,7 +41,8 @@ uintptr_t make_q_attn
     torch::Tensor q_norm,
     torch::Tensor k_norm,
     torch::Tensor post_layernorm,
-    torch::Tensor post_layernorm_bias
+    torch::Tensor post_layernorm_bias,
+    bool residual_fp32
 )
 {
     QMatrix* qm_q_proj = reinterpret_cast<QMatrix*> (q_q_proj);
@@ -83,7 +84,8 @@ uintptr_t make_q_attn
         (half*) q_norm.is_meta() ? NULL : (half*) q_norm.data_ptr(),
         (half*) k_norm.is_meta() ? NULL : (half*) k_norm.data_ptr(),
         (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
-        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr()
+        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
+        residual_fp32
     );
 
     return reinterpret_cast<uintptr_t> (attn);
@@ -116,7 +118,9 @@ void q_attn_forward_1
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
-    TORCH_CHECK_DTYPE(x, kHalf);
+    if (attn->residual_fp32) { TORCH_CHECK_DTYPE(x, kFloat); }
+    else                     { TORCH_CHECK_DTYPE(x, kHalf); }
+
     TORCH_CHECK_DTYPE_OPT(past_lens, kInt);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
@@ -152,7 +156,8 @@ void q_attn_forward_2
 )
 {
     QAttn* attn = reinterpret_cast<QAttn*> (q_attn);
-    TORCH_CHECK_DTYPE(x, kHalf);
+    if (attn->residual_fp32) { TORCH_CHECK_DTYPE(x, kFloat); }
+    else                     { TORCH_CHECK_DTYPE(x, kHalf); }
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();

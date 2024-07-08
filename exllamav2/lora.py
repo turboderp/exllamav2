@@ -56,6 +56,11 @@ class ExLlamaV2Lora:
         self.embed_tokens = None
         self.lm_head = None
 
+        # Compatibility check
+
+        assert not self.model.config.arch.residual_stream_fp32, \
+            "LoRAs not (yet) supported for models with FP32 residual stream"
+
         # Grab relevant items from LoRA config
 
         with open(lora_config_path, encoding = "utf8") as f:

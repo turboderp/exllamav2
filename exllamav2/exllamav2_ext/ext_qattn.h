@@ -25,7 +25,8 @@ uintptr_t make_q_attn
     torch::Tensor q_norm,
     torch::Tensor k_norm,
     torch::Tensor post_layernorm,
-    torch::Tensor post_layernorm_bias
+    torch::Tensor post_layernorm_bias,
+    bool residual_fp32
 );
 
 void free_q_attn

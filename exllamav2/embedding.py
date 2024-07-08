@@ -89,6 +89,8 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                 loras = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
+        cfg = self.model.config
+
         # If input IDs contain negative values, assume they are padding tokens from a model with not pad_token_id
         # defined
 
@@ -111,7 +113,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
             # Create combined tensor on the target device
 
             batch_size, seq_len = input_ids.shape
-            hidden_size = self.model.config.hidden_size
+            hidden_size = cfg.hidden_size
             combined_embeddings = torch.empty(batch_size, seq_len, hidden_size,
                                               device = indexed_embeddings.device,
                                               dtype = indexed_embeddings.dtype)
@@ -133,8 +135,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
             # Normalization
 
-            if self.model.config.arch.normalize_embeddings:
-                combined_embeddings *= self.model.config.hidden_size ** 0.5
+            if cfg.arch.residual_stream_fp32:
+                combined_embeddings = combined_embeddings.float()
+            if cfg.arch.normalize_embeddings:
+                combined_embeddings *= cfg.hidden_size ** 0.5
 
             # Extract indexed embeddings and insert in-place
 
@@ -152,8 +156,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
             else:
                 hidden_states = self.embedding(hidden_states)
 
-            if self.model.config.arch.normalize_embeddings:
-                hidden_states *= self.model.config.hidden_size ** 0.5
+            if cfg.arch.residual_stream_fp32:
+                hidden_states = hidden_states.float()
+            if cfg.arch.normalize_embeddings:
+                hidden_states *= cfg.hidden_size ** 0.5
 
         if intermediates:
             return {"hidden_states": hidden_states}

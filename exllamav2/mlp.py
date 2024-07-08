@@ -161,7 +161,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              cfg.arch.mlp_act_func == "gelu",
                                              self.has_residual,
                                              post_norm_weight,
-                                             post_norm_bias)
+                                             post_norm_bias,
+                                             cfg.arch.residual_stream_fp32)
 
 
     def unload(self):
@@ -316,10 +317,12 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         down = self.down_proj.forward(y, loras = loras)
         if self.post_layernorm:
-            down = self.post_layernorm.forward(down)
+            down = self.post_layernorm.forward(down, output_fp32 = cfg.arch.residual_stream_fp32)
         hidden_states = down + residual if self.has_residual else down
 
-        if cfg.arch.clamp_hidden_states:
+        if cfg.arch.residual_stream_fp32:
+            hidden_states = hidden_states.float()
+        elif cfg.arch.clamp_hidden_states:
             hidden_states = hidden_states.clamp(-65504, 65504)
 
         if intermediates:

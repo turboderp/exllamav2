@@ -100,6 +100,7 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
                 past_len = None,
                 intermediates: bool = False,
                 loras = None,
+                output_fp32 = False,  # TODO:
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         output_shape = hidden_states.shape
@@ -126,6 +127,7 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
                       past_len = None,
                       intermediates: bool = False,
                       loras = None,
+                      output_fp32 = False,  # TODO:
                       **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         hidden_states = self.layernorm(hidden_states)
