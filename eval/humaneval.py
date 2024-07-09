@@ -52,6 +52,13 @@ prompt_formats = {
         "<|start_header_id|>assistant<|end_header_id|>\n\n"
         "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}    ",
         "    "
+    ),
+    "gemma": (
+        "<bos><start_of_turn>user\n"
+        "Complete the following Python function:\n\n{{problem}}<|eot_id|>"
+        "<start_of_turn>model\n"
+        "```python\n{{problem}}    ",
+        "    "
     )
 }
 
