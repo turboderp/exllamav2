@@ -387,7 +387,7 @@ class ExLlamaV2Config:
                 warnings.append(" !! Warning: model requires SWA, not supported in xformers")
                 disable = True
             if disable and not warn_only:
-                warnings.append(" !! Warning: disabling flash-attn")
+                warnings.append(" !! Warning: disabling xformers")
                 self.no_xformers = True
 
         if not quiet:

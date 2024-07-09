@@ -744,7 +744,7 @@ class ExLlamaV2ArchParams:
 
         if self.residual_stream_fp32:
             assert self.norm_key_1_post and self.norm_key_2_post, \
-                "FP32 residual stream only implement for arch with post layernorms"
+                "FP32 residual stream only implemented for arch with post layernorms"
 
     def make_fused_mlp(self):
 
