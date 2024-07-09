@@ -21,6 +21,7 @@ def add_args(parser):
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
     parser.add_argument("-lq4", "--load_q4", action = "store_true", help = "Load weights in Q4 mode")
     parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Use alternative safetensors loader (with direct I/O when available)")
+    parser.add_argument("-ic", "--ignore_compatibility", action = "store_true", help = "Do not override model config options in case of compatibility issues")
 
 
 def print_options(args):
@@ -39,6 +40,7 @@ def print_options(args):
     if hasattr(args, "fast_safetensors") and args.fast_safetensors: print_opts += ["fast_safetensors"]
     if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
     if args.load_q4: print_opts += ["load_q4"]
+    if args.ignore_compatibility: print_opts += ["ignore_compatibility"]
     print(f" -- Options: {print_opts}")
 
 
@@ -107,7 +109,7 @@ def init(args,
 
     # Compatibility warnings
 
-    config.arch_compat_overrides(warn_only = True)
+    config.arch_compat_overrides(warn_only = args.ignore_compatibility)
 
     # Load model
     # If --gpu_split auto, return unloaded model. Model must be loaded with model.load_autosplit() supplying cache

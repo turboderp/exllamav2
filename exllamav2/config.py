@@ -347,6 +347,13 @@ class ExLlamaV2Config:
 
     def arch_compat_overrides(self, quiet: bool = False, warn_only = False):
 
+        from exllamav2.attn import (
+            has_flash_attn,
+            has_flash_attn_with_window,
+            has_flash_attn_with_softcap,
+            has_xformers
+        )
+
         warnings = []
 
         if self.arch.eager_attn_only:
@@ -358,6 +365,30 @@ class ExLlamaV2Config:
                 self.no_sdpa = True
             else:
                 warnings.append(" !! Warning: flash-attn, xformers and SDPA should be disabled for correct inference")
+
+        if has_flash_attn and not self.no_flash_attn:
+            disable = False
+            if self.attn_logit_softcapping and not has_flash_attn_with_softcap:
+                warnings.append(" !! Warning: model requires softcap, not supported in installed version of flash-attn")
+                disable = True
+            if (self.arch.swa or self.arch.alternating_swa) and not has_flash_attn_with_window:
+                warnings.append(" !! Warning: model requires SWA, not supported in installed version of flash-attn")
+                disable = True
+            if disable and not warn_only:
+                warnings.append(" !! Warning: disabling flash-attn")
+                self.no_flash_attn = True
+
+        if has_xformers and not self.no_xformers:
+            disable = False
+            if self.attn_logit_softcapping:
+                warnings.append(" !! Warning: model requires softcap, not supported in xformers")
+                disable = True
+            if self.arch.swa or self.arch.alternating_swa:
+                warnings.append(" !! Warning: model requires SWA, not supported in xformers")
+                disable = True
+            if disable and not warn_only:
+                warnings.append(" !! Warning: disabling flash-attn")
+                self.no_xformers = True
 
         if not quiet:
             for w in warnings:

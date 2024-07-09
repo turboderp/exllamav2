@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 has_flash_attn = False
 has_flash_attn_with_paged = False
 has_flash_attn_with_window = False
+has_flash_attn_with_softcap = False
 if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
 
     try:
@@ -44,12 +45,14 @@ if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
 
         if [2, 5, 7] <= flash_attn_ver:
             from flash_attn import flash_attn_func, flash_attn_with_kvcache
-            import flash_attn_2_cuda as flash_attn_cuda
+            # import flash_attn_2_cuda as flash_attn_cuda
 
             has_flash_attn = True
             has_flash_attn_with_paged = True
 
-        has_flash_attn_with_window = "window_size" in list(inspect.signature(flash_attn_func).parameters)
+        signature = list(inspect.signature(flash_attn_func).parameters)
+        has_flash_attn_with_window = "window_size" in signature
+        has_flash_attn_with_softcap = "softcap" in signature
 
     except ModuleNotFoundError:
         pass
@@ -688,32 +691,31 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cache.q_block == 1:
             cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
 
-        # attn_output = flash_attn_with_kvcache(
-        #     q = q,
-        #     k = k,
-        #     v = v,
-        #     k_cache = k_cache,
-        #     v_cache = v_cache,
-        #     cache_seqlens = cache_seqlens_a,
-        #     block_table = block_table,
-        #     causal = True
-        # )
-        window_size = -1 if not self.sliding_window else self.sliding_window
+        flash_kwargs = {}
+        if self.sliding_window:
+            # assert has_flash_attn_with_window, \
+            #     "Installed version of flash-attn does not support sliding window"
+            if has_flash_attn_with_window:
+                flash_kwargs["window_size"] = (self.sliding_window, self.sliding_window)
+        if cfg.attn_logit_softcapping:
+            # assert has_flash_attn_with_softcap, \
+            #     "Installed version of flash-attn does not support softcapping"
+            if has_flash_attn_with_softcap:
+                flash_kwargs["softcap"] = cfg.attn_logit_softcapping
 
-        attn_output, _ = flash_attn_cuda.fwd_kvcache(
-            q, k_cache, v_cache, k, v,
-            cache_seqlens_a,
-            None, None,
-            None,
-            block_table,
-            None,
-            None,
-            self.scaling,
-            True,
-            window_size, window_size,
-            True,
-            0,
+        attn_output = flash_attn_with_kvcache(
+            q = q,
+            k = k,
+            v = v,
+            k_cache = k_cache,
+            v_cache = v_cache,
+            cache_seqlens = cache_seqlens_a,
+            block_table = block_table,
+            causal = True,
+            softmax_scale = self.scaling,
+            **flash_kwargs
         )
+
         attn_output = attn_output.view((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
         cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, page_size, cache_seqlens, block_table)
@@ -746,7 +748,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_states = k_states.transpose(1, 2)
         v_states = v_states.transpose(1, 2)
 
-        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa:
+        # SDPA
+
+        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa and not cfg.attn_logit_softcapping:
 
             k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
             v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
@@ -763,6 +767,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 attn_mask_lr,
                 scale = self.scaling
             )
+
+        # Matmul attn
 
         else:
 
@@ -794,12 +800,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_flash(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        assert has_flash_attn_with_window or not self.sliding_window, \
-            "Installed version of flash-attn does not support sliding window"
-
-        flash_kwargs = {
-            "window_size": (self.sliding_window, self.sliding_window)
-        } if self.sliding_window else {}
+        flash_kwargs = {}
+        if self.sliding_window:
+            # assert has_flash_attn_with_window, \
+            #     "Installed version of flash-attn does not support sliding window"
+            if has_flash_attn_with_window:
+                flash_kwargs["window_size"] = (self.sliding_window, self.sliding_window)
+        if cfg.attn_logit_softcapping:
+            # assert has_flash_attn_with_softcap, \
+            #     "Installed version of flash-attn does not support softcapping"
+            if has_flash_attn_with_softcap:
+                flash_kwargs["softcap"] = cfg.attn_logit_softcapping
 
         attn_output = flash_attn_func(
             q_states,
@@ -815,8 +826,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_xformers(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        assert not self.sliding_window, \
-            "Sliding window not currently supported for xformers"
+        # assert not self.sliding_window, \
+        #     "Sliding window not currently supported for xformers"
+
+        # assert not cfg.attn_logit_softcapping, \
+        #     "Softcap not yet supported for xformers"
 
         # xformers memory_efficient_attention, could be beneficial if your device's architecture is less than <sm_80
         # xformer does not expand the kv automatically, we need to do it manually. The efficiency between

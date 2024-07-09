@@ -371,8 +371,6 @@ class ExLlamaV2ArchParams:
             self.scale_attn_weights = False
             self.pre_post_layernorm = True
             self.alternating_swa = True
-            self.eager_attn_only = True
-            self.clamp_hidden_states = False
             self.residual_stream_fp32 = True
 
         # StarCoder2
