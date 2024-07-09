@@ -7,6 +7,7 @@ from exllamav2.generator import ExLlamaV2Sampler, ExLlamaV2DynamicGenerator
 
 model_dir = "/mnt/str/models/llama2-7b-exl2/5.0bpw"
 config = ExLlamaV2Config(model_dir)
+config.arch_compat_overrides()
 model = ExLlamaV2(config)
 cache = ExLlamaV2Cache(model, max_seq_len = 32768, lazy = True)
 model.load_autosplit(cache, progress = True)

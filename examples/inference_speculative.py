@@ -12,12 +12,14 @@ total_cache_tokens = 16384
 
 draft_model_dir = "/mnt/str/models/qwen2-1.5b-instruct-exl2/4.0bpw"
 draft_config = ExLlamaV2Config(draft_model_dir)
+draft_config.arch_compat_overrides()
 draft_model = ExLlamaV2(draft_config)
 draft_cache = ExLlamaV2Cache(draft_model, max_seq_len = total_cache_tokens, lazy = True)
 draft_model.load_autosplit(draft_cache, progress = True)
 
 model_dir = "/mnt/str/models/qwen2-72b-instruct-exl2/6.0bpw"
 config = ExLlamaV2Config(model_dir)
+config.arch_compat_overrides()
 model = ExLlamaV2(config)
 cache = ExLlamaV2Cache(model, max_seq_len = total_cache_tokens, lazy = True)
 model.load_autosplit(cache, progress = True)
