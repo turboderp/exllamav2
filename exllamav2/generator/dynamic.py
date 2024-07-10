@@ -1932,7 +1932,7 @@ class ExLlamaV2DynamicJob:
             self.held_k_tokens.append(next_k_tokens)
             self.held_k_probs.append(next_k_probs)
         if self.return_logits:
-            self.held_logits.append(logits)
+            self.held_logits.append(logits[:1, :, :])
 
         # Stop if we reach max_new_tokens
 
