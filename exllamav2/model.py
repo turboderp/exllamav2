@@ -681,6 +681,7 @@ class ExLlamaV2:
                 return_last_state: bool = False,
                 position_offsets: torch.Tensor | None = None,
                 abort_event: threading.Event | None = None,
+                cpu_logits: bool = False,
                 **kwargs) \
         -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         """
@@ -716,6 +717,11 @@ class ExLlamaV2:
 
         :param abort_event:
             Optional event that, if set, will abort the forward pass. Function will return None if aborted.
+
+        :param cpu_logits:
+            If True, logits are collected and returned in system RAM. This is somewhat slower but can prevent
+            out-of-memory errors when computing logits for all positions in a long sequence, such as during a
+            perplexity test.
 
         :return:
             FP16 logits tensor, shape (batch_size, q_len, vocab_size)
@@ -819,6 +825,8 @@ class ExLlamaV2:
             if abort_event and abort_event.is_set(): return
 
             if not _preprocess_only:
+                if cpu_logits:
+                    r["logits"] = r["logits"].cpu()
                 result = r["logits"] if result is None else torch.cat((result, r["logits"]), dim = 1)
 
             chunk_begin = chunk_end
