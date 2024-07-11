@@ -53,7 +53,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                  f_key: str = None,
                  f_beg: int = None,
                  f_end: int = None,
-                 is_sub_module: bool = True):
+                 is_sub_module: bool = True,
+                 altpack_qkv: bool = False):
         super().__init__(model, key)
 
         self.is_sub_module = is_sub_module
@@ -85,6 +86,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.f_key = f_key
         self.f_beg = f_beg
         self.f_end = f_end
+        self.altpack_qkv = altpack_qkv
 
         self.assumed_footprint = in_features * (out_features + self.padding) * 2 + 128
 
@@ -94,7 +96,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
              w: dict | nn.Parameter | tuple | None = None,
              device_tensors: bool = True):
 
-        if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features)
+        if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features, self.altpack_qkv)
         if w is None: w = self.load_weight()
 
         # Load quantized linear layer from dictionary
@@ -238,6 +240,14 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
         # Linear forward
+
+        if self.key == 'lm_head' and loras is not None and loras[0].lm_head is not None:
+            hidden_states_out = loras[0].lm_head(hidden_states)
+
+            if intermediates:
+                return {"hidden_states": hidden_states_out}
+            else:
+                return hidden_states_out
 
         if self.q_handle is not None and not force_recons:
 

@@ -8,6 +8,7 @@ import pprint
 
 model_dir = "/mnt/str/models/mistral-7b-exl2/4.0bpw"
 config = ExLlamaV2Config(model_dir)
+config.arch_compat_overrides()
 model = ExLlamaV2(config)
 cache = ExLlamaV2Cache(model, lazy = True)
 model.load_autosplit(cache, progress = True)

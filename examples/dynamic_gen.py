@@ -136,6 +136,7 @@ def main():
     if use_draft_model:
 
         draft_config = ExLlamaV2Config(draft_model_dir)
+        draft_config.arch_compat_overrides()
         draft_model = ExLlamaV2(draft_config)
 
         draft_cache = ExLlamaV2Cache(
@@ -155,6 +156,7 @@ def main():
     # 2048, which will also be the limit of the chunk size for prefill used by the dynamic generator.
 
     config = ExLlamaV2Config(model_dir)
+    config.arch_compat_overrides()
     config.max_input_len = max_chunk_size
     config.max_attention_size = max_chunk_size ** 2
     model = ExLlamaV2(config)

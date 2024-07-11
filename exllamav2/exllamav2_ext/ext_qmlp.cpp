@@ -30,7 +30,10 @@ uintptr_t make_q_mlp
     torch::Tensor temp_dq,
     int max_rows,
     bool act_gelu,
-    bool has_residual
+    bool has_residual,
+    torch::Tensor post_layernorm,
+    torch::Tensor post_layernorm_bias,
+    bool residual_fp32
 )
 {
     QMatrix* qm_gate = reinterpret_cast<QMatrix*> (q_gate);
@@ -38,6 +41,7 @@ uintptr_t make_q_mlp
     QMatrix* qm_down = reinterpret_cast<QMatrix*> (q_down);
 
     TORCH_CHECK_DTYPE_OPT(layernorm, kHalf);
+    TORCH_CHECK_DTYPE_OPT(post_layernorm, kHalf);
     if (qm_gate && !layernorm.is_meta()) TORCH_CHECK(qm_gate->height == layernorm.size(0), "gate_proj is wrong shape")
     if (!layernorm.is_meta()) TORCH_CHECK(qm_up->height == layernorm.size(0), "up_proj is wrong shape")
 
@@ -56,7 +60,10 @@ uintptr_t make_q_mlp
         (half*) temp_dq.data_ptr(),
         max_rows,
         act_gelu,
-        has_residual
+        has_residual,
+        (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
+        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
+        residual_fp32
     );
 
     return reinterpret_cast<uintptr_t> (mlp);
@@ -80,7 +87,8 @@ void q_mlp_forward_
 )
 {
     QMLP* mlp = reinterpret_cast<QMLP*> (q_mlp);
-    TORCH_CHECK_DTYPE(x, kHalf);
+    if (mlp->residual_fp32) { TORCH_CHECK_DTYPE(x, kFloat); }
+    else                    { TORCH_CHECK_DTYPE(x, kHalf); }
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
 
@@ -93,7 +101,7 @@ void q_mlp_forward_
     mlp->forward_
     (
         at::cuda::getCurrentCUDABlasHandle(),
-        (half*) x.data_ptr(),
+        (void*) x.data_ptr(),
         rows,
         dim,
         loras,

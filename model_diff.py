@@ -14,7 +14,7 @@ import argparse, os, math, time
 import pandas, fastparquet
 import torch
 import torch.nn.functional as F
-from conversion.tokenize import get_tokens
+from exllamav2.conversion.tokenize import get_tokens
 from exllamav2.util import list_live_tensors
 import gc
 
@@ -47,6 +47,8 @@ config[0].prepare()
 config[1].prepare()
 config[0].max_batch_size = 1
 config[1].max_batch_size = 1
+config[0].arch_compat_overrides()
+config[1].arch_compat_overrides()
 
 model = (ExLlamaV2(config[0]), ExLlamaV2(config[1]))
 model[0].load(lazy = True)

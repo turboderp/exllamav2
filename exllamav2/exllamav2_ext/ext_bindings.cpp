@@ -19,6 +19,7 @@
 #include "ext_gemm.h"
 #include "ext_norm.h"
 #include "ext_rope.h"
+#include "ext_element.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
@@ -113,4 +114,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     // rope
 
     m.def("rope_", &rope_, "rope_");
+
+    // element
+
+    m.def("softcap_", &softcap_, "softcap_");
 }

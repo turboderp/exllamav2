@@ -100,6 +100,10 @@ class ExLlamaV2Config:
     scale_depth: float
     scale_emb: float
     use_qk_norm: bool
+    query_pre_attn_scalar: float | None
+    final_logit_softcapping: float | None
+    attn_logit_softcapping: float | None
+    sliding_window: int
 
     checkpoint_fused_mlp: bool
 
@@ -162,9 +166,9 @@ class ExLlamaV2Config:
 
         # Load generation_config.json
 
-        self.generation_config_path = os.path.join(self.model_dir, "generation_config.json")
-        if os.path.exists(self.generation_config_path):
-            with open(self.generation_config_path, encoding = "utf8") as f:
+        generation_config_path = os.path.join(self.model_dir, "generation_config.json")
+        if os.path.exists(generation_config_path):
+            with open(generation_config_path, encoding = "utf8") as f:
                 gen_config = json.load(f)
                 self.generation_config = {}
                 try:
@@ -175,8 +179,7 @@ class ExLlamaV2Config:
                         self.generation_config['eos_token_id'] = [eos_token_id_as_int]
                     else:
                         self.generation_config['eos_token_id'] = None
-                    
-        
+
         # Model architecture
 
         assert len(read_config["architectures"]) == 1, "Multiple architectures defined in config.json"
@@ -218,6 +221,8 @@ class ExLlamaV2Config:
         self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
         self.use_qk_norm = read(read_config, bool, ["use_qk_norm"], False)
 
+        self.query_pre_attn_scalar = read(read_config, float, "query_pre_attn_scalar", None)
+
         # MLP params
 
         if self.arch.default_inner_dim_mult is not None:
@@ -243,6 +248,9 @@ class ExLlamaV2Config:
         else:
             self.scale_depth = scale_depth / math.sqrt(self.num_hidden_layers)
 
+        self.attn_logit_softcapping = read(read_config, float, "attn_logit_softcapping", None)
+        self.final_logit_softcapping = read(read_config, float, "final_logit_softcapping", None)
+
         # Positional embeddings
 
         self.rotary_embedding_base = read(read_config, float, ["rope_theta", "attn_config->rope_theta"], 10000.0)
@@ -253,6 +261,8 @@ class ExLlamaV2Config:
                                                   "max_seq_len",
                                                   "n_positions"], 2048)
         self.original_max_seq_len = self.max_seq_len
+
+        self.sliding_window = read(read_config, int, ["sliding_window", "sliding_window_size"], 0)
 
         rs = read(read_config, dict, "rope_scaling", None)
         if rs:
@@ -333,3 +343,53 @@ class ExLlamaV2Config:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
         x = 0
+
+
+    def arch_compat_overrides(self, quiet: bool = False, warn_only = False):
+
+        from exllamav2.attn import (
+            has_flash_attn,
+            has_flash_attn_with_window,
+            has_flash_attn_with_softcap,
+            has_xformers
+        )
+
+        warnings = []
+
+        if self.arch.eager_attn_only:
+            warnings.append(" !! Warning: Architecture currently supports only eager attention")
+            if not warn_only:
+                warnings.append(" !! Warning: flash-attn, xformers and SDPA are disabled")
+                self.no_flash_attn = True
+                self.no_xformers = True
+                self.no_sdpa = True
+            else:
+                warnings.append(" !! Warning: flash-attn, xformers and SDPA should be disabled for correct inference")
+
+        if has_flash_attn and not self.no_flash_attn:
+            disable = False
+            if self.attn_logit_softcapping and not has_flash_attn_with_softcap:
+                warnings.append(" !! Warning: model requires softcap, not supported in installed version of flash-attn")
+                disable = True
+            if (self.arch.swa or self.arch.alternating_swa) and not has_flash_attn_with_window:
+                warnings.append(" !! Warning: model requires SWA, not supported in installed version of flash-attn")
+                disable = True
+            if disable and not warn_only:
+                warnings.append(" !! Warning: disabling flash-attn")
+                self.no_flash_attn = True
+
+        if has_xformers and not self.no_xformers:
+            disable = False
+            if self.attn_logit_softcapping:
+                warnings.append(" !! Warning: model requires softcap, not supported in xformers")
+                disable = True
+            if self.arch.swa or self.arch.alternating_swa:
+                warnings.append(" !! Warning: model requires SWA, not supported in xformers")
+                disable = True
+            if disable and not warn_only:
+                warnings.append(" !! Warning: disabling xformers")
+                self.no_xformers = True
+
+        if not quiet:
+            for w in warnings:
+                print(w)

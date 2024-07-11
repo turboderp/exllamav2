@@ -21,6 +21,7 @@ import os, time, math, json
 import torch.nn.functional as F
 import gc
 from exllamav2.conversion.bot_status import print_stage
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 def list_live_tensors():
 
@@ -469,6 +470,10 @@ def quant(job, save_fn, model):
                 x = hidden_states[i].to("cuda:0")
                 output = module.forward(x, cache, attn_params)
                 if module.padding > 0: output = output[:, :, :-module.padding]
+
+                if model.config.final_logit_softcapping:
+                    output = output.contiguous()
+                    ext_c.softcap_(output, model.config.final_logit_softcapping)
 
                 logits = output[:, :-1, :]
                 logits = logits.float() + 1e-10

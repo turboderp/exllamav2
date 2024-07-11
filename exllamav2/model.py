@@ -53,6 +53,7 @@ from typing import Callable
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
 from exllamav2.util import get_basic_progress
 # from line_profiler import profile
+from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
 
 def _torch_device(idx):
@@ -226,7 +227,13 @@ class ExLlamaV2:
                 pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx)
                 self.modules += [pd]
             else:
-                attn = ExLlamaV2Attention(self, layer_key, layer_idx)
+                if self.config.arch.alternating_swa:
+                    swa = self.config.sliding_window if not bool(layer_idx % 2) else 0
+                elif self.config.arch.swa:
+                    swa = self.config.sliding_window
+                else:
+                    swa = 0
+                attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
                 if self.config.arch.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)
                 else: mlp = ExLlamaV2MLP(self, layer_key, layer_idx)
                 self.modules += [attn, mlp]
@@ -417,7 +424,7 @@ class ExLlamaV2:
     def load_autosplit(
         self,
         cache: ExLlamaV2CacheBase,
-        reserve_vram: int | None = None,
+        reserve_vram: int | list[int] | None = None,
         last_id_only: bool = False,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
@@ -443,7 +450,7 @@ class ExLlamaV2:
     def load_autosplit_gen(
         self,
         cache: ExLlamaV2CacheBase,
-        reserve_vram: int | None = None,
+        reserve_vram: int | list[int] | None = None,
         last_id_only: bool = False,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None
@@ -466,6 +473,8 @@ class ExLlamaV2:
 
             if reserve_vram is None:
                 reserve_vram = [192 * 1024**2] + [64 * 1024**2] * (num_devices - 1)
+            elif isinstance(reserve_vram, int):
+                reserve_vram = [reserve_vram] * num_devices
 
             reserved_vram_tensors = []
             minimum_reserve_tensor = None
@@ -672,6 +681,7 @@ class ExLlamaV2:
                 return_last_state: bool = False,
                 position_offsets: torch.Tensor | None = None,
                 abort_event: threading.Event | None = None,
+                cpu_logits: bool = False,
                 **kwargs) \
         -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         """
@@ -707,6 +717,11 @@ class ExLlamaV2:
 
         :param abort_event:
             Optional event that, if set, will abort the forward pass. Function will return None if aborted.
+
+        :param cpu_logits:
+            If True, logits are collected and returned in system RAM. This is somewhat slower but can prevent
+            out-of-memory errors when computing logits for all positions in a long sequence, such as during a
+            perplexity test.
 
         :return:
             FP16 logits tensor, shape (batch_size, q_len, vocab_size)
@@ -810,6 +825,8 @@ class ExLlamaV2:
             if abort_event and abort_event.is_set(): return
 
             if not _preprocess_only:
+                if cpu_logits:
+                    r["logits"] = r["logits"].cpu()
                 result = r["logits"] if result is None else torch.cat((result, r["logits"]), dim = 1)
 
             chunk_begin = chunk_end
@@ -914,6 +931,9 @@ class ExLlamaV2:
 
         # if x is not None and self.config.logit_scale != 1:
         #     x.mul_(self.config.logit_scale)
+
+        if x is not None and self.config.final_logit_softcapping:
+            ext_c.softcap_(x, self.config.final_logit_softcapping)
 
         # Set padding logits to -inf
 

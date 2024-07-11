@@ -53,6 +53,13 @@ class ExLlamaV2Lora:
         self.target_modules = {}
         self.bias_ignored = False
         self.lora_scaling = lora_scaling
+        self.embed_tokens = None
+        self.lm_head = None
+
+        # Compatibility check
+
+        assert not self.model.config.arch.residual_stream_fp32, \
+            "LoRAs not (yet) supported for models with FP32 residual stream"
 
         # Grab relevant items from LoRA config
 
@@ -77,6 +84,29 @@ class ExLlamaV2Lora:
             tensor = f[key]
 
             # Find target
+            if key.endswith(f'{self.config.arch.lm_head_key}.weight'):
+                if tensor.dtype == torch.bfloat16:
+                    tensor = tensor.to(torch.float16)
+                elif tensor.dtype == torch.float32:
+                    tensor = tensor.to(torch.float16)
+                target_module = self.model.modules_dict["lm_head"]
+                tensor = safe_move_tensor(tensor, target_module.device())
+                self.lm_head = torch.nn.Linear(target_module.in_features, tensor.shape[0], bias = False, device = "meta")
+                self.lm_head.weight = torch.nn.Parameter(tensor, requires_grad=False)
+                continue
+            elif key.endswith(f'embed_tokens.weight'):
+                if tensor.dtype == torch.bfloat16:
+                    tensor = tensor.to(torch.float16)
+                elif tensor.dtype == torch.float32:
+                    tensor = tensor.to(torch.float16)
+                target_module = self.model.modules_dict["model.embed_tokens"]
+                tensor = safe_move_tensor(tensor, target_module.device())
+                self.embed_tokens = torch.nn.Embedding(tensor.shape[0], self.config.hidden_size, self.config.pad_token_id, device = "meta")
+                weight = torch.nn.Parameter(tensor, requires_grad=False)
+                if self.model.config.scale_emb != 1:
+                    weight *= self.model.config.scale_emb
+                self.embed_tokens.weight = weight
+                continue
 
             i = key.find("model.layers.")
             if i == -1: raise ValueError(f" ## Error: unsupported layer in {self.lora_path}: {key}")

@@ -8,6 +8,7 @@ from util import format_prompt, get_stop_conditions
 
 model_dir = "/mnt/str/models/llama3-8b-instruct-exl2/4.0bpw"
 config = ExLlamaV2Config(model_dir)
+config.arch_compat_overrides()
 model = ExLlamaV2(config)
 cache = ExLlamaV2Cache(model, max_seq_len = 8192, lazy = True)
 model.load_autosplit(cache, progress = True)

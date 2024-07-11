@@ -15,6 +15,8 @@ from exllamav2.architecture import RopeStyle
 import math
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 import torch.nn.functional as F
+import inspect
+import os
 # from line_profiler import profile
 
 from typing import TYPE_CHECKING
@@ -25,44 +27,57 @@ if TYPE_CHECKING:
 
 has_flash_attn = False
 has_flash_attn_with_paged = False
+has_flash_attn_with_window = False
+has_flash_attn_with_softcap = False
+if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
 
-try:
-    import flash_attn
-    flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".") if t.isdigit()]
-    is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
+    try:
+        import flash_attn
+        flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".") if t.isdigit()]
+        is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
 
-    if not is_ampere_or_newer_gpu:
-        print(" ## Warning: Flash Attention is installed but unsupported GPUs were detected.")
+        if not is_ampere_or_newer_gpu:
+            print(" ## Warning: Flash Attention is installed but unsupported GPUs were detected.")
 
-    if [2, 2, 1] <= flash_attn_ver < [2, 5, 7]:
-        from flash_attn import flash_attn_func
-        has_flash_attn = True
+        if [2, 2, 1] <= flash_attn_ver < [2, 5, 7]:
+            from flash_attn import flash_attn_func
+            has_flash_attn = True
 
-    if [2, 5, 7] <= flash_attn_ver:
-        from flash_attn import flash_attn_func, flash_attn_with_kvcache
-        import flash_attn_2_cuda as flash_attn_cuda
+        if [2, 5, 7] <= flash_attn_ver:
+            from flash_attn import flash_attn_func, flash_attn_with_kvcache
+            # import flash_attn_2_cuda as flash_attn_cuda
 
-        has_flash_attn = True
-        has_flash_attn_with_paged = True
+            has_flash_attn = True
+            has_flash_attn_with_paged = True
 
-except ModuleNotFoundError:
-    pass
+        signature = list(inspect.signature(flash_attn_func).parameters)
+        has_flash_attn_with_window = "window_size" in signature
+        has_flash_attn_with_softcap = "softcap" in signature
+
+    except ModuleNotFoundError:
+        pass
+
 
 has_xformers = False
-try:
-    import xformers.ops as xops
-    # LowerTriangularFromBottomRightMask was added in xformers version 2.4
-    from xformers.ops.fmha.attn_bias import LowerTriangularFromBottomRightMask
-    has_xformers = True
-except ModuleNotFoundError:
-    pass
+if 'EXLLAMA_NO_XFORMERS' not in os.environ:
+
+    try:
+        import xformers.ops as xops
+        # LowerTriangularFromBottomRightMask was added in xformers version 2.4
+        from xformers.ops.fmha.attn_bias import LowerTriangularFromBottomRightMask
+        has_xformers = True
+    except ModuleNotFoundError:
+        pass
+
 
 has_lower_right_sdpa = False
-try:
-    from torch.nn.attention.bias import causal_lower_right
-    has_lower_right_sdpa = True
-except ImportError:
-    pass
+if 'EXLLAMA_NO_SDPA' not in os.environ:
+    try:
+        from torch.nn.attention.bias import causal_lower_right
+        has_lower_right_sdpa = True
+    except ImportError:
+        pass
+
 
 def assert_paged_attn():
     global has_flash_attn_with_paged
@@ -75,7 +90,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     name: str = "Attention"
 
     layer_idx: int
-    input_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    pre_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
+    post_layernorm: ExLlamaV2RMSNorm | ExLlamaV2LayerNorm | None
     q_proj: ExLlamaV2Linear | None
     k_proj: ExLlamaV2Linear | None
     v_proj: ExLlamaV2Linear | None
@@ -97,6 +113,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     has_norm: bool
     has_residual: bool
+    scaling: float
+    sliding_window: int
 
 
     class Params:
@@ -164,9 +182,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.past_lens_tensor = safe_move_tensor(self.past_lens_tensor, device)
             return self.past_lens_tensor
 
-        def get_attn_mask(self, device) -> torch.Tensor | None:
+        def get_attn_mask(self, device, force: bool = False) -> torch.Tensor | None:
             if self.attn_mask is None:
-                self.attn_mask = self.build_attn_mask(device)
+                self.attn_mask = self.build_attn_mask(device, force)
             elif self.attn_mask.device != device:
                 self.attn_mask = safe_move_tensor(self.attn_mask, device)
             return self.attn_mask
@@ -189,9 +207,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 attn_mask[:, :, :, :min_mask_width] = torch.minimum(attn_mask[:, :, :, :min_mask_width], input_mask_part)
             return attn_mask
 
-        def build_attn_mask(self, device) -> torch.Tensor | None:
+        def build_attn_mask(self, device, force: bool = False) -> torch.Tensor | None:
             assert not self.multi_cache, "Building single mask for multiple caches"
-            if self.input_mask is None and self.seq_len == 1: return None
+            if self.input_mask is None and self.seq_len == 1 and not force: return None
             return self.build_single_attn_mask(self.batch_size, self.seq_len, self.past_len, device, self.input_mask)
 
         def build_attn_masks(self, device) -> torch.Tensor | None:
@@ -274,7 +292,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                  key: str,
                  layer_idx: int,
                  has_norm: bool = True,
-                 has_residual: bool = True):
+                 has_residual: bool = True,
+                 sliding_window: int = 0):
 
         super().__init__(model, key)
 
@@ -291,11 +310,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if self.has_norm:
             if cfg.arch.norm == "layernorm":
-                self.input_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1)
+                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1)
+                self.post_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1_post) if cfg.arch.norm_key_1_post else None
             elif cfg.arch.norm == "rmsnorm":
-                self.input_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1)
+                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1)
+                self.post_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1_post) if cfg.arch.norm_key_1_post else None
         else:
-            self.input_layernorm = None
+            self.pre_layernorm = None
+            self.post_layernorm = None
 
         f_a = 0
         f_b = cfg.num_attention_heads * cfg.head_dim
@@ -303,9 +325,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         f_d = f_c + cfg.num_key_value_heads * cfg.head_dim
         f_key = (key + ".self_attn." + cfg.arch.fused_qkv_key) if cfg.arch.fused_qkv_key else None
 
-        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b)
-        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c)
-        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d)
+        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = cfg.arch.fused_qkv_altpack)
+        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = cfg.arch.fused_qkv_altpack)
+        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = cfg.arch.fused_qkv_altpack)
         self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, cfg.arch.attention_bias_o, prescale = cfg.scale_depth)
 
         if cfg.use_qk_norm:
@@ -319,18 +341,19 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                            self.k_proj,
                            self.v_proj,
                            self.o_proj]
-        if self.has_norm:
-            self.submodules += [self.input_layernorm]
+        if self.pre_layernorm:
+            self.submodules += [self.pre_layernorm]
+        if self.post_layernorm:
+            self.submodules += [self.post_layernorm]
         if cfg.use_qk_norm:
-            self.submodules += [self.q_norm,
-                                self.k_norm]
+            self.submodules += [self.q_norm, self.k_norm]
 
-        # if cfg.arch.scale_attn_weights:
-        #     self.unscale_factor = self.layer_idx + 1
-        #     self.scale_factor = 1 / self.unscale_factor
-        # else:
-        self.unscale_factor = 1
-        self.scale_factor = 1
+        if cfg.query_pre_attn_scalar:
+            self.scaling = cfg.query_pre_attn_scalar ** (-0.5)
+        else:
+            self.scaling = 1 / math.sqrt(cfg.head_dim)
+
+        self.sliding_window = sliding_window
 
 
     def numel(self) -> int:
@@ -340,7 +363,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.v_proj.numel() + \
                 self.o_proj.numel()
 
-        if self.input_layernorm is not None: numel += self.input_layernorm.numel()
+        if self.pre_layernorm is not None: numel += self.pre_layernorm.numel()
+        if self.post_layernorm is not None: numel += self.post_layernorm.numel()
         if self.q_norm is not None: numel += self.q_norm.numel()
         if self.k_norm is not None: numel += self.k_norm.numel()
 
@@ -352,7 +376,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         cfg = self.model.config
 
-        if self.input_layernorm is not None: self.input_layernorm.load()
+        if self.pre_layernorm is not None: self.pre_layernorm.load()
+        if self.post_layernorm is not None: self.post_layernorm.load()
         self.q_proj.load()
         self.k_proj.load()
         self.v_proj.load()
@@ -374,15 +399,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
 
             if self.has_norm:
-                norm_weight = self.input_layernorm.weight if self.input_layernorm.weight is not None else none_tensor
-                norm_bias = self.input_layernorm.bias if self.input_layernorm.bias is not None else none_tensor
-                is_rms = isinstance(self.input_layernorm, ExLlamaV2RMSNorm)
-                eps = self.input_layernorm.variance_epsilon
+                norm_weight = self.pre_layernorm.weight if self.pre_layernorm.weight is not None else none_tensor
+                norm_bias = self.pre_layernorm.bias if self.pre_layernorm.bias is not None else none_tensor
+                is_rms = isinstance(self.pre_layernorm, ExLlamaV2RMSNorm)
+                eps = self.pre_layernorm.variance_epsilon
             else:
                 norm_weight = none_tensor
                 norm_bias = none_tensor
                 is_rms = False
                 eps = 0
+
+            if self.post_layernorm is not None:
+                post_norm_weight = self.post_layernorm.weight if self.post_layernorm.weight is not None else none_tensor
+                post_norm_bias = self.post_layernorm.bias if self.post_layernorm.bias is not None else none_tensor
+            else:
+                post_norm_weight = none_tensor
+                post_norm_bias = none_tensor
 
             if self.q_norm is None:
                 q_norm = none_tensor
@@ -417,7 +449,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 self.has_residual,
                 cfg.arch.rope_style.value,
                 q_norm,
-                k_norm
+                k_norm,
+                post_norm_weight,
+                post_norm_bias,
+                cfg.arch.residual_stream_fp32
             )
 
 
@@ -426,7 +461,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             ext_c.free_q_attn(self.q_handle)
             self.q_handle = None
 
-        if self.input_layernorm is not None: self.input_layernorm.unload()
+        if self.pre_layernorm is not None: self.pre_layernorm.unload()
+        if self.post_layernorm is not None: self.post_layernorm.unload()
         if self.q_proj is not None: self.q_proj.unload()
         if self.k_proj is not None: self.k_proj.unload()
         if self.v_proj is not None: self.v_proj.unload()
@@ -445,8 +481,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
              self.k_proj.weight_footprint() + \
              self.v_proj.weight_footprint() + \
              self.o_proj.weight_footprint()
-        if self.input_layernorm is not None:
-            fp += self.input_layernorm.weight_footprint()
+        if self.pre_layernorm is not None:
+            fp += self.pre_layernorm.weight_footprint()
+        if self.post_layernorm is not None:
+            fp += self.post_layernorm.weight_footprint()
         if self.q_norm is not None:
             fp += self.q_norm.weight_footprint()
         if self.k_norm is not None:
@@ -475,7 +513,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def temp_state_size(self):
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * max(cfg.num_attention_heads * cfg.head_dim, cfg.hidden_size) * 2 + 128
 
 
     def temp_q_size(self):
@@ -530,7 +568,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def set_device_idx(self, idx):
         super().set_device_idx(idx)
 
-        if self.input_layernorm is not None: self.input_layernorm.set_device_idx(idx)
+        if self.pre_layernorm is not None: self.pre_layernorm.set_device_idx(idx)
+        if self.post_layernorm is not None: self.post_layernorm.set_device_idx(idx)
         self.q_proj.set_device_idx(idx)
         self.k_proj.set_device_idx(idx)
         self.v_proj.set_device_idx(idx)
@@ -614,7 +653,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
         else:
             residual = hidden_states
-            hidden_states = self.input_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+            hidden_states = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
             q = self.q_proj.forward(hidden_states, loras = loras)
             k = self.k_proj.forward(hidden_states, loras = loras)
             v = self.v_proj.forward(hidden_states, loras = loras)
@@ -652,30 +691,31 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cache.q_block == 1:
             cache.get_kv_state(self.layer_idx, batch_size, 0, attn_params.max_cache_seqlen, page_size, cache_seqlens, block_table)
 
-        # attn_output = flash_attn_with_kvcache(
-        #     q = q,
-        #     k = k,
-        #     v = v,
-        #     k_cache = k_cache,
-        #     v_cache = v_cache,
-        #     cache_seqlens = cache_seqlens_a,
-        #     block_table = block_table,
-        #     causal = True
-        # )
-        attn_output, _ = flash_attn_cuda.fwd_kvcache(
-            q, k_cache, v_cache, k, v,
-            cache_seqlens_a,
-            None, None,
-            None,
-            block_table,
-            None,
-            None,
-            1 / math.sqrt(cfg.head_dim),
-            True,
-            -1, -1,
-            True,
-            0,
+        flash_kwargs = {}
+        if self.sliding_window:
+            # assert has_flash_attn_with_window, \
+            #     "Installed version of flash-attn does not support sliding window"
+            if has_flash_attn_with_window:
+                flash_kwargs["window_size"] = (self.sliding_window, self.sliding_window)
+        if cfg.attn_logit_softcapping:
+            # assert has_flash_attn_with_softcap, \
+            #     "Installed version of flash-attn does not support softcapping"
+            if has_flash_attn_with_softcap:
+                flash_kwargs["softcap"] = cfg.attn_logit_softcapping
+
+        attn_output = flash_attn_with_kvcache(
+            q = q,
+            k = k,
+            v = v,
+            k_cache = k_cache,
+            v_cache = v_cache,
+            cache_seqlens = cache_seqlens_a,
+            block_table = block_table,
+            causal = True,
+            softmax_scale = self.scaling,
+            **flash_kwargs
         )
+
         attn_output = attn_output.view((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
         cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, page_size, cache_seqlens, block_table)
@@ -694,6 +734,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
         else:
             hidden_states = self.o_proj.forward(attn_output, loras = loras)
+            if self.post_layernorm:
+                hidden_states = self.post_layernorm.forward(hidden_states)
             if self.has_residual:
                 hidden_states += residual
 
@@ -702,32 +744,50 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
-        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa:
+        q_states = q_states.transpose(1, 2)
+        k_states = k_states.transpose(1, 2)
+        v_states = v_states.transpose(1, 2)
 
-            q_states = q_states.transpose(1, 2)
-            k_states = k_states.transpose(1, 2)
-            v_states = v_states.transpose(1, 2)
+        # SDPA
+
+        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa and not cfg.attn_logit_softcapping:
 
             k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
             v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
 
+            if self.sliding_window and k_states.shape[2] >= self.sliding_window:
+                k_states = k_states[:, :, -self.sliding_window:, :]
+                v_states = v_states[:, :, -self.sliding_window:, :]
+
             attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
-            attn_output = F.scaled_dot_product_attention(q_states, k_states, v_states, attn_mask_lr)
+            attn_output = F.scaled_dot_product_attention(
+                q_states,
+                k_states,
+                v_states,
+                attn_mask_lr,
+                scale = self.scaling
+            )
+
+        # Matmul attn
 
         else:
-
-            q_states = q_states.transpose(1, 2)
-            k_states = k_states.transpose(1, 2)
-            v_states = v_states.transpose(1, 2)
 
             k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
             k_states = k_states.transpose(-1, -2)
 
             attn_weights = torch.matmul(q_states, k_states)
 
-            attn_weights *= 1 / math.sqrt(cfg.head_dim)
+            attn_weights *= self.scaling
             attn_mask = attn_params.get_attn_mask(attn_weights.device)
-            if attn_mask is not None: attn_weights = attn_weights + attn_mask
+
+            if cfg.attn_logit_softcapping:
+                ext_c.softcap_(attn_weights, cfg.attn_logit_softcapping)
+            if attn_mask is not None:
+                attn_weights = attn_weights + attn_mask
+            if self.sliding_window and k_states.shape[-1] >= self.sliding_window:
+                attn_weights = attn_weights[:, :, :, -self.sliding_window:]
+                v_states = v_states[:, :, -self.sliding_window:, :]
+
             attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
             v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
@@ -740,17 +800,37 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_flash(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
+        flash_kwargs = {}
+        if self.sliding_window:
+            # assert has_flash_attn_with_window, \
+            #     "Installed version of flash-attn does not support sliding window"
+            if has_flash_attn_with_window:
+                flash_kwargs["window_size"] = (self.sliding_window, self.sliding_window)
+        if cfg.attn_logit_softcapping:
+            # assert has_flash_attn_with_softcap, \
+            #     "Installed version of flash-attn does not support softcapping"
+            if has_flash_attn_with_softcap:
+                flash_kwargs["softcap"] = cfg.attn_logit_softcapping
+
         attn_output = flash_attn_func(
             q_states,
             k_states,
             v_states,
-            causal = True
+            causal = True,
+            softmax_scale = self.scaling,
+            **flash_kwargs
         )
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
         return attn_output
 
 
     def _attn_xformers(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+
+        # assert not self.sliding_window, \
+        #     "Sliding window not currently supported for xformers"
+
+        # assert not cfg.attn_logit_softcapping, \
+        #     "Softcap not yet supported for xformers"
 
         # xformers memory_efficient_attention, could be beneficial if your device's architecture is less than <sm_80
         # xformer does not expand the kv automatically, we need to do it manually. The efficiency between
@@ -770,7 +850,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             q_states,
             k_states,
             v_states,
-            attn_bias = LowerTriangularFromBottomRightMask()
+            attn_bias = LowerTriangularFromBottomRightMask(),
+            scale = self.scaling
         )
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
 
@@ -914,6 +995,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_lora_temp
         )
 
+        if cfg.arch.clamp_hidden_states:
+            hidden_states.clamp_(-65504, 65504)
+
         return hidden_states
 
 
@@ -942,7 +1026,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Project q, k, v
 
         residual = hidden_states
-        post_norm = self.input_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+        post_norm = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
 
         query_states = self.q_proj.forward(post_norm, loras = loras)
         key_states = self.k_proj.forward(post_norm, loras = loras)
@@ -1013,9 +1097,19 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         attn_proj = self.o_proj.forward(attn_output, loras = loras)
 
+        # Post layernorm
+
+        if self.post_layernorm:
+            attn_proj = self.post_layernorm.forward(attn_proj, output_fp32 = cfg.arch.residual_stream_fp32)
+
         # Add residual connection
 
         hidden_states = (attn_proj + residual) if self.has_residual else attn_proj
+
+        if cfg.arch.residual_stream_fp32:
+            hidden_states = hidden_states.float()
+        elif cfg.arch.clamp_hidden_states:
+            hidden_states.clamp_(-65504, 65504)
 
         if intermediates:
             return {"post_norm": post_norm,

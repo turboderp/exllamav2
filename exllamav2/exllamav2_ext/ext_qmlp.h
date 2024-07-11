@@ -14,7 +14,10 @@ uintptr_t make_q_mlp
     torch::Tensor temp_dq,
     int max_rows,
     bool act_gelu,
-    bool has_residual
+    bool has_residual,
+    torch::Tensor post_layernorm,
+    torch::Tensor post_layernorm_bias,
+    bool residual_fp32
 );
 
 void free_q_mlp

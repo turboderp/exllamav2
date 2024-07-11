@@ -15,6 +15,8 @@ public:
 
     half* layernorm;
     half* layernorm_bias;
+    half* post_layernorm;
+    half* post_layernorm_bias;
     bool layernorm_is_rms;
     float norm_epsilon;
 
@@ -36,11 +38,12 @@ public:
 
     bool act_gelu;
     bool has_residual;
+    bool residual_fp32;
 
     QMLP
     (
         half* _layernorm,
-        half* _layermorm_bias,
+        half* _layernorm_bias,
         bool _layernorm_is_rms,
         float _norm_epsilon,
         QMatrix* _gate,
@@ -52,7 +55,10 @@ public:
         half* _temp_dq,
         int _max_rows,
         bool _act_gelu,
-        bool _has_residual
+        bool _has_residual,
+        half* _post_layernorm,
+        half* _post_layernorm_bias,
+        bool _residual_fp32
     );
 
     ~QMLP();
@@ -60,7 +66,7 @@ public:
     void forward_
     (
         cublasHandle_t cublas_handle,
-        half* x,
+        void* x,
         int rows,
         int columns,
         const std::vector<uintptr_t>& loras,
@@ -108,7 +114,7 @@ public:
     QMoEMLP
     (
         half* _layernorm,
-        half* _layermorm_bias,
+        half* _layernorm_bias,
         bool _layernorm_is_rms,
         float _norm_epsilon,
         half* _gate,

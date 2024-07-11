@@ -183,8 +183,8 @@ if not os.path.exists(out_tensor_dir):
 
 config = ExLlamaV2Config()
 config.model_dir = job['in_dir']
-config.qkv_embed = False
 config.prepare()
+config.arch_compat_overrides()
 
 # Tokenizer
 

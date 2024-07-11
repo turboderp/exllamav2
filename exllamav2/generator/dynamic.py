@@ -6,6 +6,7 @@ from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.cache import ExLlamaV2CacheBase, ExLlamaV2Cache_8bit
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.util import cuda_sync_active
 from concurrent.futures import ThreadPoolExecutor
 
 from exllamav2.compat import pairwise
@@ -238,10 +239,10 @@ class ExLlamaV2DynamicGenerator:
         model: ExLlamaV2,
         cache: ExLlamaV2CacheBase,
         tokenizer: ExLlamaV2Tokenizer,
-        max_batch_size: int = 16,
+        max_batch_size: int = None,
         max_seq_len: int | None = None,
         max_chunk_size: int | None = None,
-        max_q_size: int = 16,
+        max_q_size: int = 8,
         draft_model: ExLlamaV2 | None = None,
         draft_cache: ExLlamaV2CacheBase | None = None,
         num_draft_tokens: int = 4,
@@ -267,7 +268,7 @@ class ExLlamaV2DynamicGenerator:
 
         :param max_batch_size:
             The maximum number of sequences to process in parallel. The generator will also limit this
-            dynamically considering the available cache space.
+            dynamically considering the available cache space. Specify None to calculate automatically
 
         :param max_seq_len:
             Maximum length of each individual sequence. Defaults to the model's max_seq_len.
@@ -324,7 +325,13 @@ class ExLlamaV2DynamicGenerator:
 
         self.draft_model = draft_model
         self.draft_cache = draft_cache
-        self.num_draft_tokens = num_draft_tokens if (draft_model or use_ngram_draft) else 0
+
+        if draft_model or use_ngram_draft:
+            assert num_draft_tokens <= max_q_size, \
+                "num_draft_tokens cannot be larger than max_q_size."
+            self.num_draft_tokens = num_draft_tokens
+        else:
+            self.num_draft_tokens = 0
 
         if draft_model:
             assert draft_cache is not None, \
@@ -343,12 +350,16 @@ class ExLlamaV2DynamicGenerator:
         assert not isinstance(cache, ExLlamaV2Cache_8bit), \
             "Dynamic generator does not currently work with 8-bit cache. Use either FP16 or Q4."
 
-        model_max_q = cfg.max_batch_size * cfg.max_input_len
-        req_max_q = max_q_size * max_batch_size
-        assert req_max_q <= model_max_q, \
-            f"Model has max_batch_size * max_input_len = {cfg.max_batch_size} * {cfg.max_input_len} tokens, " + \
-            f"generator requires max_batch_size * max_q_size = {max_batch_size} * {max_q_size} tokens."
-        self.max_batch_size = max_batch_size
+        if not max_batch_size:
+            max_batch_size = cfg.max_input_len // max_q_size
+            self.max_batch_size = max_batch_size
+        else:
+            model_max_q = cfg.max_batch_size * cfg.max_input_len
+            req_max_q = max_q_size * max_batch_size
+            assert req_max_q <= model_max_q, \
+                f"Model has max_batch_size * max_input_len = {cfg.max_batch_size} * {cfg.max_input_len} tokens, " + \
+                f"generator requires max_batch_size * max_q_size = {max_batch_size} * {max_q_size} tokens."
+            self.max_batch_size = max_batch_size
 
         if max_seq_len is not None:
             assert max_seq_len <= model.config.max_seq_len, \
@@ -1013,7 +1024,7 @@ class ExLlamaV2DynamicGenerator:
         for job in self.active_jobs:
             if not job.is_prefill_done(): continue
             if job.time_first_token is None:
-                torch.cuda.synchronize()
+                cuda_sync_active()
                 job.time_first_token = time.time()
             job_ids = job.get_input_ids_list()
             input_ids_list += job_ids
@@ -1091,7 +1102,7 @@ class ExLlamaV2DynamicGenerator:
             logit_mapping.append(len(input_ids_list))
             if not job.is_prefill_done(): continue
             if job.time_first_token is None:
-                torch.cuda.synchronize()
+                cuda_sync_active()
                 job.time_first_token = time.time()
             if draft_tokens is None:
                 job_ids = job.get_input_ids_list(add_to_cache = True)
@@ -1921,7 +1932,7 @@ class ExLlamaV2DynamicJob:
             self.held_k_tokens.append(next_k_tokens)
             self.held_k_probs.append(next_k_probs)
         if self.return_logits:
-            self.held_logits.append(logits)
+            self.held_logits.append(logits[:1, :, :])
 
         # Stop if we reach max_new_tokens
 

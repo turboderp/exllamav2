@@ -159,6 +159,7 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
     total_numel += module.v_proj.numel()
     total_numel += module.o_proj.numel()
 
+    max_accuracy = 0.0
     (q_, k_, v_, o_) = (-1, -1, -1, -1)
     for (q, k, v, o) in qmaps:
 
@@ -177,6 +178,8 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
         accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
         print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
 
+        max_accuracy = max(accuracy, max_accuracy)
+
         torch.cuda.empty_cache()
 
         r = { "accuracy": accuracy,
@@ -186,6 +189,10 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
               "v_proj": qjobs[2][v].get_dict(),
               "o_proj": qjobs[3][o].get_dict() }
         results.append(r)
+
+    if max_accuracy < 0.1:
+        print(" ## Measurement/inference error (1)")
+        os._exit(1)
 
     for x in ["k_proj", "v_proj", "o_proj"] + (["q_proj"] if not keep_q else []):
         if x in quantizers:
@@ -216,6 +223,7 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_pa
     total_numel += module.up_proj.numel()
     total_numel += module.down_proj.numel()
 
+    max_accuracy = 0.0
     if has_gate:
 
         (g_, u_, d_) = (-1, -1, -1)
@@ -233,6 +241,8 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_pa
 
             accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
             print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
+
+            max_accuracy = max(accuracy, max_accuracy)
 
             torch.cuda.empty_cache()
 
@@ -259,6 +269,8 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_pa
             accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
             print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
 
+            max_accuracy = max(accuracy, max_accuracy)
+
             torch.cuda.empty_cache()
 
             r = { "accuracy": accuracy,
@@ -266,6 +278,10 @@ def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_pa
                   "up_proj": qjobs[1][u].get_dict(),
                   "down_proj": qjobs[2][d].get_dict() }
             results.append(r)
+
+    if max_accuracy < 0.1:
+        print(" ## Measurement/inference error (1)")
+        os._exit(1)
 
     for x in ["up_proj", "down_proj", "gate_proj"]:
         if x in quantizers:
@@ -311,6 +327,7 @@ def measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, att
     total_numel += sum(module.w3[i].numel() for i in range(num_experts))
     total_numel += sum(module.w2[i].numel() for i in range(num_experts))
 
+    max_accuracy = 0.0
     (g_, u_, d_) = (-1, -1, -1)
     for (g, u, d) in qmaps:
 
@@ -328,6 +345,8 @@ def measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, att
         accuracy = test_error(module, hidden_states, target_states, cache, attn_mask)
         print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
 
+        max_accuracy = max(accuracy, max_accuracy)
+
         torch.cuda.empty_cache()
 
         r = { "accuracy": accuracy,
@@ -336,6 +355,10 @@ def measure_moe_mlp(module, hidden_states, target_states, quantizers, cache, att
               "w3": qjobs[1][u].get_dict(),
               "w2": qjobs[2][d].get_dict() }
         results.append(r)
+
+    if max_accuracy < 0.1:
+        print(" ## Measurement/inference error (1)")
+        os._exit(1)
 
     return results
 
@@ -515,8 +538,23 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
         for i in range(len(hidden_states)):
 
             x = hidden_states[i].to("cuda:0")
+            if torch.isnan(x).any():
+                print(" ## Measurement/inference error (2)")
+                os._exit(1)
+            if torch.isinf(x).any():
+                print(" ## Measurement/inference error (3)")
+                os._exit(1)
+
             outputs = module.forward(x, cache, attn_params, intermediates = True)
             target_device = "cuda:0" if i < hidden_state_offload_layers else "cpu"
+
+            for k, v in outputs.items():
+                if torch.isnan(v).any():
+                    print(f" ## Measurement/inference error (2): {k}")
+                    os._exit(1)
+                if torch.isinf(v).any():
+                    print(f" ## Measurement/inference error (3): {k}")
+                    os._exit(1)
 
             # Hessians
 

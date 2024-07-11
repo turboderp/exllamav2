@@ -8,12 +8,15 @@
 
 void rms_norm_cuda
 (
-    const half* x,
+    const void* x,
     const half* w,
-    half* y,
+    void* y,
     const float epsilon,
     const int rows,
-    const int dim
+    const int dim,
+    const bool add_residual = false,
+    const bool input_fp32 = false,
+    const bool output_fp32 = false
 );
 
 #endif

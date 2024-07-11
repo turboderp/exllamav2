@@ -5,7 +5,7 @@ from human_eval.data import write_jsonl, read_problems
 from exllamav2 import model_init
 from exllamav2 import ExLlamaV2Cache, ExLlamaV2Cache_Q4, ExLlamaV2Cache_Q6, ExLlamaV2Cache_Q8
 from exllamav2.generator import ExLlamaV2DynamicGenerator, ExLlamaV2DynamicJob, ExLlamaV2Sampler
-import argparse, contextlib
+import argparse, contextlib, subprocess
 import util
 
 # Args
@@ -20,6 +20,7 @@ parser.add_argument("-cq8", "--cache_q8", action = "store_true", help = "Use Q8 
 parser.add_argument("--max_tokens", type = int, default = 768, help = "Max number of tokens for each completion")
 parser.add_argument("-pf", "--prompt_format", type = str, help = "Instruct format to apply. Default is raw completion (for base models) ")
 parser.add_argument("-v", "--verbose", action = "store_true", help = "Spam completions to console while generating")
+parser.add_argument("-e", "--eval", action = "store_true", help = "Run evaluation script on output file after sampling")
 model_init.add_args(parser)
 args = parser.parse_args()
 
@@ -51,6 +52,13 @@ prompt_formats = {
         "Complete the following Python function:\n\n{{problem}}<|eot_id|>"
         "<|start_header_id|>assistant<|end_header_id|>\n\n"
         "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}    ",
+        "    "
+    ),
+    "gemma": (
+        "<bos><start_of_turn>user\n"
+        "Complete the following Python function:\n\n{{problem}}<|eot_id|>"
+        "<start_of_turn>model\n"
+        "```python\n{{problem}}    ",
         "    "
     )
 }
@@ -191,4 +199,9 @@ with cm as progress:
 
 print(f" -- Saving: {args.output}")
 write_jsonl(args.output, samples)
+
+# Optionally launch eval script
+
+if args.eval:
+    subprocess.run(["evaluate_functional_correctness", args.output])
 

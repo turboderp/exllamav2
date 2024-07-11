@@ -89,6 +89,8 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                 loras = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
+        cfg = self.model.config
+
         # If input IDs contain negative values, assume they are padding tokens from a model with not pad_token_id
         # defined
 
@@ -111,7 +113,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
             # Create combined tensor on the target device
 
             batch_size, seq_len = input_ids.shape
-            hidden_size = self.model.config.hidden_size
+            hidden_size = cfg.hidden_size
             combined_embeddings = torch.empty(batch_size, seq_len, hidden_size,
                                               device = indexed_embeddings.device,
                                               dtype = indexed_embeddings.dtype)
@@ -124,14 +126,19 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                     standard_mask_ = standard_mask[i]
                     input_ids_ = input_ids[i]
                     standard_ids_ = input_ids_[standard_mask_]
-                    standard_embeddings_ = self.embedding(standard_ids_)
+                    if loras is not None and loras[0].embed_tokens is not None:
+                        standard_embeddings_ = loras[0].embed_tokens(standard_ids_)
+                    else:
+                        standard_embeddings_ = self.embedding(standard_ids_)
                     standard_embeddings_ = safe_move_tensor(standard_embeddings_, indexed_embeddings.device)
                     combined_embeddings[i][standard_mask_] = standard_embeddings_
 
             # Normalization
 
-            if self.model.config.arch.normalize_embeddings:
-                combined_embeddings *= self.model.config.hidden_size ** 0.5
+            if cfg.arch.residual_stream_fp32:
+                combined_embeddings = combined_embeddings.float()
+            if cfg.arch.normalize_embeddings:
+                combined_embeddings *= cfg.hidden_size ** 0.5
 
             # Extract indexed embeddings and insert in-place
 
@@ -144,10 +151,15 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         # Call embedding module if no indexed embeddings
 
         else:
-            hidden_states = self.embedding.forward(hidden_states)
+            if loras is not None and loras[0].embed_tokens is not None:
+                hidden_states = loras[0].embed_tokens(hidden_states)
+            else:
+                hidden_states = self.embedding(hidden_states)
 
-            if self.model.config.arch.normalize_embeddings:
-                hidden_states *= self.model.config.hidden_size ** 0.5
+            if cfg.arch.residual_stream_fp32:
+                hidden_states = hidden_states.float()
+            if cfg.arch.normalize_embeddings:
+                hidden_states *= cfg.hidden_size ** 0.5
 
         if intermediates:
             return {"hidden_states": hidden_states}

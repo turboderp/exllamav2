@@ -15,6 +15,7 @@ import random
 import threading
 from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook, ExLlamaV2PostSamplingResult
 from exllamav2.embedding import EMBEDDING_INDEX
+from exllamav2.util import cuda_sync_active
 
 class ExLlamaV2BaseGenerator:
 
@@ -46,7 +47,7 @@ class ExLlamaV2BaseGenerator:
 
         input_ids = torch.zeros((1, 2), dtype = torch.long)
         self.model.forward(input_ids, cache = None, input_mask = None, preprocess_only = True)
-        torch.cuda.synchronize()
+        cuda_sync_active()
 
 
     def full(self):

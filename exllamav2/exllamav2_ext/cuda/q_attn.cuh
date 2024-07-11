@@ -19,6 +19,8 @@ public:
 
     half* layernorm;
     half* layernorm_bias;
+    half* post_layernorm;
+    half* post_layernorm_bias;
     bool layernorm_is_rms;
     float norm_epsilon;
 
@@ -50,12 +52,13 @@ public:
     std::unordered_map<uintptr_t, std::tuple<half*, half*, int>> o_proj_lora;
 
     bool has_residual;
+    bool residual_fp32;
     int rope_style;
 
     QAttn
     (
         half* _layernorm,
-        half* _layermorm_bias,
+        half* _layernorm_bias,
         bool _layernorm_is_rms,
         float _norm_epsilon,
         QMatrix* _q_proj,
@@ -76,7 +79,10 @@ public:
         bool _has_residual,
         int _rope_style,
         half* _q_norm,
-        half* _k_norm
+        half* _k_norm,
+        half* _post_layernorm,
+        half* _post_layernorm_bias,
+        bool _residual_fp32
     );
 
     ~QAttn();
@@ -84,7 +90,7 @@ public:
     void forward_cuda_1
     (
         cublasHandle_t cublas_handle,
-        half* x,
+        void* x,
         int batch_size,
         int q_len,
         int past_len,
@@ -102,7 +108,7 @@ public:
     (
         cublasHandle_t cublas_handle,
         const half* attn_output,
-        half* hidden_state,
+        void* hidden_state,
         int q_len,
         int batch_size,
         const std::vector<uintptr_t>& loras,

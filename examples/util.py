@@ -29,6 +29,12 @@ def format_prompt(prompt_format, sp, p):
             f"{p}<|im_end|>\n"
             f"<|im_start|>assistant\n"
         )
+    elif prompt_format == "gemma":
+        return (
+            f"<bos><start_of_turn>user\n"
+            f"{p}<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
 
 def get_stop_conditions(prompt_format, tokenizer):
     if prompt_format == "llama":
@@ -37,7 +43,8 @@ def get_stop_conditions(prompt_format, tokenizer):
         return [tokenizer.single_id("<|eot_id|>")]
     elif prompt_format == "granite":
         return [tokenizer.eos_token_id, "\n\nQuestion:"]
-
+    elif prompt_format == "gemma":
+        return [tokenizer.eos_token_id, "<end_of_turn>"]
 
 # Cached dataset loader
 

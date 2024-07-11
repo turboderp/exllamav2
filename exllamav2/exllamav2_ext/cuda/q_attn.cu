@@ -93,7 +93,10 @@ QAttn::QAttn
     bool _has_residual,
     int _rope_style,
     half* _q_norm,
-    half* _k_norm
+    half* _k_norm,
+    half* _post_layernorm,
+    half* _post_layernorm_bias,
+    bool _residual_fp32
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -117,7 +120,10 @@ QAttn::QAttn
     has_residual(_has_residual),
     rope_style(_rope_style),
     q_norm(_q_norm),
-    k_norm(_k_norm)
+    k_norm(_k_norm),
+    post_layernorm(_post_layernorm),
+    post_layernorm_bias(_post_layernorm_bias),
+    residual_fp32(_residual_fp32)
 {
 }
 
@@ -128,7 +134,7 @@ QAttn::~QAttn()
 void QAttn::forward_cuda_1
 (
     cublasHandle_t cublas_handle,
-    half* x,
+    void* x,
     int batch_size,
     int q_len,
     int past_len,
@@ -142,14 +148,14 @@ void QAttn::forward_cuda_1
     half* lora_temp
 )
 {
-    half* norm_state = x;
+    half* norm_state = (half*) x;
 
     if (layernorm)
     {
         if (layernorm_is_rms)
-            rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
+            rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size, false, residual_fp32, false);
         else
-            layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
+            layer_norm_cuda((half*)x, layernorm, layernorm_bias, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
         norm_state = temp_state;
     }
 
@@ -195,14 +201,25 @@ void QAttn::forward_cuda_2
 (
     cublasHandle_t cublas_handle,
     const half* attn_output,
-    half* hidden_state,
+    void* hidden_state,
     int q_len,
     int batch_size,
     const std::vector<uintptr_t>& loras,
     half* lora_temp
 )
 {
-    gemm_half_q_half_cuda(cublas_handle, attn_output, o_proj, hidden_state, q_len * batch_size, o_proj->width, o_proj->height, !has_residual, temp_dq);
+    if (!post_layernorm)
+    {
+        gemm_half_q_half_cuda(cublas_handle, attn_output, o_proj, (half*) hidden_state, q_len * batch_size, o_proj->width, o_proj->height, !has_residual, temp_dq);
+    }
+    else
+    {
+        gemm_half_q_half_cuda(cublas_handle, attn_output, o_proj, temp_state, q_len * batch_size, o_proj->width, o_proj->height, true, temp_dq);
+        if (layernorm_is_rms)
+            rms_norm_cuda(temp_state, post_layernorm, hidden_state, norm_epsilon, q_len * batch_size, hidden_size, true, false, residual_fp32);
+        else
+            layer_norm_cuda(temp_state, post_layernorm, post_layernorm_bias, (half*) hidden_state, norm_epsilon, q_len * batch_size, hidden_size, true);
+    }
 
-    apply_loras_cuda(cublas_handle, o_proj_lora, loras, o_proj, attn_output, hidden_state, lora_temp, q_len * batch_size);
+    apply_loras_cuda(cublas_handle, o_proj_lora, loras, o_proj, attn_output, (half*) hidden_state, lora_temp, q_len * batch_size);
 }
