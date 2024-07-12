@@ -178,7 +178,7 @@ single completion:
 output = generator.generate(
     prompt = "Five good reasons to adopt a cat:",
     max_new_tokens = 200,
-    add_bos = True)
+    add_bos = True,
 )
 
 print(output)
