@@ -833,7 +833,12 @@ int multinomial_cpu
     while (true)
     {
         if (accum >= random) break;
-        if (idx == num_candidates - 1) break;
+        if (idx == num_candidates - 1)
+        {
+            // Roll back in case the sampled probability is exactly zero
+            while (idx > 0 && temp_probs[idx] == 0.0f) idx--;
+            break;
+        }
         idx++;
         accum += temp_probs[idx];
     }

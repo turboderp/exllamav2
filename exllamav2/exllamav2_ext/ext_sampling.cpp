@@ -230,7 +230,24 @@ std::vector<float> sample_basic
             random_s = powf(random, expf(-skew));
         }
 
-        multinomial_cpu(num_candidates, temp_probs, temp_indices, random_s);
+//        {
+//            float sum = 0.0f;
+//            float pmin = temp_probs[0];
+//            float pmax = pmin;
+//            for (int i = 0; i < num_candidates; ++i)
+//            {
+//                if (temp_probs[i] < pmin) pmin = temp_probs[i];
+//                if (temp_probs[i] > pmax) pmax = temp_probs[i];
+//                sum += temp_probs[i];
+//            }
+//            DBGF4(pmin, pmax, sum, random_s);
+//        }
+
+        // Scale random sampling point a little to account for FP32 rounding errors during softmax. Probs
+        // can potentially sum to slightly less than 1 for large-vocab models
+        float random_s_adj = random_s * 0.9998;
+
+        multinomial_cpu(num_candidates, temp_probs, temp_indices, random_s_adj);
 
         output_tokens[i][0] = temp_indices[0];
         output_probs[i][0] = temp_probs[0];
