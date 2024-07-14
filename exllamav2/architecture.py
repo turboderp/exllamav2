@@ -569,6 +569,27 @@ class ExLlamaV2ArchParams:
             self.rope_style = RopeStyle.NEOX
             self.fused_qkv_altpack = True
 
+        # Index
+
+        if arch_string == "IndexForCausalLM":
+            arch_recognized = True
+            self.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.expect_keys += \
+                expect_keys_llama
+            self.norm_eps_key = "rms_norm_eps"
+            self.mlp_key_gate = ".mlp.gate_proj"
+            self.mlp_key_up = ".mlp.up_proj"
+            self.mlp_key_down = ".mlp.down_proj"
+            self.lm_head_key = "lm_head"
+            self.norm_key_1 = ".input_layernorm"
+            self.norm_key_2 = ".post_attention_layernorm"
+            self.mlp_act_func = "silu"
+            self.norm = "rmsnorm"
+            self.rope_style = RopeStyle.NEOX
+
         # Llama (default + fallback)
 
         if arch_string != "LlamaForCausalLM" and not arch_recognized:

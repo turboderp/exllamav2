@@ -54,7 +54,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                  f_beg: int = None,
                  f_end: int = None,
                  is_sub_module: bool = True,
-                 altpack_qkv: bool = False):
+                 altpack_qkv: bool = False,
+                 normalize_unq: bool = False):
         super().__init__(model, key)
 
         self.is_sub_module = is_sub_module
@@ -89,6 +90,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.altpack_qkv = altpack_qkv
 
         self.assumed_footprint = in_features * (out_features + self.padding) * 2 + 128
+        self.normalize_unq = normalize_unq
 
 
     @torch.inference_mode
@@ -125,6 +127,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         elif isinstance(w, nn.Parameter):
             assert not self.has_bias, self.key + " has no bias tensor but bias is expected"
+            if self.normalize_unq:
+                w = self.normalize(w)
             if self.padding > 0: w = nn.Parameter(F.pad(w.data, (0, 0, 0, self.padding)).contiguous())
             if not self.model.config.load_in_q4 or not ".layers." in self.key:
                 self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
@@ -138,6 +142,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         elif isinstance(w, tuple):
             assert self.has_bias, self.key + " has bias tensor but bias is not expected"
+            if self.normalize_unq:
+                w = self.normalize(w[0]), w[1]
             ww = w[0]
             wb = w[1]
             if self.padding > 0:
@@ -152,6 +158,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 self.q4_scales = torch.empty((self.out_features * self.in_features // 32,), device = self.device(), dtype = torch.half)
                 ext_c.matrix_fp16_to_q4(ww.contiguous(), self.q4_weight, self.q4_scales)
                 self.fp16_bias = wb
+
+
+    def normalize(self, w: torch.Tensor):
+        return nn.functional.normalize(w)
 
 
     def matrix_shape(self):

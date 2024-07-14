@@ -250,7 +250,8 @@ class ExLlamaV2:
                                False,
                                max_out_len = self.config.max_output_len,
                                prescale = self.config.logit_scale,
-                               is_sub_module = False)
+                               is_sub_module = False,
+                               normalize_unq = bool(self.config.norm_head))
         if self.config.arch.lm_head_key != "lm_head":
             head.alt_key = self.config.arch.lm_head_key
         self.modules += [head]

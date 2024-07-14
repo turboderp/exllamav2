@@ -104,6 +104,7 @@ class ExLlamaV2Config:
     final_logit_softcapping: float | None
     attn_logit_softcapping: float | None
     sliding_window: int
+    norm_head: int | None
 
     checkpoint_fused_mlp: bool
 
@@ -250,6 +251,10 @@ class ExLlamaV2Config:
 
         self.attn_logit_softcapping = read(read_config, float, "attn_logit_softcapping", None)
         self.final_logit_softcapping = read(read_config, float, "final_logit_softcapping", None)
+
+        # Normalize weights in head layer
+
+        self.norm_head = read(read_config, int, "norm_head", None)
 
         # Positional embeddings
 
