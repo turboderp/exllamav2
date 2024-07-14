@@ -31,6 +31,7 @@ parser.add_argument("-l", "--length", type = int, default = 2048, help = "Max no
 parser.add_argument("-ml", "--measurement_length", type = int, default = 2048, help = "Max no. tokens per sample when measuring")
 parser.add_argument("-so", "--status_output", action = "store_true", help = "Include machine-parseable status updates in console output")
 parser.add_argument("-hsol", "--hidden_state_offload_layers", type = int, default = 0, help = "Number of hidden/target states to keep in VRAM. Speed-up but increases VRAM usage")
+parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Use fast-safetensors to load layers of the unquantized model. This can help alleviate some out-of-memory issues, especially on Windows.")
 
 args = parser.parse_args()
 
@@ -112,6 +113,7 @@ job = {"in_dir": args.in_dir,
        "rope_scale": args.rope_scale,
        "rope_alpha": args.rope_alpha,
        "output_measurement": output_measurement,
+       "fast_safetensors": args.fast_safetensors,
        "progress": "begin"}
 
 if args.measurement is not None:
@@ -160,6 +162,8 @@ if job["output_measurement"] is None:
 else:
     print(f" -- Measurement will be saved to {job['output_measurement']}")
     print(f" !! Conversion script will end after measurement pass")
+if job.get("fast_safetensors"):
+    print(f" -- Enabled fast_safetensors option.")
 
 if job['rope_scale']: print(f" -- RoPE scale: {job['rope_scale']:.2f}")
 if job['rope_alpha']: print(f" -- RoPE alpha: {job['rope_alpha']:.2f}")
@@ -189,6 +193,10 @@ config.arch_compat_overrides()
 # Tokenizer
 
 tokenizer = ExLlamaV2Tokenizer(config)
+
+# Set fast_safetensors in config
+
+if job.get("fast_safetensors"): config.fasttensors = True
 
 # Set scaling for input model
 
