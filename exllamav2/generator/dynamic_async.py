@@ -75,6 +75,7 @@ class ExLlamaV2DynamicJobAsync:
     job: ExLlamaV2DynamicJob
     queue: asyncio.Queue
     generator: ExLlamaV2DynamicGeneratorAsync
+    cancelled: bool = False
 
     def __init__(self, generator: ExLlamaV2DynamicGeneratorAsync, *args: object, **kwargs: object):
         self.generator = generator
@@ -87,6 +88,10 @@ class ExLlamaV2DynamicJobAsync:
 
     async def __aiter__(self):
         while True:
+            # Get out if the job is cancelled
+            if self.cancelled:
+                break
+
             result = await self.queue.get()
             if isinstance(result, Exception):
                 raise result
@@ -96,3 +101,4 @@ class ExLlamaV2DynamicJobAsync:
 
     async def cancel(self):
         await self.generator.cancel(self)
+        self.cancelled = True
