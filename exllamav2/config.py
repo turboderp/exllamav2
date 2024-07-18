@@ -107,6 +107,7 @@ class ExLlamaV2Config:
     norm_head: int | None
 
     checkpoint_fused_mlp: bool
+    checkpoint_offset_qzeros: bool
 
 
     def __init__(self,
@@ -286,6 +287,11 @@ class ExLlamaV2Config:
                 self.alt_rope_method = "su"
             # if scaling_type == "yarn":
             #     self.scale_alpha_value = factor
+
+        # Checkpoint format (for GPTQ models)
+
+        checkpoint_format = read(read_config, str, ["quantization_config->checkpoint_format"], None)
+        self.checkpoint_offset_qzeros = (checkpoint_format == "gptq_v2")
 
         # Create map of model tensors
 

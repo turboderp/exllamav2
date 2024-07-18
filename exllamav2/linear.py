@@ -98,13 +98,15 @@ class ExLlamaV2Linear(ExLlamaV2Module):
              w: dict | nn.Parameter | tuple | None = None,
              device_tensors: bool = True):
 
+        cfg = self.model.config
+
         if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features, self.altpack_qkv)
         if w is None: w = self.load_weight()
 
         # Load quantized linear layer from dictionary
 
         if isinstance(w, dict):
-            assert not self.model.config.load_in_q4, "Can't load quantized layer in Q4 mode"
+            assert not cfg.load_in_q4, "Can't load quantized layer in Q4 mode"
             if self.has_bias:
                 assert "bias" in w, self.key + " has no bias but bias expected"
             else:
@@ -119,7 +121,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.q_handle = ext.make_q_matrix(w,
                                               self.temp_dq,
                                               prescale = self.prescale,
-                                              max_dq_rows = self.model.config.max_dq_size // self.out_features)
+                                              max_dq_rows = cfg.max_dq_size // self.out_features,
+                                              offset_qzeros = cfg.checkpoint_offset_qzeros)
             self.prev_prescale = self.prescale
             self.prescale = 1
 
