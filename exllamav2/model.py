@@ -129,6 +129,31 @@ class ExLlamaV2DeviceTensors:
         return scratch_slice
 
 
+    @staticmethod
+    def _apply_scaling(
+        freqs: torch.Tensor,
+        scale_factor: float = 8,
+        low_freq_factor: float = 1,
+        high_freq_factor: float = 4,
+        old_context_len: int = 8192,  # original llama3 length
+    ):
+        low_freq_wavelen = old_context_len / low_freq_factor
+        high_freq_wavelen = old_context_len / high_freq_factor
+        new_freqs = []
+
+        for freq in freqs:
+            wavelen = 2 * math.pi / freq
+            if wavelen < high_freq_wavelen:
+                new_freqs.append(freq)
+            elif wavelen > low_freq_wavelen:
+                new_freqs.append(freq / scale_factor)
+            else:
+                assert low_freq_wavelen != high_freq_wavelen
+                smooth = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
+                new_freqs.append((1 - smooth) * freq / scale_factor + smooth * freq)
+        return torch.tensor(new_freqs, dtype = freqs.dtype, device = freqs.device)
+
+
     def prepare_sincos(self):
 
         device = _torch_device(self.device_idx)
@@ -162,6 +187,19 @@ class ExLlamaV2DeviceTensors:
                 ext_factors = torch.tensor(cfg.scale_short_factor, dtype = torch.float32, device = device)
 
             inv_freq = 1.0 / (ext_factors * base ** (torch.arange(0, head_dim, 2, device = device).float() / head_dim))
+
+        # Llama 3.1
+
+        elif cfg.alt_rope_method == "llama3":
+
+            inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2, device = device).float() / head_dim))
+            inv_freq = self._apply_scaling(
+                inv_freq,
+                cfg.l3_rope_factor,
+                cfg.l3_rope_low_freq_factor,
+                cfg.l3_rope_high_freq_factor,
+                cfg.l3_rope_original_max_position_embeddings,
+            )
 
         # Regular
 
