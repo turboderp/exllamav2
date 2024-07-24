@@ -189,7 +189,8 @@ jobs:
           # --- Install CUDA using Conda
           $cudaVersion = '${{ matrix.cuda }}'
           $cudaVersionPytorch = '${{ matrix.cuda }}'.Remove('${{ matrix.cuda }}'.LastIndexOf('.')).Replace('.','')
-          
+
+          $env:MAMBA_NO_LOW_SPEED_LIMIT = 1
           mamba install -y -c nvidia/label/cuda-$cudaVersion cuda-toolkit cuda-runtime
 
           if (!(mamba list cuda)[-1].contains('cuda')) {sleep -s 10; mamba install -y 'cuda' $cudaVersion}
