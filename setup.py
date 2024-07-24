@@ -111,7 +111,7 @@ setup(
         "pandas",
         "ninja",
         "fastparquet",
-        "torch>=2.2.0",
+        # "torch>=2.2.0",
         "safetensors>=0.3.2",
         "sentencepiece>=0.1.97",
         "pygments",
