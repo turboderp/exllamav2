@@ -54,7 +54,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                  f_beg: int = None,
                  f_end: int = None,
                  is_sub_module: bool = True,
-                 altpack_qkv: bool = False):
+                 altpack_qkv: bool = False,
+                 normalize_unq: bool = False):
         super().__init__(model, key)
 
         self.is_sub_module = is_sub_module
@@ -89,6 +90,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.altpack_qkv = altpack_qkv
 
         self.assumed_footprint = in_features * (out_features + self.padding) * 2 + 128
+        self.normalize_unq = normalize_unq
 
 
     @torch.inference_mode
@@ -96,13 +98,15 @@ class ExLlamaV2Linear(ExLlamaV2Module):
              w: dict | nn.Parameter | tuple | None = None,
              device_tensors: bool = True):
 
+        cfg = self.model.config
+
         if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features, self.altpack_qkv)
         if w is None: w = self.load_weight()
 
         # Load quantized linear layer from dictionary
 
         if isinstance(w, dict):
-            assert not self.model.config.load_in_q4, "Can't load quantized layer in Q4 mode"
+            assert not cfg.load_in_q4, "Can't load quantized layer in Q4 mode"
             if self.has_bias:
                 assert "bias" in w, self.key + " has no bias but bias expected"
             else:
@@ -117,7 +121,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.q_handle = ext.make_q_matrix(w,
                                               self.temp_dq,
                                               prescale = self.prescale,
-                                              max_dq_rows = self.model.config.max_dq_size // self.out_features)
+                                              max_dq_rows = cfg.max_dq_size // self.out_features,
+                                              offset_qzeros = cfg.checkpoint_offset_qzeros)
             self.prev_prescale = self.prescale
             self.prescale = 1
 
@@ -125,6 +130,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         elif isinstance(w, nn.Parameter):
             assert not self.has_bias, self.key + " has no bias tensor but bias is expected"
+            if self.normalize_unq:
+                w = self.normalize(w)
             if self.padding > 0: w = nn.Parameter(F.pad(w.data, (0, 0, 0, self.padding)).contiguous())
             if not self.model.config.load_in_q4 or not ".layers." in self.key:
                 self.linear = nn.Linear(self.in_features, self.out_features, self.has_bias, device = "meta", dtype = torch.float16)
@@ -138,6 +145,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         elif isinstance(w, tuple):
             assert self.has_bias, self.key + " has bias tensor but bias is not expected"
+            if self.normalize_unq:
+                w = self.normalize(w[0]), w[1]
             ww = w[0]
             wb = w[1]
             if self.padding > 0:
@@ -152,6 +161,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 self.q4_scales = torch.empty((self.out_features * self.in_features // 32,), device = self.device(), dtype = torch.half)
                 ext_c.matrix_fp16_to_q4(ww.contiguous(), self.q4_weight, self.q4_scales)
                 self.fp16_bias = wb
+
+
+    def normalize(self, w: torch.Tensor):
+        return nn.functional.normalize(w)
 
 
     def matrix_shape(self):

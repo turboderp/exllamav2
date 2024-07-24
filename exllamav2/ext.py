@@ -320,7 +320,8 @@ def make_q_matrix(w: dict,
                   temp_dq: torch.Tensor,
                   key: str = None,
                   prescale: float = 1,
-                  max_dq_rows = 0):
+                  max_dq_rows = 0,
+                  offset_qzeros: bool = False):
 
     # EXL2
 
@@ -353,6 +354,9 @@ def make_q_matrix(w: dict,
 
         if prescale != 1: w["scales"] *= prescale
         if w["scales"].dtype == torch.float: w["scales"] = w["scales"].half()
+
+        if offset_qzeros:
+            w["qzeros"] -= 0b00010001000100010001000100010001
 
         # GPTQ with g_idx (act_order)
 

@@ -893,6 +893,11 @@ class ExLlamaV2DynamicGenerator:
                         "stop_string"
                         "max_new_tokens"
                         "end_filter"
+                    optional, if "eos_reason" == "stop_token":
+                        "eos_triggering_token_id": int
+                        "eos_triggering_token_str": str
+                    optional, if "eos_reason" == "stop_string":
+                        "eos_triggering_string": str
                     "full_completion": str  - full text completion
                     "new_tokens": int  - number of tokens generated
                     "time_enqueued": float  - time from job was enqueued until it started, in seconds
@@ -1849,7 +1854,10 @@ class ExLlamaV2DynamicJob:
             eos_reason: str = None,
             emit_held = False,
             suppressed_text = None,
-            suppressed_tokens = None
+            suppressed_tokens = None,
+            stop_token: int = None,
+            stop_string: str = None,
+            rem_held_text: str = None
         ):
             r = {
                 "job": self,
@@ -1860,6 +1868,15 @@ class ExLlamaV2DynamicJob:
 
             if eos_reason is not None:
                 r.update({ "eos_reason": eos_reason })
+                if eos_reason == "stop_token":
+                    id_to_piece = self.generator.tokenizer.get_id_to_piece_list(True)
+                    r.update({
+                        "eos_triggering_token_id": stop_token,
+                        "eos_triggering_token_str": id_to_piece[stop_token]
+                    })
+                    pass
+                if eos_reason == "stop_string":
+                    r.update({ "eos_triggering_string": stop_string })
 
             if emit_held:
                 if self.held_text != "":
@@ -1903,17 +1920,28 @@ class ExLlamaV2DynamicJob:
                         "accepted_draft_tokens": self.accepted_draft_tokens,
                         "rejected_draft_tokens": self.rejected_draft_tokens
                     })
+                if eos_reason == "stop_string":
+                    self.held_text = rem_held_text
+                rh = {}
+                if self.held_text:
+                    rh.update({ "text": self.held_text })
+                if self.held_tokens:
+                    rh.update({ "token_ids": self.held_tokens.torch().clone() })
+                if self.held_probs:
+                    rh.update({ "token_probs": self.held_probs.torch().clone() })
+                if self.held_k_tokens:
+                    rh.update({ "top_k_tokens": self.held_k_tokens.torch().clone() })
+                    rh.update({ "top_k_probs": self.held_k_probs.torch().clone() })
+                if self.held_logits:
+                    rh.update({ "logits": self.held_logits.torch().clone() })
+                if rh:
+                    r.update({ "held": rh })
 
             if self.identifier is not None:
                 r.update({ "identifier": self.identifier })
 
             results.append(r)
             return emit_eos, next_token
-
-        # End on stop tokens
-
-        if next_token.item() in self.stop_tokens:
-            return emit(results, emit_eos = True, eos_reason = "stop_token")
 
         # Decode and buffer output
 
@@ -1933,6 +1961,11 @@ class ExLlamaV2DynamicJob:
             self.held_k_probs.append(next_k_probs)
         if self.return_logits:
             self.held_logits.append(logits[:1, :, :])
+
+        # End on stop tokens
+
+        if next_token.item() in self.stop_tokens:
+            return emit(results, emit_eos = True, eos_reason = "stop_token", stop_token = next_token.item())
 
         # Stop if we reach max_new_tokens
 
@@ -2032,8 +2065,19 @@ class ExLlamaV2DynamicJob:
                 self.stop_strings_utf32_buffer
             )
             if match >= 0:
+                held = self.held_text[match:]
                 self.held_text = self.held_text[:match]
-                return emit(results, emit_eos = True, emit_held = True, eos_reason = "stop_string")
+                for s in self.stop_strings:
+                    if held.startswith(s):
+                        return emit(
+                            results,
+                            emit_eos = True,
+                            emit_held = True,
+                            eos_reason = "stop_string",
+                            stop_string = s,
+                            rem_held_text = held
+                        )
+                assert False, "Detected stop string but couldn't identify it (logic error)"
             if match == -2:
                 return emit(results)
 
