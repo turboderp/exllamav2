@@ -178,7 +178,7 @@ single completion:
 output = generator.generate(
     prompt = "Five good reasons to adopt a cat:",
     max_new_tokens = 200,
-    add_bos = True)
+    add_bos = True,
 )
 
 print(output)
@@ -214,7 +214,7 @@ outputs = generator.generate(
     max_new_tokens = 200,
     stop_conditions = [tokenizer.eos_token_id],
     gen_settings = gen_settings,
-    add_bos = True)
+    add_bos = True
 )
 
 for o in outputs:
