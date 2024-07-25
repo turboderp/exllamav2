@@ -1912,8 +1912,8 @@ class ExLlamaV2DynamicJob:
                     "time_enqueued": self.time_first_prefill - self.time_enqueue,
                     "time_prefill": self.time_first_token - self.time_first_prefill,
                     "time_generate": self.time_last_token - self.time_first_token,
-                    "cached_pages": self.cached_pages,
-                    "cached_tokens": self.cached_pages * page_size + self.cached_tokens,
+                    "cached_pages": self.cached_pages // len(self.sequences),
+                    "cached_tokens": (self.cached_pages * page_size + self.cached_tokens) // len(self.sequences),
                 })
                 if self.generator.draft_model or self.generator.use_ngram_draft:
                     r.update({
