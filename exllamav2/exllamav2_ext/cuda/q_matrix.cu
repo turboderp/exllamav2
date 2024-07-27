@@ -482,7 +482,7 @@ __global__ void reconstruct_kernel
     }
 }
 
-void QMatrix::reconstruct(half* out, int row_a, int row_b)
+void QMatrix::reconstruct(cudaStream_t stream, half* out, int row_a, int row_b)
 {
     dim3 blockDim, gridDim;
     blockDim.x = BLOCK_KN_SIZE;
@@ -494,7 +494,7 @@ void QMatrix::reconstruct(half* out, int row_a, int row_b)
     if (!is_gptq)
     {
         gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
-        reconstruct_kernel<<<gridDim, blockDim>>>
+        reconstruct_kernel<<<gridDim, blockDim, 0, stream>>>
         (
             cuda_q_weight,
             cuda_q_perm,
@@ -519,7 +519,7 @@ void QMatrix::reconstruct(half* out, int row_a, int row_b)
     else
     {
         gridDim.x = DIVIDE(width, BLOCK_KN_SIZE * 4);
-        reconstruct_gptq_kernel<<<gridDim, blockDim>>>
+        reconstruct_gptq_kernel<<<gridDim, blockDim, 0, stream>>>
         (
             cuda_q_weight,
             cuda_q_perm,
@@ -711,6 +711,7 @@ __global__ void matrix_fp16_to_fp8_kernel
 
 void matrix_fp8_to_fp16_cuda
 (
+    cudaStream_t stream,
     const uint8_t* in_ptr,
     half* out_ptr,
     int numel
@@ -722,11 +723,12 @@ void matrix_fp8_to_fp16_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_F;
     gridDim.x = numel / (BLOCKSIZE_F * THREADS_F);
-    matrix_fp8_to_fp16_kernel<<<gridDim, blockDim>>>(in_ptr, out_ptr);
+    matrix_fp8_to_fp16_kernel<<<gridDim, blockDim, 0, stream>>>(in_ptr, out_ptr);
 }
 
 void matrix_fp16_to_fp8_cuda
 (
+    cudaStream_t stream,
     const half* in_ptr,
     uint8_t* out_ptr,
     int numel
@@ -738,13 +740,14 @@ void matrix_fp16_to_fp8_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_F;
     gridDim.x = numel / (BLOCKSIZE_F * THREADS_F);
-    matrix_fp16_to_fp8_kernel<<<gridDim, blockDim>>>(in_ptr, out_ptr);
+    matrix_fp16_to_fp8_kernel<<<gridDim, blockDim, 0, stream>>>(in_ptr, out_ptr);
 }
 
 // Q4/FP16 convert funcs
 
 void matrix_q4_to_fp16_cuda
 (
+    cudaStream_t stream,
     const uint8_t* in_ptr,
     const half* scales_ptr,
     half* out_ptr,
@@ -753,6 +756,7 @@ void matrix_q4_to_fp16_cuda
 {
     array_q_to_fp16_kv_cuda
     (
+        stream,
         in_ptr,
         scales_ptr,
         out_ptr,
@@ -772,6 +776,7 @@ void matrix_q4_to_fp16_cuda
 
 void matrix_fp16_to_q4_cuda
 (
+    cudaStream_t stream,
     const half* in_ptr,
     uint8_t* out_ptr,
     half* scales_ptr,
@@ -780,6 +785,7 @@ void matrix_fp16_to_q4_cuda
 {
     array_fp16_to_q_kv_cuda
     (
+        stream,
         in_ptr,
         out_ptr,
         scales_ptr,

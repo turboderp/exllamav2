@@ -97,6 +97,7 @@ __global__ void head_norm_kernel
 
 void head_norm_cuda
 (
+    cudaStream_t stream,
     const half* x,
     const half* w,
     const half* b,
@@ -114,5 +115,5 @@ void head_norm_cuda
 
     float r_dim = 1.0f / (float) head_dim;
 
-    head_norm_kernel<<<gridDim, blockDim>>>(x, w, b, y, epsilon, r_dim, rows, num_heads, head_dim);
+    head_norm_kernel<<<gridDim, blockDim, 0, stream>>>(x, w, b, y, epsilon, r_dim, rows, num_heads, head_dim);
 }

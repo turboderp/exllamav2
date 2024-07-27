@@ -128,6 +128,7 @@ void q_attn_forward_1
 
     attn->forward_cuda_1
     (
+        NULL,
         cublas_handle,
         (half*) x.data_ptr(),
         batch_size,
@@ -164,6 +165,7 @@ void q_attn_forward_2
 
     attn->forward_cuda_2
     (
+        NULL,
         cublas_handle,
         (const half*) attn_output.data_ptr(),
         (half*) x.data_ptr(),

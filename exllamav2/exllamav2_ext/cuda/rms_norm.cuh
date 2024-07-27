@@ -8,6 +8,7 @@
 
 void rms_norm_cuda
 (
+    cudaStream_t stream,
     const void* x,
     const half* w,
     void* y,

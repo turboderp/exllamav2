@@ -10,6 +10,7 @@
 
 void gemm_half_q_half_cuda_part
 (
+    cudaStream_t stream,
     const half* a,
     QMatrix* b,
     half* c,
@@ -30,7 +31,7 @@ void gemm_half_q_half_cuda_part
         AT_Result* atr;
         cudaEvent_t start, stop;
 
-        bool use_autotune = true;
+        bool use_autotune = false;
 
         if (!use_autotune)
         {
@@ -104,7 +105,7 @@ void gemm_half_q_half_cuda_part
 
         // Launch kernel
 
-        kernel<<<gridDim, blockDim>>>
+        kernel<<<gridDim, blockDim, 0, stream>>>
         (
             a,
             b->cuda_q_weight,
@@ -165,7 +166,7 @@ void gemm_half_q_half_cuda_part
 //             print_global_mem(r_weights, 1, 1, 1);
 //         DBGI(r_weights_stride);
 
-        kernel<<<gridDim, blockDim>>>
+        kernel<<<gridDim, blockDim, 0, stream>>>
         (
             a,
             b->cuda_q_weight,
@@ -188,6 +189,7 @@ void gemm_half_q_half_cuda_part
 
 void gemm_half_q_half_cuda
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const half* a,
     QMatrix* b,
@@ -203,7 +205,7 @@ void gemm_half_q_half_cuda
     bool mul_r_weights
 )
 {
-    if (b->cuda_bias && clear) cuda_vector_set_(c, b->cuda_bias, size_m, size_n);
+    if (b->cuda_bias && clear) cuda_vector_set_(stream, c, b->cuda_bias, size_m, size_n);
 
     // Here we force CUDA matmul for matrices that are too big to dequantize. This is necessary for the
     // extremely large output layers of some models. Splitting along K and dequantizing/multiplying in
@@ -228,10 +230,11 @@ void gemm_half_q_half_cuda
             // Reconstruct FP16 matrix, then cuBLAS
 
             if (!temp_dq) temp_dq = b->temp_dq;
-            b->reconstruct(temp_dq, row_a, row_b);
+            b->reconstruct(stream, temp_dq, row_a, row_b);
 
             const half alpha = __float2half(1.0f);
             const half beta = (clear && !b->cuda_bias && row_a == 0) ? __float2half(0.0f) : __float2half(1.0f);
+            cublasSetStream(cublas_handle, stream);
             cublasHgemm(cublas_handle,
                         CUBLAS_OP_N,
                         CUBLAS_OP_N,
@@ -277,6 +280,7 @@ void gemm_half_q_half_cuda
         int block_m = min(size_m, block_m_size_max);
         gemm_half_q_half_cuda_part
         (
+            stream,
             a, b, c,
             size_m, size_n, size_k,
             block_m,
@@ -287,7 +291,7 @@ void gemm_half_q_half_cuda
         );
     }
 
-    if (b->cuda_bias && !clear) cuda_vector_add_(c, b->cuda_bias, size_m, size_n);
+    if (b->cuda_bias && !clear) cuda_vector_add_(stream, c, b->cuda_bias, size_m, size_n);
 }
 
 __global__ void clear_kernel
@@ -306,6 +310,7 @@ __global__ void clear_kernel
 
 void clear_tensor_cuda
 (
+    cudaStream_t stream,
     half* c,
     int size_m,
     int size_n
@@ -316,5 +321,5 @@ void clear_tensor_cuda
 //     blockDim.y = 1;
 //     gridDim.x = DIVIDE(size_n / 8, CLEAR_N_SIZE);
 //     gridDim.y = size_m;
-//     clear_kernel<<<gridDim, blockDim>>>(c, size_m, size_n);
+//     clear_kernel<<<gridDim, blockDim, 0, stream>>>(c, size_m, size_n);
 }

@@ -100,6 +100,7 @@ void q_mlp_forward_
 
     mlp->forward_
     (
+        NULL,
         at::cuda::getCurrentCUDABlasHandle(),
         (void*) x.data_ptr(),
         rows,
@@ -252,6 +253,7 @@ void q_moe_mlp_forward_
 
     moe_mlp->forward_
     (
+        NULL,
         at::cuda::getCurrentCUDABlasHandle(),
         (half*) x.data_ptr(),
         x.size(0), // rows

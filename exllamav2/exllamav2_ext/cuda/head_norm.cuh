@@ -8,6 +8,7 @@
 
 void head_norm_cuda
 (
+    cudaStream_t stream,
     const half* x,
     const half* w,
     const half* b,

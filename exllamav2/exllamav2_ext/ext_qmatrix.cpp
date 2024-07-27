@@ -126,7 +126,7 @@ void reconstruct
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(output));
 
-    qm->reconstruct((half*) output.data_ptr());
+    qm->reconstruct(NULL, (half*) output.data_ptr());
 }
 
 
@@ -150,6 +150,7 @@ void gemm_half_q_half
 
     gemm_half_q_half_cuda
     (
+        NULL,
         at::cuda::getCurrentCUDABlasHandle(),
         (const half*) a.data_ptr(),
         qm,
@@ -180,6 +181,7 @@ void matrix_q4_to_fp16
 
     matrix_q4_to_fp16_cuda
     (
+        NULL,
         (const uint8_t*) in.data_ptr(),
         (const half*) scales.data_ptr(),
         (half*) out.data_ptr(),
@@ -202,6 +204,7 @@ void matrix_fp16_to_q4
 
     matrix_fp16_to_q4_cuda
     (
+        NULL,
         (const half*) in.data_ptr(),
         (uint8_t*) out.data_ptr(),
         (half*) scales.data_ptr(),

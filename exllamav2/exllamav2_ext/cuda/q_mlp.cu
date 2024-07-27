@@ -62,6 +62,7 @@ QMLP::~QMLP() {
 
 void QMLP::forward_
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     void* x,
     int rows,
@@ -88,9 +89,9 @@ void QMLP::forward_
     if (layernorm)
     {
         if (layernorm_is_rms)
-            rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns, false, residual_fp32, false);
+            rms_norm_cuda(stream, x, layernorm, temp_state, norm_epsilon, rows, columns, false, residual_fp32, false);
         else
-            layer_norm_cuda((half*) x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+            layer_norm_cuda(stream, (half*) x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
         norm_state = temp_state;
     }
 
@@ -98,47 +99,47 @@ void QMLP::forward_
 
     if (gate)
     {
-        gemm_half_q_half_cuda(cublas_handle, norm_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
-        gemm_half_q_half_cuda(cublas_handle, norm_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
 
-        apply_loras_cuda(cublas_handle, gate_proj_lora, loras, gate, norm_state, temp_a, lora_temp, rows);
-        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_b, lora_temp, rows);
+        apply_loras_cuda(stream, cublas_handle, gate_proj_lora, loras, gate, norm_state, temp_a, lora_temp, rows);
+        apply_loras_cuda(stream, cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_b, lora_temp, rows);
 
         fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
-        kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
+        kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
     }
 
     // Up proj without gate
 
     else
     {
-        gemm_half_q_half_cuda(cublas_handle, norm_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq);
 
-        apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_a, lora_temp, rows);
+        apply_loras_cuda(stream, cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_a, lora_temp, rows);
 
         fp_act_kernel kernel = pick_act_kernel(use_half2, false, act_gelu);
-        kernel<<<gridDim, blockDim>>>(temp_a, rows, intermediate_size, NULL, 0);
+        kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, rows, intermediate_size, NULL, 0);
     }
 
     // Down proj without post_layernorm
 
     if (!post_layernorm)
     {
-        gemm_half_q_half_cuda(cublas_handle, temp_a, down, (half*) x, rows, columns, intermediate_size, !has_residual, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, (half*) x, rows, columns, intermediate_size, !has_residual, temp_dq);
     }
 
     // Down proj with post_layernorm
 
     else
     {
-        gemm_half_q_half_cuda(cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq);
         if (layernorm_is_rms)
-            rms_norm_cuda(temp_state, post_layernorm, x, norm_epsilon, rows, columns, true, false, residual_fp32);
+            rms_norm_cuda(stream, temp_state, post_layernorm, x, norm_epsilon, rows, columns, true, false, residual_fp32);
         else
-            layer_norm_cuda(temp_state, post_layernorm, post_layernorm_bias, (half*) x, norm_epsilon, rows, columns, true);
+            layer_norm_cuda(stream, temp_state, post_layernorm, post_layernorm_bias, (half*) x, norm_epsilon, rows, columns, true);
     }
 
-    apply_loras_cuda(cublas_handle, down_proj_lora, loras, down, temp_a, (half*) x, lora_temp, rows);
+    apply_loras_cuda(stream, cublas_handle, down_proj_lora, loras, down, temp_a, (half*) x, lora_temp, rows);
 }
 
 
@@ -200,6 +201,7 @@ QMoEMLP::~QMoEMLP() {
 
 void QMoEMLP::forward_
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     half* x,
     int rows,
@@ -219,14 +221,15 @@ void QMoEMLP::forward_
     // Norm
 
     if (layernorm_is_rms)
-        rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, rows, columns);
+        rms_norm_cuda(stream, x, layernorm, temp_state, norm_epsilon, rows, columns);
     else
-        layer_norm_cuda(x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+        layer_norm_cuda(stream, x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
 
     // Compute gate logits
 
     half alpha_ = __float2half(1.0f);
     half beta_ = __float2half(0.0f);
+    cublasSetStream(cublas_handle, stream);
     cublasHgemm(cublas_handle,
                 CUBLAS_OP_T, // gate is column-major
                 CUBLAS_OP_N,
@@ -245,11 +248,11 @@ void QMoEMLP::forward_
     gridDim.x = 1;
     gridDim.y = DIVIDE(rows, WARPS);
     if (num_experts == 4)
-        softmax4_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+        softmax4_topk_norm_kernel<<<gridDim, blockDim, 0, stream>>>(temp_logits, rows, num_experts_per_token);
     else if (num_experts == 8)
-        softmax8_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+        softmax8_topk_norm_kernel<<<gridDim, blockDim, 0, stream>>>(temp_logits, rows, num_experts_per_token);
     else if (num_experts == 16)
-        softmax16_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+        softmax16_topk_norm_kernel<<<gridDim, blockDim, 0, stream>>>(temp_logits, rows, num_experts_per_token);
 
     // For small no. rows, execute all kernels but pass the routing weights. Rows with a weight of zero will skip dot
     // product accum and kernels launched with only zero-weights will exit prematurely.
@@ -261,8 +264,8 @@ void QMoEMLP::forward_
 
         for (int i = 0; i < num_experts; i++)
         {
-            gemm_half_q_half_cuda(cublas_handle, temp_state, w1[i], temp_a, rows, intermediate_size, columns, true, temp_dq, true, temp_logits + i, num_experts, false);
-            gemm_half_q_half_cuda(cublas_handle, temp_state, w3[i], temp_b, rows, intermediate_size, columns, true, temp_dq, true, temp_logits + i, num_experts, false);
+            gemm_half_q_half_cuda(stream, cublas_handle, temp_state, w1[i], temp_a, rows, intermediate_size, columns, true, temp_dq, true, temp_logits + i, num_experts, false);
+            gemm_half_q_half_cuda(stream, cublas_handle, temp_state, w3[i], temp_b, rows, intermediate_size, columns, true, temp_dq, true, temp_logits + i, num_experts, false);
 
 //            apply_loras_cuda(cublas_handle, w1_lora[i], loras, w1[i], temp_state, temp_a, lora_temp, rows);
 //            apply_loras_cuda(cublas_handle, w3_lora[i], loras, w3[i], temp_state, temp_b, lora_temp, rows);
@@ -271,9 +274,9 @@ void QMoEMLP::forward_
             blockDim.y = THREADS_Y;
             gridDim.x = DIVIDE(intermediate_size, THREADS_X) / (use_half2 ? 2 : 1);
             gridDim.y = DIVIDE(rows, THREADS_Y);
-            kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, temp_logits + i, num_experts);
+            kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, temp_b, rows, intermediate_size, temp_logits + i, num_experts);
 
-            gemm_half_q_half_cuda(cublas_handle, temp_a, w2[i], x, rows, columns, intermediate_size, false, temp_dq, true, temp_logits + i, num_experts, true);
+            gemm_half_q_half_cuda(stream, cublas_handle, temp_a, w2[i], x, rows, columns, intermediate_size, false, temp_dq, true, temp_logits + i, num_experts, true);
 
 //            apply_loras_cuda(cublas_handle, w2_lora[i], loras, w2[i], temp_a, x, lora_temp, rows);
         }

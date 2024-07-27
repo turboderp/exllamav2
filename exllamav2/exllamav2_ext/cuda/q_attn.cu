@@ -133,6 +133,7 @@ QAttn::~QAttn()
 
 void QAttn::forward_cuda_1
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     void* x,
     int batch_size,
@@ -153,33 +154,34 @@ void QAttn::forward_cuda_1
     if (layernorm)
     {
         if (layernorm_is_rms)
-            rms_norm_cuda(x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size, false, residual_fp32, false);
+            rms_norm_cuda(stream, x, layernorm, temp_state, norm_epsilon, q_len * batch_size, hidden_size, false, residual_fp32, false);
         else
-            layer_norm_cuda((half*)x, layernorm, layernorm_bias, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
+            layer_norm_cuda(stream, (half*)x, layernorm, layernorm_bias, temp_state, norm_epsilon, q_len * batch_size, hidden_size);
         norm_state = temp_state;
     }
 
-    gemm_half_q_half_cuda(cublas_handle, norm_state, q_proj, temp_q, q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
-    gemm_half_q_half_cuda(cublas_handle, norm_state, k_proj, temp_k, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);
-    gemm_half_q_half_cuda(cublas_handle, norm_state, v_proj, temp_v, q_len * batch_size, v_proj->width, hidden_size, true, temp_dq);
+    gemm_half_q_half_cuda(stream, cublas_handle, norm_state, q_proj, temp_q, q_len * batch_size, q_proj->width, hidden_size, true, temp_dq);
+    gemm_half_q_half_cuda(stream, cublas_handle, norm_state, k_proj, temp_k, q_len * batch_size, k_proj->width, hidden_size, true, temp_dq);
+    gemm_half_q_half_cuda(stream, cublas_handle, norm_state, v_proj, temp_v, q_len * batch_size, v_proj->width, hidden_size, true, temp_dq);
 
-    apply_loras_cuda(cublas_handle, q_proj_lora, loras, q_proj, norm_state, temp_q, lora_temp, q_len * batch_size);
-    apply_loras_cuda(cublas_handle, k_proj_lora, loras, k_proj, norm_state, temp_k, lora_temp, q_len * batch_size);
-    apply_loras_cuda(cublas_handle, v_proj_lora, loras, v_proj, norm_state, temp_v, lora_temp, q_len * batch_size);
+    apply_loras_cuda(stream, cublas_handle, q_proj_lora, loras, q_proj, norm_state, temp_q, lora_temp, q_len * batch_size);
+    apply_loras_cuda(stream, cublas_handle, k_proj_lora, loras, k_proj, norm_state, temp_k, lora_temp, q_len * batch_size);
+    apply_loras_cuda(stream, cublas_handle, v_proj_lora, loras, v_proj, norm_state, temp_v, lora_temp, q_len * batch_size);
 
     if (q_norm)
-        head_norm_cuda(temp_q, q_norm, NULL, temp_q, norm_epsilon, q_len * batch_size, num_heads, head_dim);
+        head_norm_cuda(stream, temp_q, q_norm, NULL, temp_q, norm_epsilon, q_len * batch_size, num_heads, head_dim);
 
     if (k_norm)
-        head_norm_cuda(temp_k, k_norm, NULL, temp_k, norm_epsilon, q_len * batch_size, num_kv_heads, head_dim);
+        head_norm_cuda(stream, temp_k, k_norm, NULL, temp_k, norm_epsilon, q_len * batch_size, num_kv_heads, head_dim);
 
-//    rope_cuda(temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
-//    rope_cuda(temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
+//    rope_cuda(stream, temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
+//    rope_cuda(stream, temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);
 
     if (rope_style != ROPE_STYLE_NONE)
     {
         rope_cuda_qk
         (
+            stream,
             temp_q,
             temp_k,
             sin,
@@ -199,6 +201,7 @@ void QAttn::forward_cuda_1
 
 void QAttn::forward_cuda_2
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const half* attn_output,
     void* hidden_state,
@@ -210,16 +213,16 @@ void QAttn::forward_cuda_2
 {
     if (!post_layernorm)
     {
-        gemm_half_q_half_cuda(cublas_handle, attn_output, o_proj, (half*) hidden_state, q_len * batch_size, o_proj->width, o_proj->height, !has_residual, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, attn_output, o_proj, (half*) hidden_state, q_len * batch_size, o_proj->width, o_proj->height, !has_residual, temp_dq);
     }
     else
     {
-        gemm_half_q_half_cuda(cublas_handle, attn_output, o_proj, temp_state, q_len * batch_size, o_proj->width, o_proj->height, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, attn_output, o_proj, temp_state, q_len * batch_size, o_proj->width, o_proj->height, true, temp_dq);
         if (layernorm_is_rms)
-            rms_norm_cuda(temp_state, post_layernorm, hidden_state, norm_epsilon, q_len * batch_size, hidden_size, true, false, residual_fp32);
+            rms_norm_cuda(stream, temp_state, post_layernorm, hidden_state, norm_epsilon, q_len * batch_size, hidden_size, true, false, residual_fp32);
         else
-            layer_norm_cuda(temp_state, post_layernorm, post_layernorm_bias, (half*) hidden_state, norm_epsilon, q_len * batch_size, hidden_size, true);
+            layer_norm_cuda(stream, temp_state, post_layernorm, post_layernorm_bias, (half*) hidden_state, norm_epsilon, q_len * batch_size, hidden_size, true);
     }
 
-    apply_loras_cuda(cublas_handle, o_proj_lora, loras, o_proj, attn_output, (half*) hidden_state, lora_temp, q_len * batch_size);
+    apply_loras_cuda(stream, cublas_handle, o_proj_lora, loras, o_proj, attn_output, (half*) hidden_state, lora_temp, q_len * batch_size);
 }

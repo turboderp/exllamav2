@@ -85,7 +85,16 @@ __global__ void fp8_to_fp16_kernel
     *out_ptr = out;
 }
 
-void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int stride, int height, int offset, int width)
+void array_fp16_to_fp8_cuda
+(
+    cudaStream_t stream,
+    const half* pIn,
+    unsigned char *pOut,
+    int stride,
+    int height,
+    int offset,
+    int width
+)
 {
     int min = offset;
     int max = offset + width;
@@ -97,11 +106,20 @@ void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int stride, in
     gridDim.x = DIVIDE((max - min) / 8, THREADS);
     gridDim.y = height;
 
-    fp16_to_fp8_kernel<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
+    fp16_to_fp8_kernel<<<gridDim, blockDim, 0, stream>>>(pIn, pOut, stride, height, min, max);
     // cuda_check( cudaPeekAtLastError() );
 }
 
-void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, int height, int offset, int width)
+void array_fp8_to_fp16_cuda
+(
+    cudaStream_t stream,
+    const unsigned char* pIn,
+    half* pOut,
+    int stride,
+    int height,
+    int offset,
+    int width
+)
 {
     int min = offset;
     int max = offset + width;
@@ -113,7 +131,7 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
     gridDim.x = DIVIDE((max - min) / 8, THREADS);
     gridDim.y = height;
 
-    fp8_to_fp16_kernel<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
+    fp8_to_fp16_kernel<<<gridDim, blockDim, 0, stream>>>(pIn, pOut, stride, height, min, max);
     // cuda_check( cudaPeekAtLastError() );
 }
 
@@ -211,6 +229,7 @@ __global__ void fp16_to_q_kv_kernel
 
 void array_fp16_to_q_kv_paged_cuda
 (
+    cudaStream_t stream,
     const half* k_in,
     unsigned char* k_out,
     half* k_scales,
@@ -236,7 +255,7 @@ void array_fp16_to_q_kv_paged_cuda
     gridDim.z = batch_size * 2;
 
     if (wbits == 4)
-        fp16_to_q_kv_paged_kernel<4, 4><<<gridDim, blockDim>>>
+        fp16_to_q_kv_paged_kernel<4, 4><<<gridDim, blockDim, 0, stream>>>
         (
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
@@ -246,7 +265,7 @@ void array_fp16_to_q_kv_paged_cuda
             cal_k, cal_v
         );
     else if (wbits == 6)
-        fp16_to_q_kv_paged_kernel<8, 4><<<gridDim, blockDim>>>
+        fp16_to_q_kv_paged_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>
         (
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
@@ -256,7 +275,7 @@ void array_fp16_to_q_kv_paged_cuda
             cal_k, cal_v
         );
     else if (wbits == 8)
-        fp16_to_q_kv_paged_kernel<8, 8><<<gridDim, blockDim>>>
+        fp16_to_q_kv_paged_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>
         (
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
@@ -269,6 +288,7 @@ void array_fp16_to_q_kv_paged_cuda
 
 void array_fp16_to_q_kv_cuda
 (
+    cudaStream_t stream,
     const half* k_in,
     unsigned char* k_out,
     half* k_scales,
@@ -292,21 +312,21 @@ void array_fp16_to_q_kv_cuda
     gridDim.z = v_in ? 2 : 1;
 
     if (wbits == 4)
-        fp16_to_q_kv_kernel<4, 4><<<gridDim, blockDim>>>(
+        fp16_to_q_kv_kernel<4, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
             dim, offset, stride,
             cal_k, cal_v
         );
     else if (wbits == 6)
-        fp16_to_q_kv_kernel<8, 4><<<gridDim, blockDim>>>(
+        fp16_to_q_kv_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
             dim, offset, stride,
             cal_k, cal_v
         );
     else if (wbits == 8)
-        fp16_to_q_kv_kernel<8, 8><<<gridDim, blockDim>>>(
+        fp16_to_q_kv_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
             dim, offset, stride,
@@ -405,6 +425,7 @@ __global__ void q_to_fp16_kv_kernel
 
 void array_q_to_fp16_kv_paged_cuda
 (
+    cudaStream_t stream,
     const unsigned char* k_in,
     const half* k_scales,
     half* k_out,
@@ -429,7 +450,7 @@ void array_q_to_fp16_kv_paged_cuda
     gridDim.z = batch_size * 2;
 
     if (wbits == 4)
-        q_to_fp16_kv_paged_kernel<4, 4><<<gridDim, blockDim>>>
+        q_to_fp16_kv_paged_kernel<4, 4><<<gridDim, blockDim, 0, stream>>>
         (
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
@@ -439,7 +460,7 @@ void array_q_to_fp16_kv_paged_cuda
             cal_k, cal_v
         );
     else if (wbits == 6)
-        q_to_fp16_kv_paged_kernel<8, 4><<<gridDim, blockDim>>>
+        q_to_fp16_kv_paged_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>
         (
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
@@ -449,7 +470,7 @@ void array_q_to_fp16_kv_paged_cuda
             cal_k, cal_v
         );
     else if (wbits == 8)
-        q_to_fp16_kv_paged_kernel<8, 8><<<gridDim, blockDim>>>
+        q_to_fp16_kv_paged_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>
         (
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
@@ -462,6 +483,7 @@ void array_q_to_fp16_kv_paged_cuda
 
 void array_q_to_fp16_kv_cuda
 (
+    cudaStream_t stream,
     const unsigned char* k_in,
     const half* k_scales,
     half* k_out,
@@ -485,21 +507,21 @@ void array_q_to_fp16_kv_cuda
     gridDim.z = v_in ? 2 : 1;
 
     if (wbits == 4)
-        q_to_fp16_kv_kernel<4, 4><<<gridDim, blockDim>>>(
+        q_to_fp16_kv_kernel<4, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
             dim, offset, stride,
             cal_k, cal_v
         );
     else if (wbits == 6)
-        q_to_fp16_kv_kernel<8, 4><<<gridDim, blockDim>>>(
+        q_to_fp16_kv_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
             dim, offset, stride,
             cal_k, cal_v
         );
     else if (wbits == 8)
-        q_to_fp16_kv_kernel<8, 8><<<gridDim, blockDim>>>(
+        q_to_fp16_kv_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
             dim, offset, stride,

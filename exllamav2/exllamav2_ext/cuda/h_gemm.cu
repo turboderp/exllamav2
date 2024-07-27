@@ -182,6 +182,7 @@ __global__ void h_gemm_wide_kernel
 
 void h_gemm_cublas
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const int size_m,
     const int size_n,
@@ -195,6 +196,7 @@ void h_gemm_cublas
 {
     half alpha_ = __float2half(alpha);
     half beta_ = __float2half(beta);
+    cublasSetStream(cublas_handle, stream);
     cublasHgemm(cublas_handle,
                 CUBLAS_OP_N,
                 CUBLAS_OP_N,
@@ -209,6 +211,7 @@ void h_gemm_cublas
 
 void h_gemm_cuda
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const int size_m,
     const int size_n,
@@ -241,7 +244,7 @@ void h_gemm_cuda
 //             DBGI3(blockDim.x, blockDim.y, blockDim.z);
 //             DBGI3(gridDim.x, gridDim.y, gridDim.z);
 
-            h_gemm_tall_kernel<<<gridDim, blockDim>>>(size_m, size_n, size_k, a, b, c, clear);
+            h_gemm_tall_kernel<<<gridDim, blockDim, 0, stream>>>(size_m, size_n, size_k, a, b, c, clear);
             cuda_check( cudaPeekAtLastError() );
             return;
         }
@@ -261,13 +264,13 @@ void h_gemm_cuda
 //             DBGI3(blockDim.x, blockDim.y, blockDim.z);
 //             DBGI3(gridDim.x, gridDim.y, gridDim.z);
 
-            h_gemm_wide_kernel<<<gridDim, blockDim>>>(size_m, size_n, size_k, a, b, c, clear);
+            h_gemm_wide_kernel<<<gridDim, blockDim, 0, stream>>>(size_m, size_n, size_k, a, b, c, clear);
             cuda_check( cudaPeekAtLastError() );
             return;
         }
     }
 
-    h_gemm_cublas(cublas_handle, size_m, size_n, size_k, a, b, c, alpha, beta);
+    h_gemm_cublas(stream, cublas_handle, size_m, size_n, size_k, a, b, c, alpha, beta);
 //     DBGI3(size_m, size_n, size_k);
     cuda_check( cudaPeekAtLastError() );
 

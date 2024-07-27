@@ -9,6 +9,7 @@
 
 void cuda_vector_add_
 (
+    cudaStream_t stream,
     half* dest,
     const half* source,
     int width,
@@ -17,6 +18,7 @@ void cuda_vector_add_
 
 void cuda_vector_set_
 (
+    cudaStream_t stream,
     half* dest,
     const half* source,
     int width,

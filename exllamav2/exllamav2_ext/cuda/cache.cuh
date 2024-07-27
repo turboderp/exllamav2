@@ -6,11 +6,29 @@
 #include <cstdint>
 #include <cstdio>
 
-void array_fp16_to_fp8_cuda(const half* pIn, unsigned char* pOut, int stride, int height, int offset, int width);
-void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, int height, int offset, int width);
+void array_fp16_to_fp8_cuda
+(
+    cudaStream_t stream,
+    const half* pIn,
+    unsigned char* pOut,
+    int stride, int height,
+    int offset, int width
+);
+
+void array_fp8_to_fp16_cuda
+(
+    cudaStream_t stream,
+    const unsigned char* pIn,
+    half* pOut,
+    int stride,
+    int height,
+    int offset,
+    int width
+);
 
 void array_fp16_to_q_kv_cuda
 (
+    cudaStream_t stream,
     const half* k_in,
     unsigned char* k_out,
     half* k_scales,
@@ -29,6 +47,7 @@ void array_fp16_to_q_kv_cuda
 
 void array_q_to_fp16_kv_cuda
 (
+    cudaStream_t stream,
     const unsigned char* k_in,
     const half* k_scales,
     half* k_out,
@@ -47,6 +66,7 @@ void array_q_to_fp16_kv_cuda
 
 void array_fp16_to_q_kv_paged_cuda
 (
+    cudaStream_t stream,
     const half* k_in,
     unsigned char* k_out,
     half* k_scales,
@@ -67,6 +87,7 @@ void array_fp16_to_q_kv_paged_cuda
 
 void array_q_to_fp16_kv_paged_cuda
 (
+    cudaStream_t stream,
     const unsigned char* k_in,
     const half* k_scales,
     half* k_out,

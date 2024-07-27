@@ -11,6 +11,7 @@
 
 void gemm_half_q_half_cuda
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const half* a,
     QMatrix* b,
@@ -28,6 +29,7 @@ void gemm_half_q_half_cuda
 
 void clear_tensor_cuda
 (
+    cudaStream_t stream,
     half* c,
     int size_m,
     int size_n

@@ -8,6 +8,7 @@
 
 void rope_cuda
 (
+    cudaStream_t stream,
     half* x,
     const half* sin,
     const half* cos,
@@ -22,6 +23,7 @@ void rope_cuda
 
 void rope_cuda_qk
 (
+    cudaStream_t stream,
     half* x_q,
     half* x_k,
     const half* sin,

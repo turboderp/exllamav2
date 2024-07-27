@@ -37,6 +37,7 @@ void gemm_half_half_half
     {
         h_gemm_cublas
         (
+            NULL,
             at::cuda::getCurrentCUDABlasHandle(),
             c.size(0), // m
             c.size(1), // n
@@ -52,6 +53,7 @@ void gemm_half_half_half
     {
         h_gemm_cuda
         (
+            NULL,
             at::cuda::getCurrentCUDABlasHandle(),
             c.size(0), // m
             c.size(1), // n

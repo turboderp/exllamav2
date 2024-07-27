@@ -43,6 +43,7 @@ void rope_
 
     rope_cuda
     (
+        NULL,
         (half*) x.data_ptr(),
         (const half*) sin.data_ptr(),
         (const half*) cos.data_ptr(),

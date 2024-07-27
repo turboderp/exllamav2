@@ -65,6 +65,7 @@ public:
 
     void forward_
     (
+        cudaStream_t stream,
         cublasHandle_t cublas_handle,
         void* x,
         int rows,
@@ -138,6 +139,7 @@ public:
 
     void forward_
     (
+        cudaStream_t stream,
         cublasHandle_t cublas_handle,
         half* x,
         int rows,

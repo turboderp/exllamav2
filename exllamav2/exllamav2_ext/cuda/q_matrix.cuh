@@ -71,7 +71,7 @@ public:
 
     ~QMatrix();
 
-    void reconstruct(half* out, int row_a = 0, int row_b = 0);
+    void reconstruct(cudaStream_t stream, half* out, int row_a = 0, int row_b = 0);
     bool make_sequential(const uint32_t* cpu_g_idx);
 
 private:
@@ -80,6 +80,7 @@ private:
 
 void matrix_q4_to_fp16_cuda
 (
+    cudaStream_t stream,
     const uint8_t* in_ptr,
     const half* scales_ptr,
     half* out_ptr,
@@ -88,6 +89,7 @@ void matrix_q4_to_fp16_cuda
 
 void matrix_fp16_to_q4_cuda
 (
+    cudaStream_t stream,
     const half* in_ptr,
     uint8_t* out_ptr,
     half* scales_ptr,
@@ -96,6 +98,7 @@ void matrix_fp16_to_q4_cuda
 
 void matrix_fp8_to_fp16_cuda
 (
+    cudaStream_t stream,
     const uint8_t* in_ptr,
     half* out_ptr,
     int numel
@@ -103,6 +106,7 @@ void matrix_fp8_to_fp16_cuda
 
 void matrix_fp16_to_fp8_cuda
 (
+    cudaStream_t stream,
     const half* in_ptr,
     uint8_t* out_ptr,
     int numel

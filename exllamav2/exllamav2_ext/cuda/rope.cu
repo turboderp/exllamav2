@@ -171,6 +171,7 @@ __global__ void rope_cuda_qk_kernel
 
 void rope_cuda
 (
+    cudaStream_t stream,
     half* x,
     const half* sin,
     const half* cos,
@@ -195,7 +196,7 @@ void rope_cuda
     gridDim.y = DIVIDE(rows_per_batch, threads_y);
     gridDim.z = batch_size;
 
-    rope_cuda_kernel<<<gridDim, blockDim>>>
+    rope_cuda_kernel<<<gridDim, blockDim, 0, stream>>>
     (
         x,
         sin,
@@ -212,6 +213,7 @@ void rope_cuda
 
 void rope_cuda_qk
 (
+    cudaStream_t stream,
     half* x_q,
     half* x_k,
     const half* sin,
@@ -240,7 +242,7 @@ void rope_cuda_qk
     gridDim.y = DIVIDE(rows_per_batch, threads_y);
     gridDim.z = batch_size;
 
-    rope_cuda_qk_kernel<<<gridDim, blockDim>>>
+    rope_cuda_qk_kernel<<<gridDim, blockDim, 0, stream>>>
     (
         x_q,
         x_k,

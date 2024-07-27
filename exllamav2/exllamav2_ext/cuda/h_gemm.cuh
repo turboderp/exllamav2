@@ -11,6 +11,7 @@
 
 void h_gemm_cuda
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const int size_m,
     const int size_n,
@@ -24,6 +25,7 @@ void h_gemm_cuda
 
 void h_gemm_cublas
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const int size_m,
     const int size_n,

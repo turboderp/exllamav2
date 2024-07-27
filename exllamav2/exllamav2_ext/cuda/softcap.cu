@@ -24,6 +24,7 @@ __global__ void cuda_softcap_kernel
 
 void softcap_cuda_
 (
+    cudaStream_t stream,
     float* x,
     const uint64_t numel,
     const float scale
@@ -33,7 +34,7 @@ void softcap_cuda_
     blockDim.x = NUM_THREADS;
     gridDim.x = DIVIDE(numel, NUM_THREADS);
 
-    cuda_softcap_kernel<<<gridDim, blockDim>>>(x, numel, scale);
+    cuda_softcap_kernel<<<gridDim, blockDim, 0, stream>>>(x, numel, scale);
 }
 
 // TODO: Profile
@@ -64,6 +65,7 @@ __global__ void h_cuda_softcap_kernel
 
 void h_softcap_cuda_
 (
+    cudaStream_t stream,
     half* x,
     const uint64_t numel,
     const float scale
@@ -73,6 +75,6 @@ void h_softcap_cuda_
     blockDim.x = NUM_THREADS;
     gridDim.x = DIVIDE(numel / 2, NUM_THREADS);
 
-    h_cuda_softcap_kernel<<<gridDim, blockDim>>>(x, numel, scale);
+    h_cuda_softcap_kernel<<<gridDim, blockDim, 0, stream>>>(x, numel, scale);
 }
 

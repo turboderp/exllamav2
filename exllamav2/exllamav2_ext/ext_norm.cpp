@@ -42,6 +42,7 @@ void rms_norm
 
     rms_norm_cuda
     (
+        NULL,
         (void*) x.data_ptr(),
         (half*) w.data_ptr(),
         (void*) y.data_ptr(),
@@ -92,6 +93,7 @@ void layer_norm
 
     layer_norm_cuda
     (
+        NULL,
         (half*) x.data_ptr(),
         (half*) w.data_ptr(),
         b.device().is_meta() ? NULL : (half*) b.data_ptr(),
@@ -144,6 +146,7 @@ void head_norm
 
     head_norm_cuda
     (
+        NULL,
         (half*) x.data_ptr(),
         (half*) w.data_ptr(),
         b.device().is_meta() ? NULL : (half*) b.data_ptr(),

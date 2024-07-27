@@ -27,6 +27,7 @@ void softcap_
     {
         softcap_cuda_
         (
+            NULL,
             (float*) x.data_ptr(),
             numel,
             scale
@@ -36,6 +37,7 @@ void softcap_
     {
         h_softcap_cuda_
         (
+            NULL,
             (half*) x.data_ptr(),
             numel,
             scale

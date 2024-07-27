@@ -11,6 +11,7 @@
 
 void apply_loras_cuda
 (
+    cudaStream_t stream,
     cublasHandle_t cublas_handle,
     const std::unordered_map<uintptr_t, std::tuple<half*, half*, int>>& adapters,
     const std::vector<uintptr_t>& ids,

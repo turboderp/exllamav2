@@ -131,6 +131,7 @@ __global__ void cuda_vector_set_int4_kernel
 
 void cuda_vector_add_
 (
+    cudaStream_t stream,
     half* dest,
     const half* source,
     int height,
@@ -144,7 +145,7 @@ void cuda_vector_add_
         gridDim.x = DIVIDE(width, NUM_EL_INT4);
         gridDim.y = DIVIDE(height, NUM_THREADS_Y_INT4);
 
-        cuda_vector_add_int4_kernel<<<gridDim, blockDim>>>(dest, source, height, width);
+        cuda_vector_add_int4_kernel<<<gridDim, blockDim, 0, stream>>>(dest, source, height, width);
     }
     else
     {
@@ -153,12 +154,13 @@ void cuda_vector_add_
         gridDim.x = DIVIDE(width, NUM_THREADS_X * 2);
         gridDim.y = DIVIDE(height, NUM_THREADS_Y);
 
-        cuda_vector_add_kernel<<<gridDim, blockDim>>>(dest, source, height, width);
+        cuda_vector_add_kernel<<<gridDim, blockDim, 0, stream>>>(dest, source, height, width);
     }
 }
 
 void cuda_vector_set_
 (
+    cudaStream_t stream,
     half* dest,
     const half* source,
     int height,
@@ -172,7 +174,7 @@ void cuda_vector_set_
         gridDim.x = DIVIDE(width, NUM_EL_INT4);
         gridDim.y = DIVIDE(height, NUM_THREADS_Y_INT4);
 
-        cuda_vector_set_int4_kernel<<<gridDim, blockDim>>>(dest, source, height, width);
+        cuda_vector_set_int4_kernel<<<gridDim, blockDim, 0, stream>>>(dest, source, height, width);
     }
     else
     {
@@ -181,7 +183,7 @@ void cuda_vector_set_
         gridDim.x = DIVIDE(width, NUM_THREADS_X * 2);
         gridDim.y = DIVIDE(height, NUM_THREADS_Y);
 
-        cuda_vector_set_kernel<<<gridDim, blockDim>>>(dest, source, height, width);
+        cuda_vector_set_kernel<<<gridDim, blockDim, 0, stream>>>(dest, source, height, width);
     }
 }
 

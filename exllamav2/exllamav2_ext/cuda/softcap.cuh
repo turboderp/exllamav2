@@ -9,6 +9,7 @@
 
 void softcap_cuda_
 (
+    cudaStream_t stream,
     float* x,
     const uint64_t numel,
     const float scale
@@ -16,6 +17,7 @@ void softcap_cuda_
 
 void h_softcap_cuda_
 (
+    cudaStream_t stream,
     half* x,
     const uint64_t numel,
     const float scale

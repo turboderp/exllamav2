@@ -89,6 +89,7 @@ public:
 
     void forward_cuda_1
     (
+        cudaStream_t stream,
         cublasHandle_t cublas_handle,
         void* x,
         int batch_size,
@@ -106,6 +107,7 @@ public:
 
     void forward_cuda_2
     (
+        cudaStream_t stream,
         cublasHandle_t cublas_handle,
         const half* attn_output,
         void* hidden_state,
