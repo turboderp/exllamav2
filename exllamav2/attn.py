@@ -389,14 +389,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             assert self.k_proj.is_quant() and self.v_proj.is_quant() and self.o_proj.is_quant(), "Partially quantized attention layer"
 
-            device_tensors = self.model.get_device_tensors(self.device_idx)
-            device_tensors.begin_scratch_alloc()
-            self.temp_state = device_tensors.get_scratch_slice(self.temp_state_size())
-            # self.temp_q = device_tensors.get_scratch_slice(self.temp_q_size())
-            # self.temp_k = device_tensors.get_scratch_slice(self.temp_k_size())
-            # self.temp_v = device_tensors.get_scratch_slice(self.temp_v_size())
-            self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
-            # self.temp_kv = device_tensors.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
+            device_context = self.model.get_device_context(self.device_idx)
+            device_context.begin_scratch_alloc()
+            self.temp_state = device_context.get_scratch_slice(self.temp_state_size())
+            # self.temp_q = device_context.get_scratch_slice(self.temp_q_size())
+            # self.temp_k = device_context.get_scratch_slice(self.temp_k_size())
+            # self.temp_v = device_context.get_scratch_slice(self.temp_v_size())
+            self.temp_dq = device_context.get_scratch_slice(self.temp_dq_size())
+            # self.temp_kv = device_context.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
 
             if self.has_norm:
                 norm_weight = self.pre_layernorm.weight if self.pre_layernorm.weight is not None else none_tensor
@@ -598,7 +598,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         is_q = self.q_handle is not None
         cfg = self.model.config
-        constants = self.model.get_device_tensors(self.device_idx, scratch = is_q)
+        constants = self.model.get_device_context(self.device_idx, scratch = is_q)
         page_size = attn_params.page_size
         batch_size, q_len, _ = hidden_states.shape
         cache_seqlens = attn_params.get_cache_seqlens(self.device_idx)
@@ -892,7 +892,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
 
         cfg = self.model.config
-        constants = self.model.get_device_tensors(self.device_idx)
+        constants = self.model.get_device_context(self.device_idx)
 
         batch_size, q_len, _ = hidden_states.shape
         direct = (batch_size == 1 and cache is not None and isinstance(cache, ExLlamaV2CacheBase))
@@ -1046,7 +1046,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Apply position embeddings
 
-        constants = self.model.get_device_tensors(self.device_idx, scratch = False)
+        constants = self.model.get_device_context(self.device_idx, scratch = False)
 
         if attn_params.position_offsets is not None:
             position_offsets = attn_params.get_position_offsets(hidden_states.device)

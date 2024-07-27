@@ -39,10 +39,11 @@ void rms_norm
     int dim = x.size(1);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     rms_norm_cuda
     (
-        NULL,
+        stream,
         (void*) x.data_ptr(),
         (half*) w.data_ptr(),
         (void*) y.data_ptr(),
@@ -90,10 +91,11 @@ void layer_norm
     int dim = x.size(1);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     layer_norm_cuda
     (
-        NULL,
+        stream,
         (half*) x.data_ptr(),
         (half*) w.data_ptr(),
         b.device().is_meta() ? NULL : (half*) b.data_ptr(),
@@ -143,10 +145,11 @@ void head_norm
     int rows = x.numel() / head_dim / num_heads;
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     head_norm_cuda
     (
-        NULL,
+        stream,
         (half*) x.data_ptr(),
         (half*) w.data_ptr(),
         b.device().is_meta() ? NULL : (half*) b.data_ptr(),

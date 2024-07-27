@@ -124,11 +124,12 @@ void q_attn_forward_1
     TORCH_CHECK_DTYPE_OPT(past_lens, kInt);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
 
     attn->forward_cuda_1
     (
-        NULL,
+        stream,
         cublas_handle,
         (half*) x.data_ptr(),
         batch_size,
@@ -161,11 +162,12 @@ void q_attn_forward_2
     else                     { TORCH_CHECK_DTYPE(x, kHalf); }
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
 
     attn->forward_cuda_2
     (
-        NULL,
+        stream,
         cublas_handle,
         (const half*) attn_output.data_ptr(),
         (half*) x.data_ptr(),

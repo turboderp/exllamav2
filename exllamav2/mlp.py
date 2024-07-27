@@ -125,8 +125,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if self.up_proj.is_quant():
             assert self.gate_proj is None or self.gate_proj.is_quant()
             assert self.up_proj.is_quant(), "Partially quantized MLP layer"
-            device_tensors = self.model.get_device_tensors(self.device_idx)
-            device_tensors.begin_scratch_alloc()
+            device_context = self.model.get_device_context(self.device_idx)
+            device_context.begin_scratch_alloc()
 
             if self.has_norm:
                 norm_weight = self.pre_layernorm.weight if self.pre_layernorm.weight is not None else none_tensor
@@ -153,10 +153,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                                              0 if self.gate_proj is None else self.gate_proj.q_handle,
                                              self.up_proj.q_handle,
                                              self.down_proj.q_handle,
-                                             device_tensors.get_scratch_slice(self.temp_state_size()),
-                                             device_tensors.get_scratch_slice(self.temp_a_size()),
-                                             device_tensors.get_scratch_slice(self.temp_b_size()),
-                                             device_tensors.get_scratch_slice(self.temp_dq_size()),
+                                             device_context.get_scratch_slice(self.temp_state_size()),
+                                             device_context.get_scratch_slice(self.temp_a_size()),
+                                             device_context.get_scratch_slice(self.temp_b_size()),
+                                             device_context.get_scratch_slice(self.temp_dq_size()),
                                              cfg.max_input_len * cfg.max_batch_size,
                                              cfg.arch.mlp_act_func == "gelu",
                                              self.has_residual,

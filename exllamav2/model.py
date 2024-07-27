@@ -61,7 +61,7 @@ def _torch_device(idx):
     return f"cuda:{idx}"
 
 
-class ExLlamaV2DeviceTensors:
+class ExLlamaV2DeviceContext:
 
     model: ExLlamaV2
     device_idx: int
@@ -75,6 +75,8 @@ class ExLlamaV2DeviceTensors:
 
     scratch: torch.Tensor | None
 
+    stream: torch.cuda.Stream
+
 
     def __init__(self,
                  model: ExLlamaV2,
@@ -87,6 +89,11 @@ class ExLlamaV2DeviceTensors:
         self.scratch = None
         self.scratch_bytes = scratch_bytes
         self.scratch_idx = 0
+
+        # Create streams
+
+        self.stream = torch.cuda.Stream(torch.device(device_idx), -100)
+        xx = 0
 
 
     def prepare(self, scratch):
@@ -234,7 +241,7 @@ class ExLlamaV2:
     config: ExLlamaV2Config
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
-    device_tensors: list[ExLlamaV2DeviceTensors]
+    device_context: list[ExLlamaV2DeviceContext]
     cache_map: dict[int: str]
     last_kv_layer_idx: int
     head_layer_idx: int
@@ -245,7 +252,7 @@ class ExLlamaV2:
         self.config = config
         self.modules = []
         self.modules_dict = {}
-        self.device_tensors = []
+        self.device_context = []
         self.cache_map = {}
         self.loaded = False
 
@@ -382,9 +389,9 @@ class ExLlamaV2:
 
         # Prepare to prepare device tensors
 
-        self.device_tensors = []
+        self.device_context = []
         for idx, scratch_bytes in enumerate(fixed_bytes):
-            self.device_tensors.append(ExLlamaV2DeviceTensors(self, idx, scratch_bytes))
+            self.device_context.append(ExLlamaV2DeviceContext(self, idx, scratch_bytes))
 
         # Create map for cache
 
@@ -506,7 +513,7 @@ class ExLlamaV2:
 
         with torch.inference_mode():
 
-            self.device_tensors = []
+            self.device_context = []
 
             # Reserved space
 
@@ -552,7 +559,7 @@ class ExLlamaV2:
 
                     if current_device > last_touched_device:
 
-                        self.device_tensors.append(ExLlamaV2DeviceTensors(self, current_device, scratch_fixed))
+                        self.device_context.append(ExLlamaV2DeviceContext(self, current_device, scratch_fixed))
                         # if attn_mask is not None:
                         #     reserved_vram_tensors.append(attn_mask)
                         #     attn_mask = safe_move_tensor(attn_mask, _torch_device(current_device))
@@ -644,7 +651,7 @@ class ExLlamaV2:
 
         self.modules = []
         self.modules_dict = {}
-        self.device_tensors = []
+        self.device_context = []
 
 
     def set_cache_map(self):
@@ -660,31 +667,34 @@ class ExLlamaV2:
         return list(set(self.cache_map.values()))
 
 
-    def create_device_tensors(self, scratch_bytes):
+    def create_device_context(self, scratch_bytes):
 
         for idx, b in enumerate(scratch_bytes):
 
-            tensors = ExLlamaV2DeviceTensors(self, idx, b)
-            self.device_tensors.append(tensors)
+            tensors = ExLlamaV2DeviceContext(self, idx, b)
+            self.device_context.append(tensors)
 
 
-    def drop_device_tensors(self):
+    def drop_device_context(self):
 
-        for dt in self.device_tensors:
-            dt.drop()
-
-
-    def free_device_tensors(self):
-
-        for dt in self.device_tensors:
-            dt.free()
+        for dc in self.device_context:
+            dc.drop()
 
 
-    def get_device_tensors(self, device_idx, scratch = True):
+    def free_device_context(self):
 
-        tensors = self.device_tensors[device_idx]
-        if not tensors.ready: tensors.prepare(scratch)
-        return tensors
+        for dc in self.device_context:
+            dc.free()
+
+
+    def get_device_context(self, device_idx, scratch = True):
+
+        if device_idx == -1:
+            return None
+
+        context = self.device_context[device_idx]
+        if not context.ready: context.prepare(scratch)
+        return context
 
 
     def get_modules(self) -> list[ExLlamaV2Module]:
@@ -930,6 +940,10 @@ class ExLlamaV2:
                 cache.current_seq_len = past_len
 
         device = self.modules[0].device_idx
+        context = self.get_device_context(device) if device >= 0 else None
+        if context:
+            torch.cuda.set_stream(context.stream)
+
         for idx, module in enumerate(self.modules):
 
             if idx == self.head_layer_idx and last_id_only:
@@ -947,10 +961,13 @@ class ExLlamaV2:
 
             # Onward
 
-            n_device = _torch_device(module.device_idx)
+            n_device = module.device_idx
             if n_device != device:
                 x = safe_move_tensor(x, n_device, non_blocking = True)
                 device = n_device
+                context = self.get_device_context(device) if device >= 0 else None
+                if context:
+                    torch.cuda.set_stream(context.stream)
 
             x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras, **kwargs)
 

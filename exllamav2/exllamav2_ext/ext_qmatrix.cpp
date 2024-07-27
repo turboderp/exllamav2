@@ -125,8 +125,9 @@ void reconstruct
     TORCH_CHECK_DTYPE(output, kHalf);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(output));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
-    qm->reconstruct(NULL, (half*) output.data_ptr());
+    qm->reconstruct(stream, (half*) output.data_ptr());
 }
 
 
@@ -147,10 +148,11 @@ void gemm_half_q_half
     TORCH_CHECK(qm->width == c.size(1), "b and c have incompatible shapes")
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(a));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     gemm_half_q_half_cuda
     (
-        NULL,
+        stream,
         at::cuda::getCurrentCUDABlasHandle(),
         (const half*) a.data_ptr(),
         qm,
@@ -178,10 +180,11 @@ void matrix_q4_to_fp16
     TORCH_CHECK_DTYPE(out, kHalf);
     int numel = out.numel();
     const at::cuda::OptionalCUDAGuard device_guard(device_of(in));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     matrix_q4_to_fp16_cuda
     (
-        NULL,
+        stream,
         (const uint8_t*) in.data_ptr(),
         (const half*) scales.data_ptr(),
         (half*) out.data_ptr(),
@@ -201,10 +204,11 @@ void matrix_fp16_to_q4
     TORCH_CHECK_DTYPE(out, kByte);
     int numel = in.numel();
     const at::cuda::OptionalCUDAGuard device_guard(device_of(in));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     matrix_fp16_to_q4_cuda
     (
-        NULL,
+        stream,
         (const half*) in.data_ptr(),
         (uint8_t*) out.data_ptr(),
         (half*) scales.data_ptr(),

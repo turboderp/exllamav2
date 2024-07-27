@@ -91,6 +91,7 @@ void q_mlp_forward_
     else                    { TORCH_CHECK_DTYPE(x, kHalf); }
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     int dim = x.size(-1);
     int rows = x.numel() / dim;
@@ -100,7 +101,7 @@ void q_mlp_forward_
 
     mlp->forward_
     (
-        NULL,
+        stream,
         at::cuda::getCurrentCUDABlasHandle(),
         (void*) x.data_ptr(),
         rows,
@@ -247,13 +248,14 @@ void q_moe_mlp_forward_
     TORCH_CHECK_DTYPE(x, kHalf);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     TORCH_CHECK(x.size(1) == moe_mlp->hidden_dim, "x is wrong shape");
     TORCH_CHECK(x.size(0) <= moe_mlp->max_rows, "Too many rows in x");
 
     moe_mlp->forward_
     (
-        NULL,
+        stream,
         at::cuda::getCurrentCUDABlasHandle(),
         (half*) x.data_ptr(),
         x.size(0), // rows

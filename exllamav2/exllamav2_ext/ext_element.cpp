@@ -21,13 +21,15 @@ void softcap_
 )
 {
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+
     uint64_t numel = x.numel();
 
     if (x.dtype() == torch::kFloat)
     {
         softcap_cuda_
         (
-            NULL,
+            stream,
             (float*) x.data_ptr(),
             numel,
             scale
@@ -37,7 +39,7 @@ void softcap_
     {
         h_softcap_cuda_
         (
-            NULL,
+            stream,
             (half*) x.data_ptr(),
             numel,
             scale

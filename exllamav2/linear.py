@@ -96,7 +96,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     @torch.inference_mode
     def load(self,
              w: dict | nn.Parameter | tuple | None = None,
-             device_tensors: bool = True):
+             device_context: bool = True):
 
         cfg = self.model.config
 
@@ -111,10 +111,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 assert "bias" in w, self.key + " has no bias but bias expected"
             else:
                 assert "bias" not in w, self.key + " has bias but bias is not expected"
-            if device_tensors:
-                device_tensors = self.model.get_device_tensors(self.device_idx)
-                device_tensors.begin_scratch_alloc()
-                self.temp_dq = device_tensors.get_scratch_slice(self.temp_dq_size())
+            if device_context:
+                device_context = self.model.get_device_context(self.device_idx)
+                device_context.begin_scratch_alloc()
+                self.temp_dq = device_context.get_scratch_slice(self.temp_dq_size())
             else:
                 self.temp_dq = none_tensor
             self.q_tensors = w

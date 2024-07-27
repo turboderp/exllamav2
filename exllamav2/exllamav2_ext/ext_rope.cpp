@@ -40,10 +40,11 @@ void rope_
     int rows_per_batch = x.numel() / head_dim / batch_size;
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     rope_cuda
     (
-        NULL,
+        stream,
         (half*) x.data_ptr(),
         (const half*) sin.data_ptr(),
         (const half*) cos.data_ptr(),

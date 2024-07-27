@@ -91,7 +91,7 @@ def quant_linear(job: dict,
     for k in recons_keys:
         recons_dict[k] = packed_dict[source.key + "." + k].to(r_device)
     recons_dict["q_perm"] = torch.argsort(recons_dict["q_invperm"]).to(torch.int)
-    recons_linear.load(recons_dict, device_tensors = False)
+    recons_linear.load(recons_dict, device_context = False)
 
     # Sanity test to ensure reconstructed matrix matches unpacked matrix
 
@@ -288,7 +288,7 @@ def quant(job, save_fn, model):
 
         rtn = False
         if module.key == "lm_head" and module.numel() > 1e9:  # every part of the buffalo
-            model.free_device_tensors()
+            model.free_device_context()
             gc.collect()
             torch.cuda.empty_cache()
             rtn = True
@@ -418,7 +418,7 @@ def quant(job, save_fn, model):
             quant_moe_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
         if mode == "linear":
-            model.drop_device_tensors()
+            model.drop_device_context()
             gc.collect()  # shruge
             torch.cuda.empty_cache()
             quant_lm_head(job, module, hidden_states, quantizers, attn_params, rtn)
