@@ -20,6 +20,8 @@ enum KernelLabels
     Q,
     K,
     V,
+    Q_NORM,
+    K_NORM,
     ROPE
 };
 
@@ -209,10 +211,24 @@ void QAttn::forward_cuda_1_graph
         q_gemm_cuda_update_c(graph, KernelLabels::K, temp_k);
         q_gemm_cuda_update_c(graph, KernelLabels::V, temp_v);
 
-        rope_cuda_qk_update_q(graph, KernelLabels::ROPE, temp_q);
-        rope_cuda_qk_update_k(graph, KernelLabels::ROPE, temp_k);
-        rope_cuda_qk_update_past_len(graph, KernelLabels::ROPE, past_len);
-        rope_cuda_qk_update_past_lens(graph, KernelLabels::ROPE, past_lens);
+        if (q_norm)
+        {
+            head_norm_cuda_update_x(graph, KernelLabels::Q_NORM, temp_q);
+            head_norm_cuda_update_y(graph, KernelLabels::Q_NORM, temp_q);
+        }
+        if (k_norm)
+        {
+            head_norm_cuda_update_x(graph, KernelLabels::K_NORM, temp_k);
+            head_norm_cuda_update_y(graph, KernelLabels::K_NORM, temp_k);
+        }
+
+        if (rope_style != ROPE_STYLE_NONE)
+        {
+            rope_cuda_qk_update_q(graph, KernelLabels::ROPE, temp_q);
+            rope_cuda_qk_update_k(graph, KernelLabels::ROPE, temp_k);
+            rope_cuda_qk_update_past_len(graph, KernelLabels::ROPE, past_len);
+            rope_cuda_qk_update_past_lens(graph, KernelLabels::ROPE, past_lens);
+        }
 
         graph->launch(stream);
     }
@@ -261,10 +277,10 @@ void QAttn::forward_cuda_1
     apply_loras_cuda(stream, cublas_handle, v_proj_lora, loras, v_proj, norm_state, temp_v, lora_temp, q_len * batch_size);
 
     if (q_norm)
-        head_norm_cuda(stream, temp_q, q_norm, NULL, temp_q, norm_epsilon, q_len * batch_size, num_heads, head_dim);  // TODO: Graph stuff
+        head_norm_cuda(stream, temp_q, q_norm, NULL, temp_q, norm_epsilon, q_len * batch_size, num_heads, head_dim, graph, KernelLabels::Q_NORM);
 
     if (k_norm)
-        head_norm_cuda(stream, temp_k, k_norm, NULL, temp_k, norm_epsilon, q_len * batch_size, num_kv_heads, head_dim);  // TODO: Graph stuff
+        head_norm_cuda(stream, temp_k, k_norm, NULL, temp_k, norm_epsilon, q_len * batch_size, num_kv_heads, head_dim, graph, KernelLabels::K_NORM);
 
 //    rope_cuda(stream, temp_q, sin, cos, batch_size, q_len * num_heads,    head_dim, num_heads,    past_len, past_lens);
 //    rope_cuda(stream, temp_k, sin, cos, batch_size, q_len * num_kv_heads, head_dim, num_kv_heads, past_len, past_lens);

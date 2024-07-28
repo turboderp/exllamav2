@@ -5,6 +5,7 @@
 #include <cuda_fp16.h>
 #include <cstdint>
 #include <cstdio>
+#include "graph.cuh"
 
 void head_norm_cuda
 (
@@ -16,7 +17,23 @@ void head_norm_cuda
     const float epsilon,
     const int rows,
     const int num_heads,
-    const int head_dim
+    const int head_dim,
+    Graph* graph = NULL,
+    int label = 0
+);
+
+void head_norm_cuda_update_x
+(
+    Graph* graph,
+    int label,
+    void* x
+);
+
+void head_norm_cuda_update_y
+(
+    Graph* graph,
+    int label,
+    void* y
 );
 
 #endif

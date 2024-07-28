@@ -105,7 +105,9 @@ void head_norm_cuda
     const float epsilon,
     const int rows,
     const int num_heads,
-    const int head_dim
+    const int head_dim,
+    Graph* graph,
+    int label
 )
 {
     dim3 blockDim, gridDim;
@@ -116,4 +118,25 @@ void head_norm_cuda
     float r_dim = 1.0f / (float) head_dim;
 
     head_norm_kernel<<<gridDim, blockDim, 0, stream>>>(x, w, b, y, epsilon, r_dim, rows, num_heads, head_dim);
+    if (graph) graph->attach_label(stream, label, 0);
+}
+
+void head_norm_cuda_update_x
+(
+    Graph* graph,
+    int label,
+    void* x
+)
+{
+    graph->update_param_ptr(label, 0, 0, x);
+}
+
+void head_norm_cuda_update_y
+(
+    Graph* graph,
+    int label,
+    void* y
+)
+{
+    graph->update_param_ptr(label, 0, 3, y);
 }
