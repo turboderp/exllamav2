@@ -245,5 +245,5 @@ void rms_norm_cuda_update_y
     void* y
 )
 {
-    graph->update_param_ptr(label, 0, 3, y);
+    graph->update_param_ptr(label, 0, 2, y);
 }
