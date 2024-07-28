@@ -4,7 +4,7 @@
 
 #define AT_USE_GEMM_AUTOTUNE true
 #define AT_SHAPEHASH(device, size_m, size_k, size_n) (((uint64_t)device << 48) | ((uint64_t)size_m << 32) | ((uint64_t)size_n << 16) | ((uint64_t)size_k))
-#define AT_NUM_MEASURE 40
+#define AT_NUM_MEASURE 120
 
 struct AT_Result
 {
@@ -42,8 +42,8 @@ AT_Result* at_get_top(int device, int size_k, int size_n)
 float iqm(std::vector<float>& v)
 {
     std::sort(v.begin(), v.end());
-    int p0 = v.size() * 3 / 8;
-    int p1 = v.size() * 5 / 8;
+    int p0 = v.size() * 5 / 16;
+    int p1 = v.size() * 11 / 16;
     float sum = 0.0f;
     for (int i = p0; i < p1; ++i) sum += v[i];
     return sum / (float)(p1 - p0);

@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <vector>
 
-#define MIN_GRAPH_INSTANCES 50
+#define MIN_GRAPH_INSTANCES 125
 
 class Graph
 {
