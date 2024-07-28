@@ -99,7 +99,7 @@ void q_mlp_forward_
     TORCH_CHECK(dim == mlp->up->height, "x is wrong shape");
     TORCH_CHECK(rows <= mlp->max_rows, "Too many rows in x");
 
-    mlp->forward_
+    mlp->forward_graph_
     (
         stream,
         at::cuda::getCurrentCUDABlasHandle(),

@@ -214,6 +214,7 @@ if build_jit:
         "ext_safetensors.cpp",
         "ext_sampling.cpp",
         "ext_element.cpp",
+        "cuda/graph.cu",
         "cuda/h_add.cu",
         "cuda/h_gemm.cu",
         "cuda/lora.cu",

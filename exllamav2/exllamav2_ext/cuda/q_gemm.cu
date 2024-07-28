@@ -8,6 +8,14 @@
 #include "q_gemm_autotune.cuh"
 #include "h_add.cuh"
 
+enum KernelSublabels
+{
+    CLEAR = 1,
+    GEMM_GPTQ,
+    GEMM_EXL2,
+    ADD,
+};
+
 void gemm_half_q_half_cuda_part
 (
     cudaStream_t stream,
@@ -21,7 +29,9 @@ void gemm_half_q_half_cuda_part
     bool clear,
     const half* r_weights,
     int r_weights_stride,
-    bool mul_r_weights
+    bool mul_r_weights,
+    Graph* graph,
+    int label
 )
 {
     if (!b->is_gptq)
@@ -31,9 +41,7 @@ void gemm_half_q_half_cuda_part
         AT_Result* atr;
         cudaEvent_t start, stop;
 
-        bool use_autotune = false;
-
-        if (!use_autotune)
+        if (AT_USE_GEMM_AUTOTUNE)
         {
             block_kn_size = at_get_fallback_blocksize(b->device, size_m, size_n, size_k);
         }
@@ -98,6 +106,7 @@ void gemm_half_q_half_cuda_part
 
         if (measure)
         {
+            if (graph) printf(" ## Labeling graph in reconstruct/cuBLAS matmul");
             cudaEventCreate(&start);
             cudaEventCreate(&stop);
             cudaEventRecord(start);
@@ -128,6 +137,7 @@ void gemm_half_q_half_cuda_part
             r_weights,
             r_weights_stride
         );
+        if (graph) graph->attach_label(stream, label, KernelSublabels::GEMM_EXL2);
 
         // Finish measurement
 
@@ -184,6 +194,7 @@ void gemm_half_q_half_cuda_part
             r_weights,
             r_weights_stride
         );
+        if (graph) graph->attach_label(stream, label, KernelSublabels::GEMM_GPTQ);
     }
 }
 
@@ -202,10 +213,16 @@ void gemm_half_q_half_cuda
     bool force_cuda,
     const half* r_weights,
     const int r_weights_stride,
-    bool mul_r_weights
+    bool mul_r_weights,
+    Graph* graph,
+    int label
 )
 {
-    if (b->cuda_bias && clear) cuda_vector_set_(stream, c, b->cuda_bias, size_m, size_n);
+    if (b->cuda_bias && clear)
+    {
+        cuda_vector_set_(stream, c, b->cuda_bias, size_m, size_n);
+        if (graph) graph->attach_label(stream, label, KernelSublabels::CLEAR);
+    }
 
     // Here we force CUDA matmul for matrices that are too big to dequantize. This is necessary for the
     // extremely large output layers of some models. Splitting along K and dequantizing/multiplying in
@@ -217,6 +234,8 @@ void gemm_half_q_half_cuda
 
     if (size_m > MAX_Q_GEMM_ROWS && !force_cuda && size_k <= row_step)
     {
+        if (graph) printf(" ## Labeling graph in reconstruct/cuBLAS matmul");
+
         int row_b = 0;
         if (row_step == 0) row_step = size_k;
 
@@ -287,11 +306,17 @@ void gemm_half_q_half_cuda
             clear && !b->cuda_bias,
             r_weights,
             r_weights_stride,
-            mul_r_weights
+            mul_r_weights,
+            graph,
+            label
         );
     }
 
-    if (b->cuda_bias && !clear) cuda_vector_add_(stream, c, b->cuda_bias, size_m, size_n);
+    if (b->cuda_bias && !clear)
+    {
+        cuda_vector_add_(stream, c, b->cuda_bias, size_m, size_n);
+        if (graph) graph->attach_label(stream, label, KernelSublabels::ADD);
+    }
 }
 
 __global__ void clear_kernel
@@ -323,3 +348,29 @@ void clear_tensor_cuda
 //     gridDim.y = size_m;
 //     clear_kernel<<<gridDim, blockDim, 0, stream>>>(c, size_m, size_n);
 }
+
+void q_gemm_cuda_update_a
+(
+    Graph* graph,
+    int label,
+    void* a
+)
+{
+    graph->update_param_ptr(label, KernelSublabels::GEMM_GPTQ, 0, a);
+    graph->update_param_ptr(label, KernelSublabels::GEMM_EXL2, 0, a);
+}
+
+void q_gemm_cuda_update_c
+(
+    Graph* graph,
+    int label,
+    void* c
+)
+{
+    graph->update_param_ptr(label, KernelSublabels::CLEAR, 0, c);
+    graph->update_param_ptr(label, KernelSublabels::GEMM_GPTQ, 4, c);
+    graph->update_param_ptr(label, KernelSublabels::GEMM_EXL2, 4, c);
+    graph->update_param_ptr(label, KernelSublabels::ADD, 0, c);
+}
+
+

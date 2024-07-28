@@ -226,7 +226,9 @@ void rope_cuda_qk
     const int num_heads_k,
     const int past_len,
     const int32_t* past_lens,
-    const bool neox_style
+    const bool neox_style,
+    Graph* graph,
+    int label
 )
 {
     // For large batch sizes we risk exceeding grid dimension of 65535, so shift to block dimension instead
@@ -258,6 +260,46 @@ void rope_cuda_qk
         threads_y,
         neox_style
     );
+
+    if (graph) graph->attach_label(stream, label, 0);
 }
 
+void rope_cuda_qk_update_q
+(
+    Graph* graph,
+    int label,
+    void* q
+)
+{
+    graph->update_param_ptr(label, 0, 0, q);
+}
 
+void rope_cuda_qk_update_k
+(
+    Graph* graph,
+    int label,
+    void* k
+)
+{
+    graph->update_param_ptr(label, 0, 1, k);
+}
+
+void rope_cuda_qk_update_past_len
+(
+    Graph* graph,
+    int label,
+    int past_len
+)
+{
+    graph->update_param_int(label, 0, 9, past_len);
+}
+
+void rope_cuda_qk_update_past_lens
+(
+    Graph* graph,
+    int label,
+    void* past_lens
+)
+{
+    graph->update_param_ptr(label, 0, 10, past_lens);
+}

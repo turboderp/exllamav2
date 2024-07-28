@@ -8,6 +8,28 @@
 #include <ATen/cuda/CUDAContext.h>
 
 #include "q_matrix.cuh"
+#include "graph.cuh"
+
+struct QMLP_params_const
+{
+    int rows;
+    int columns;
+
+    bool operator==(const QMLP_params_const& other) const
+    {
+        return rows == other.rows &&
+               columns == other.columns;
+    }
+};
+
+struct QMLP_params_const_hash
+{
+    std::size_t operator()(const QMLP_params_const& key) const
+    {
+        return (std::hash<int>()(key.rows)) ^
+               (std::hash<int>()(key.columns) << 1);
+    }
+};
 
 class QMLP
 {
@@ -40,6 +62,8 @@ public:
     bool has_residual;
     bool residual_fp32;
 
+    std::unordered_map<QMLP_params_const, Graph*, QMLP_params_const_hash> graph_map;
+
     QMLP
     (
         half* _layernorm,
@@ -63,7 +87,7 @@ public:
 
     ~QMLP();
 
-    void forward_
+    void forward_graph_
     (
         cudaStream_t stream,
         cublasHandle_t cublas_handle,
@@ -74,9 +98,23 @@ public:
         half* lora_temp
     );
 
+    void forward_
+    (
+        cudaStream_t stream,
+        cublasHandle_t cublas_handle,
+        void* x,
+        int rows,
+        int columns,
+        const std::vector<uintptr_t>& loras,
+        half* lora_temp,
+        Graph* graph = NULL
+    );
+
 private:
 
 };
+
+// ---------------------------------------------------------------------------------
 
 class QMoEMLP
 {

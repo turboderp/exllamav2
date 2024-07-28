@@ -273,6 +273,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             pass_loras = [id(x) for x in loras]
             pass_lora_temp = torch.empty((self.temp_lora_size,), dtype = torch.half, device = hidden_states.device)
 
+        # print (hidden_states.storage().data_ptr())
         ext_c.q_mlp_forward_(self.q_handle,
                              hidden_states,
                              pass_loras,

@@ -29,6 +29,7 @@ typedef void (*fp_rms_norm_kernel)
     const bool
 );
 
+#define rms_norm_kernel_NUM_ARGS 10
 template <int blocks_per_warp>
 __global__ void rms_norm_kernel
 (
@@ -208,7 +209,9 @@ void rms_norm_cuda
     const int dim,
     const bool add_residual,
     const bool input_fp32,
-    const bool output_fp32
+    const bool output_fp32,
+    Graph* graph,
+    int label
 )
 {
     dim3 blockDim, gridDim;
@@ -222,4 +225,25 @@ void rms_norm_cuda
     int blocks_per_warp = DIVIDE(dim, NUM_THREADS * 2);
     fp_rms_norm_kernel kernel = pick_rms_norm_kernel(blocks_per_warp);
     kernel<<<gridDim, blockDim, 0, stream>>>(x, w, y, epsilon, r_dim, rows, dim, add_residual, input_fp32, output_fp32);
+    if (graph) graph->attach_label(stream, label, 0);
+}
+
+void rms_norm_cuda_update_x
+(
+    Graph* graph,
+    int label,
+    void* x
+)
+{
+    graph->update_param_ptr(label, 0, 0, x);
+}
+
+void rms_norm_cuda_update_y
+(
+    Graph* graph,
+    int label,
+    void* y
+)
+{
+    graph->update_param_ptr(label, 0, 3, y);
 }

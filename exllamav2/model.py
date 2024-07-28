@@ -61,6 +61,9 @@ def _torch_device(idx):
     return f"cuda:{idx}"
 
 
+global_streams = {}
+
+
 class ExLlamaV2DeviceContext:
 
     model: ExLlamaV2
@@ -90,9 +93,13 @@ class ExLlamaV2DeviceContext:
         self.scratch_bytes = scratch_bytes
         self.scratch_idx = 0
 
-        # Create streams
+        # Create streams (only one per device)
 
-        self.stream = torch.cuda.Stream(torch.device(device_idx), -100)
+        if device_idx not in global_streams:
+            global_streams[device_idx] = torch.cuda.Stream(torch.device(device_idx), -100)
+
+        self.stream = global_streams[device_idx]
+
         xx = 0
 
 

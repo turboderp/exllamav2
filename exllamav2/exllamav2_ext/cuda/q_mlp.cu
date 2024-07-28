@@ -15,6 +15,17 @@ const int THREADS_Y = 4;
 #include "q_mlp_softmax.cuh"
 #include "q_mlp_activation.cuh"
 
+#include <iostream>
+
+enum KernelLabels
+{
+    NORM = 1,
+    GATE,
+    UP,
+    DOWN,
+    POST_NORM
+};
+
 // const int MAX_DIMENSION = 8192;
 
 QMLP::QMLP
@@ -57,7 +68,84 @@ QMLP::QMLP
 {
 }
 
-QMLP::~QMLP() {
+QMLP::~QMLP()
+{
+    for (const auto& pair : graph_map) delete pair.second;
+}
+
+void QMLP::forward_graph_
+(
+    cudaStream_t stream,
+    cublasHandle_t cublas_handle,
+    void* x,
+    int rows,
+    int columns,
+    const std::vector<uintptr_t>& loras,
+    half* lora_temp
+)
+{
+    // Don't use graph if LoRAs enabled or if module might invoke cuBLAS
+
+    if (loras.size() || rows > MAX_Q_GEMM_ROWS)
+    {
+        forward_(stream, cublas_handle, x, rows, columns, loras, lora_temp);
+        return;
+    }
+
+    QMLP_params_const pc = { rows, columns };
+    auto it = graph_map.find(pc);
+    Graph* graph;
+    if (it == graph_map.end())
+    {
+        graph = new Graph();
+        graph_map[pc] = graph;
+//        printf("**** new graph ****\n");
+//        DBGI2(rows, columns);
+//        DBGX(x);
+    }
+    else graph = it->second;
+    if (graph->count())
+    {
+        graph->begin_capture(stream);
+        forward_(stream, cublas_handle, (half*) x, rows, columns, loras, lora_temp, graph);
+        graph->end_capture(stream);
+//        printf("**** record ****\n");
+//        DBGI2(rows, columns);
+//        DBGX(x);
+    }
+    if (graph->ready())
+    {
+        if (layernorm)
+        {
+            if (layernorm_is_rms)
+                rms_norm_cuda_update_x(graph, KernelLabels::NORM, x);
+            else
+                layer_norm_cuda_update_x(graph, KernelLabels::NORM, x);
+        }
+        else
+        {
+            q_gemm_cuda_update_a(graph, KernelLabels::GATE, x);
+            q_gemm_cuda_update_a(graph, KernelLabels::UP, x);
+        }
+
+        if (!post_layernorm)
+        {
+            q_gemm_cuda_update_c(graph, KernelLabels::DOWN, x);
+        }
+        else
+        {
+            if (layernorm_is_rms)
+                rms_norm_cuda_update_y(graph, KernelLabels::POST_NORM, x);
+            else
+                layer_norm_cuda_update_y(graph, KernelLabels::POST_NORM, x);
+        }
+
+        graph->launch(stream);
+    }
+    else
+    {
+        forward_(stream, cublas_handle, x, rows, columns, loras, lora_temp);
+    }
 }
 
 void QMLP::forward_
@@ -68,7 +156,8 @@ void QMLP::forward_
     int rows,
     int columns,
     const std::vector<uintptr_t>& loras,
-    half* lora_temp
+    half* lora_temp,
+    Graph* graph
 )
 {
     bool use_half2 = true;
@@ -89,9 +178,9 @@ void QMLP::forward_
     if (layernorm)
     {
         if (layernorm_is_rms)
-            rms_norm_cuda(stream, x, layernorm, temp_state, norm_epsilon, rows, columns, false, residual_fp32, false);
+            rms_norm_cuda(stream, x, layernorm, temp_state, norm_epsilon, rows, columns, false, residual_fp32, false, graph, KernelLabels::NORM);
         else
-            layer_norm_cuda(stream, (half*) x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns);
+            layer_norm_cuda(stream, (half*) x, layernorm, layernorm_bias, temp_state, norm_epsilon, rows, columns, false, graph, KernelLabels::NORM);
         norm_state = temp_state;
     }
 
@@ -99,8 +188,8 @@ void QMLP::forward_
 
     if (gate)
     {
-        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
-        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq, false, NULL, 0, false, graph, KernelLabels::GATE);
+        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, up,   temp_b, rows, intermediate_size, columns, true, temp_dq, false, NULL, 0, false, graph, KernelLabels::UP);
 
         apply_loras_cuda(stream, cublas_handle, gate_proj_lora, loras, gate, norm_state, temp_a, lora_temp, rows);
         apply_loras_cuda(stream, cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_b, lora_temp, rows);
@@ -113,7 +202,7 @@ void QMLP::forward_
 
     else
     {
-        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, norm_state, up,   temp_a, rows, intermediate_size, columns, true, temp_dq, false, NULL, 0, false, graph, KernelLabels::GATE);
 
         apply_loras_cuda(stream, cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_a, lora_temp, rows);
 
@@ -125,7 +214,7 @@ void QMLP::forward_
 
     if (!post_layernorm)
     {
-        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, (half*) x, rows, columns, intermediate_size, !has_residual, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, (half*) x, rows, columns, intermediate_size, !has_residual, temp_dq, false, NULL, 0, false, graph, KernelLabels::DOWN);
     }
 
     // Down proj with post_layernorm
@@ -134,9 +223,9 @@ void QMLP::forward_
     {
         gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq);
         if (layernorm_is_rms)
-            rms_norm_cuda(stream, temp_state, post_layernorm, x, norm_epsilon, rows, columns, true, false, residual_fp32);
+            rms_norm_cuda(stream, temp_state, post_layernorm, x, norm_epsilon, rows, columns, true, false, residual_fp32, graph, KernelLabels::POST_NORM);
         else
-            layer_norm_cuda(stream, temp_state, post_layernorm, post_layernorm_bias, (half*) x, norm_epsilon, rows, columns, true);
+            layer_norm_cuda(stream, temp_state, post_layernorm, post_layernorm_bias, (half*) x, norm_epsilon, rows, columns, true, graph, KernelLabels::POST_NORM);
     }
 
     apply_loras_cuda(stream, cublas_handle, down_proj_lora, loras, down, temp_a, (half*) x, lora_temp, rows);

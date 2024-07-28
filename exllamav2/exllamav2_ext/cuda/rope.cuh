@@ -5,6 +5,7 @@
 #include <cuda_fp16.h>
 #include <cstdint>
 #include <cstdio>
+#include "graph.cuh"
 
 void rope_cuda
 (
@@ -36,7 +37,37 @@ void rope_cuda_qk
     const int num_heads_k,
     const int past_len,
     const int32_t* past_lens,
-    const bool neox_style
+    const bool neox_style,
+    Graph* graph = NULL,
+    int label = 0
+);
+
+void rope_cuda_qk_update_q
+(
+    Graph* graph,
+    int label,
+    void* q
+);
+
+void rope_cuda_qk_update_k
+(
+    Graph* graph,
+    int label,
+    void* k
+);
+
+void rope_cuda_qk_update_past_len
+(
+    Graph* graph,
+    int label,
+    int past_len
+);
+
+void rope_cuda_qk_update_past_lens
+(
+    Graph* graph,
+    int label,
+    void* past_lens
 );
 
 #endif
