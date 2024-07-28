@@ -99,16 +99,29 @@ void q_mlp_forward_
     TORCH_CHECK(dim == mlp->up->height, "x is wrong shape");
     TORCH_CHECK(rows <= mlp->max_rows, "Too many rows in x");
 
-    mlp->forward_graph_
-    (
-        stream,
-        at::cuda::getCurrentCUDABlasHandle(),
-        (void*) x.data_ptr(),
-        rows,
-        dim,
-        loras,
-        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
-    );
+    #ifdef USE_GRAPH
+        mlp->forward_graph_
+        (
+            stream,
+            at::cuda::getCurrentCUDABlasHandle(),
+            (void*) x.data_ptr(),
+            rows,
+            dim,
+            loras,
+            loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+        );
+    #else
+        mlp->forward_
+        (
+            stream,
+            at::cuda::getCurrentCUDABlasHandle(),
+            (void*) x.data_ptr(),
+            rows,
+            dim,
+            loras,
+            loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+        );
+    #endif
 }
 
 int q_mlp_set_loras

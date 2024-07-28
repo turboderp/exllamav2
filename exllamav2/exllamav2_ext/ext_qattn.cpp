@@ -127,23 +127,43 @@ void q_attn_forward_1
     cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
 
-    attn->forward_cuda_1_graph
-    (
-        stream,
-        cublas_handle,
-        (half*) x.data_ptr(),
-        batch_size,
-        q_len,
-        past_len,
-        past_lens.device().is_meta() ? NULL : (int32_t*) past_lens.data_ptr(),
-        (half*) q_temp.data_ptr(),
-        (half*) k_temp.data_ptr(),
-        (half*) v_temp.data_ptr(),
-        (half*) sin.data_ptr(),
-        (half*) cos.data_ptr(),
-        loras,
-        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
-    );
+    #ifdef USE_GRAPH
+        attn->forward_cuda_1_graph
+        (
+            stream,
+            cublas_handle,
+            (half*) x.data_ptr(),
+            batch_size,
+            q_len,
+            past_len,
+            past_lens.device().is_meta() ? NULL : (int32_t*) past_lens.data_ptr(),
+            (half*) q_temp.data_ptr(),
+            (half*) k_temp.data_ptr(),
+            (half*) v_temp.data_ptr(),
+            (half*) sin.data_ptr(),
+            (half*) cos.data_ptr(),
+            loras,
+            loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+        );
+    #else
+        attn->forward_cuda_1
+        (
+            stream,
+            cublas_handle,
+            (half*) x.data_ptr(),
+            batch_size,
+            q_len,
+            past_len,
+            past_lens.device().is_meta() ? NULL : (int32_t*) past_lens.data_ptr(),
+            (half*) q_temp.data_ptr(),
+            (half*) k_temp.data_ptr(),
+            (half*) v_temp.data_ptr(),
+            (half*) sin.data_ptr(),
+            (half*) cos.data_ptr(),
+            loras,
+            loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+        );
+    #endif
 }
 
 void q_attn_forward_2
