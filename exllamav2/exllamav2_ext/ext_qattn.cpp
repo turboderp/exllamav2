@@ -127,7 +127,7 @@ void q_attn_forward_1
     cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
 
-    #ifdef USE_GRAPH
+    #ifdef USE_GRAPHS
         attn->forward_cuda_1_graph
         (
             stream,

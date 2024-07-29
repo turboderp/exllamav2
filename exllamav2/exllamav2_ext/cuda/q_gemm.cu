@@ -37,11 +37,11 @@ void gemm_half_q_half_cuda_part
     if (!b->is_gptq)
     {
         int block_kn_size;
-        bool measure;
+        bool measure = false;
         AT_Result* atr;
         cudaEvent_t start, stop;
 
-        if (AT_USE_GEMM_AUTOTUNE)
+        if (!AT_USE_GEMM_AUTOTUNE)
         {
             block_kn_size = at_get_fallback_blocksize(b->device, size_m, size_n, size_k);
         }
