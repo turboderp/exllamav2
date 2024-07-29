@@ -77,6 +77,7 @@ public:
     bool residual_fp32;
     int rope_style;
 
+    bool use_graphs;
     std::unordered_map<QAttn_params_const, Graph*, QAttn_params_const_hash> graph_map;
 
     QAttn
@@ -106,12 +107,13 @@ public:
         half* _k_norm,
         half* _post_layernorm,
         half* _post_layernorm_bias,
-        bool _residual_fp32
+        bool _residual_fp32,
+        bool _use_graphs
     );
 
     ~QAttn();
 
-    void forward_cuda_1_graph
+    void forward_cuda_1
     (
         cudaStream_t stream,
         cublasHandle_t cublas_handle,
@@ -129,7 +131,7 @@ public:
         half* lora_temp
     );
 
-    void forward_cuda_1
+    void forward_cuda_1_run
     (
         cudaStream_t stream,
         cublasHandle_t cublas_handle,

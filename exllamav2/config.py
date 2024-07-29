@@ -63,6 +63,7 @@ class ExLlamaV2Config:
     no_sdpa: bool                               # Do not use Torch SDPA even if causal_lower_right bias is available (seems to be unreliable on ROCm (?))
     fasttensors: bool                           # Use alternative .safetensors loader (aio on Linux, cstdio on Windows). Not always faster but can address excessive use of system RAM in some situations
     load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
+    no_graphs: bool                             # Do not use CUDA graphs
 
     max_dq_size: int                            # Max number of elements to dequantize at once
 
@@ -137,6 +138,7 @@ class ExLlamaV2Config:
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
         self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
         self.load_in_q4 = False
+        self.no_graphs = 'EXLLAMA_NO_GRAPHS' in os.environ
 
         if model_dir is not None:
             self.model_dir = model_dir

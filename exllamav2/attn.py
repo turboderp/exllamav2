@@ -452,7 +452,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 k_norm,
                 post_norm_weight,
                 post_norm_bias,
-                cfg.arch.residual_stream_fp32
+                cfg.arch.residual_stream_fp32,
+                not cfg.no_graphs
             )
 
 

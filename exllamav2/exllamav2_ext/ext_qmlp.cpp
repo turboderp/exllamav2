@@ -33,7 +33,8 @@ uintptr_t make_q_mlp
     bool has_residual,
     torch::Tensor post_layernorm,
     torch::Tensor post_layernorm_bias,
-    bool residual_fp32
+    bool residual_fp32,
+    bool use_graphs
 )
 {
     QMatrix* qm_gate = reinterpret_cast<QMatrix*> (q_gate);
@@ -63,7 +64,8 @@ uintptr_t make_q_mlp
         has_residual,
         (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
         (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
-        residual_fp32
+        residual_fp32,
+        use_graphs
     );
 
     return reinterpret_cast<uintptr_t> (mlp);
@@ -99,29 +101,16 @@ void q_mlp_forward_
     TORCH_CHECK(dim == mlp->up->height, "x is wrong shape");
     TORCH_CHECK(rows <= mlp->max_rows, "Too many rows in x");
 
-    #ifdef USE_GRAPHS
-        mlp->forward_graph_
-        (
-            stream,
-            at::cuda::getCurrentCUDABlasHandle(),
-            (void*) x.data_ptr(),
-            rows,
-            dim,
-            loras,
-            loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
-        );
-    #else
-        mlp->forward_
-        (
-            stream,
-            at::cuda::getCurrentCUDABlasHandle(),
-            (void*) x.data_ptr(),
-            rows,
-            dim,
-            loras,
-            loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
-        );
-    #endif
+    mlp->forward_
+    (
+        stream,
+        at::cuda::getCurrentCUDABlasHandle(),
+        (void*) x.data_ptr(),
+        rows,
+        dim,
+        loras,
+        loras_temp.device().is_meta() ? NULL : (half*) loras_temp.data_ptr()
+    );
 }
 
 int q_mlp_set_loras

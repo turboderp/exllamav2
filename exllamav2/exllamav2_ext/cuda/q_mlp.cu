@@ -46,7 +46,8 @@ QMLP::QMLP
     bool _has_residual,
     half* _post_layernorm,
     half* _post_layernorm_bias,
-    bool _residual_fp32
+    bool _residual_fp32,
+    bool _use_graphs
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -64,7 +65,8 @@ QMLP::QMLP
     has_residual(_has_residual),
     post_layernorm(_post_layernorm),
     post_layernorm_bias(_post_layernorm_bias),
-    residual_fp32(_residual_fp32)
+    residual_fp32(_residual_fp32),
+    use_graphs(_use_graphs)
 {
 }
 
@@ -73,7 +75,7 @@ QMLP::~QMLP()
     for (const auto& pair : graph_map) delete pair.second;
 }
 
-void QMLP::forward_graph_
+void QMLP::forward_
 (
     cudaStream_t stream,
     cublasHandle_t cublas_handle,
@@ -86,9 +88,9 @@ void QMLP::forward_graph_
 {
     // Don't use graph if LoRAs enabled or if module might invoke cuBLAS
 
-    if (loras.size() || rows > MAX_Q_GEMM_ROWS)
+    if (!use_graphs || loras.size() || rows > MAX_Q_GEMM_ROWS)
     {
-        forward_(stream, cublas_handle, x, rows, columns, loras, lora_temp);
+        forward_run_(stream, cublas_handle, x, rows, columns, loras, lora_temp);
         return;
     }
 
@@ -107,7 +109,7 @@ void QMLP::forward_graph_
     if (graph->count())
     {
         graph->begin_capture(stream);
-        forward_(stream, cublas_handle, (half*) x, rows, columns, loras, lora_temp, graph);
+        forward_run_(stream, cublas_handle, (half*) x, rows, columns, loras, lora_temp, graph);
         graph->end_capture(stream);
 //        printf("**** record ****\n");
 //        DBGI2(rows, columns);
@@ -144,11 +146,11 @@ void QMLP::forward_graph_
     }
     else
     {
-        forward_(stream, cublas_handle, x, rows, columns, loras, lora_temp);
+        forward_run_(stream, cublas_handle, x, rows, columns, loras, lora_temp);
     }
 }
 
-void QMLP::forward_
+void QMLP::forward_run_
 (
     cudaStream_t stream,
     cublasHandle_t cublas_handle,

@@ -62,6 +62,7 @@ public:
     bool has_residual;
     bool residual_fp32;
 
+    bool use_graphs;
     std::unordered_map<QMLP_params_const, Graph*, QMLP_params_const_hash> graph_map;
 
     QMLP
@@ -82,12 +83,13 @@ public:
         bool _has_residual,
         half* _post_layernorm,
         half* _post_layernorm_bias,
-        bool _residual_fp32
+        bool _residual_fp32,
+        bool _use_graphs
     );
 
     ~QMLP();
 
-    void forward_graph_
+    void forward_
     (
         cudaStream_t stream,
         cublasHandle_t cublas_handle,
@@ -98,7 +100,7 @@ public:
         half* lora_temp
     );
 
-    void forward_
+    void forward_run_
     (
         cudaStream_t stream,
         cublasHandle_t cublas_handle,

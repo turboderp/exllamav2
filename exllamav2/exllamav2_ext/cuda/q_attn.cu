@@ -108,7 +108,8 @@ QAttn::QAttn
     half* _k_norm,
     half* _post_layernorm,
     half* _post_layernorm_bias,
-    bool _residual_fp32
+    bool _residual_fp32,
+    bool _use_graphs
 ):
     layernorm(_layernorm),
     layernorm_bias(_layernorm_bias),
@@ -135,7 +136,8 @@ QAttn::QAttn
     k_norm(_k_norm),
     post_layernorm(_post_layernorm),
     post_layernorm_bias(_post_layernorm_bias),
-    residual_fp32(_residual_fp32)
+    residual_fp32(_residual_fp32),
+    use_graphs(_use_graphs)
 {
 }
 
@@ -144,7 +146,7 @@ QAttn::~QAttn()
     for (const auto& pair : graph_map) delete pair.second;
 }
 
-void QAttn::forward_cuda_1_graph
+void QAttn::forward_cuda_1
 (
     cudaStream_t stream,
     cublasHandle_t cublas_handle,
@@ -164,9 +166,9 @@ void QAttn::forward_cuda_1_graph
 {
     // Don't use graph if LoRAs enabled or if module might invoke cuBLAS
 
-    if (loras.size() || q_len * batch_size > MAX_Q_GEMM_ROWS)
+    if (!use_graphs || loras.size() || q_len * batch_size > MAX_Q_GEMM_ROWS)
     {
-        forward_cuda_1(stream, cublas_handle, x, batch_size, q_len, past_len, past_lens, temp_q, temp_k, temp_v, sin, cos, loras, lora_temp);
+        forward_cuda_1_run(stream, cublas_handle, x, batch_size, q_len, past_len, past_lens, temp_q, temp_k, temp_v, sin, cos, loras, lora_temp);
         return;
     }
 
@@ -185,7 +187,7 @@ void QAttn::forward_cuda_1_graph
     if (graph->count())
     {
         graph->begin_capture(stream);
-        forward_cuda_1(stream, cublas_handle, x, batch_size, q_len, past_len, past_lens, temp_q, temp_k, temp_v, sin, cos, loras, lora_temp, graph);
+        forward_cuda_1_run(stream, cublas_handle, x, batch_size, q_len, past_len, past_lens, temp_q, temp_k, temp_v, sin, cos, loras, lora_temp, graph);
         graph->end_capture(stream);
 //        printf("**** record ****\n");
 //        DBGI2(q_len, batch_size);
@@ -234,11 +236,11 @@ void QAttn::forward_cuda_1_graph
     }
     else
     {
-        forward_cuda_1(stream, cublas_handle, x, batch_size, q_len, past_len, past_lens, temp_q, temp_k, temp_v, sin, cos, loras, lora_temp);
+        forward_cuda_1_run(stream, cublas_handle, x, batch_size, q_len, past_len, past_lens, temp_q, temp_k, temp_v, sin, cos, loras, lora_temp);
     }
 }
 
-void QAttn::forward_cuda_1
+void QAttn::forward_cuda_1_run
 (
     cudaStream_t stream,
     cublasHandle_t cublas_handle,

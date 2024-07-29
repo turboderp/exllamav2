@@ -17,7 +17,8 @@ uintptr_t make_q_mlp
     bool has_residual,
     torch::Tensor post_layernorm,
     torch::Tensor post_layernorm_bias,
-    bool residual_fp32
+    bool residual_fp32,
+    bool use_graphs
 );
 
 void free_q_mlp

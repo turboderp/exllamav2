@@ -146,23 +146,26 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 post_norm_weight = none_tensor
                 post_norm_bias = none_tensor
 
-            self.q_handle = ext_c.make_q_mlp(norm_weight,
-                                             norm_bias,
-                                             is_rms,
-                                             eps,
-                                             0 if self.gate_proj is None else self.gate_proj.q_handle,
-                                             self.up_proj.q_handle,
-                                             self.down_proj.q_handle,
-                                             device_context.get_scratch_slice(self.temp_state_size()),
-                                             device_context.get_scratch_slice(self.temp_a_size()),
-                                             device_context.get_scratch_slice(self.temp_b_size()),
-                                             device_context.get_scratch_slice(self.temp_dq_size()),
-                                             cfg.max_input_len * cfg.max_batch_size,
-                                             cfg.arch.mlp_act_func == "gelu",
-                                             self.has_residual,
-                                             post_norm_weight,
-                                             post_norm_bias,
-                                             cfg.arch.residual_stream_fp32)
+            self.q_handle = ext_c.make_q_mlp(
+                norm_weight,
+                norm_bias,
+                is_rms,
+                eps,
+                0 if self.gate_proj is None else self.gate_proj.q_handle,
+                self.up_proj.q_handle,
+                self.down_proj.q_handle,
+                device_context.get_scratch_slice(self.temp_state_size()),
+                device_context.get_scratch_slice(self.temp_a_size()),
+                device_context.get_scratch_slice(self.temp_b_size()),
+                device_context.get_scratch_slice(self.temp_dq_size()),
+                cfg.max_input_len * cfg.max_batch_size,
+                cfg.arch.mlp_act_func == "gelu",
+                self.has_residual,
+                post_norm_weight,
+                post_norm_bias,
+                cfg.arch.residual_stream_fp32,
+                not cfg.no_graphs
+            )
 
 
     def unload(self):
