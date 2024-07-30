@@ -2,7 +2,12 @@
 #ifndef _q_gemm_autotune_cuh
 #define _q_gemm_autotune_cuh
 
+#if defined(USE_ROCM)
+// Autotune seems unreliable on ROCm
+#define AT_USE_GEMM_AUTOTUNE false
+#else
 #define AT_USE_GEMM_AUTOTUNE true
+#endif
 #define AT_SHAPEHASH(device, size_m, size_k, size_n) (((uint64_t)device << 48) | ((uint64_t)size_m << 32) | ((uint64_t)size_n << 16) | ((uint64_t)size_k))
 #define AT_NUM_MEASURE 120
 
@@ -61,7 +66,11 @@ void at_select(AT_Result* atr)
 
 int at_get_fallback_blocksize(int device, int size_m, int size_k, int size_n)
 {
-    return max(size_k, size_n) < 12000 ? 32 : 64;
+    #if defined(USE_ROCM)
+        return 64;
+    #else
+        return max(size_k, size_n) < 12000 ? 32 : 64;
+    #endif
 }
 
 #endif
