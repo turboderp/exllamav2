@@ -21,6 +21,7 @@ parser.add_argument("--max_tokens", type = int, default = 768, help = "Max numbe
 parser.add_argument("-pf", "--prompt_format", type = str, help = "Instruct format to apply. Default is raw completion (for base models) ")
 parser.add_argument("-v", "--verbose", action = "store_true", help = "Spam completions to console while generating")
 parser.add_argument("-e", "--eval", action = "store_true", help = "Run evaluation script on output file after sampling")
+parser.add_argument("-temp", "--temperature", type = float, help = "Sampling temperature (0 for greedy), default: 0.6")
 model_init.add_args(parser)
 args = parser.parse_args()
 
@@ -109,9 +110,9 @@ generator = ExLlamaV2DynamicGenerator(
 
 gen_settings = ExLlamaV2Sampler.Settings(
     token_repetition_penalty = 1.0,
-    temperature = 0.8,
-    top_k = 100,
-    top_p = 0.8
+    temperature = 0.6,
+    top_k = 50,
+    top_p = 0.6
 )
 
 # Get problems
