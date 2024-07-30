@@ -47,14 +47,16 @@ if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
             from flash_attn import flash_attn_func, flash_attn_with_kvcache
             # import flash_attn_2_cuda as flash_attn_cuda
 
+            signature = list(inspect.signature(flash_attn_func).parameters)
+            has_flash_attn_with_window = "window_size" in signature
+            has_flash_attn_with_softcap = "softcap" in signature
+
             has_flash_attn = True
             has_flash_attn_with_paged = True
 
-        signature = list(inspect.signature(flash_attn_func).parameters)
-        has_flash_attn_with_window = "window_size" in signature
-        has_flash_attn_with_softcap = "softcap" in signature
-
     except ModuleNotFoundError:
+        pass
+    except NameError:
         pass
 
 
