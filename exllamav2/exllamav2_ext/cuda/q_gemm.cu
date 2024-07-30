@@ -74,7 +74,7 @@ void gemm_half_q_half_cuda_part
                     int c64 = atr->timings_64.size();
                     if (c32 + c64 == AT_NUM_MEASURE)
                     {
-                        at_select(atr);
+                        at_select(atr, b->device, size_m, size_k, size_n);
                         block_kn_size = atr->best;
                         measure = false;
                     }

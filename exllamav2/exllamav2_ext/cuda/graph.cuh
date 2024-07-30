@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <vector>
 
-#define MIN_GRAPH_INSTANCES 125
+#define MIN_GRAPH_INSTANCES 205
 
 #if defined(USE_ROCM)
 #define cudaGraphNode_t hipGraphNode_t
