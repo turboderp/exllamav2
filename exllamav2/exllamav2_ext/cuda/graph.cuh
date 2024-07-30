@@ -9,6 +9,16 @@
 
 #define MIN_GRAPH_INSTANCES 125
 
+#if defined(USE_ROCM)
+#define cudaGraphNode_t hipGraphNode_t
+#define cudaKernelNodeParams hipKernelNodeParams
+#define cudaGraphKernelNodeGetParams hipGraphKernelNodeGetParams
+#define cudaGraphNodeType hipGraphNodeType
+#define cudaGraphNodeGetType hipGraphNodeGetType
+#define cudaGraphNodeTypeKernel hipGraphNodeTypeKernel
+#define cudaGraphExecKernelNodeSetParams hipGraphExecKernelNodeSetParams
+#endif
+
 class Graph
 {
 public:

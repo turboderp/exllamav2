@@ -198,6 +198,7 @@ void QMLP::forward_run_
 
         fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
         kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
+        if (graph) graph->attach_label(stream, 0, 0);
     }
 
     // Up proj without gate
@@ -210,6 +211,7 @@ void QMLP::forward_run_
 
         fp_act_kernel kernel = pick_act_kernel(use_half2, false, act_gelu);
         kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, rows, intermediate_size, NULL, 0);
+        if (graph) graph->attach_label(stream, 0, 0);
     }
 
     // Down proj without post_layernorm
@@ -223,7 +225,7 @@ void QMLP::forward_run_
 
     else
     {
-        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq);
+        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq, graph, 0);
         if (layernorm_is_rms)
             rms_norm_cuda(stream, temp_state, post_layernorm, x, norm_epsilon, rows, columns, true, false, residual_fp32, graph, KernelLabels::POST_NORM);
         else

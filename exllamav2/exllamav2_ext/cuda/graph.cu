@@ -103,29 +103,33 @@ void Graph::launch(cudaStream_t stream)
     cudaGraphLaunch(graph_exec, stream);
 }
 
+//void Graph::attach_label(cudaStream_t stream, int label, int sublabel)
+//{
+//    // Get the current capturing graph
+//
+//    cudaGraph_t capturing_graph;
+//    cudaStreamCaptureStatus capture_status;
+//    cudaStreamGetCaptureInfo(stream, &capture_status, NULL, &capturing_graph, NULL, NULL);
+//
+//    // Get the index of the last captured (kernel) node
+//
+//    size_t numNodes;
+//    cudaGraphGetNodes(capturing_graph, nullptr, &numNodes);
+//    int node_idx = (int)numNodes - 1;
+//
+//    // Skip unlabeled kernels
+//
+//    while (node_labels.size() < node_idx)
+//        node_labels.push_back(std::tuple<int, int>(0, 0));
+//
+//    // Set label
+//
+//    node_labels.push_back(std::tuple<int, int>(label, sublabel));
+//}
+
 void Graph::attach_label(cudaStream_t stream, int label, int sublabel)
 {
-    // Get the current capturing graph
-
-    cudaGraph_t capturing_graph;
-    cudaStreamCaptureStatus capture_status;
-    cudaStreamGetCaptureInfo(stream, &capture_status, NULL, &capturing_graph, NULL, NULL);
-
-    // Get the index of the last captured (kernel) node
-
-    size_t numNodes;
-    cudaGraphGetNodes(capturing_graph, nullptr, &numNodes);
-    int node_idx = (int)numNodes - 1;
-
-    // Skip unlabeled kernels
-
-    while (node_labels.size() < node_idx)
-        node_labels.push_back(std::tuple<int, int>(0, 0));
-
-    // Set label
-
     node_labels.push_back(std::tuple<int, int>(label, sublabel));
-//    DBGI3(node_idx, label, sublabel);
 }
 
 template <typename T>
