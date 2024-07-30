@@ -109,7 +109,7 @@ void gemm_half_q_half_cuda_part
             if (graph) printf(" ## Labeling graph in reconstruct/cuBLAS matmul");
             cudaEventCreate(&start);
             cudaEventCreate(&stop);
-            cudaEventRecord(start);
+            cudaEventRecord(start, stream);
         }
 
         // Launch kernel
@@ -143,7 +143,7 @@ void gemm_half_q_half_cuda_part
 
         if (measure)
         {
-            cudaEventRecord(stop);
+            cudaEventRecord(stop, stream);
             cudaEventSynchronize(stop);
             float timing = 0.0f;
             cudaEventElapsedTime(&timing, start, stop);
