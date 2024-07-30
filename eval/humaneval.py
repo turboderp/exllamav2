@@ -43,7 +43,16 @@ prompt_formats = {
     ),
     "granite": (
         "Question:\nComplete the following Python function:\n\n{{problem}}\n\nAnswer:\n"
-        "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}    ",
+        "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}",
+        "    "
+    ),
+    "llama": (
+        "[INST] <<SYS>>\n"
+        "You are a helpful AI coding assistant.\n"
+        "<</SYS>>\n\n"
+        "Complete the following Python function:\n\n"
+        "{{problem}} [/INST] "
+        "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}",
         "    "
     ),
     "llama3": (
@@ -52,14 +61,14 @@ prompt_formats = {
         "<|start_header_id|>user<|end_header_id|>\n\n"
         "Complete the following Python function:\n\n{{problem}}<|eot_id|>"
         "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}    ",
+        "Sure! Here is how you might implement the function:\n\n```python\n{{problem}}",
         "    "
     ),
     "gemma": (
         "<bos><start_of_turn>user\n"
         "Complete the following Python function:\n\n{{problem}}<|eot_id|>"
         "<start_of_turn>model\n"
-        "```python\n{{problem}}    ",
+        "```python\n{{problem}}",
         "    "
     )
 }
