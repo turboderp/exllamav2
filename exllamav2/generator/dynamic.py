@@ -2220,7 +2220,7 @@ class ExLlamaV2DynamicJob:
                         if match > best_match:
                             best_match = match
                             best_match_page = page
-                    if best_match_page:
+                    if best_match_page and best_match > 1:
                         page = seq.allocated_pages[p0]
                         for c in [self.generator.cache] if not self.generator.draft_model else \
                             [self.generator.cache, self.generator.draft_cache]:
