@@ -247,6 +247,7 @@ class ExLlamaV2Sampler:
                 assert pass_tokens, "Filter excluded all tokens"
                 if filter_prefer_eos and tokenizer.eos_token_id in pass_tokens:
                     pass_tokens = { tokenizer.eos_token_id }
+                # TODO: pass pass_tokens as a numpy array or Python set
                 ext_c.logit_filter_exclusive(logit_filter, [sorted(list(pass_tokens))])
 
         # Healing

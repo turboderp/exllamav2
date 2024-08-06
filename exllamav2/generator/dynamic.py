@@ -1729,6 +1729,8 @@ class ExLlamaV2DynamicJob:
 
         # Start filters
 
+        # TODO: Try to move filter evaluation to the end of the forward pass, before sampling so it can potentially
+        #   occur while waiting for the CUDA queue
         if self.new_tokens == 0:
             for f in self.filters: f.begin("")
 
