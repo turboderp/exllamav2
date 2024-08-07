@@ -181,6 +181,9 @@ class ExLlamaV2ArchParams:
         # Scale attn weights (GPT2 quirk, not important for inference)
         self.scale_attn_weights = False
 
+        # Model implementation works in tensor-parallel mode
+        self.supports_tp = False
+
         # Mistral
 
         if arch_string == "MistralForCausalLM":
@@ -201,6 +204,7 @@ class ExLlamaV2ArchParams:
             self.mlp_act_func = "silu"
             self.norm = "rmsnorm"
             self.rope_style = RopeStyle.NEOX
+            self.supports_tp = True
 
         # Mixtral
 
@@ -613,6 +617,7 @@ class ExLlamaV2ArchParams:
             self.mlp_act_func = "silu"
             self.norm = "rmsnorm"
             self.rope_style = RopeStyle.NEOX
+            self.supports_tp = True
 
         # Arch overrides
 
