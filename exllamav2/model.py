@@ -854,9 +854,10 @@ class ExLlamaV2:
                 cache.current_seq_len = past_len
 
         device = self.modules[0].device_idx
-        context = self.get_device_context(device) if device >= 0 else None
-        if context:
-            torch.cuda.set_stream(context.stream)
+        if device is not None and device >= 0:
+            context = self.get_device_context(device)
+            if context:
+                torch.cuda.set_stream(context.stream)
 
         for idx, module in enumerate(self.modules):
 
@@ -876,12 +877,11 @@ class ExLlamaV2:
             # Onward
 
             n_device = module.device_idx
-            if n_device != device:
+            if n_device is not None and n_device != device and n_device >= 0:
                 x = safe_move_tensor(x, n_device, non_blocking = True)
                 device = n_device
-                context = self.get_device_context(device) if device >= 0 else None
-                if context:
-                    torch.cuda.set_stream(context.stream)
+                context = self.get_device_context(device)
+                torch.cuda.set_stream(context.stream)
 
             x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras, **kwargs)
 
@@ -892,10 +892,7 @@ class ExLlamaV2:
         # Advance cache
 
         if cache is not None:
-            if isinstance(cache, list):
-                for c in cache: c.current_seq_len += seq_len
-            else:
-                cache.current_seq_len += seq_len
+            cache.current_seq_len += seq_len
 
         # Apply logit scale
 
@@ -912,5 +909,10 @@ class ExLlamaV2:
             if head_padding > 0:
                 x[:, :, -head_padding:] = -65504.
             r["logits"] = x
+
+        # Synchronize if the last operation TP
+
+        if self.tp_context:
+            self.tp_context.wait_streams(BROADCAST_VC)
 
         return r
