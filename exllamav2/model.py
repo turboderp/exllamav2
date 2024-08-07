@@ -47,6 +47,8 @@ from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
+from exllamav2.device import ExLlamaV2DeviceContext
+from exllamav2.tensor_p import TPContext, BROADCAST_VC
 import gc
 import threading
 from typing import Callable
@@ -66,11 +68,13 @@ class ExLlamaV2:
     config: ExLlamaV2Config
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
-    device_context: list[ExLlamaV2DeviceContext]
+    device_context: list[ExLlamaV2DeviceContext | None]
     cache_map: dict[int: str]
     last_kv_layer_idx: int
     head_layer_idx: int
     loaded: bool
+
+    tp_context: TPContext | None
 
     def __init__(self, config: ExLlamaV2Config, lazy_load = False):
 
@@ -80,6 +84,7 @@ class ExLlamaV2:
         self.device_context = []
         self.cache_map = {}
         self.loaded = False
+        self.tp_context = None
 
         # Build model
 
@@ -288,8 +293,91 @@ class ExLlamaV2:
             self.loaded = True
             cleanup_stfiles()
 
-            # if stats: yield gpu_split, stats_
-            # else: yield gpu_split
+
+    def load_tp(
+        self,
+        gpu_split: list[float] | None = None,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None,
+        progress: bool = False
+    ):
+
+        if progress:
+            progressbar = get_basic_progress()
+            progressbar.start()
+            task_id = progressbar.add_task("Loading: " + self.config.model_dir, total = len(self.modules))
+            module = 0
+            def callback_pb(a, b):
+                progressbar.update(task_id, advance = 1)
+            assert callback is None, \
+                "Cannot use callback function and console progress bar at the same time."
+            callback = callback_pb
+        f = self.load_tp_gen(gpu_split, callback, callback_gen)
+        for item in f:
+            pass
+        if progress:
+            progressbar.stop()
+
+
+    def load_tp_gen(
+        self,
+        gpu_split: list[float] | None = None,
+        callback: Callable[[int, int], None] | None = None,
+        callback_gen: Callable[[int, int], None] | None = None
+    ):
+        # self.config.no_graphs = True
+        self.tp_context = TPContext(self, gpu_split)
+
+        # Create device tensors
+
+        # TODO: Reduce scratch space per device based on tensor split
+
+        devices = self.tp_context.all_devices()
+        scratch = 0
+        for module in self.modules[1:]:
+            scratch = max(scratch, module.scratch_space_fixed())
+
+        self.device_context = [None] * (max(devices) + 1)
+        for idx in devices:
+            self.device_context[idx] = ExLlamaV2DeviceContext(self, idx, scratch)
+
+        # Load module weights
+
+        with torch.inference_mode():
+
+            for idx in range(len(self.modules)):
+                module = self.modules[idx]
+
+                if callback is not None: callback(idx, len(self.modules))
+                if callback_gen is not None: yield from callback_gen(idx, len(self.modules))
+
+                if isinstance(module, ExLlamaV2Embedding):
+                    module.set_device_idx(-1)
+                else:
+                    module.set_device_idx(self.tp_context.device)
+
+                module.load()
+
+                if isinstance(module, ExLlamaV2Embedding):
+                    module.tp_split()
+                if isinstance(module, ExLlamaV2Attention):
+                    module.tp_split()
+                if isinstance(module, ExLlamaV2MLP):
+                    module.tp_split()
+                if isinstance(module, ExLlamaV2RMSNorm):
+                    module.tp_split(BROADCAST_VC)
+                elif isinstance(module, ExLlamaV2Linear):
+                    module.tp_split(BROADCAST_VC)
+
+                module.set_device_idx(None)
+
+            if callback is not None: callback(len(self.modules), len(self.modules))
+            if callback_gen is not None: yield from callback_gen(len(self.modules), len(self.modules))
+
+            self.loaded = True
+            cleanup_stfiles()
+
+            self.tp_context.finalize()
 
 
     def load_autosplit(
@@ -477,6 +565,10 @@ class ExLlamaV2:
         self.modules = []
         self.modules_dict = {}
         self.device_context = []
+
+        if self.tp_context:
+            self.tp_context.unload()
+            self.tp_context = None
 
 
     def set_cache_map(self):
