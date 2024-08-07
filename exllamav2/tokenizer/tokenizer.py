@@ -63,7 +63,7 @@ class ExLlamaV2Tokenizer:
 
     tokenizer_config_dict: dict | None
 
-    def __init__(self, config, lazy_init = False, force_json = False):
+    def __init__(self, config, lazy_init = True, force_json = False):
         """
         Initialize tokenizer from model config
 
