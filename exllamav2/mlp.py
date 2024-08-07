@@ -8,6 +8,7 @@ from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.lora import ExLlamaV2Lora
+from exllamav2.tensor_p import BROADCAST_ID, BROADCAST_RS
 # from line_profiler import profile
 
 from typing import TYPE_CHECKING
@@ -33,6 +34,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     has_norm: bool
     has_residual: bool
 
+    is_tp: bool
+
+
     def __init__(self,
                  model: ExLlamaV2,
                  key: str,
@@ -42,6 +46,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         super().__init__(model, key)
         cfg = self.model.config
+
+        self.is_tp = False
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
@@ -255,14 +261,27 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
 
     # @profile
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        if self.is_tp:
+            return self.forward_tp(
+                hidden_states,
+                cache,
+                attn_params,
+                past_len,
+                intermediates,
+                loras,
+                **kwargs
+            )
 
         cfg = self.model.config
 
@@ -288,14 +307,70 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache = None,
-                      attn_params = None,
-                      past_len = None,
-                      intermediates: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward_tp(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        cfg = self.model.config
+
+        batch_size, q_len, _ = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_ID, dim = cfg.head_dim)
+
+        residual = hidden_states
+
+        post_norm = self.pre_layernorm.forward_tp(hidden_states, output_split = True) \
+            if self.pre_layernorm else hidden_states
+
+        gate = self.gate_proj.forward_tp(post_norm, output_split = True)
+        up = self.up_proj.forward_tp(post_norm, output_split = True)
+
+        outputs = []
+        for idx, hs in enumerate(post_norm):
+            dev = hs.device.index
+            context = self.model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+
+            # TODO: Use act_mul kernel
+
+            if cfg.arch.mlp_act_func == "silu":
+                output = F.silu(gate[idx])
+            elif cfg.arch.mlp_act_func == "gelu":
+                output = F.gelu(gate[idx], approximate = "tanh")
+            output *= up[idx]
+            # output.clamp_(min = -65504.0, max = 65504.0)
+            outputs.append(output)
+
+        outputs = self.model.tp_context.gather(outputs, BROADCAST_ID)
+        outputs = self.model.tp_context.broadcast(outputs, BROADCAST_RS)
+
+        down = self.down_proj.forward_tp(outputs, output_split = True)
+
+        if self.has_residual:
+            self.model.tp_context.add_residual(down, residual, BROADCAST_RS)
+
+        down = self.model.tp_context.gather(down, BROADCAST_RS)
+        down = down.view(batch_size, q_len, down.shape[-1])
+        return down
+
+
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         cfg = self.model.config
 
@@ -373,3 +448,19 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if self.gate_proj is not None: self.gate_proj.rank_reduce(k)
         self.up_proj.rank_reduce(k)
         self.down_proj.rank_reduce(k)
+
+
+    def tp_split(self):
+
+        if self.pre_layernorm is not None:
+            self.pre_layernorm.tp_split(BROADCAST_RS)
+        if self.post_layernorm is not None:
+            self.post_layernorm.tp_split(BROADCAST_RS)
+        if self.gate_proj is not None:
+            self.gate_proj.tp_split(BROADCAST_ID)
+        if self.up_proj is not None:
+            self.up_proj.tp_split(BROADCAST_ID)
+        if self.down_proj is not None:
+            self.down_proj.tp_split(BROADCAST_RS)
+
+        self.is_tp = True
