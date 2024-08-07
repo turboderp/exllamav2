@@ -44,6 +44,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/ext_safetensors.cpp",
                 "exllamav2/exllamav2_ext/ext_sampling.cpp",
                 "exllamav2/exllamav2_ext/ext_element.cpp",
+                "exllamav2/exllamav2_ext/ext_tp.cpp",
                 "exllamav2/exllamav2_ext/cuda/graph.cu",
                 "exllamav2/exllamav2_ext/cuda/h_add.cu",
                 "exllamav2/exllamav2_ext/cuda/h_gemm.cu",

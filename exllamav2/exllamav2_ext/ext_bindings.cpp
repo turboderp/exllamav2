@@ -20,6 +20,7 @@
 #include "ext_norm.h"
 #include "ext_rope.h"
 #include "ext_element.h"
+#include "ext_tp.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
@@ -119,4 +120,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     // element
 
     m.def("softcap_", &softcap_, "softcap_");
+
+    // tp
+
+    m.def("make_tp_context", &make_tp_context, "make_tp_context");
+    m.def("free_tp_context", &free_tp_context, "free_tp_context");
+    m.def("tp_broadcast", &tp_broadcast, "tp_broadcast");
+    m.def("tp_gather", &tp_gather, "tp_gather");
 }
