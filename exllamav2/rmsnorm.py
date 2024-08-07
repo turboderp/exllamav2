@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.ext import exllamav2_ext as ext_c
+from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -12,13 +13,18 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
     name: str = "RMSNorm"
 
-    weight: nn.Parameter | None
-    bias: nn.Parameter | None
+    weight: nn.Parameter | None | list[nn.Parameter | None]
+    bias: nn.Parameter | None | list[nn.Parameter | None]
     variance_epsilon: float
 
+    is_tp: bool
+    broadcast_type: int | None
 
     def __init__(self, model, key):
         super().__init__(model, key)
+
+        self.is_tp = False
+        self.broadcast_type = None
 
         self.weight = None
         self.bias = None
@@ -90,15 +96,29 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         return 0
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras = None,
-                output_fp32 = False,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        output_fp32 = False,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        if self.is_tp:
+            return self.forward_tp(
+                hidden_states,
+                cache,
+                attn_params,
+                past_len,
+                intermediates,
+                loras,
+                output_fp32,
+                **kwargs
+            )
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -115,6 +135,39 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return {"hidden_states": hidden_states}
         else:
             return hidden_states
+
+
+    def forward_tp(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        output_fp32 = False,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        if isinstance(hidden_states, torch.Tensor):
+            output_shape = hidden_states.shape
+            hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+            hidden_states = self.model.tp_context.broadcast(hidden_states, self.broadcast_type)
+        else:
+            output_shape = hidden_states[0].shape
+            hidden_states = [hs.view(-1, hs.shape[-1]) for hs in hidden_states]
+
+        outputs = []
+        for idx, hs in enumerate(hidden_states):
+            dev = hs.device.index
+            context = self.model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+
+            output = torch.empty_like(hs)
+            ext_c.rms_norm(hs, self.weight[idx], output, self.variance_epsilon)
+            outputs.append(output.view(output_shape))
+
+        return outputs
 
 
     def forward_torch(self,
@@ -143,3 +196,32 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             return hidden_states
 
 
+    def tp_split(self, broadcast_type: int):
+
+        cfg = self.model.config
+        self.broadcast_type = broadcast_type
+        split = self.model.tp_context.get_split(broadcast_type)
+        maxdev = max(dev for dev, _, _ in split)
+
+        new_weight: list[nn.Parameter | None] = [None] * (maxdev + 1)
+        new_bias: list[nn.Parameter | None] = [None] * (maxdev + 1)
+
+        for idx, a, b in split:
+            s = b - a
+            if s == 0: continue
+
+            if self.weight is not None:
+                if self.weight.device.index == idx:
+                    new_weight[idx] = self.weight
+                else:
+                    new_weight[idx] = safe_move_tensor(self.weight, idx)
+
+            if self.bias is not None:
+                if self.bias.device.index == idx:
+                    new_bias[idx] = self.bias
+                else:
+                    new_bias[idx] = safe_move_tensor(self.bias, idx)
+
+        self.weight = new_weight
+        self.bias = new_bias
+        self.is_tp = True
