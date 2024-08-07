@@ -242,7 +242,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                    self.down_proj.temp_dq_size())
 
 
-    def set_device_idx(self, idx: int):
+    def set_device_idx(self, idx: int | None):
         super().set_device_idx(idx)
 
         if self.pre_layernorm is not None:

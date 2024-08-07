@@ -20,7 +20,7 @@ class ExLlamaV2Module:
     config: ExLlamaV2Config
     key: str
     alt_key: str | None
-    device_idx: int
+    device_idx: int | list
     footprint: int
     submodules: list[ExLlamaV2Module]
     assumed_footprint: int
@@ -223,7 +223,7 @@ class ExLlamaV2Module:
         return self.footprint
 
 
-    def set_device_idx(self, idx: int):
+    def set_device_idx(self, idx: int | None):
         self.device_idx = idx
 
 

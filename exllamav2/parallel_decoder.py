@@ -83,7 +83,7 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         return max(self.attn.scratch_space(), self.mlp.scratch_space())
 
 
-    def set_device_idx(self, idx: int):
+    def set_device_idx(self, idx: int | None):
         super().set_device_idx(idx)
 
         self.input_layernorm.set_device_idx(idx)

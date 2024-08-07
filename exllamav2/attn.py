@@ -401,7 +401,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return 2 * att_max * cfg.num_attention_heads * 2 + 128
 
 
-    def set_device_idx(self, idx):
+    def set_device_idx(self, idx: int | None):
         super().set_device_idx(idx)
 
         if self.pre_layernorm is not None: self.pre_layernorm.set_device_idx(idx)

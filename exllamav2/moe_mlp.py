@@ -201,7 +201,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         return self.model.config.max_input_len * self.model.config.max_batch_size * self.model.config.num_experts * 2 + 128
 
 
-    def set_device_idx(self, idx: int):
+    def set_device_idx(self, idx: int | None):
         super().set_device_idx(idx)
 
         self.post_attention_layernorm.set_device_idx(idx)
