@@ -18,14 +18,22 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
     embedding: nn.Embedding | None
     native_vocab_size: int | None
 
+    is_tp: bool
 
     def __init__(self,
                  model: ExLlamaV2,
                  key: str):
         super().__init__(model, key)
 
+        self.is_tp = False
+
         self.native_vocab_size = None
         self.embedding = None
+
+
+    def tp_split(self):
+
+        self.is_tp = True
 
 
     @torch.inference_mode
@@ -160,6 +168,12 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                 hidden_states = hidden_states.float()
             if cfg.arch.normalize_embeddings:
                 hidden_states *= cfg.hidden_size ** 0.5
+
+        # Move to pinned temp buffer for TP
+
+        if self.is_tp:
+            ctx = self.model.tp_context
+            hidden_states = ctx.copy_pinned(hidden_states)
 
         if intermediates:
             return {"hidden_states": hidden_states}
