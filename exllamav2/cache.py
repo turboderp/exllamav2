@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.tensor_p import BROADCAST_KV
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -28,16 +29,21 @@ class ExLlamaV2CacheBase:
     weights_per_element_k: int
     weights_per_element_v: int
     has_scales: bool
+    fixed_device: int | None
 
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int,
-                 max_seq_len: int,
-                 dtype: torch.dtype,
-                 weights_per_element_k: int,
-                 weights_per_element_v: int,
-                 has_scales: bool):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int,
+        max_seq_len: int,
+        dtype: torch.dtype,
+        weights_per_element_k: int,
+        weights_per_element_v: int,
+        has_scales: bool,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
         self.model = model
         self.max_seq_len = max_seq_len if max_seq_len != -1 else self.model.config.max_seq_len
@@ -52,7 +58,7 @@ class ExLlamaV2CacheBase:
         self.key_scales = []
         self.value_scales = []
 
-        self.num_key_value_heads = self.model.config.num_key_value_heads
+        self.num_key_value_heads = num_key_value_heads or self.model.config.num_key_value_heads
         self.num_hidden_layers = self.model.config.num_hidden_layers
         self.head_dim = self.model.config.head_dim
 
@@ -63,6 +69,8 @@ class ExLlamaV2CacheBase:
         self.shape_s = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32)
 
         self.q_block = 1
+        self.fixed_device = fixed_device
+
 
     def create_state_tensors(self,
                              copy_from: ExLlamaV2CacheBase | None,
@@ -78,7 +86,7 @@ class ExLlamaV2CacheBase:
             for i in range(self.num_hidden_layers):
 
                 if copy_from is None:
-                    device = self.model.cache_map[i]
+                    device = self.model.cache_map.get(i, self.fixed_device)
                     p_key_states = torch.zeros(self.shape_wk, dtype = self.dtype, device = device).contiguous()
                     p_value_states = torch.zeros(self.shape_wv, dtype = self.dtype, device = device).contiguous()
                     if self.has_scales:
@@ -218,14 +226,27 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
     FP16 cache
     """
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int = 1,
-                 max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache | None = None,
-                 lazy: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int = 1,
+        max_seq_len: int = -1,
+        copy_from: ExLlamaV2Cache | None = None,
+        lazy: bool = False,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
-        super().__init__(model, batch_size, max_seq_len, torch.half, 1, 1, False)
+        super().__init__(
+            model,
+            batch_size,
+            max_seq_len,
+            torch.half,
+            1, 1,
+            False,
+            num_key_value_heads,
+            fixed_device
+        )
 
         self.create_state_tensors(copy_from, lazy)
 
@@ -278,14 +299,27 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
     8-bit cache. Keys and values are compressed to FP8 (e5m2) format by truncation.
     """
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int = 1,
-                 max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache_8bit | None = None,
-                 lazy: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int = 1,
+        max_seq_len: int = -1,
+        copy_from: ExLlamaV2Cache_8bit | None = None,
+        lazy: bool = False,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
-        super().__init__(model, batch_size, max_seq_len, torch.uint8, 1, 1, False)
+        super().__init__(
+            model,
+            batch_size,
+            max_seq_len,
+            torch.uint8,
+            1, 1,
+            False,
+            num_key_value_heads,
+            fixed_device
+        )
 
         self.create_state_tensors(copy_from, lazy)
 
@@ -293,7 +327,8 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
 
         self.temp_tensors = {}
         if not lazy:
-            for device in self.model.get_cache_devices(): self.touch_device(device)
+            devs = self.model.get_cache_devices() if self.fixed_device is None else [self.fixed_device]
+            for device in devs: self.touch_device(device)
 
 
     def touch_device(self, device):
@@ -313,7 +348,8 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
                      cache_seqlens: torch.Tensor | None = None,
                      block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
 
-        device = self.model.cache_map[layer_idx]
+        device = self.model.cache_map.get(layer_idx, self.fixed_device)
+
         temp_key_state, temp_value_state = self.temp_tensors[device]
         if width > 0: ext_c.fp8_to_fp16(self.key_states[layer_idx], temp_key_state, batch_size, offset, width)
         if width > 0: ext_c.fp8_to_fp16(self.value_states[layer_idx], temp_value_state, batch_size, offset, width)
@@ -329,7 +365,8 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
                        cache_seqlens: torch.Tensor | None = None,
                        block_table: torch.Tensor | None = None):
 
-        device = self.model.cache_map[layer_idx]
+        device = self.model.cache_map.get(layer_idx, self.fixed_device)
+
         temp_key_state, temp_value_state = self.temp_tensors[device]
         if width > 0: ext_c.fp16_to_fp8(temp_key_state, self.key_states[layer_idx], batch_size, offset, width)
         if width > 0: ext_c.fp16_to_fp8(temp_value_state, self.value_states[layer_idx], batch_size, offset, width)
@@ -364,16 +401,30 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
 
     wbits: int
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int = 1,
-                 max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache_Q4 | None = None,
-                 lazy: bool = False,
-                 weights_per_byte_k: int = -1,
-                 weights_per_byte_v: int = -1):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int = 1,
+        max_seq_len: int = -1,
+        copy_from: ExLlamaV2Cache_Q4 | None = None,
+        lazy: bool = False,
+        weights_per_byte_k: int = -1,
+        weights_per_byte_v: int = -1,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
-        super().__init__(model, batch_size, max_seq_len, torch.uint8, weights_per_byte_k, weights_per_byte_v, True)
+        super().__init__(
+            model,
+            batch_size,
+            max_seq_len,
+            torch.uint8,
+            weights_per_byte_k,
+            weights_per_byte_v,
+            True,
+            num_key_value_heads,
+            fixed_device
+        )
         cfg = self.model.config
 
         self.create_state_tensors(copy_from, lazy)
@@ -392,7 +443,8 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
 
         self.temp_tensors = {}
         if not lazy:
-            for device in self.model.get_cache_devices(): self.touch_device(device)
+            devs = self.model.get_cache_devices() if self.fixed_device is None else [self.fixed_device]
+            for device in devs: self.touch_device(device)
 
         # Calibration mode
 
@@ -420,7 +472,8 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
                      cache_seqlens: torch.Tensor | None = None,
                      block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
 
-        device = self.model.cache_map[layer_idx]
+        device = self.model.cache_map.get(layer_idx, self.fixed_device)
+
         temp_key_state, temp_value_state = self.temp_tensors[device]
         if width == 0: return temp_key_state, temp_value_state
 
@@ -478,7 +531,7 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
             offset = a
             width = b - a
 
-        device = self.model.cache_map[layer_idx]
+        device = self.model.cache_map.get(layer_idx, self.fixed_device)
         temp_key_state, temp_value_state = self.temp_tensors[device]
 
         # if self.calibrated:
@@ -606,38 +659,212 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
 
 class ExLlamaV2Cache_Q4(ExLlamaV2Cache_Q):
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int = 1,
-                 max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache_Q4 | None = None,
-                 lazy: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int = 1,
+        max_seq_len: int = -1,
+        copy_from: ExLlamaV2Cache_Q4 | None = None,
+        lazy: bool = False,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
-        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 2, 2)
+        super().__init__(
+            model,
+            batch_size,
+            max_seq_len,
+            copy_from,
+            lazy,
+            2, 2,
+            num_key_value_heads,
+            fixed_device
+        )
         self.wbits = 4
 
 
 class ExLlamaV2Cache_Q6(ExLlamaV2Cache_Q):
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int = 1,
-                 max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache_Q6 | None = None,
-                 lazy: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int = 1,
+        max_seq_len: int = -1,
+        copy_from: ExLlamaV2Cache_Q6 | None = None,
+        lazy: bool = False,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
-        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 1, 2)
+        super().__init__(
+            model,
+            batch_size,
+            max_seq_len,
+            copy_from,
+            lazy,
+            1, 2,
+            num_key_value_heads,
+            fixed_device
+        )
         self.wbits = 6
 
 
 class ExLlamaV2Cache_Q8(ExLlamaV2Cache_Q):
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 batch_size: int = 1,
-                 max_seq_len: int = -1,
-                 copy_from: ExLlamaV2Cache_Q8 | None = None,
-                 lazy: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        batch_size: int = 1,
+        max_seq_len: int = -1,
+        copy_from: ExLlamaV2Cache_Q8 | None = None,
+        lazy: bool = False,
+        num_key_value_heads: int | None = None,
+        fixed_device: int | None = None
+    ):
 
-        super().__init__(model, batch_size, max_seq_len, copy_from, lazy, 1, 1)
+        super().__init__(
+            model,
+            batch_size,
+            max_seq_len,
+            copy_from,
+            lazy,
+            1, 1,
+            num_key_value_heads,
+            fixed_device
+        )
         self.wbits = 8
+
+
+class ExLlamaV2Cache_TP(ExLlamaV2CacheBase):
+
+    caches: list[ExLlamaV2CacheBase]
+
+    max_seq_len: int
+    batch_size: int
+
+    current_seq_len: int
+
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        base: type = ExLlamaV2Cache,
+        batch_size: int = 1,
+        max_seq_len: int = -1
+    ):
+        super().__init__(model, batch_size, max_seq_len, torch.half, 1, 1, False, None)
+
+        assert model.tp_context is not None, \
+            "Cannot create TP cache unless model is loaded with load_tp()"
+
+        self.caches = [
+            base(
+                model = model,
+                batch_size = batch_size,
+                max_seq_len = max_seq_len,
+                copy_from = None,
+                lazy = False,
+                num_key_value_heads = b - a,
+                fixed_device = idx
+            )
+            if b - a > 0 else None
+            for idx, a, b in model.tp_context.get_split(BROADCAST_KV)
+        ]
+
+        # for idx, cache in enumerate(self.caches):
+        #     if cache is None: continue
+        #     cache.fixed_device = idx
+        #     cache.create_state_tensors(copy_from = None, lazy = False)
+
+
+    def roll_left(self):
+        for cache in self.caches:
+            cache.roll_left()
+
+
+    def get_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | list[torch.Tensor] | None = None,
+        block_table: torch.Tensor | list[torch.Tensor] | None = None
+    ) -> (torch.Tensor, torch.Tensor):
+        kc, vc = [], []
+        for idx, cache in enumerate(self.caches):
+            k, v = cache.get_kv_state(
+                layer_idx,
+                batch_size,
+                offset,
+                width,
+                page_size,
+                cache_seqlens[idx],
+                block_table[idx]
+            )
+            kc.append(k)
+            vc.append(v)
+        return kc, vc
+
+
+    def store_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | list[torch.Tensor] | None = None,
+        block_table: torch.Tensor | list[torch.Tensor] | None = None
+    ):
+        for idx, cache in enumerate(self.caches):
+            cache.store_kv_state(
+                layer_idx,
+                batch_size,
+                offset,
+                width,
+                page_size,
+                cache_seqlens[idx],
+                block_table[idx]
+            )
+
+
+    @torch.inference_mode
+    def copy_states(
+        self,
+        target: ExLlamaV2Cache_TP,
+        from_column: int,
+        from_columns: int,
+        to_column: int,
+        to_columns: int,
+        from_row: int,
+        from_rows: int,
+        to_row: int,
+        to_rows: int
+    ):
+        # TODO: Parallel implementation
+        for cache, tcache in zip(self.caches, target.caches):
+            cache.copy_states(
+                tcache,
+                from_column,
+                from_columns,
+                to_column,
+                to_columns,
+                from_row,
+                from_rows,
+                to_row,
+                to_rows
+            )
+
+
+    def touch_device(self, device):
+        raise NotImplementedError()
+
+
+    def all_tensors(self):
+        # TODO: Support defrag with TP cache
+        return []
+
+
+    def reset(self):
+        self.current_seq_len = 0
