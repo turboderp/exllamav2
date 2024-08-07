@@ -1,8 +1,7 @@
 from __future__ import annotations
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
-import gc
+import gc, subprocess, time, os, json
 import torch
-import time
 
 
 class Timer:
@@ -213,6 +212,100 @@ def print_vram_usage_peak():
 
     mem_this = torch.cuda.max_memory_allocated("cuda:0")
     print(f"Peak memory: {mem_this / (1024 ** 2):,.2f} MB")
+
+
+def get_visible_devices():
+
+    visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+    if visible_devices is None:
+        return None
+    return [int(dev) for dev in visible_devices.split(',')]
+
+
+def get_nvidia_gpu_memory(visible_devices=None):
+
+    """
+    Get the current GPU usage for NVIDIA GPUs.
+    TODO: Find a better way to respect CUDA_VISIBLE_DEVICES, perhaps pynvml?
+    """
+
+    result = subprocess.run(
+        [
+            'nvidia-smi',
+            '--query-gpu=index,memory.total,memory.used,memory.free',
+            '--format=csv,nounits,noheader'
+        ],
+        stdout = subprocess.PIPE, encoding = 'utf-8'
+    )
+
+    gpu_memory = {}
+    for line in result.stdout.strip().split('\n'):
+        index, total, used, free = map(int, line.split(','))
+        if visible_devices is None or index in visible_devices:
+            gpu_memory[index] = {'total': total, 'used': used, 'free': free}
+    if visible_devices is not None:
+        gpu_memory = { idx: gpu_memory[d] for idx, d in enumerate(visible_devices) }
+
+    return gpu_memory
+
+
+def get_amd_gpu_memory():
+
+    """
+    Get the current GPU usage for AMD GPUs.
+    TODO: Test on ROCm
+    """
+
+    result = subprocess.run(
+        [
+            'rocm-smi',
+            '--showmeminfo',
+            'vram',
+            '--json'
+        ],
+        stdout=subprocess.PIPE, encoding='utf-8'
+    )
+
+    data = json.loads(result.stdout)
+
+    gpu_memory = {}
+    for gpu in data['card']:
+        index = gpu['card_id']
+        total = int(gpu['vram_total'])
+        used = int(gpu['vram_used'])
+        free = int(gpu['vram_free'])
+        gpu_memory[index] = {'total': total, 'used': used, 'free': free}
+
+    return gpu_memory
+
+
+def get_all_gpu_memory():
+
+    """
+    Get the current GPU usage for both NVIDIA and AMD GPUs.
+    """
+
+    gpu_memory = {}
+    visible_devices = get_visible_devices()
+
+    try:
+        nvidia_memory = get_nvidia_gpu_memory(visible_devices)
+        gpu_memory.update(nvidia_memory)
+    except FileNotFoundError:
+        pass
+        # print("nvidia-smi not found. Skipping NVIDIA GPU check.")
+
+    try:
+        amd_memory = get_amd_gpu_memory()
+        gpu_memory.update(amd_memory)
+    except FileNotFoundError:
+        pass
+        # print("rocm-smi not found. Skipping AMD GPU check.")  # TODO: remove warning on NVidia, test on AMD
+
+    assert gpu_memory, \
+        "Unable to read available VRAM from nvidia-smi or rocm-smi"
+
+    return gpu_memory
 
 
 def integer_split(x, split: list[int]) -> list[int]:
