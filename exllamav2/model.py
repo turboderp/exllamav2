@@ -899,7 +899,7 @@ class ExLlamaV2:
     # @profile
     def forward_chunk(self,
                       input_ids: torch.Tensor,
-                      cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
+                      cache: ExLlamaV2CacheBase | None = None,
                       input_mask: torch.Tensor | None = None,
                       preprocess_only: bool = False,
                       last_id_only: bool = False,
@@ -915,10 +915,7 @@ class ExLlamaV2:
         batch_size, seq_len = input_ids.shape
         past_len = 0
         if cache is not None:
-            if isinstance(cache, ExLlamaV2CacheBase):
-                past_len = cache.current_seq_len
-            # else:
-            #     past_len = [c.current_seq_len for c in cache]
+            past_len = cache.current_seq_len
 
         assert self.config.max_output_len is None or \
             preprocess_only or \
