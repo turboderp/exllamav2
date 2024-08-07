@@ -349,20 +349,21 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             output_shape = hidden_states[0].shape[:-1] + (self.out_features,)
             hidden_states = [hs.view(-1, hs.shape[-1]) for hs in hidden_states]
 
-        outputs = []
-        for idx, hs in enumerate(hidden_states):
-            dev = hs.device.index
-            context = self.model.get_device_context(dev)
-            torch.cuda.set_stream(context.stream)
-            sh = (hs.shape[0], (split[idx][2] - split[idx][1]) * dim)
-            output = torch.empty(sh, device=hs.device, dtype=hs.dtype)
-            outputs.append(output)
-            ext_c.gemm_half_q_half(
-                hs,
-                self.q_handle[idx],
-                output,
-                force_cuda
-            )
+        outputs = [
+            torch.empty(
+                (hs.shape[0], (b - a) * dim),
+                device = hs.device,
+                dtype = hs.dtype
+            ) for hs, (dev, a, b) in zip(hidden_states, split)
+        ]
+
+        ext_c.gemm_half_q_half_tp(
+            hidden_states,
+            self.q_handle,
+            outputs,
+            force_cuda,
+            self.model.tp_context.ext_tp_context
+        )
 
         if output_split:
             return outputs

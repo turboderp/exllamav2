@@ -52,6 +52,15 @@ void gemm_half_q_half
     bool force_cuda
 );
 
+void gemm_half_q_half_tp
+(
+    std::vector<torch::Tensor> a,
+    std::vector<uintptr_t> b,
+    std::vector<torch::Tensor> c,
+    bool force_cuda,
+    uintptr_t tp_context
+);
+
 void matrix_q4_to_fp16
 (
     torch::Tensor in,
