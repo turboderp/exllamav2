@@ -16,7 +16,7 @@
 #include "cuda/head_norm.cuh"
 
 #include "cpp/util.h"
-
+#include "ext_tp.h"
 
 // RMS layernorm
 
@@ -54,6 +54,42 @@ void rms_norm
         input_fp32,
         output_fp32
     );
+}
+
+void rms_norm_tp
+(
+    std::vector<torch::Tensor> x,
+    std::vector<torch::Tensor> w,
+    std::vector<torch::Tensor> y,
+    float epsilon,
+    uintptr_t tp_context
+)
+{
+    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+
+    int rows = x[0].size(0);
+    int dim = x[0].size(1);
+
+    for (int i = 0; i < x.size(); ++i)
+    {
+        int dev = x[i].device().index();
+//        DBGI(dev);
+//        DBGI(ctx->streams[dev]);
+        cudaSetDevice(dev);
+        rms_norm_cuda
+        (
+            ctx->streams[dev],
+            (void*) x[i].data_ptr(),
+            (half*) w[i].data_ptr(),
+            (void*) y[i].data_ptr(),
+            epsilon,
+            rows,
+            dim,
+            false,
+            false,  // TODO: FP32 residual
+            false
+        );
+    }
 }
 
 void rms_norm_

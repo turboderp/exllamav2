@@ -157,28 +157,30 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
             output_shape = hidden_states[0].shape
             hidden_states = [hs.view(-1, hs.shape[-1]) for hs in hidden_states]
 
-        outputs = []
-        for idx, hs in enumerate(hidden_states):
-            dev = hs.device.index
-            context = self.model.get_device_context(dev)
-            torch.cuda.set_stream(context.stream)
+        outputs = [torch.empty_like(hs) for hs in hidden_states]
+        ext_c.rms_norm_tp(
+            hidden_states,
+            self.weight,
+            outputs,
+            self.variance_epsilon,
+            self.model.tp_context.ext_tp_context
+        )
 
-            output = torch.empty_like(hs)
-            ext_c.rms_norm(hs, self.weight[idx], output, self.variance_epsilon)
-            outputs.append(output.view(output_shape))
-
+        outputs = [x.view(output_shape) for x in outputs]
         return outputs
 
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache = None,
-                      attn_params = None,
-                      past_len = None,
-                      intermediates: bool = False,
-                      loras = None,
-                      output_fp32 = False,
-                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        output_fp32 = False,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         # hidden_states.clamp_(-65504.0, 65504.0)
 

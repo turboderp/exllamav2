@@ -108,6 +108,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
     m.def("rms_norm", &rms_norm, "rms_norm");
     m.def("rms_norm_", &rms_norm_, "rms_norm_");
+    m.def("rms_norm_tp", &rms_norm_tp, "rms_norm_tp");
     m.def("layer_norm", &layer_norm, "layer_norm");
     m.def("layer_norm_", &layer_norm_, "layer_norm_");
     m.def("head_norm", &head_norm, "head_norm");
