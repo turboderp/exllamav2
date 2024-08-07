@@ -66,7 +66,9 @@ public:
         half* bias,
 
         half* _temp_dq,
-        const int _max_dq_rows
+        const int _max_dq_rows,
+
+        bool no_map = false
     );
 
     ~QMatrix();

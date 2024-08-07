@@ -68,7 +68,9 @@ QMatrix::QMatrix
     half* _bias,
 
     half* _temp_dq,
-    const int _max_dq_rows
+    const int _max_dq_rows,
+
+    bool no_map
 ) :
     device(_device),
     height(_height),
@@ -171,6 +173,8 @@ QMatrix::QMatrix
 //     DBGI(rows_2);
 
     // Shuffle quantized data
+
+    if (no_map) return;
 
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_X;

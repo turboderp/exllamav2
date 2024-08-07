@@ -5,8 +5,10 @@ from torch import nn
 from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.module import ExLlamaV2Module
+from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from exllamav2.lora import ExLlamaV2Lora
     from exllamav2.model import ExLlamaV2
@@ -22,13 +24,13 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     prescale: float
 
     linear: nn.Linear | None
-    q_handle: int | None
-    q_tensors: dict | None
+    q_handle: int | list[int | None] | None
+    q_tensors: dict | list[dict | None] | None
     q4_weight: torch.Tensor | None
     q4_scales: torch.Tensor | None
     fp16_bias: torch.Tensor | None
 
-    temp_dq: torch.tensor
+    temp_dq: torch.Tensor | list[torch.Tensor]
     padding: int
     max_out_len: int
 
@@ -39,6 +41,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     f_beg: int | None
     f_end: int | None
 
+    is_tp: bool
+    broadcast_type: int | None
     is_sub_module: bool
 
     def __init__(self,
@@ -59,6 +63,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         super().__init__(model, key)
 
         self.is_sub_module = is_sub_module
+
+        self.is_tp = False
+        self.broadcast_type = None
 
         if pad32:
             self.padding = -out_features % 32
@@ -184,11 +191,14 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.linear = None
 
         if self.q_handle is not None:
-            ext_c.free_q_matrix(self.q_handle)
+            for h in (self.q_handle if isinstance(self.q_handle, list) else [self.q_handle]):
+                ext_c.free_q_matrix(h)
             self.q_handle = None
 
         if self.q_tensors is not None:
-            for k, v in self.q_tensors.items(): del v
+            for t in (self.q_tensors if isinstance(self.q_tensors, list) else [self.q_tensors]):
+                for k, v in t.items():
+                    del v
             self.q_tensors = None
 
         if self.q4_weight is not None:
@@ -226,9 +236,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                (self.temp_fwd_size() if self.is_sub_module else 0)
 
 
-    def temp_dq_size(self) -> int:
+    def temp_dq_size(self, out_features = None) -> int:
 
-        dq = self.in_features * self.out_features
+        dq = self.in_features * self.out_features if out_features is None else out_features
         dq = min(dq, self.model.config.max_dq_size)
         dq = dq * 2 + 128
         return dq
@@ -241,16 +251,31 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         return self.out_features * max_len * self.model.config.max_batch_size * 4 + 128
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None,
-                force_recons: bool = False,
-                force_cuda: bool = False,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        force_recons: bool = False,
+        force_cuda: bool = False,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        if self.is_tp:
+            return self.forward_tp(
+                hidden_states,
+                cache,
+                attn_params,
+                past_len,
+                intermediates,
+                loras,
+                force_recons,
+                force_cuda,
+                **kwargs
+            )
 
         # Linear forward
 
@@ -297,6 +322,54 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             return {"hidden_states": hidden_states_out}
         else:
             return hidden_states_out
+
+
+    def forward_tp(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        force_recons: bool = False,
+        force_cuda: bool = False,
+        output_split: bool = False,
+        dim: int = 1,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        split = self.model.tp_context.get_split(self.broadcast_type)
+
+        if isinstance(hidden_states, torch.Tensor):
+            output_shape = hidden_states.shape[:-1] + (self.out_features,)
+            hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+            hidden_states = self.model.tp_context.broadcast(hidden_states, self.broadcast_type)
+        else:
+            output_shape = hidden_states[0].shape[:-1] + (self.out_features,)
+            hidden_states = [hs.view(-1, hs.shape[-1]) for hs in hidden_states]
+
+        outputs = []
+        for idx, hs in enumerate(hidden_states):
+            dev = hs.device.index
+            context = self.model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+            sh = (hs.shape[0], (split[idx][2] - split[idx][1]) * dim)
+            output = torch.empty(sh, device=hs.device, dtype=hs.dtype)
+            outputs.append(output)
+            ext_c.gemm_half_q_half(
+                hs,
+                self.q_handle[idx],
+                output,
+                force_cuda
+            )
+
+        if output_split:
+            return outputs
+
+        output = self.model.tp_context.gather(outputs, self.broadcast_type)
+        hidden_states_out = output.view(output_shape)
+        return hidden_states_out
 
 
     def get_weight_tensor_dq(self) -> torch.Tensor:
@@ -351,3 +424,77 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         weight_approx = results[0] @ torch.diag(results[1]) @ results[2].T
 
         self.linear.weight = nn.Parameter(weight_approx.half())
+
+
+    def tp_split(self, broadcast_type: int, dim = None):
+        assert self.q_handle is not None, \
+            "Can only split quantized tensor."
+        assert all(x in self.q_tensors for x in [
+            "q_scale",
+            "q_scale_max",
+            "q_perm",
+            "q_invperm",
+            "q_group_map",
+            "q_groups",
+            "q_weight"
+        ]), "Can only split fully loaded EXL2 tensor."
+
+        cfg = self.model.config
+        self.broadcast_type = broadcast_type
+        split = self.model.tp_context.get_split(broadcast_type)
+        maxdev = max(dev for dev, _, _ in split)
+
+        if dim:
+            split = [(d, a * dim, b * dim) for (d, a, b) in split]
+
+        new_q_handle: list[int | None]  = [None] * (maxdev + 1)
+        new_q_tensors: list[dict | None] = [None] * (maxdev + 1)
+        new_temp_dq: list[torch.Tensor | None] = [None] * (maxdev + 1)
+
+        for idx, a, b in split:
+            s = b - a
+            if s == 0: continue
+
+            w = {
+                "q_scale": safe_move_tensor(self.q_tensors["q_scale"][:, a // 8:b // 8], idx).contiguous(),
+                "q_scale_max": safe_move_tensor(self.q_tensors["q_scale_max"], idx).contiguous(),
+                "q_perm": safe_move_tensor(self.q_tensors["q_perm"], idx).contiguous(),
+                "q_invperm": safe_move_tensor(self.q_tensors["q_invperm"], idx).contiguous(),
+                "q_group_map": safe_move_tensor(self.q_tensors["q_group_map"], idx).contiguous(),
+                "q_groups": safe_move_tensor(self.q_tensors["q_groups"], idx).contiguous(),
+                "q_weight": safe_move_tensor(self.q_tensors["q_weight"][:, a:b], idx).contiguous()
+            }
+
+            if "bias" in self.q_tensors:
+                w["bias"] = safe_move_tensor(self.q_tensors["bias"][a:b], idx).contiguous()
+
+            new_q_tensors[idx] = w
+
+            device_context = self.model.get_device_context(idx)
+            device_context.begin_scratch_alloc()
+            new_temp_dq[idx] = device_context.get_scratch_slice(self.temp_dq_size(s))
+            max_dq_rows = cfg.max_dq_size // s
+
+            new_q_handle[idx] = ext_c.make_q_matrix_split(
+                w["q_weight"],
+                w["q_perm"],
+                w["q_invperm"],
+                w["q_scale"],
+                w["q_scale_max"],
+                w["q_groups"],
+                w["q_group_map"],
+                none_tensor,
+                none_tensor,
+                none_tensor,
+                w.get("bias", none_tensor),
+                new_temp_dq[idx],
+                max_dq_rows
+            )
+
+            # TODO: Update all QMatrix temp_dqs after parallelizing model
+
+        ext_c.free_q_matrix(self.q_handle)
+        self.q_handle = new_q_handle
+        self.q_tensors = new_q_tensors
+        self.temp_dq = new_temp_dq
+        self.is_tp = True

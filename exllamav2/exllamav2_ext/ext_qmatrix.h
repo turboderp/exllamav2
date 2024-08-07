@@ -16,9 +16,26 @@ uintptr_t make_q_matrix
     int max_dq_rows
 );
 
+uintptr_t make_q_matrix_split
+(
+    torch::Tensor q_weight,
+    torch::Tensor q_perm,
+    torch::Tensor q_invperm,
+    torch::Tensor q_scale,
+    torch::Tensor q_scale_max,
+    torch::Tensor q_groups,
+    torch::Tensor q_group_map,
+    torch::Tensor gptq_qzeros,
+    torch::Tensor gptq_scales,
+    torch::Tensor gptq_g_idx,
+    torch::Tensor bias,
+    torch::Tensor temp_dq,
+    int max_dq_rows
+);
+
 void free_q_matrix
 (
-    uintptr_t handle
+    uintptr_t tp_context
 );
 
 void reconstruct

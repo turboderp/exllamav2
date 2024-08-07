@@ -105,6 +105,76 @@ uintptr_t make_q_matrix
     return reinterpret_cast<uintptr_t> (m);
 }
 
+uintptr_t make_q_matrix_split
+(
+    torch::Tensor q_weight,
+    torch::Tensor q_perm,
+    torch::Tensor q_invperm,
+    torch::Tensor q_scale,
+    torch::Tensor q_scale_max,
+    torch::Tensor q_groups,
+    torch::Tensor q_group_map,
+    torch::Tensor gptq_qzeros,
+    torch::Tensor gptq_scales,
+    torch::Tensor gptq_g_idx,
+    torch::Tensor bias,
+    torch::Tensor temp_dq,
+    int max_dq_rows
+)
+{
+    TORCH_CHECK(
+        gptq_qzeros.device().is_meta() &&
+        gptq_scales.device().is_meta() &&
+        gptq_g_idx.device().is_meta(),
+        "Tensor split not implemented for GPTQ matrices"
+    );
+
+    int device = q_weight.device().index();
+    int width = q_weight.size(1);
+    int groups;
+    int height;
+
+    if (!q_scale.device().is_meta())
+    {
+        TORCH_CHECK_SHAPES(q_weight, 1, q_scale, 1, 8);
+        TORCH_CHECK_SHAPES(q_scale_max, 0, q_scale, 0, 1);
+        groups = q_scale.size(0);
+        height = q_invperm.size(0);
+//        DBGI(groups);
+//        DBGI(height);
+    }
+    else
+    {
+        TORCH_CHECK(false, "Tensor split not implemented for GPTQ matrices");
+    }
+
+    QMatrix* m = new QMatrix
+    (
+        device,
+        height,
+        width,
+        groups,
+        (uint32_t*) q_weight.data_ptr(),
+        q_perm.device().is_meta() ? NULL : (uint16_t*) q_perm.data_ptr(),
+        q_invperm.device().is_meta() ? NULL : (uint16_t*) q_invperm.data_ptr(),
+        q_scale.device().is_meta() ? NULL : (uint32_t*) q_scale.data_ptr(),
+        q_scale_max.device().is_meta() ? NULL : (half*) q_scale_max.data_ptr(),
+        q_groups.device().is_meta() ? NULL : (uint16_t*) q_groups.data_ptr(),
+        q_group_map.device().is_meta() ? NULL : (uint16_t*) q_group_map.data_ptr(),
+        gptq_qzeros.device().is_meta() ? NULL : (uint32_t*) gptq_qzeros.data_ptr(),
+        gptq_scales.device().is_meta() ? NULL : (half*) gptq_scales.data_ptr(),
+        gptq_g_idx.device().is_meta() ? NULL : (uint32_t*) gptq_g_idx.data_ptr(),
+        bias.device().is_meta() ? NULL : (half*) bias.data_ptr(),
+        (half*) temp_dq.data_ptr(),
+        max_dq_rows,
+        true
+    );
+
+    if (m->failed) throw std::runtime_error("CUDA out of memory");
+
+    return reinterpret_cast<uintptr_t> (m);
+}
+
 void free_q_matrix
 (
     uintptr_t handle
@@ -144,6 +214,7 @@ void gemm_half_q_half
     TORCH_CHECK_DTYPE(a, kHalf);
     TORCH_CHECK_DTYPE(c, kHalf);
     TORCH_CHECK_SHAPES(a, 0, c, 0, 1);
+//    DBGI2(qm->height, qm->width);
     TORCH_CHECK(qm->height == a.size(1), "a and b have incompatible shapes")
     TORCH_CHECK(qm->width == c.size(1), "b and c have incompatible shapes")
 
