@@ -725,8 +725,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_output = self.model.tp_context.gather(attn_outputs, BROADCAST_Q, dim = cfg.head_dim)
-        attn_outputs = self.model.tp_context.broadcast(attn_output, BROADCAST_Q)
+        attn_outputs = self.model.tp_context.allgather(attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = cfg.head_dim)
 
         hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = cfg.head_dim, output_split = True)
 

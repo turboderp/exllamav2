@@ -348,8 +348,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             # output.clamp_(min = -65504.0, max = 65504.0)
             outputs.append(output)
 
-        outputs = self.model.tp_context.gather(outputs, BROADCAST_ID)
-        outputs = self.model.tp_context.broadcast(outputs, BROADCAST_RS)
+        outputs = self.model.tp_context.allgather(outputs, BROADCAST_ID, BROADCAST_ID)
 
         down = self.down_proj.forward_tp(outputs, output_split = True)
 

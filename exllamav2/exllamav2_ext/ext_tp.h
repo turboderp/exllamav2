@@ -63,7 +63,8 @@ void tp_gather
     uintptr_t tp_context,
     std::vector<torch::Tensor> inputs,
     int broadcast_type,
-    torch::Tensor target,
+    std::vector<torch::Tensor> targets,
+    int broadcast_type_target,
     int dim
 );
 

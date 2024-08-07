@@ -20,10 +20,15 @@ class TPContext:
     model: ExLlamaV2
 
     kv_split: list[tuple[int, int, int]] | None
+    kv_split_devs: list[int] | None
     id_split: list[tuple[int, int, int]] | None
+    id_split_devs: list[int] | None
     vc_split: list[tuple[int, int, int]] | None
+    vc_split_devs: list[int] | None
     rs_split: list[tuple[int, int, int]] | None
+    rs_split_devs: list[int] | None
     q_split: list[tuple[int, int, int]] | None
+    q_split_devs: list[int] | None
 
     pinned_temp: torch.Tensor | None
     device_temp: list[torch.Tensor] | None
@@ -48,13 +53,15 @@ class TPContext:
             "Model intermediate size must be divisible by 128"
 
         self.kv_split = None
-        self.kv_devices = None
+        self.kv_split_devs = None
         self.id_split = None
-        self.id_devices = None
+        self.id_split_devs = None
         self.vc_split = None
-        self.vc_devices = None
+        self.vc_split_devs = None
         self.rs_split = None
-        self.rs_devices = None
+        self.rs_split_devs = None
+        self.q_split = None
+        self.q_split_devs = None
         self.device = None
         self.streams = None
         self.pinned_temp = None
@@ -98,17 +105,20 @@ class TPContext:
         def set_split(raw_split):
             b = 0
             split = []
+            devs = []
             for d, s in enumerate(raw_split):
                 a = b
                 b = a + s
-                if s: split.append((d, a, b))
-            return split
+                if s:
+                    split.append((d, a, b))
+                    devs.append(d)
+            return split, devs
 
-        self.kv_split = set_split(kv_split)
-        self.id_split = set_split(id_split)
-        self.vc_split = set_split(vc_split)
-        self.rs_split = set_split(rs_split)
-        self.q_split = set_split(q_split)
+        self.kv_split, self.kv_split_devs = set_split(kv_split)
+        self.id_split, self.id_split_devs = set_split(id_split)
+        self.vc_split, self.vc_split_devs = set_split(vc_split)
+        self.rs_split, self.rs_split_devs = set_split(rs_split)
+        self.q_split, self.q_split_devs = set_split(q_split)
 
         self.device = self.all_devices()[0]
 
@@ -149,17 +159,24 @@ class TPContext:
 
     def get_split(self, broadcast_type: int):
 
-        if broadcast_type == BROADCAST_KV:
-            return self.kv_split
-        if broadcast_type == BROADCAST_ID:
-            return self.id_split
-        if broadcast_type == BROADCAST_VC:
-            return self.vc_split
-        if broadcast_type == BROADCAST_RS:
-            return self.rs_split
-        if broadcast_type == BROADCAST_Q:
-            return self.q_split
-        raise ValueError("Unknown broadcast type")
+        return [
+            self.kv_split,
+            self.id_split,
+            self.vc_split,
+            self.rs_split,
+            self.q_split
+        ][broadcast_type]
+
+
+    def get_devs(self, broadcast_type: int):
+
+        return [
+            self.kv_split_devs,
+            self.id_split_devs,
+            self.vc_split_devs,
+            self.rs_split_devs,
+            self.q_split_devs
+        ][broadcast_type]
 
 
     def broadcast(
@@ -169,16 +186,10 @@ class TPContext:
         dim: int = 1
     ):
         split = self.get_split(broadcast_type)
-        # bc_tensors = [self.device_temp[idx].view(input_tensor.shape) for idx, _, _ in split]
 
         bc_tensors = []
         for idx, _, _ in split:
-            if idx == input_tensor.device.index:
-                bc_tensors.append(input_tensor)
-            else:
-                bc_tensors.append(
-                    torch.empty_like(input_tensor, device = idx)
-                )
+            bc_tensors.append(torch.empty_like(input_tensor, device = idx))
 
         ext_c.tp_broadcast(
             self.ext_tp_context,
@@ -204,13 +215,40 @@ class TPContext:
             self.ext_tp_context,
             inputs,
             broadcast_type,
-            none_tensor,
+            [],
+            0,
             dim
         )
 
         pt = self.pinned_temp[:split[-1][2] * dim * inputs[0].shape[0]]
         pt = pt.view(inputs[0].shape[0], split[-1][2] * dim)
         return pt
+
+
+    def allgather(
+        self,
+        inputs: list[torch.Tensor],
+        broadcast_type_g: int,
+        broadcast_type_b: int,
+        dim: int = 1
+    ):
+        # split_g = self.get_split(broadcast_type_g)
+        split_b = self.get_split(broadcast_type_b)
+        sh = (inputs[0].shape[0], split_b[-1][-1] * dim)
+        dtype = inputs[0].dtype
+
+        bc_tensors = [torch.empty(sh, device = dev, dtype = dtype) for dev, _, _ in split_b]
+
+        ext_c.tp_gather(
+            self.ext_tp_context,
+            inputs,
+            broadcast_type_g,
+            bc_tensors,
+            broadcast_type_b,
+            dim
+        )
+
+        return bc_tensors
 
 
     def copy_pinned(

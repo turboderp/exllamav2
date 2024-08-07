@@ -195,7 +195,8 @@ void tp_gather
     uintptr_t tp_context,
     std::vector<torch::Tensor> inputs,
     int broadcast_type,
-    torch::Tensor target,
+    std::vector<torch::Tensor> targets,
+    int broadcast_type_target,
     int dim
 )
 {
@@ -253,5 +254,26 @@ void tp_gather
         }
     }
 
-    if (target.device().is_meta()) return;
+    if (!targets.size()) return;
+
+    size_t size = targets[0].numel() * 2;
+
+    switch(broadcast_type_target)
+    {
+        case BROADCAST_KV: split = ctx->kv_split; break;
+        case BROADCAST_ID: split = ctx->id_split; break;
+        case BROADCAST_VC: split = ctx->vc_split; break;
+        case BROADCAST_RS: split = ctx->rs_split; break;
+        case BROADCAST_Q: split = ctx->q_split; break;
+    }
+
+    for (int i = 0; i < split.size(); ++i)
+    {
+        int dev = std::get<0>(split[i]);
+        void* target = (void*) targets[i].data_ptr();
+
+        cudaSetDevice(dev);
+        cudaStream_t stream = ctx->streams[dev];
+        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp, size, cudaMemcpyHostToDevice, stream));
+    }
 }
