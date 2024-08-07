@@ -1,6 +1,7 @@
 from __future__ import annotations
 import torch
 from exllamav2.compat import safe_move_tensor
+from exllamav2.tensor_p import BROADCAST_KV
 
 class Params:
     batch_size: int
@@ -109,7 +110,11 @@ class Params:
 class PagedParams(Params):
 
     block_index: torch.Tensor
+    block_index_tp: torch.Tensor | None
     cache_seqlens: torch.Tensor
+    cache_seqlens_tp: torch.Tensor | None
+    cache_seqlens_after: torch.Tensor
+    cache_seqlens_after_tp: torch.Tensor | None
     max_cache_seqlen: int
     page_size: int
     is_sequential: bool
@@ -151,6 +156,10 @@ class PagedParams(Params):
                 self.first_index = self.block_index[0, vp0].item() * page_size + vi0 - vp0 * page_size
                 self.cache_seqlens_after = self.cache_seqlens + q_len
 
+        self.block_index_tp = None
+        self.cache_seqlens_tp = None
+        self.cache_seqlens_after_tp = None
+
     def get_attn_mask(self, device, force: bool = False):
         raise NotImplementedError()
 
@@ -168,3 +177,19 @@ class PagedParams(Params):
         if self.cache_seqlens_after.device.index != device_idx:
             self.cache_seqlens_after = safe_move_tensor(self.cache_seqlens_after, device_idx, non_blocking = True)
         return self.cache_seqlens_after
+
+    def prep_tp(self, model):
+        if self.block_index_tp is not None:
+            return
+        self.block_index_tp = []
+        self.cache_seqlens_tp = []
+        if self.is_sequential:
+            self.cache_seqlens_after_tp = []
+        split = model.tp_context.get_split(BROADCAST_KV)
+        for dev, a, b in split:
+            context = model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+            self.block_index_tp.append(safe_move_tensor(self.block_index, dev, non_blocking = True))
+            self.cache_seqlens_tp.append(safe_move_tensor(self.cache_seqlens, dev, non_blocking = True))
+            if self.is_sequential:
+                self.cache_seqlens_after_tp.append(safe_move_tensor(self.cache_seqlens_after, dev, non_blocking = True))

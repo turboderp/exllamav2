@@ -12,6 +12,7 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.compat import safe_move_tensor
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
+from exllamav2.tensor_p import BROADCAST_KV, BROADCAST_Q
 import math
 # from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 import torch.nn.functional as F
@@ -118,6 +119,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     scaling: float
     sliding_window: int
 
+    is_tp: bool
 
     from exllamav2.attn_params import Params
     from exllamav2.attn_params import PagedParams
@@ -133,6 +135,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         super().__init__(model, key)
 
         cfg = self.model.config
+        self.is_tp = False
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
@@ -425,12 +428,23 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     # @profile
-    def forward_paged(self,
-                      hidden_states: torch.Tensor,
-                      cache: ExLlamaV2CacheBase | None = None,
-                      attn_params: ExLlamaV2Attention.PagedParams | None = None,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      **kwargs) -> torch.Tensor:
+    def forward_paged(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.PagedParams | None = None,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor:
+
+        if self.is_tp:
+            return self.forward_paged_tp(
+                hidden_states,
+                cache,
+                attn_params,
+                loras,
+                **kwargs,
+            )
 
         is_q = self.q_handle is not None
         cfg = self.model.config
@@ -575,6 +589,156 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             if self.has_residual:
                 hidden_states += residual
 
+        return hidden_states
+
+
+    def forward_paged_tp(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.PagedParams | None = None,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor:
+
+        assert self.q_handle is not None
+        cfg = self.model.config
+
+        split = self.model.tp_context.get_split(BROADCAST_KV)
+        attn_params.prep_tp(self.model)
+
+        batch_size, q_len, _ = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_KV, dim = cfg.head_dim)
+
+        page_size = attn_params.page_size
+
+        k_cache_f, v_cache_f = cache.get_kv_state(
+            self.layer_idx,
+            batch_size,
+            0,
+            attn_params.max_cache_seqlen if cache.q_block > 1 else 0,
+            page_size,
+            attn_params.cache_seqlens_tp,
+            attn_params.block_index_tp
+        )
+
+        k_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in k_cache_f]
+        v_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in v_cache_f]
+
+        residual = hidden_states
+
+        post_norm = self.pre_layernorm.forward_tp(hidden_states, output_split = True) if self.has_norm else hidden_states
+        q = self.q_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+        k = self.k_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+        v = self.v_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+        q = [q_.view(batch_size, q_len, q_.shape[1] // cfg.head_dim, cfg.head_dim) for q_ in q]
+        k = [k_.view(batch_size, q_len, k_.shape[1] // cfg.head_dim, cfg.head_dim) for k_ in k]
+        v = [v_.view(batch_size, q_len, v_.shape[1] // cfg.head_dim, cfg.head_dim) for v_ in v]
+        if cfg.use_qk_norm:
+            assert False, "TP not implemented for QK norm"  # TODO: ...
+            # q = self.q_norm.forward(q)
+            # k = self.k_norm.forward(k)
+        if cfg.arch.rope_style != RopeStyle.NONE:
+            for idx, (dev, a, b) in enumerate(split):
+                constants = self.model.get_device_context(idx, scratch = True)
+                context = self.model.get_device_context(dev)
+                torch.cuda.set_stream(context.stream)
+                for t, heads in [(q[idx], cfg.num_key_value_groups), (k[idx], 1)]:
+                    ext_c.rope_(
+                        t,
+                        constants.sin,
+                        constants.cos,
+                        0,
+                        (b - a) * heads,
+                        cfg.head_dim,
+                        attn_params.cache_seqlens_tp[idx],
+                        cfg.arch.rope_style == RopeStyle.NEOX
+                    )
+        if attn_params.is_sequential:
+            k_ = [x[:, attn_params.first_index: attn_params.first_index + q_len, :, :] for x in k_cache_f]
+            v_ = [x[:, attn_params.first_index: attn_params.first_index + q_len, :, :] for x in v_cache_f]
+            for (dev, a, b), x_, x, y_, y in zip(split, k_, k, v_, v):
+                context = self.model.get_device_context(dev)
+                torch.cuda.set_stream(context.stream)
+                x_.copy_(x)
+                y_.copy_(y)
+            k = None
+            v = None
+            cache_seqlens_a = attn_params.cache_seqlens_after_tp
+        else:
+            cache_seqlens_a = attn_params.cache_seqlens_tp
+
+        if cache.q_block == 1:
+            cache.get_kv_state(
+                self.layer_idx,
+                batch_size,
+                0,
+                attn_params.max_cache_seqlen,
+                page_size,
+                attn_params.cache_seqlens_tp,
+                attn_params.block_index_tp
+            )
+
+        flash_kwargs = {}
+        if self.sliding_window:
+            # assert has_flash_attn_with_window, \
+            #     "Installed version of flash-attn does not support sliding window"
+            if has_flash_attn_with_window:
+                flash_kwargs["window_size"] = (self.sliding_window, self.sliding_window)
+        if cfg.attn_logit_softcapping:
+            # assert has_flash_attn_with_softcap, \
+            #     "Installed version of flash-attn does not support softcapping"
+            if has_flash_attn_with_softcap:
+                flash_kwargs["softcap"] = cfg.attn_logit_softcapping
+
+        attn_outputs = []
+        for idx in range(len(split)):
+            dev, a, b = split[idx]
+            context = self.model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+
+            attn_output = flash_attn_with_kvcache(
+                q = q[idx],
+                k = k[idx] if k is not None else None,
+                v = v[idx] if v is not None else None,
+                k_cache = k_cache[idx],
+                v_cache = v_cache[idx],
+                cache_seqlens = cache_seqlens_a[idx],
+                block_table = attn_params.block_index_tp[idx],
+                causal = True,
+                softmax_scale = self.scaling,
+                **flash_kwargs
+            )
+            attn_output = attn_output.view(batch_size * q_len, (b - a) * cfg.head_dim * cfg.num_key_value_groups)
+            attn_outputs.append(attn_output)
+
+        cache.store_kv_state(
+            self.layer_idx,
+            batch_size,
+            0,
+            q_len,
+            page_size,
+            attn_params.cache_seqlens_tp,
+            attn_params.block_index_tp
+        )
+
+        # Output projection
+
+        attn_output = self.model.tp_context.gather(attn_outputs, BROADCAST_Q, dim = cfg.head_dim)
+        attn_outputs = self.model.tp_context.broadcast(attn_output, BROADCAST_Q)
+
+        hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = cfg.head_dim, output_split = True)
+
+        if self.has_residual:
+            self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = cfg.head_dim)
+
+        hidden_states = self.model.tp_context.gather(hidden_states, BROADCAST_Q, dim = cfg.head_dim)
+
+        # if self.post_layernorm:  # TODO: ...
+        #     hidden_states = self.post_layernorm.forward(hidden_states)
+
+        hidden_states = hidden_states.view(batch_size, q_len, hidden_states.shape[-1])
         return hidden_states
 
 
@@ -986,3 +1150,20 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def is_quant(self):
         return self.q_handle is not None
 
+
+    def tp_split(self):
+
+        cfg = self.model.config
+
+        if self.pre_layernorm is not None:
+            self.pre_layernorm.tp_split(BROADCAST_KV)
+        if self.post_layernorm is not None:
+            self.post_layernorm.tp_split(BROADCAST_KV)
+
+        self.q_proj.tp_split(BROADCAST_Q, dim = cfg.head_dim)
+        self.k_proj.tp_split(BROADCAST_KV, dim = cfg.head_dim)
+        self.v_proj.tp_split(BROADCAST_KV, dim = cfg.head_dim)
+        self.o_proj.tp_split(BROADCAST_Q, dim = cfg.head_dim)
+
+        self.is_tp = True
+        self.set_device_idx(None)
