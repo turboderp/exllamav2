@@ -215,3 +215,18 @@ def print_vram_usage_peak():
     print(f"Peak memory: {mem_this / (1024 ** 2):,.2f} MB")
 
 
+def integer_split(x, split: list[int]) -> list[int]:
+
+    """
+    Precisely split x integer into portions according to given ratio, ensuring sum(portions) == x
+    """
+
+    sum_split = sum(split)
+    portions = [int(x * p / sum_split) for p in split]
+    remaining = x - sum(portions)
+    remainders = [(x * p / sum_split) - initial for p, initial in zip(split, portions)]
+    for i in range(remaining):
+        max_index = remainders.index(max(remainders))
+        portions[max_index] += 1
+        remainders[max_index] -= 1
+    return portions
