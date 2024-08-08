@@ -51,9 +51,9 @@ void free_tp_context(uintptr_t ctx);
 void tp_broadcast
 (
     uintptr_t tp_context,
-    torch::Tensor input,
+    torch::Tensor source,
     int broadcast_type,
-    std::vector<torch::Tensor> targets,
+    const py::list &targets,
     int dim
 );
 
@@ -61,9 +61,9 @@ void tp_broadcast
 void tp_gather
 (
     uintptr_t tp_context,
-    std::vector<torch::Tensor> inputs,
+    const py::list &inputs,
     int broadcast_type,
-    std::vector<torch::Tensor> targets,
+    const py::list &targets,
     int broadcast_type_target,
     int dim
 );

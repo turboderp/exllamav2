@@ -54,9 +54,9 @@ void gemm_half_q_half
 
 void gemm_half_q_half_tp
 (
-    std::vector<torch::Tensor> a,
-    std::vector<uintptr_t> b,
-    std::vector<torch::Tensor> c,
+    const py::list &a,
+    const py::list &b,
+    const py::list &c,
     bool force_cuda,
     uintptr_t tp_context
 );
