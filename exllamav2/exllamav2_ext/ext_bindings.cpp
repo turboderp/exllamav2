@@ -84,6 +84,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("q_mlp_forward_", &q_mlp_forward_, "q_mlp_forward_");
     m.def("q_mlp_set_loras", &q_mlp_set_loras, "q_mlp_set_loras");
     m.def("q_moe_mlp_forward_", &q_moe_mlp_forward_, "q_moe_mlp_forward_");
+    m.def("tp_mlp_forward_", &tp_mlp_forward_, "tp_mlp_forward_");
 //    m.def("q_moe_mlp_set_loras", &q_moe_mlp_set_loras, "q_moe_mlp_set_loras");
 
     // cache

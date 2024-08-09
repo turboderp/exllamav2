@@ -12,8 +12,12 @@
 #include "ext_qmlp.h"
 
 #include "cuda/q_mlp.cuh"
+#include "cuda/rms_norm.cuh"
+#include "cuda/q_gemm.cuh"
 
 #include "cpp/util.h"
+#include "ext_tp.h"
+#include "ext_qmatrix.h"
 
 uintptr_t make_q_mlp
 (
@@ -318,3 +322,105 @@ void q_moe_mlp_forward_
 //
 //    return max_rank;
 //}
+
+void tp_mlp_forward_
+(
+    uintptr_t tp_context,
+    torch::Tensor hidden_states,
+    const py::list &temp_bc0,
+    const py::list &temp_bc1,
+    const py::list &temp_bc2,
+    const py::list &temp_gate,
+    const py::list &temp_up,
+    const py::list &temp_down,
+    const py::list &pre_layernorm,
+    float norm_epsilon,
+    const py::list &gate,
+    const py::list &up,
+    const py::list &down,
+    bool act_gelu
+)
+{
+    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+    int rows = temp_bc2[0].cast<torch::Tensor>().size(0);
+    int interm_dim = temp_bc2[0].cast<torch::Tensor>().size(1);
+    int hidden_dim = temp_bc1[0].cast<torch::Tensor>().size(1);
+
+    // Broadcast
+
+    tp_broadcast(tp_context, hidden_states, BROADCAST_ID, temp_bc0, 1);
+
+    // Layernorm
+
+    for (int i = 0; i < pre_layernorm.size(); ++i)
+    {
+        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        cudaSetDevice(dev);
+        rms_norm_cuda
+        (
+            ctx->streams[dev],
+            (void*) temp_bc0[i].cast<torch::Tensor>().data_ptr(),
+            (half*) pre_layernorm[i].cast<torch::Tensor>().data_ptr(),
+            (void*) temp_bc1[i].cast<torch::Tensor>().data_ptr(),
+            norm_epsilon,
+            rows,
+            hidden_dim,
+            false,
+            false,  // TODO: FP32 residual
+            false
+        );
+    }
+
+    // Up, gate
+
+    gemm_half_q_half_tp(temp_bc1, gate, temp_gate, false, tp_context);
+    gemm_half_q_half_tp(temp_bc1, up, temp_up, false, tp_context);
+
+    // Act/mul
+
+    for (int i = 0; i < temp_bc1.size(); ++i)
+    {
+        int dev = temp_bc1[i].cast<torch::Tensor>().device().index();
+        cudaSetDevice(dev);
+        act_mul_cuda
+        (
+            ctx->streams[dev],
+            (half*) temp_gate[i].cast<torch::Tensor>().data_ptr(),
+            (half*) temp_up[i].cast<torch::Tensor>().data_ptr(),
+            rows,
+            interm_dim,
+            act_gelu
+        );
+    }
+
+    // Allgather
+
+    tp_gather(tp_context, temp_gate, BROADCAST_ID, temp_bc2, BROADCAST_ID, 1);
+
+    // Down
+
+    gemm_half_q_half_tp(temp_bc2, down, temp_down, false, tp_context);
+
+    // Add residual
+    // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel
+
+    int offset = 0;
+    for (int i = 0; i < temp_bc0.size(); ++i)
+    {
+        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        cudaSetDevice(dev);
+
+        auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+        at::cuda::setCurrentCUDAStream(stream);
+
+        int w = temp_down[i].cast<torch::Tensor>().size(1);
+        auto res_slice = temp_bc0[i].cast<torch::Tensor>().narrow(1, offset, w);
+        temp_down[i].cast<torch::Tensor>().add_(res_slice);
+        offset += w;
+    }
+
+    // Gather
+
+    tp_gather(tp_context, temp_down, BROADCAST_RS, py::list(), -1, 1);
+}
+

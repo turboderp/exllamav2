@@ -214,13 +214,13 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
             if self.weight is not None:
                 if self.weight.device.index == idx:
-                    new_weight[idx] = self.weight
+                    new_weight[idx] = self.weight.data
                 else:
                     new_weight[idx] = safe_move_tensor(self.weight, idx)
 
             if self.bias is not None:
                 if self.bias.device.index == idx:
-                    new_bias[idx] = self.bias
+                    new_bias[idx] = self.bias.data
                 else:
                     new_bias[idx] = safe_move_tensor(self.bias, idx)
 

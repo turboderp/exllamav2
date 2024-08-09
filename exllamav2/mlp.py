@@ -319,10 +319,58 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         cfg = self.model.config
+        ctx = self.model.tp_context
+
+        batch_size, q_len, _ = hidden_states.shape
+        rows = batch_size * q_len
+        hidden_states = hidden_states.view(-1, cfg.hidden_size)
+        dtype = hidden_states.dtype
+
+        # TODO: Preallocate from shared scratch space
+
+        temp_bc0 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_RS)
+        temp_bc1 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_RS)
+        temp_bc2 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_ID)
+        temp_gate = ctx.get_temp_tensors(rows, dtype, BROADCAST_ID)
+        temp_up = ctx.get_temp_tensors(rows, dtype, BROADCAST_ID)
+        temp_down = ctx.get_temp_tensors(rows, dtype, BROADCAST_RS)
+
+        ext_c.tp_mlp_forward_(
+            self.model.tp_context.ext_tp_context,
+            hidden_states,
+            temp_bc0,
+            temp_bc1,
+            temp_bc2,
+            temp_gate,
+            temp_up,
+            temp_down,
+            self.pre_layernorm.weight if self.pre_layernorm is not None else [],
+            self.pre_layernorm.variance_epsilon if self.pre_layernorm is not None else 0.0,
+            self.gate_proj.q_handle if self.gate_proj is not None else [],
+            self.up_proj.q_handle,
+            self.down_proj.q_handle,
+            cfg.arch.mlp_act_func == "gelu"
+        )
+
+        return ctx.get_pinned(batch_size, q_len, cfg.hidden_size)
+
+
+    def forward_tp_old(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
+
+        cfg = self.model.config
 
         batch_size, q_len, _ = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_ID, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_RS)
 
         residual = hidden_states
 
@@ -337,8 +385,6 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             dev = hs.device.index
             context = self.model.get_device_context(dev)
             torch.cuda.set_stream(context.stream)
-
-            # TODO: Use act_mul kernel
 
             if cfg.arch.mlp_act_func == "silu":
                 output = F.silu(gate[idx])

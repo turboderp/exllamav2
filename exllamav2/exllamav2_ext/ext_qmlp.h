@@ -91,10 +91,20 @@ void q_moe_mlp_forward_
 //    std::vector<std::unordered_map<uintptr_t, torch::Tensor>>& w3_lora_b
 //);
 
-
-
-
-
-
-
-
+void tp_mlp_forward_
+(
+    uintptr_t tp_context,
+    torch::Tensor hidden_states,
+    const py::list &temp_bc0,
+    const py::list &temp_bc1,
+    const py::list &temp_bc2,
+    const py::list &temp_gate,
+    const py::list &temp_up,
+    const py::list &temp_down,
+    const py::list &pre_layernorm,
+    float norm_epsilon,
+    const py::list &gate,
+    const py::list &up,
+    const py::list &down,
+    bool act_gelu
+);

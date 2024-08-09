@@ -12,13 +12,6 @@
 #include "ext_tp.h"
 #include "cuda/util.cuh"
 
-#define BROADCAST_KV 0
-#define BROADCAST_ID 1
-#define BROADCAST_VC 2
-#define BROADCAST_RS 3
-#define BROADCAST_Q 4
-
-
 ExtTPContext::ExtTPContext
 (
     std::vector<std::tuple<int, int, int>> _kv_split,

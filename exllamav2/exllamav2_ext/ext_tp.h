@@ -1,6 +1,12 @@
 #ifndef _ext_tp_h
 #define _ext_tp_h
 
+#define BROADCAST_KV 0
+#define BROADCAST_ID 1
+#define BROADCAST_VC 2
+#define BROADCAST_RS 3
+#define BROADCAST_Q 4
+
 class ExtTPContext
 {
 public:
@@ -56,7 +62,6 @@ void tp_broadcast
     const py::list &targets,
     int dim
 );
-
 
 void tp_gather
 (
