@@ -192,4 +192,16 @@ private:
 
 };
 
+// ---------------------------------------------------------------------------------
+
+void act_mul_cuda
+(
+    cudaStream_t stream,
+    half* gate,
+    half* up,
+    int rows,
+    int dim,
+    bool act_gelu
+);
+
 #endif

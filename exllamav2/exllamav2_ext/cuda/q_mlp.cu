@@ -235,6 +235,27 @@ void QMLP::forward_run_
     apply_loras_cuda(stream, cublas_handle, down_proj_lora, loras, down, temp_a, (half*) x, lora_temp, rows);
 }
 
+void act_mul_cuda
+(
+    cudaStream_t stream,
+    half* gate,
+    half* up,
+    int rows,
+    int dim,
+    bool act_gelu
+)
+{
+    bool use_half2 = true;
+
+    dim3 blockDim, gridDim;
+    blockDim.x = THREADS_X;
+    blockDim.y = THREADS_Y;
+    gridDim.x = DIVIDE(dim, THREADS_X) / (use_half2 ? 2 : 1);
+    gridDim.y = DIVIDE(rows, THREADS_Y);
+
+    fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
+    kernel<<<gridDim, blockDim, 0, stream>>>(gate, up, rows, dim, NULL, 0);
+}
 
 QMoEMLP::QMoEMLP
 (
