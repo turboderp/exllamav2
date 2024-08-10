@@ -243,8 +243,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     def temp_dq_size(self, out_features = None) -> int:
 
         dq = self.in_features * (self.out_features if out_features is None else out_features)
-        dq = min(dq, self.model.config.max_dq_size)
-        dq = dq * 2 + 128
+        dq = 2 * min(dq, self.model.config.max_dq_size)
         return dq
 
 
@@ -256,8 +255,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         for dev, a, b in split:
             self.out_features_tp[dev] = (b - a) * dim
 
-        scratch = [2 * self.in_features * of for of in self.out_features_tp]
-        scratch = [min(s, self.model.config.max_dq_size) for s in scratch]
+        scratch = [self.in_features * of for of in self.out_features_tp]
+        scratch = [2 * min(s, self.model.config.max_dq_size) for s in scratch]
         return scratch
 
 
