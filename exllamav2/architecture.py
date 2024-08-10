@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import IntEnum
 
 # Common keys
 
@@ -94,7 +94,7 @@ internlm2_keymap = [("$output.", "lm_head."),
                     (".attention.", ".self_attn."),
                     (".wo.", ".o_proj.")]
 
-class RopeStyle(Enum):
+class RopeStyle(IntEnum):
     NONE = 0
     GPTJ = 1
     NEOX = 2

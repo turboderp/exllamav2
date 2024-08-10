@@ -7,13 +7,19 @@
 #include <cstdio>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <torch/torch.h>
 
 #include "config.h"
 #include "ext_qattn.h"
 
 #include "cuda/q_attn.cuh"
+#include "cuda/rms_norm.cuh"
+#include "cuda/q_gemm.cuh"
+#include "cuda/rope.cuh"
 
 #include "cpp/util.h"
+#include "ext_tp.h"
+#include "ext_qmatrix.h"
 
 uintptr_t make_q_attn
 (
@@ -246,4 +252,179 @@ py::object fwd_kvcache_func;
 void set_flash_attn_func()
 {
     fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
+}
+
+void tp_attn_forward_
+(
+    uintptr_t tp_context,
+    torch::Tensor hidden_states,
+    const py::list &temp_bc0,
+    const py::list &temp_bc1,
+    const py::list &temp_q,
+    const py::list &temp_k,
+    const py::list &temp_v,
+    const py::list &temp_o,
+    const py::list &k_cache,
+    const py::list &v_cache,
+    const py::list &pre_layernorm,
+    float norm_epsilon,
+    const py::list &q_proj,
+    const py::list &k_proj,
+    const py::list &v_proj,
+    const py::list &o_proj,
+    int head_dim,
+    int rope_style,
+    int batch_size,
+    int q_len,
+    const py::list &sin,
+    const py::list &cos,
+    const py::list &past_lens,
+    const py::list &block_index,
+    float scaling
+)
+{
+    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+    int rows = temp_bc0[0].cast<torch::Tensor>().size(0);
+    int hidden_dim = temp_bc0[0].cast<torch::Tensor>().size(1);
+
+    // Broadcast
+
+    tp_broadcast(tp_context, hidden_states, BROADCAST_Q, temp_bc0, head_dim);
+
+    // Layernorm
+
+    for (int i = 0; i < pre_layernorm.size(); ++i)
+    {
+        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        cudaSetDevice(dev);
+        rms_norm_cuda
+        (
+            ctx->streams[dev],
+            (void*) temp_bc0[i].cast<torch::Tensor>().data_ptr(),
+            (half*) pre_layernorm[i].cast<torch::Tensor>().data_ptr(),
+            (void*) temp_bc1[i].cast<torch::Tensor>().data_ptr(),
+            norm_epsilon,
+            rows,
+            hidden_dim,
+            false,
+            false,  // TODO: FP32 residual
+            false
+        );
+    }
+
+    // Q, K, V
+
+    gemm_half_q_half_tp(temp_bc1, q_proj, temp_q, false, tp_context);
+    gemm_half_q_half_tp(temp_bc1, k_proj, temp_k, false, tp_context);
+    gemm_half_q_half_tp(temp_bc1, v_proj, temp_v, false, tp_context);
+
+    // RoPE
+
+    if (rope_style != ROPE_STYLE_NONE)
+    {
+        for (int i = 0; i < temp_q.size(); ++i)
+        {
+            int dev = temp_q[i].cast<torch::Tensor>().device().index();
+            cudaSetDevice(dev);
+
+            int num_heads = temp_q[i].cast<torch::Tensor>().size(1) / head_dim;
+            int num_kv_heads = temp_k[i].cast<torch::Tensor>().size(1) / head_dim;
+            int q_len = rows / batch_size;
+
+            rope_cuda_qk
+            (
+                ctx->streams[dev],
+                (half*) temp_q[i].cast<torch::Tensor>().data_ptr(),
+                (half*) temp_k[i].cast<torch::Tensor>().data_ptr(),
+                (half*) sin[dev].cast<torch::Tensor>().data_ptr(),
+                (half*) cos[dev].cast<torch::Tensor>().data_ptr(),
+                batch_size,
+                q_len * num_heads,
+                q_len * num_kv_heads,
+                head_dim,
+                num_heads,
+                num_kv_heads,
+                0, //past_len,
+                (int32_t*) past_lens[i].cast<torch::Tensor>().data_ptr(),
+                rope_style == ROPE_STYLE_NEOX
+            );
+        }
+    }
+
+    // Attn
+
+    for (int i = 0; i < temp_q.size(); ++i)
+    {
+        int dev = temp_q[i].cast<torch::Tensor>().device().index();
+        cudaSetDevice(dev);
+
+        auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+        at::cuda::setCurrentCUDAStream(stream);
+
+        std::vector<int64_t> attn_shape_qo = {batch_size, q_len, temp_q[i].cast<torch::Tensor>().size(1) / head_dim, head_dim};
+        std::vector<int64_t> attn_shape_kv = {batch_size, q_len, temp_k[i].cast<torch::Tensor>().size(1) / head_dim, head_dim};
+
+        torch::Tensor q = temp_q[i].cast<torch::Tensor>().view(attn_shape_qo);
+        torch::Tensor k = temp_k[i].cast<torch::Tensor>().view(attn_shape_kv);
+        torch::Tensor v = temp_v[i].cast<torch::Tensor>().view(attn_shape_kv);
+        torch::Tensor o = temp_o[i].cast<torch::Tensor>().view(attn_shape_qo);
+
+        auto none = py::none();
+
+        fwd_kvcache_func
+        (
+            q,
+            k_cache[i].cast<torch::Tensor>(),
+            v_cache[i].cast<torch::Tensor>(),
+            k,
+            v,
+            past_lens[i].cast<torch::Tensor>(),  // cache_seqlens
+            none,  // rotary_cos
+            none,  // rotary_sin
+            none,  // cache_batch_idx
+            none,  // cache_leftpad
+            block_index[i].cast<torch::Tensor>(),  // block_table
+            none,  // alibi_slopes
+            o, // output
+            scaling,  // softmax_scale
+            true,  // causal
+            10000000,  // window_size[0]
+            -1,  // window_size[1]
+            0.0,  // softcap
+            true,  // rotary_interleaved
+            0  // num_splits
+        );
+
+     }
+
+    // Allgather
+
+    tp_gather(tp_context, temp_o, BROADCAST_Q, temp_bc1, BROADCAST_Q, head_dim);
+
+    // Output projection
+
+    gemm_half_q_half_tp(temp_bc1, o_proj, temp_o, false, tp_context);
+
+    // Add residual
+    // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel
+
+    int offset = 0;
+    for (int i = 0; i < temp_bc0.size(); ++i)
+    {
+        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        cudaSetDevice(dev);
+
+        auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+        at::cuda::setCurrentCUDAStream(stream);
+
+        int w = temp_o[i].cast<torch::Tensor>().size(1);
+        auto res_slice = temp_bc0[i].cast<torch::Tensor>().narrow(1, offset, w);
+        temp_o[i].cast<torch::Tensor>().add_(res_slice);
+        offset += w;
+    }
+
+    // Gather
+
+    tp_gather(tp_context, temp_o, BROADCAST_Q, py::list(), -1, head_dim);
+
 }

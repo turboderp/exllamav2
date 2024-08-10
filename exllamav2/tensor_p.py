@@ -3,6 +3,7 @@ import torch
 from exllamav2.util import get_all_gpu_memory, integer_split
 from exllamav2.device import global_streams
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+# from line_profiler import profile
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -38,6 +39,9 @@ class TPContext:
 
     ext_tp_context: int | None
 
+    sin: list[torch.Tensor | None] | None
+    cos: list[torch.Tensor | None] | None
+
 
     def __init__(
         self,
@@ -67,6 +71,9 @@ class TPContext:
         self.pinned_temp = None
         self.device_temp = None
         self.ext_tp_context = None
+
+        self.sin = None
+        self.cos = None
 
         self.define_split(gpu_split)
 
@@ -179,6 +186,26 @@ class TPContext:
         ][broadcast_type]
 
 
+    def get_temp_tensors_bc(self, rows: int, dtype: torch.dtype, broadcast_type: int, dim: int = 1):
+
+        split = self.get_split(broadcast_type)
+        dim = split[-1][2] * dim
+        return [torch.empty((rows, dim), device = dev, dtype = dtype) for dev, _, _ in split]
+
+
+    def get_temp_tensors(self, rows: int, dtype: torch.dtype, broadcast_type: int, dim: int = 1):
+
+        split = self.get_split(broadcast_type)
+        return [torch.empty((rows, (b - a) * dim), device = dev, dtype = dtype) for dev, a, b in split]
+
+
+    def get_pinned(self, batch_size: int, q_len: int, dim: int):
+
+        pt = self.pinned_temp[:batch_size * q_len * dim]
+        pt = pt.view(batch_size, q_len, dim)
+        return pt
+
+
     def broadcast(
         self,
         input_tensor: torch.Tensor,
@@ -224,7 +251,7 @@ class TPContext:
         pt = pt.view(inputs[0].shape[0], split[-1][2] * dim)
         return pt
 
-
+    # @profile
     def allgather(
         self,
         inputs: list[torch.Tensor],
@@ -285,3 +312,19 @@ class TPContext:
             s = global_streams[dev]
             s.synchronize()
         torch.cuda.synchronize()
+
+
+    def get_sin_cos(self):
+        if self.sin is not None:
+            return self.sin, self.cos
+        devctxs = [self.model.get_device_context(dev) for dev in self.all_devices()]
+        self.sin = []
+        self.cos = []
+        for devctx in devctxs:
+            if devctx is None:
+                self.sin.append(None)
+                self.cos.append(None)
+            else:
+                self.sin.append(devctx.sin)
+                self.cos.append(devctx.cos)
+        return self.sin, self.cos

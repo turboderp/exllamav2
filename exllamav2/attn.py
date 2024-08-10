@@ -595,6 +595,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
+    # @profile
     def forward_paged_tp(
         self,
         hidden_states: torch.Tensor,
@@ -604,17 +605,21 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         **kwargs
     ) -> torch.Tensor:
 
-        assert self.q_handle is not None
         cfg = self.model.config
+        ctx = self.model.tp_context
 
-        split = self.model.tp_context.get_split(BROADCAST_KV)
+        assert cache.q_block != 1, \
+            "Models with odd key/value dims not supported in TP mode with quantized cache"
+        assert not self.sliding_window, \
+            "Sliding window not supported in TP mode"
+
         attn_params.prep_tp(self.model)
+        page_size = attn_params.page_size
 
         batch_size, q_len, _ = hidden_states.shape
-        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_KV, dim = cfg.head_dim)
-
-        page_size = attn_params.page_size
+        rows = batch_size * q_len
+        hidden_states = hidden_states.view(-1, cfg.hidden_size)
+        dtype = hidden_states.dtype
 
         k_cache_f, v_cache_f = cache.get_kv_state(
             self.layer_idx,
@@ -628,6 +633,88 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         k_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in k_cache_f]
         v_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in v_cache_f]
+
+        temp_bc0 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        temp_bc1 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        temp_q = ctx.get_temp_tensors(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        temp_k = ctx.get_temp_tensors(rows, dtype, BROADCAST_KV, dim = cfg.head_dim)
+        temp_v = ctx.get_temp_tensors(rows, dtype, BROADCAST_KV, dim = cfg.head_dim)
+        temp_o = ctx.get_temp_tensors(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        sin, cos = ctx.get_sin_cos()
+
+        ext_c.tp_attn_forward_(
+            self.model.tp_context.ext_tp_context,
+            hidden_states,
+            temp_bc0,
+            temp_bc1,
+            temp_q,
+            temp_k,
+            temp_v,
+            temp_o,
+            k_cache,
+            v_cache,
+            self.pre_layernorm.weight if self.pre_layernorm is not None else [],
+            self.pre_layernorm.variance_epsilon if self.pre_layernorm is not None else 0.0,
+            self.q_proj.q_handle,
+            self.k_proj.q_handle,
+            self.v_proj.q_handle,
+            self.o_proj.q_handle,
+            cfg.head_dim,
+            int(cfg.arch.rope_style),
+            batch_size,
+            q_len,
+            sin,
+            cos,
+            attn_params.cache_seqlens_tp,
+            attn_params.block_index_tp,
+            self.scaling
+        )
+
+        cache.store_kv_state(
+            self.layer_idx,
+            batch_size,
+            0,
+            q_len,
+            page_size,
+            attn_params.cache_seqlens_tp,
+            attn_params.block_index_tp
+        )
+
+        return ctx.get_pinned(batch_size, q_len, cfg.hidden_size)
+
+
+    # @profile
+    def forward_paged_tp_old(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.PagedParams | None = None,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor:
+
+        assert self.q_handle is not None
+        cfg = self.model.config
+        split = self.model.tp_context.get_split(BROADCAST_KV)
+        batch_size, q_len, _ = hidden_states.shape
+        attn_params.prep_tp(self.model)
+        page_size = attn_params.page_size
+        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+
+        k_cache_f, v_cache_f = cache.get_kv_state(
+            self.layer_idx,
+            batch_size,
+            0,
+            attn_params.max_cache_seqlen if cache.q_block > 1 else 0,
+            page_size,
+            attn_params.cache_seqlens_tp,
+            attn_params.block_index_tp
+        )
+
+        k_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in k_cache_f]
+        v_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in v_cache_f]
+
+        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_KV, dim = cfg.head_dim)
 
         residual = hidden_states
 

@@ -74,6 +74,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("q_attn_forward_1", &q_attn_forward_1, "q_attn_forward_1");
     m.def("q_attn_forward_2", &q_attn_forward_2, "q_attn_forward_2");
     m.def("q_attn_set_loras", &q_attn_set_loras, "q_attn_set_loras");
+    m.def("tp_attn_forward_", &tp_attn_forward_, "tp_attn_forward_");
     m.def("set_flash_attn_func", &set_flash_attn_func, "set_flash_attn_func");
 
     // qmlp

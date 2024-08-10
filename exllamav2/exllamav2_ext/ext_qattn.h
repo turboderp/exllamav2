@@ -105,4 +105,31 @@ typedef std::vector<at::Tensor> (*MHAFwdKVCacheFunc)
 //void set_flash_attn_func(MHAFwdKVCacheFunc f);
 void set_flash_attn_func();
 
-
+void tp_attn_forward_
+(
+    uintptr_t tp_context,
+    torch::Tensor hidden_states,
+    const py::list &temp_bc0,
+    const py::list &temp_bc1,
+    const py::list &temp_q,
+    const py::list &temp_k,
+    const py::list &temp_v,
+    const py::list &temp_o,
+    const py::list &k_cache,
+    const py::list &v_cache,
+    const py::list &pre_layernorm,
+    float norm_epsilon,
+    const py::list &q_proj,
+    const py::list &k_proj,
+    const py::list &v_proj,
+    const py::list &o_proj,
+    int head_dim,
+    int rope_style,
+    int batch_size,
+    int q_len,
+    const py::list &sin,
+    const py::list &cos,
+    const py::list &past_lens,
+    const py::list &block_index,
+    float scaling
+);
