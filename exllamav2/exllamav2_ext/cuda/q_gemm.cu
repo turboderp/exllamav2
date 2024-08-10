@@ -262,13 +262,6 @@ void gemm_half_q_half_cuda
                                 a + row_a, size_k,
                         &beta,  c,         size_n);
 
-//            cublasHgemm(cublas_handle,
-//                        CUBLAS_OP_N,
-//                        CUBLAS_OP_N,
-//                        size_n, size_m, size_k,
-//                        &alpha, temp_dq, size_n,
-//                                a,       size_k,
-//                        &beta,  c,       size_n);
         }
 
         //const float alpha = 1.0f;

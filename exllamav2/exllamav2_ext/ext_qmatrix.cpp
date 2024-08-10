@@ -259,12 +259,11 @@ void gemm_half_q_half_tp
         TORCH_CHECK(qm[i]->width == c[i].cast<torch::Tensor>().size(1), "b and c have incompatible shapes")
     }
 
-    cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
-
     for (int i = 0; i < a.size(); ++i)
     {
         int dev = a[i].cast<torch::Tensor>().device().index();
         cudaSetDevice(dev);
+        cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
         gemm_half_q_half_cuda
         (
             ctx->streams[dev],
