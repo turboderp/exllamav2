@@ -76,8 +76,33 @@ int q_attn_set_loras
     std::unordered_map<uintptr_t, torch::Tensor>& o_proj_lora_b
 );
 
+// TODO: Find a way to call this function directly without going through pybind
 
+typedef std::vector<at::Tensor> (*MHAFwdKVCacheFunc)
+(
+    at::Tensor &,
+    const at::Tensor &,
+    const at::Tensor &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<const at::Tensor> &,
+    c10::optional<at::Tensor> &,
+    c10::optional<at::Tensor> &,
+    c10::optional<at::Tensor> &,
+    const float,
+    bool,
+    int,
+    int,
+    const float,
+    bool,
+    int
+);
 
-
+//void set_flash_attn_func(MHAFwdKVCacheFunc f);
+void set_flash_attn_func();
 
 

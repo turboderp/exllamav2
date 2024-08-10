@@ -52,6 +52,9 @@ if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
             has_flash_attn_with_window = "window_size" in signature
             has_flash_attn_with_softcap = "softcap" in signature
 
+            import flash_attn_2_cuda as flash_attn_cuda
+            ext_c.set_flash_attn_func()
+
             has_flash_attn = True
             has_flash_attn_with_paged = True
 
