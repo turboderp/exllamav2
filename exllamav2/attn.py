@@ -636,6 +636,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         temp_bc0 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
         temp_bc1 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        temp_bc2 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
         temp_q = ctx.get_temp_tensors(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
         temp_k = ctx.get_temp_tensors(rows, dtype, BROADCAST_KV, dim = cfg.head_dim)
         temp_v = ctx.get_temp_tensors(rows, dtype, BROADCAST_KV, dim = cfg.head_dim)
@@ -647,6 +648,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             hidden_states,
             temp_bc0,
             temp_bc1,
+            temp_bc2,
             temp_q,
             temp_k,
             temp_v,

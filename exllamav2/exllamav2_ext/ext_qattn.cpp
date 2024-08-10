@@ -260,6 +260,7 @@ void tp_attn_forward_
     torch::Tensor hidden_states,
     const py::list &temp_bc0,
     const py::list &temp_bc1,
+    const py::list &temp_bc2,
     const py::list &temp_q,
     const py::list &temp_k,
     const py::list &temp_v,
@@ -399,11 +400,11 @@ void tp_attn_forward_
 
     // Allgather
 
-    tp_gather(tp_context, temp_o, BROADCAST_Q, temp_bc1, BROADCAST_Q, head_dim);
+    tp_gather(tp_context, temp_o, BROADCAST_Q, temp_bc2, BROADCAST_Q, head_dim);
 
     // Output projection
 
-    gemm_half_q_half_tp(temp_bc1, o_proj, temp_o, false, tp_context);
+    gemm_half_q_half_tp(temp_bc2, o_proj, temp_o, false, tp_context);
 
     // Add residual
     // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel

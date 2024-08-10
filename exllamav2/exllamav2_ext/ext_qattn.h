@@ -111,6 +111,7 @@ void tp_attn_forward_
     torch::Tensor hidden_states,
     const py::list &temp_bc0,
     const py::list &temp_bc1,
+    const py::list &temp_bc2,
     const py::list &temp_q,
     const py::list &temp_k,
     const py::list &temp_v,
