@@ -32,7 +32,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
 
     @torch.inference_mode
-    def load(self):
+    def load(self, device_context = True):
 
         w = self.load_weight()
 
@@ -94,6 +94,11 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     def scratch_space(self) -> int:
 
         return 0
+
+
+    def scratch_space_tp(self) -> list[int]:
+
+        return [0] * self.model.tp_context.num_devices
 
 
     def forward(

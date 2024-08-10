@@ -37,9 +37,10 @@ class ExLlamaV2Module:
 
 
     def numel(self): raise(NotImplementedError())
-    def load(self): raise(NotImplementedError())
+    def load(self, device_context: bool): raise(NotImplementedError())
     def unload(self): raise(NotImplementedError())
     def scratch_space_fixed(self): raise(NotImplementedError())
+    def scratch_space_tp(self): raise(NotImplementedError())
     def scratch_space(self): raise(NotImplementedError())
 
     def forward(self,
@@ -254,6 +255,7 @@ class Intervention(ExLlamaV2Module):
     def load(self): return self.inner.load()
     def unload(self): return self.inner.unload()
     def scratch_space_fixed(self): return self.inner.scratch_space_fixed()
+    def scratch_space_tp(self): return self.inner.scratch_space_fixed()
     def scratch_space(self): return self.inner.scratch_space()
     def device(self): return self.inner.device()
     def set_device_idx(self, idx: int): raise NotImplementedError()

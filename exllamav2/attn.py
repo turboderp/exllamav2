@@ -123,6 +123,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     sliding_window: int
 
     is_tp: bool
+    tp_dq_size: list[int] | None
 
     from exllamav2.attn_params import Params
     from exllamav2.attn_params import PagedParams
@@ -139,6 +140,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         cfg = self.model.config
         self.is_tp = False
+        self.tp_dq_size = None
 
         self.layer_idx = layer_idx
         self.has_norm = has_norm
@@ -213,7 +215,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
 
     @torch.inference_mode
-    def load(self):
+    def load(self, device_context: bool = True):
 
         cfg = self.model.config
 
@@ -230,14 +232,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             assert self.k_proj.is_quant() and self.v_proj.is_quant() and self.o_proj.is_quant(), "Partially quantized attention layer"
 
-            device_context = self.model.get_device_context(self.device_idx)
-            device_context.begin_scratch_alloc()
-            self.temp_state = device_context.get_scratch_slice(self.temp_state_size())
-            # self.temp_q = device_context.get_scratch_slice(self.temp_q_size())
-            # self.temp_k = device_context.get_scratch_slice(self.temp_k_size())
-            # self.temp_v = device_context.get_scratch_slice(self.temp_v_size())
-            self.temp_dq = device_context.get_scratch_slice(self.temp_dq_size())
-            # self.temp_kv = device_context.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
+            if device_context:
+                device_context = self.model.get_device_context(self.device_idx)
+                device_context.begin_scratch_alloc()
+                self.temp_state = device_context.get_scratch_slice(self.temp_state_size())
+                # self.temp_q = device_context.get_scratch_slice(self.temp_q_size())
+                # self.temp_k = device_context.get_scratch_slice(self.temp_k_size())
+                # self.temp_v = device_context.get_scratch_slice(self.temp_v_size())
+                self.temp_dq = device_context.get_scratch_slice(self.temp_dq_size())
+                # self.temp_kv = device_context.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
+            else:
+                self.temp_state = none_tensor
+                self.temp_dq = none_tensor
 
             if self.has_norm:
                 norm_weight = self.pre_layernorm.weight if self.pre_layernorm.weight is not None else none_tensor
@@ -634,25 +640,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in k_cache_f]
         v_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in v_cache_f]
 
-        temp_bc0 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        temp_bc1 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        temp_bc2 = ctx.get_temp_tensors_bc(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        temp_q = ctx.get_temp_tensors(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        temp_k = ctx.get_temp_tensors(rows, dtype, BROADCAST_KV, dim = cfg.head_dim)
-        temp_v = ctx.get_temp_tensors(rows, dtype, BROADCAST_KV, dim = cfg.head_dim)
-        temp_o = ctx.get_temp_tensors(rows, dtype, BROADCAST_Q, dim = cfg.head_dim)
         sin, cos = ctx.get_sin_cos()
 
         ext_c.tp_attn_forward_(
             self.model.tp_context.ext_tp_context,
             hidden_states,
-            temp_bc0,
-            temp_bc1,
-            temp_bc2,
-            temp_q,
-            temp_k,
-            temp_v,
-            temp_o,
+            self.temp_bc0,
+            self.temp_bc1,
+            self.temp_bc2,
+            self.temp_q,
+            self.temp_k,
+            self.temp_v,
+            self.temp_o,
             k_cache,
             v_cache,
             self.pre_layernorm.weight if self.pre_layernorm is not None else [],
@@ -1245,6 +1244,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def tp_split(self):
 
         cfg = self.model.config
+        ctx = self.model.tp_context
 
         if self.pre_layernorm is not None:
             self.pre_layernorm.tp_split(BROADCAST_KV)
@@ -1256,5 +1256,52 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         self.v_proj.tp_split(BROADCAST_KV, dim = cfg.head_dim)
         self.o_proj.tp_split(BROADCAST_Q, dim = cfg.head_dim)
 
+        maxrows = cfg.max_batch_size * cfg.max_input_len
+        dtype = torch.half
+
+        ctx.begin_scratch_alloc_tp()
+        ctx.reserve_scratch(self.tp_dq_size)
+        self.temp_bc0 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        self.temp_bc1 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        self.temp_bc2 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        self.temp_q = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        self.temp_k = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_KV, dim = cfg.head_dim)
+        self.temp_v = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_KV, dim = cfg.head_dim)
+        self.temp_o = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+
         self.is_tp = True
         self.set_device_idx(None)
+
+
+    def scratch_space_tp(self):
+
+        cfg = self.model.config
+        ctx = self.model.tp_context
+        devs = ctx.num_devices
+        scratch = [0] * devs
+
+        def add(res: list[int]):
+            for i, s in enumerate(res):
+                scratch[i] += s
+
+        def amax(res: list[int]):
+            for i, s in enumerate(res):
+                scratch[i] = max(scratch[i], s)
+
+        amax(self.q_proj.scratch_space_tp(BROADCAST_Q, cfg.head_dim))
+        amax(self.k_proj.scratch_space_tp(BROADCAST_KV, cfg.head_dim))
+        amax(self.v_proj.scratch_space_tp(BROADCAST_KV, cfg.head_dim))
+        amax(self.o_proj.scratch_space_tp(BROADCAST_Q, cfg.head_dim))
+        self.tp_dq_size = [s for s in scratch]
+
+        maxrows = cfg.max_batch_size * cfg.max_input_len
+
+        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_KV, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_KV, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
+
+        return scratch

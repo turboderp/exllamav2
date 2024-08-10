@@ -88,7 +88,7 @@ class ExLlamaV2DeviceContext:
 
         if self.scratch is None: self.prepare(True)
 
-        size_bytes = ((size_bytes + 127) // 128) * 128
+        size_bytes = ((size_bytes + 63) // 64) * 64
         size_half = size_bytes // 2
         scratch_slice = self.scratch.narrow(0, self.scratch_idx, size_half)
         self.scratch_idx += size_half

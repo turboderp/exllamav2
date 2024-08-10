@@ -37,7 +37,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
 
     @torch.inference_mode
-    def load(self):
+    def load(self, device_context: bool = True):
 
         vocab_size = self.model.config.vocab_size
         hidden_size = self.model.config.hidden_size
@@ -81,6 +81,11 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
     def scratch_space_fixed(self) -> int:
 
         return 0
+
+
+    def scratch_space_tp(self) -> list[int]:
+
+        return [0] * self.model.tp_context.num_devices
 
 
     def scratch_space(self) -> int:

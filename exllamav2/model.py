@@ -325,21 +325,22 @@ class ExLlamaV2:
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None
     ):
-        # self.config.no_graphs = True
+        self.config.no_graphs = True
         self.tp_context = TPContext(self, gpu_split)
 
         # Create device tensors
 
-        # TODO: Reduce scratch space per device based on tensor split
-
-        devices = self.tp_context.all_devices()
-        scratch = 0
+        devs = self.tp_context.num_devices
+        scratch = [0] * devs
         for module in self.modules[1:]:
-            scratch = max(scratch, module.scratch_space_fixed())
+            ms = module.scratch_space_tp()
+            for i, m in enumerate(ms):
+                scratch[i] = max(scratch[i], m)
 
-        self.device_context = [None] * (max(devices) + 1)
-        for idx in devices:
-            self.device_context[idx] = ExLlamaV2DeviceContext(self, idx, scratch)
+        self.device_context = [None] * devs
+        for idx in range(devs):
+            if scratch[idx] > 0:
+                self.device_context[idx] = ExLlamaV2DeviceContext(self, idx, scratch[idx])
 
         # Load module weights
 
@@ -356,7 +357,7 @@ class ExLlamaV2:
                 else:
                     module.set_device_idx(self.tp_context.device)
 
-                module.load()
+                module.load(device_context = False)
 
                 if isinstance(module, ExLlamaV2Embedding):
                     module.tp_split()

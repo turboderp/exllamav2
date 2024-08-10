@@ -67,19 +67,19 @@ uintptr_t make_q_attn
 
     QAttn* attn = new QAttn
     (
-        (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
-        (half*) layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
+        layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
+        layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
         layernorm_is_rms,
         norm_epsilon,
         qm_q_proj,
         qm_k_proj,
         qm_v_proj,
         qm_o_proj,
-        (half*) temp_state.data_ptr(),
+        temp_state.is_meta() ? NULL : (half*) temp_state.data_ptr(),
 //        (half*) temp_q.data_ptr(),
 //        (half*) temp_k.data_ptr(),
 //        (half*) temp_v.data_ptr(),
-        (half*) temp_dq.data_ptr(),
+        temp_dq.is_meta() ? NULL : (half*) temp_dq.data_ptr(),
         max_rows,
         hidden_size,
         num_heads,
@@ -88,10 +88,10 @@ uintptr_t make_q_attn
         max_seq_len,
         has_residual,
         rope_style,
-        (half*) q_norm.is_meta() ? NULL : (half*) q_norm.data_ptr(),
-        (half*) k_norm.is_meta() ? NULL : (half*) k_norm.data_ptr(),
-        (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
-        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
+        q_norm.is_meta() ? NULL : (half*) q_norm.data_ptr(),
+        k_norm.is_meta() ? NULL : (half*) k_norm.data_ptr(),
+        post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
+        post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
         residual_fp32,
         use_graphs
     );
@@ -258,13 +258,13 @@ void tp_attn_forward_
 (
     uintptr_t tp_context,
     torch::Tensor hidden_states,
-    const py::list &temp_bc0,
-    const py::list &temp_bc1,
-    const py::list &temp_bc2,
-    const py::list &temp_q,
-    const py::list &temp_k,
-    const py::list &temp_v,
-    const py::list &temp_o,
+    const py::list &temp_bc0_,
+    const py::list &temp_bc1_,
+    const py::list &temp_bc2_,
+    const py::list &temp_q_,
+    const py::list &temp_k_,
+    const py::list &temp_v_,
+    const py::list &temp_o_,
     const py::list &k_cache,
     const py::list &v_cache,
     const py::list &pre_layernorm,
@@ -285,8 +285,23 @@ void tp_attn_forward_
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
-    int rows = temp_bc0[0].cast<torch::Tensor>().size(0);
-    int hidden_dim = temp_bc0[0].cast<torch::Tensor>().size(1);
+    int rows = batch_size * q_len;
+    int hidden_dim = temp_bc0_[0].cast<torch::Tensor>().size(1);
+
+    py::list temp_bc0;
+    py::list temp_bc1;
+    py::list temp_bc2;
+    py::list temp_q;
+    py::list temp_k;
+    py::list temp_v;
+    py::list temp_o;
+    for (const auto &item : temp_bc0_) temp_bc0.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_bc1_) temp_bc1.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_bc2_) temp_bc2.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_q_) temp_q.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_k_) temp_k.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_v_) temp_v.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_o_) temp_o.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
 
     // Broadcast
 

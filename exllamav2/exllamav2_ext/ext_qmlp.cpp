@@ -52,22 +52,22 @@ uintptr_t make_q_mlp
 
     QMLP* mlp = new QMLP
     (
-        (half*) layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
-        (half*) layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
+        layernorm.is_meta() ? NULL : (half*) layernorm.data_ptr(),
+        layernorm_bias.is_meta() ? NULL : (half*) layernorm_bias.data_ptr(),
         layernorm_is_rms,
         norm_epsilon,
         qm_gate,
         qm_up,
         qm_down,
-        (half*) temp_state.data_ptr(),
-        (half*) temp_a.data_ptr(),
-        (half*) temp_b.data_ptr(),
-        (half*) temp_dq.data_ptr(),
+        temp_state.is_meta() ? NULL : (half*) temp_state.data_ptr(),
+        temp_a.is_meta() ? NULL : (half*) temp_a.data_ptr(),
+        temp_b.is_meta() ? NULL : (half*) temp_b.data_ptr(),
+        temp_dq.is_meta() ? NULL : (half*) temp_dq.data_ptr(),
         max_rows,
         act_gelu,
         has_residual,
-        (half*) post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
-        (half*) post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
+        post_layernorm.is_meta() ? NULL : (half*) post_layernorm.data_ptr(),
+        post_layernorm_bias.is_meta() ? NULL : (half*) post_layernorm_bias.data_ptr(),
         residual_fp32,
         use_graphs
     );
@@ -327,12 +327,12 @@ void tp_mlp_forward_
 (
     uintptr_t tp_context,
     torch::Tensor hidden_states,
-    const py::list &temp_bc0,
-    const py::list &temp_bc1,
-    const py::list &temp_bc2,
-    const py::list &temp_gate,
-    const py::list &temp_up,
-    const py::list &temp_down,
+    const py::list &temp_bc0_,
+    const py::list &temp_bc1_,
+    const py::list &temp_bc2_,
+    const py::list &temp_gate_,
+    const py::list &temp_up_,
+    const py::list &temp_down_,
     const py::list &pre_layernorm,
     float norm_epsilon,
     const py::list &gate,
@@ -342,9 +342,22 @@ void tp_mlp_forward_
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
-    int rows = temp_bc2[0].cast<torch::Tensor>().size(0);
-    int interm_dim = temp_bc2[0].cast<torch::Tensor>().size(1);
-    int hidden_dim = temp_bc1[0].cast<torch::Tensor>().size(1);
+    int rows = hidden_states.size(0);
+    int interm_dim = temp_bc2_[0].cast<torch::Tensor>().size(1);
+    int hidden_dim = temp_bc1_[0].cast<torch::Tensor>().size(1);
+
+    py::list temp_bc0;
+    py::list temp_bc1;
+    py::list temp_bc2;
+    py::list temp_gate;
+    py::list temp_up;
+    py::list temp_down;
+    for (const auto &item : temp_bc0_) temp_bc0.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_bc1_) temp_bc1.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_bc2_) temp_bc2.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_gate_) temp_gate.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_up_) temp_up.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    for (const auto &item : temp_down_) temp_down.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
 
     // Broadcast
 

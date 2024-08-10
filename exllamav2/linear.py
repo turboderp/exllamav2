@@ -6,6 +6,7 @@ from exllamav2 import ext
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.compat import safe_move_tensor
+from exllamav2.tensor_p import BROADCAST_VC
 
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     in_features: int
     out_features: int
+    out_features_tp: list[int] | None
     has_bias: bool
     prescale: float
 
@@ -98,6 +100,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         self.assumed_footprint = in_features * (out_features + self.padding) * 2 + 128
         self.normalize_unq = normalize_unq
+
+        self.out_features_tp = None
 
 
     @torch.inference_mode
@@ -238,10 +242,23 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
     def temp_dq_size(self, out_features = None) -> int:
 
-        dq = self.in_features * self.out_features if out_features is None else out_features
+        dq = self.in_features * (self.out_features if out_features is None else out_features)
         dq = min(dq, self.model.config.max_dq_size)
         dq = dq * 2 + 128
         return dq
+
+
+    def scratch_space_tp(self, broadcast_type: int = BROADCAST_VC, dim = 1):
+
+        ctx = self.model.tp_context
+        split = ctx.get_split(broadcast_type)
+        self.out_features_tp = [0] * ctx.num_devices
+        for dev, a, b in split:
+            self.out_features_tp[dev] = (b - a) * dim
+
+        scratch = [2 * self.in_features * of for of in self.out_features_tp]
+        scratch = [min(s, self.model.config.max_dq_size) for s in scratch]
+        return scratch
 
 
     def temp_fwd_size(self) -> int:
@@ -441,12 +458,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         ]), "Can only split fully loaded EXL2 tensor."
 
         cfg = self.model.config
+        ctx = self.model.tp_context
         self.broadcast_type = broadcast_type
-        split = self.model.tp_context.get_split(broadcast_type)
+        split = ctx.get_split(broadcast_type)
         maxdev = max(dev for dev, _, _ in split)
 
         if dim:
             split = [(d, a * dim, b * dim) for (d, a, b) in split]
+
+        self.out_features_tp = [0] * ctx.num_devices
+        for dev, a, b in split:
+            self.out_features_tp[dev] = b - a
 
         new_q_handle: list[int | None]  = [None] * (maxdev + 1)
         new_q_tensors: list[dict | None] = [None] * (maxdev + 1)
@@ -472,6 +494,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             new_q_tensors[idx] = w
 
             device_context = self.model.get_device_context(idx)
+            # if not submodule:
             device_context.begin_scratch_alloc()
             new_temp_dq[idx] = device_context.get_scratch_slice(self.temp_dq_size(s))
             max_dq_rows = cfg.max_dq_size // s

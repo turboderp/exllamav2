@@ -35,6 +35,7 @@ class TPContext:
     device_temp: list[torch.Tensor] | None
 
     device: int | None
+    num_devices: int | None
     streams: list[int] | None
 
     ext_tp_context: int | None
@@ -67,6 +68,7 @@ class TPContext:
         self.q_split = None
         self.q_split_devs = None
         self.device = None
+        self.num_devices = None
         self.streams = None
         self.pinned_temp = None
         self.device_temp = None
@@ -127,7 +129,9 @@ class TPContext:
         self.rs_split, self.rs_split_devs = set_split(rs_split)
         self.q_split, self.q_split_devs = set_split(q_split)
 
-        self.device = self.all_devices()[0]
+        devs = self.all_devices()
+        self.device = devs[0]
+        self.num_devices = max(devs) + 1
 
 
     def finalize(self):
@@ -193,10 +197,29 @@ class TPContext:
         return [torch.empty((rows, dim), device = dev, dtype = dtype) for dev, _, _ in split]
 
 
+    def get_temp_tensors_bc_s(self, rows: int, esize: int, broadcast_type: int, dim: int = 1):
+
+        scratch = [0] * self.num_devices
+        split = self.get_split(broadcast_type)
+        dim = split[-1][2] * dim
+        for dev, _, _ in split:
+            scratch[dev] = rows * dim * esize
+        return scratch
+
+
     def get_temp_tensors(self, rows: int, dtype: torch.dtype, broadcast_type: int, dim: int = 1):
 
         split = self.get_split(broadcast_type)
         return [torch.empty((rows, (b - a) * dim), device = dev, dtype = dtype) for dev, a, b in split]
+
+
+    def get_temp_tensors_s(self, rows: int, esize: int, broadcast_type: int, dim: int = 1):
+
+        scratch = [0] * self.num_devices
+        split = self.get_split(broadcast_type)
+        for dev, a, b in split:
+            scratch[dev] = rows * (b - a) * dim * esize
+        return scratch
 
 
     def get_pinned(self, batch_size: int, q_len: int, dim: int):
@@ -328,3 +351,52 @@ class TPContext:
                 self.sin.append(devctx.sin)
                 self.cos.append(devctx.cos)
         return self.sin, self.cos
+
+
+    def begin_scratch_alloc_tp(self):
+
+        for devctx in self.model.device_context:
+            devctx.begin_scratch_alloc()
+
+
+    def get_scratch_slice_tp_bc(self, rows: int, dtype: torch.dtype, broadcast_type: int, dim: int = 1):
+
+        split = self.get_split(broadcast_type)
+        dim = split[-1][2] * dim
+        if dtype == torch.half: esize = 2
+        if dtype == torch.float: esize = 4
+
+        tensors = []
+        for dev, _, _ in split:
+            devctx = self.model.get_device_context(dev)
+            size_bytes = rows * dim * esize
+            tensor = devctx.get_scratch_slice(size_bytes)
+            tensor = tensor.view(rows, dim)
+            tensors.append(tensor)
+
+        return tensors
+
+
+    def get_scratch_slice_tp(self, rows: int, dtype: torch.dtype, broadcast_type: int, dim: int = 1):
+
+        split = self.get_split(broadcast_type)
+        if dtype == torch.half: esize = 2
+        if dtype == torch.float: esize = 4
+
+        tensors = []
+        for dev, a, b in split:
+            devctx = self.model.get_device_context(dev)
+            size_bytes = rows * (b - a) * dim * esize
+            tensor = devctx.get_scratch_slice(size_bytes)
+            tensor = tensor.view(rows, (b - a) * dim)
+            tensors.append(tensor)
+
+        return tensors
+
+
+    def reserve_scratch(self, scratch: list[int]):
+
+        for dev, s in enumerate(scratch):
+            if s == 0: continue
+            devctx = self.model.get_device_context(dev)
+            devctx.get_scratch_slice(s)
