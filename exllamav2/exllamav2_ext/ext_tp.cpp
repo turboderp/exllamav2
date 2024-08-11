@@ -41,6 +41,18 @@ ExtTPContext::ExtTPContext
 {
     pinned_temp = (void*) _pinned_temp.data_ptr();
     pinned_size = _pinned_temp.numel() * _pinned_temp.element_size();
+
+    for (int i = 0; i < streams.size(); ++i)
+        if (streams[i]) all_devices.push_back(i);
+
+    create_events();
+
+    #ifdef TP_MULTITHREADED
+
+        int numdevs = all_devices.size();
+        thread_pool = new ThreadPool(numdevs);
+
+    #endif
 }
 
 ExtTPContext::~ExtTPContext()
@@ -52,14 +64,13 @@ ExtTPContext::~ExtTPContext()
         cuda_check(cudaEventDestroy(sync_events2[i]));
         cuda_check(cudaEventDestroy(sync_events3[i]));
     }
+
+    delete thread_pool;
 }
 
 void ExtTPContext::create_events()
 {
     if (sync_events.size()) return;
-//    DBGI(sync_events.size());
-
-//    DBGX(pinned_temp);
 
     cuda_check(cudaEventCreate(&sync_event));
 
@@ -120,11 +131,11 @@ void tp_broadcast
     torch::Tensor source,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
-    int dim
+    int dim,
+    int t_device
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
-    ctx->create_events();
 
     size_t size = source.numel() * 2;
     TORCH_CHECK(size <= ctx->pinned_size, "Temporary tensor is too small")
@@ -156,6 +167,8 @@ void tp_broadcast
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
+        if (t_device != -1 && t_device != dev) continue;
+
         void* target = (void*) targets[i].data_ptr();
         if (target == source_g) continue;
 
@@ -189,11 +202,36 @@ void tp_gather
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
     int broadcast_type_target,
-    int dim
+    int dim,
+    int t_device
+)
+{
+    tp_gather_barrier
+    (
+        tp_context,
+        inputs,
+        broadcast_type,
+        targets,
+        broadcast_type_target,
+        dim,
+        t_device,
+        nullptr
+    );
+}
+
+void tp_gather_barrier
+(
+    uintptr_t tp_context,
+    const std::vector<torch::Tensor> &inputs,
+    int broadcast_type,
+    const std::vector<torch::Tensor> &targets,
+    int broadcast_type_target,
+    int dim,
+    int t_device,
+    Barrier* barrier
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
-    ctx->create_events();
 
     std::vector<std::tuple<int, int, int>> split;
     switch(broadcast_type)
@@ -212,6 +250,8 @@ void tp_gather
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
+        if (t_device != -1 && t_device != dev) continue;
+
         uint8_t* src = (uint8_t*) inputs[i].data_ptr();
         int src_cols = inputs[i].size(1);
         uint8_t* dst = ((uint8_t*) ctx->pinned_temp) + std::get<1>(split[i]) * esize * dim;
@@ -232,10 +272,14 @@ void tp_gather
         cuda_check(cudaEventRecord(ctx->sync_events3[dev], ctx->streams[dev]));
     }
 
+    if (barrier)
+        barrier->arrive_and_wait();
+
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
         cudaSetDevice(dev);
+        if (t_device != -1 && t_device != dev) continue;
 
         for (int j = 0; j < split.size(); ++j)
         {
@@ -261,6 +305,8 @@ void tp_gather
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
+        if (t_device != -1 && t_device != dev) continue;
+
         void* target = (void*) targets[i].data_ptr();
 
         cudaSetDevice(dev);

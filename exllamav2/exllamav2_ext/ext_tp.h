@@ -7,6 +7,10 @@
 #define BROADCAST_RS 3
 #define BROADCAST_Q 4
 
+//#define TP_MULTITHREADED
+
+#include "cpp/threadpool.h"
+
 class ExtTPContext
 {
 public:
@@ -23,6 +27,10 @@ public:
     std::vector<cudaEvent_t> sync_events;
     std::vector<cudaEvent_t> sync_events2;
     std::vector<cudaEvent_t> sync_events3;
+
+    std::vector<int> all_devices;
+
+    ThreadPool *thread_pool;
 
     ExtTPContext(
         std::vector<std::tuple<int, int, int>> _kv_split,
@@ -57,7 +65,8 @@ void tp_broadcast
     torch::Tensor source,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
-    int dim
+    int dim,
+    int t_device = -1
 );
 
 void tp_gather
@@ -67,7 +76,20 @@ void tp_gather
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
     int broadcast_type_target,
-    int dim
+    int dim,
+    int t_device = -1
+);
+
+void tp_gather_barrier
+(
+    uintptr_t tp_context,
+    const std::vector<torch::Tensor> &inputs,
+    int broadcast_type,
+    const std::vector<torch::Tensor> &targets,
+    int broadcast_type_target,
+    int dim,
+    int t_device = -1,
+    Barrier* barrier = nullptr
 );
 
 #endif

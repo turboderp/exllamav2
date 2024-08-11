@@ -359,80 +359,115 @@ void tp_mlp_forward_
     for (const auto &item : temp_up_) temp_up.push_back(item.narrow(0, 0, rows));
     for (const auto &item : temp_down_) temp_down.push_back(item.narrow(0, 0, rows));
 
-    // Broadcast
-
-    tp_broadcast(tp_context, hidden_states, BROADCAST_ID, temp_bc0, 1);
-
-    // Layernorm
-
-    for (int i = 0; i < pre_layernorm.size(); ++i)
+    auto run_thread = [&] (int t_device, Barrier* sync) -> void
     {
-        int dev = temp_bc0[i].device().index();
-        cudaSetDevice(dev);
-        rms_norm_cuda
-        (
-            ctx->streams[dev],
-            (void*) temp_bc0[i].data_ptr(),
-            (half*) pre_layernorm[i].data_ptr(),
-            (void*) temp_bc1[i].data_ptr(),
-            norm_epsilon,
-            rows,
-            hidden_dim,
-            false,
-            false,  // TODO: FP32 residual
-            false
-        );
-    }
+        #ifdef TP_MULTITHREADED
+            at::InferenceMode guard(true);
+        #endif
 
-    // Up, gate
+        // Broadcast
 
-    gemm_half_q_half_tp(temp_bc1, gate, temp_gate, false, tp_context);
-    gemm_half_q_half_tp(temp_bc1, up, temp_up, false, tp_context);
+        tp_broadcast(tp_context, hidden_states, BROADCAST_ID, temp_bc0, 1, t_device);
 
-    // Act/mul
+        // Layernorm
 
-    for (int i = 0; i < temp_bc1.size(); ++i)
-    {
-        int dev = temp_bc1[i].device().index();
-        cudaSetDevice(dev);
-        act_mul_cuda
-        (
-            ctx->streams[dev],
-            (half*) temp_gate[i].data_ptr(),
-            (half*) temp_up[i].data_ptr(),
-            rows,
-            interm_dim,
-            act_gelu
-        );
-    }
+        for (int i = 0; i < pre_layernorm.size(); ++i)
+        {
+            int dev = temp_bc0[i].device().index();
+            if (t_device != -1 && t_device != dev) continue;
 
-    // Allgather
+            cudaSetDevice(dev);
+            rms_norm_cuda
+            (
+                ctx->streams[dev],
+                (void*) temp_bc0[i].data_ptr(),
+                (half*) pre_layernorm[i].data_ptr(),
+                (void*) temp_bc1[i].data_ptr(),
+                norm_epsilon,
+                rows,
+                hidden_dim,
+                false,
+                false,  // TODO: FP32 residual
+                false
+            );
+        }
 
-    tp_gather(tp_context, temp_gate, BROADCAST_ID, temp_bc2, BROADCAST_ID, 1);
+        // Up, gate
 
-    // Down
+        gemm_half_q_half_tp(temp_bc1, gate, temp_gate, false, tp_context, t_device);
+        gemm_half_q_half_tp(temp_bc1, up, temp_up, false, tp_context, t_device);
 
-    gemm_half_q_half_tp(temp_bc2, down, temp_down, false, tp_context);
+        // Act/mul
 
-    // Add residual
-    // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel
+        for (int i = 0; i < temp_bc1.size(); ++i)
+        {
+            int dev = temp_bc1[i].device().index();
+            if (t_device != -1 && t_device != dev) continue;
 
-    int offset = 0;
-    for (int i = 0; i < temp_bc0.size(); ++i)
-    {
-        int dev = temp_bc0[i].device().index();
-        cudaSetDevice(dev);
+            cudaSetDevice(dev);
+            act_mul_cuda
+            (
+                ctx->streams[dev],
+                (half*) temp_gate[i].data_ptr(),
+                (half*) temp_up[i].data_ptr(),
+                rows,
+                interm_dim,
+                act_gelu
+            );
+        }
 
-        auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
-        at::cuda::setCurrentCUDAStream(stream);
+        // Allgather
 
-        int w = temp_down[i].size(1);
-        auto res_slice = temp_bc0[i].narrow(1, offset, w);
-        temp_down[i].add_(res_slice);
-        offset += w;
-    }
+        tp_gather_barrier(tp_context, temp_gate, BROADCAST_ID, temp_bc2, BROADCAST_ID, 1, t_device, sync);
 
-    // Gather
+        // Down
 
-    tp_gather(tp_context, temp_down, BROADCAST_RS, temp_down, -1, 1);
+        gemm_half_q_half_tp(temp_bc2, down, temp_down, false, tp_context, t_device);
+
+        // Add residual
+        // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel
+        // TODO: Currently runs only on the first thread, seems libtorch in-place operations are not threadsafe?
+
+        if (t_device == -1 || t_device == ctx->all_devices[0])
+        {
+            int offset = 0;
+            for (int i = 0; i < temp_bc0.size(); ++i)
+            {
+                int dev = temp_bc0[i].device().index();
+                cudaSetDevice(dev);
+
+                auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+                at::cuda::setCurrentCUDAStream(stream);
+
+                int w = temp_down[i].size(1);
+                auto res_slice = temp_bc0[i].narrow(1, offset, w);
+                temp_down[i].add_(res_slice);
+                offset += w;
+            }
+        }
+
+        if (t_device != -1)
+            sync->arrive_and_wait();
+
+        // Gather
+
+        tp_gather_barrier(tp_context, temp_down, BROADCAST_RS, temp_down, -1, 1, t_device, sync);
+
+    };
+
+    #ifdef TP_MULTITHREADED
+
+        std::vector<std::future<void>> threads;
+        Barrier sync_point(ctx->all_devices.size());
+        for (const auto &dev : ctx->all_devices)
+            threads.push_back(ctx->thread_pool->enqueue(run_thread, dev, &sync_point));
+        for (auto &t : threads)
+            t.get();
+
+    #else
+
+        run_thread(-1, NULL);
+
+    #endif
+
 }

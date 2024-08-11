@@ -240,7 +240,8 @@ class TPContext:
             input_tensor,
             broadcast_type,
             bc_tensors,
-            dim
+            dim,
+            -1
         )
 
         return bc_tensors
@@ -261,7 +262,8 @@ class TPContext:
             broadcast_type,
             [],
             -1,
-            dim
+            dim,
+            -1
         )
 
         pt = self.pinned_temp[:split[-1][2] * dim * inputs[0].shape[0]]
@@ -289,7 +291,8 @@ class TPContext:
             broadcast_type_g,
             bc_tensors,
             broadcast_type_b,
-            dim
+            dim,
+            -1
         )
 
         return bc_tensors

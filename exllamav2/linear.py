@@ -378,7 +378,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.q_handle,
             outputs,
             force_cuda,
-            self.model.tp_context.ext_tp_context
+            self.model.tp_context.ext_tp_context,
+            -1
         )
 
         if output_split:
