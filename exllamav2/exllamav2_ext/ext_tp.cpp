@@ -119,7 +119,7 @@ void tp_broadcast
     uintptr_t tp_context,
     torch::Tensor source,
     int broadcast_type,
-    const py::list &targets,
+    const std::vector<torch::Tensor> &targets,
     int dim
 )
 {
@@ -156,7 +156,7 @@ void tp_broadcast
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
-        void* target = (void*) targets[i].cast<torch::Tensor>().data_ptr();
+        void* target = (void*) targets[i].data_ptr();
         if (target == source_g) continue;
 
         cudaSetDevice(dev);
@@ -185,9 +185,9 @@ void tp_broadcast
 void tp_gather
 (
     uintptr_t tp_context,
-    const py::list &inputs,
+    const std::vector<torch::Tensor> &inputs,
     int broadcast_type,
-    const py::list &targets,
+    const std::vector<torch::Tensor> &targets,
     int broadcast_type_target,
     int dim
 )
@@ -205,15 +205,15 @@ void tp_gather
         case BROADCAST_Q: split = ctx->q_split; break;
     }
 
-    int out_rows = inputs[0].cast<torch::Tensor>().size(0);
+    int out_rows = inputs[0].size(0);
     int out_cols = std::get<2>(split[split.size() - 1]) * dim;
-    int esize = inputs[0].cast<torch::Tensor>().element_size();
+    int esize = inputs[0].element_size();
 
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
-        uint8_t* src = (uint8_t*) inputs[i].cast<torch::Tensor>().data_ptr();
-        int src_cols = inputs[i].cast<torch::Tensor>().size(1);
+        uint8_t* src = (uint8_t*) inputs[i].data_ptr();
+        int src_cols = inputs[i].size(1);
         uint8_t* dst = ((uint8_t*) ctx->pinned_temp) + std::get<1>(split[i]) * esize * dim;
 
         cudaSetDevice(dev);
@@ -245,9 +245,9 @@ void tp_gather
         }
     }
 
-    if (!targets.size()) return;
+    if (broadcast_type_target == -1) return;
 
-    size_t size = targets[0].cast<torch::Tensor>().numel() * 2;
+    size_t size = targets[0].numel() * 2;
 
     switch(broadcast_type_target)
     {
@@ -261,7 +261,7 @@ void tp_gather
     for (int i = 0; i < split.size(); ++i)
     {
         int dev = std::get<0>(split[i]);
-        void* target = (void*) targets[i].cast<torch::Tensor>().data_ptr();
+        void* target = (void*) targets[i].data_ptr();
 
         cudaSetDevice(dev);
         cudaStream_t stream = ctx->streams[dev];

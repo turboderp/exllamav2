@@ -258,50 +258,50 @@ void tp_attn_forward_
 (
     uintptr_t tp_context,
     torch::Tensor hidden_states,
-    const py::list &temp_bc0_,
-    const py::list &temp_bc1_,
-    const py::list &temp_bc2_,
-    const py::list &temp_q_,
-    const py::list &temp_k_,
-    const py::list &temp_v_,
-    const py::list &temp_o_,
-    const py::list &k_cache,
-    const py::list &v_cache,
-    const py::list &pre_layernorm,
+    const std::vector<torch::Tensor> &temp_bc0_,
+    const std::vector<torch::Tensor> &temp_bc1_,
+    const std::vector<torch::Tensor> &temp_bc2_,
+    const std::vector<torch::Tensor> &temp_q_,
+    const std::vector<torch::Tensor> &temp_k_,
+    const std::vector<torch::Tensor> &temp_v_,
+    const std::vector<torch::Tensor> &temp_o_,
+    const std::vector<torch::Tensor> &k_cache,
+    const std::vector<torch::Tensor> &v_cache,
+    const std::vector<torch::Tensor> &pre_layernorm,
     float norm_epsilon,
-    const py::list &q_proj,
-    const py::list &k_proj,
-    const py::list &v_proj,
-    const py::list &o_proj,
+    const std::vector<uintptr_t> &q_proj,
+    const std::vector<uintptr_t> &k_proj,
+    const std::vector<uintptr_t> &v_proj,
+    const std::vector<uintptr_t> &o_proj,
     int head_dim,
     int rope_style,
     int batch_size,
     int q_len,
-    const py::list &sin,
-    const py::list &cos,
-    const py::list &past_lens,
-    const py::list &block_index,
+    const std::vector<torch::Tensor> &sin,
+    const std::vector<torch::Tensor> &cos,
+    const std::vector<torch::Tensor> &past_lens,
+    const std::vector<torch::Tensor> &block_index,
     float scaling
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
     int rows = batch_size * q_len;
-    int hidden_dim = temp_bc0_[0].cast<torch::Tensor>().size(1);
+    int hidden_dim = temp_bc0_[0].size(1);
 
-    py::list temp_bc0;
-    py::list temp_bc1;
-    py::list temp_bc2;
-    py::list temp_q;
-    py::list temp_k;
-    py::list temp_v;
-    py::list temp_o;
-    for (const auto &item : temp_bc0_) temp_bc0.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_bc1_) temp_bc1.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_bc2_) temp_bc2.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_q_) temp_q.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_k_) temp_k.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_v_) temp_v.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_o_) temp_o.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    std::vector<torch::Tensor> temp_bc0;
+    std::vector<torch::Tensor> temp_bc1;
+    std::vector<torch::Tensor> temp_bc2;
+    std::vector<torch::Tensor> temp_q;
+    std::vector<torch::Tensor> temp_k;
+    std::vector<torch::Tensor> temp_v;
+    std::vector<torch::Tensor> temp_o;
+    for (const auto &item : temp_bc0_) temp_bc0.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_bc1_) temp_bc1.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_bc2_) temp_bc2.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_q_) temp_q.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_k_) temp_k.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_v_) temp_v.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_o_) temp_o.push_back(item.narrow(0, 0, rows));
 
     // Broadcast
 
@@ -312,13 +312,14 @@ void tp_attn_forward_
     for (int i = 0; i < pre_layernorm.size(); ++i)
     {
         int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        int dev = temp_bc0[i].device().index();
         cudaSetDevice(dev);
         rms_norm_cuda
         (
             ctx->streams[dev],
-            (void*) temp_bc0[i].cast<torch::Tensor>().data_ptr(),
-            (half*) pre_layernorm[i].cast<torch::Tensor>().data_ptr(),
-            (void*) temp_bc1[i].cast<torch::Tensor>().data_ptr(),
+            (void*) temp_bc0[i].data_ptr(),
+            (half*) pre_layernorm[i].data_ptr(),
+            (void*) temp_bc1[i].data_ptr(),
             norm_epsilon,
             rows,
             hidden_dim,
@@ -340,20 +341,20 @@ void tp_attn_forward_
     {
         for (int i = 0; i < temp_q.size(); ++i)
         {
-            int dev = temp_q[i].cast<torch::Tensor>().device().index();
+            int dev = temp_q[i].device().index();
             cudaSetDevice(dev);
 
-            int num_heads = temp_q[i].cast<torch::Tensor>().size(1) / head_dim;
-            int num_kv_heads = temp_k[i].cast<torch::Tensor>().size(1) / head_dim;
+            int num_heads = temp_q[i].size(1) / head_dim;
+            int num_kv_heads = temp_k[i].size(1) / head_dim;
             int q_len = rows / batch_size;
 
             rope_cuda_qk
             (
                 ctx->streams[dev],
-                (half*) temp_q[i].cast<torch::Tensor>().data_ptr(),
-                (half*) temp_k[i].cast<torch::Tensor>().data_ptr(),
-                (half*) sin[i].cast<torch::Tensor>().data_ptr(),
-                (half*) cos[i].cast<torch::Tensor>().data_ptr(),
+                (half*) temp_q[i].data_ptr(),
+                (half*) temp_k[i].data_ptr(),
+                (half*) sin[i].data_ptr(),
+                (half*) cos[i].data_ptr(),
                 batch_size,
                 q_len * num_heads,
                 q_len * num_kv_heads,
@@ -361,7 +362,7 @@ void tp_attn_forward_
                 num_heads,
                 num_kv_heads,
                 0, //past_len,
-                (int32_t*) past_lens[i].cast<torch::Tensor>().data_ptr(),
+                (int32_t*) past_lens[i].data_ptr(),
                 rope_style == ROPE_STYLE_NEOX
             );
         }
@@ -371,35 +372,35 @@ void tp_attn_forward_
 
     for (int i = 0; i < temp_q.size(); ++i)
     {
-        int dev = temp_q[i].cast<torch::Tensor>().device().index();
+        int dev = temp_q[i].device().index();
         cudaSetDevice(dev);
 
         auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
         at::cuda::setCurrentCUDAStream(stream);
 
-        std::vector<int64_t> attn_shape_qo = {batch_size, q_len, temp_q[i].cast<torch::Tensor>().size(1) / head_dim, head_dim};
-        std::vector<int64_t> attn_shape_kv = {batch_size, q_len, temp_k[i].cast<torch::Tensor>().size(1) / head_dim, head_dim};
+        std::vector<int64_t> attn_shape_qo = {batch_size, q_len, temp_q[i].size(1) / head_dim, head_dim};
+        std::vector<int64_t> attn_shape_kv = {batch_size, q_len, temp_k[i].size(1) / head_dim, head_dim};
 
-        torch::Tensor q = temp_q[i].cast<torch::Tensor>().view(attn_shape_qo);
-        torch::Tensor k = temp_k[i].cast<torch::Tensor>().view(attn_shape_kv);
-        torch::Tensor v = temp_v[i].cast<torch::Tensor>().view(attn_shape_kv);
-        torch::Tensor o = temp_o[i].cast<torch::Tensor>().view(attn_shape_qo);
+        torch::Tensor q = temp_q[i].view(attn_shape_qo);
+        torch::Tensor k = temp_k[i].view(attn_shape_kv);
+        torch::Tensor v = temp_v[i].view(attn_shape_kv);
+        torch::Tensor o = temp_o[i].view(attn_shape_qo);
 
         auto none = py::none();
 
         fwd_kvcache_func
         (
             q,
-            k_cache[i].cast<torch::Tensor>(),
-            v_cache[i].cast<torch::Tensor>(),
+            k_cache[i],
+            v_cache[i],
             k,
             v,
-            past_lens[i].cast<torch::Tensor>(),  // cache_seqlens
+            past_lens[i],  // cache_seqlens
             none,  // rotary_cos
             none,  // rotary_sin
             none,  // cache_batch_idx
             none,  // cache_leftpad
-            block_index[i].cast<torch::Tensor>(),  // block_table
+            block_index[i],  // block_table
             none,  // alibi_slopes
             o, // output
             scaling,  // softmax_scale
@@ -427,20 +428,19 @@ void tp_attn_forward_
     int offset = 0;
     for (int i = 0; i < temp_bc0.size(); ++i)
     {
-        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        int dev = temp_bc0[i].device().index();
         cudaSetDevice(dev);
 
         auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
         at::cuda::setCurrentCUDAStream(stream);
 
-        int w = temp_o[i].cast<torch::Tensor>().size(1);
-        auto res_slice = temp_bc0[i].cast<torch::Tensor>().narrow(1, offset, w);
-        temp_o[i].cast<torch::Tensor>().add_(res_slice);
+        int w = temp_o[i].size(1);
+        auto res_slice = temp_bc0[i].narrow(1, offset, w);
+        temp_o[i].add_(res_slice);
         offset += w;
     }
 
     // Gather
 
-    tp_gather(tp_context, temp_o, BROADCAST_Q, py::list(), -1, head_dim);
-
+    tp_gather(tp_context, temp_o, BROADCAST_Q, temp_o, -1, head_dim);
 }

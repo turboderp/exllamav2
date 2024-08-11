@@ -327,37 +327,37 @@ void tp_mlp_forward_
 (
     uintptr_t tp_context,
     torch::Tensor hidden_states,
-    const py::list &temp_bc0_,
-    const py::list &temp_bc1_,
-    const py::list &temp_bc2_,
-    const py::list &temp_gate_,
-    const py::list &temp_up_,
-    const py::list &temp_down_,
-    const py::list &pre_layernorm,
+    const std::vector<torch::Tensor> &temp_bc0_,
+    const std::vector<torch::Tensor> &temp_bc1_,
+    const std::vector<torch::Tensor> &temp_bc2_,
+    const std::vector<torch::Tensor> &temp_gate_,
+    const std::vector<torch::Tensor> &temp_up_,
+    const std::vector<torch::Tensor> &temp_down_,
+    const std::vector<torch::Tensor> &pre_layernorm,
     float norm_epsilon,
-    const py::list &gate,
-    const py::list &up,
-    const py::list &down,
+    const std::vector<uintptr_t> &gate,
+    const std::vector<uintptr_t> &up,
+    const std::vector<uintptr_t> &down,
     bool act_gelu
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
     int rows = hidden_states.size(0);
-    int interm_dim = temp_bc2_[0].cast<torch::Tensor>().size(1);
-    int hidden_dim = temp_bc1_[0].cast<torch::Tensor>().size(1);
+    int interm_dim = temp_bc2_[0].size(1);
+    int hidden_dim = temp_bc1_[0].size(1);
 
-    py::list temp_bc0;
-    py::list temp_bc1;
-    py::list temp_bc2;
-    py::list temp_gate;
-    py::list temp_up;
-    py::list temp_down;
-    for (const auto &item : temp_bc0_) temp_bc0.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_bc1_) temp_bc1.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_bc2_) temp_bc2.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_gate_) temp_gate.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_up_) temp_up.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
-    for (const auto &item : temp_down_) temp_down.append(item.cast<torch::Tensor>().narrow(0, 0, rows));
+    std::vector<torch::Tensor> temp_bc0;
+    std::vector<torch::Tensor> temp_bc1;
+    std::vector<torch::Tensor> temp_bc2;
+    std::vector<torch::Tensor> temp_gate;
+    std::vector<torch::Tensor> temp_up;
+    std::vector<torch::Tensor> temp_down;
+    for (const auto &item : temp_bc0_) temp_bc0.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_bc1_) temp_bc1.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_bc2_) temp_bc2.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_gate_) temp_gate.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_up_) temp_up.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_down_) temp_down.push_back(item.narrow(0, 0, rows));
 
     // Broadcast
 
@@ -367,14 +367,14 @@ void tp_mlp_forward_
 
     for (int i = 0; i < pre_layernorm.size(); ++i)
     {
-        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        int dev = temp_bc0[i].device().index();
         cudaSetDevice(dev);
         rms_norm_cuda
         (
             ctx->streams[dev],
-            (void*) temp_bc0[i].cast<torch::Tensor>().data_ptr(),
-            (half*) pre_layernorm[i].cast<torch::Tensor>().data_ptr(),
-            (void*) temp_bc1[i].cast<torch::Tensor>().data_ptr(),
+            (void*) temp_bc0[i].data_ptr(),
+            (half*) pre_layernorm[i].data_ptr(),
+            (void*) temp_bc1[i].data_ptr(),
             norm_epsilon,
             rows,
             hidden_dim,
@@ -393,13 +393,13 @@ void tp_mlp_forward_
 
     for (int i = 0; i < temp_bc1.size(); ++i)
     {
-        int dev = temp_bc1[i].cast<torch::Tensor>().device().index();
+        int dev = temp_bc1[i].device().index();
         cudaSetDevice(dev);
         act_mul_cuda
         (
             ctx->streams[dev],
-            (half*) temp_gate[i].cast<torch::Tensor>().data_ptr(),
-            (half*) temp_up[i].cast<torch::Tensor>().data_ptr(),
+            (half*) temp_gate[i].data_ptr(),
+            (half*) temp_up[i].data_ptr(),
             rows,
             interm_dim,
             act_gelu
@@ -420,20 +420,19 @@ void tp_mlp_forward_
     int offset = 0;
     for (int i = 0; i < temp_bc0.size(); ++i)
     {
-        int dev = temp_bc0[i].cast<torch::Tensor>().device().index();
+        int dev = temp_bc0[i].device().index();
         cudaSetDevice(dev);
 
         auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
         at::cuda::setCurrentCUDAStream(stream);
 
-        int w = temp_down[i].cast<torch::Tensor>().size(1);
-        auto res_slice = temp_bc0[i].cast<torch::Tensor>().narrow(1, offset, w);
-        temp_down[i].cast<torch::Tensor>().add_(res_slice);
+        int w = temp_down[i].size(1);
+        auto res_slice = temp_bc0[i].narrow(1, offset, w);
+        temp_down[i].add_(res_slice);
         offset += w;
     }
 
     // Gather
 
-    tp_gather(tp_context, temp_down, BROADCAST_RS, py::list(), -1, 1);
+    tp_gather(tp_context, temp_down, BROADCAST_RS, temp_down, -1, 1);
 }
-

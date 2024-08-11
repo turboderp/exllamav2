@@ -239,9 +239,9 @@ void gemm_half_q_half
 
 void gemm_half_q_half_tp
 (
-    const py::list &a,
-    const py::list &b,
-    const py::list &c,
+    const std::vector<torch::Tensor> &a,
+    const std::vector<uintptr_t> &b,
+    const std::vector<torch::Tensor> &c,
     bool force_cuda,
     uintptr_t tp_context
 )
@@ -251,29 +251,29 @@ void gemm_half_q_half_tp
 
     for (size_t i = 0; i < a.size(); ++i)
     {
-        qm.push_back(reinterpret_cast<QMatrix*> (b[i].cast<uintptr_t>()));
-        TORCH_CHECK_DTYPE(a[i].cast<torch::Tensor>(), kHalf);
-        TORCH_CHECK_DTYPE(c[i].cast<torch::Tensor>(), kHalf);
-        TORCH_CHECK_SHAPES(a[i].cast<torch::Tensor>(), 0, c[i].cast<torch::Tensor>(), 0, 1);
-        TORCH_CHECK(qm[i]->height == a[i].cast<torch::Tensor>().size(1), "a and b have incompatible shapes")
-        TORCH_CHECK(qm[i]->width == c[i].cast<torch::Tensor>().size(1), "b and c have incompatible shapes")
+        qm.push_back(reinterpret_cast<QMatrix*> (b[i]));
+        TORCH_CHECK_DTYPE(a[i], kHalf);
+        TORCH_CHECK_DTYPE(c[i], kHalf);
+        TORCH_CHECK_SHAPES(a[i], 0, c[i], 0, 1);
+        TORCH_CHECK(qm[i]->height == a[i].size(1), "a and b have incompatible shapes")
+        TORCH_CHECK(qm[i]->width == c[i].size(1), "b and c have incompatible shapes")
     }
 
     for (int i = 0; i < a.size(); ++i)
     {
-        int dev = a[i].cast<torch::Tensor>().device().index();
+        int dev = a[i].device().index();
         cudaSetDevice(dev);
         cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
         gemm_half_q_half_cuda
         (
             ctx->streams[dev],
             cublas_handle,
-            (const half*) a[i].cast<torch::Tensor>().data_ptr(),
+            (const half*) a[i].data_ptr(),
             qm[i],
-            (half*) c[i].cast<torch::Tensor>().data_ptr(),
-            c[i].cast<torch::Tensor>().size(0), // m
-            c[i].cast<torch::Tensor>().size(1), // n
-            a[i].cast<torch::Tensor>().size(1), // k
+            (half*) c[i].data_ptr(),
+            c[i].size(0), // m
+            c[i].size(1), // n
+            a[i].size(1), // k
             true,
             NULL,
             force_cuda

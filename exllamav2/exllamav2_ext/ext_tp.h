@@ -40,11 +40,11 @@ public:
 
 uintptr_t make_tp_context
 (
-    std::vector<std::tuple<int, int, int>> kv_split,
-    std::vector<std::tuple<int, int, int>> id_split,
-    std::vector<std::tuple<int, int, int>> vc_split,
-    std::vector<std::tuple<int, int, int>> rs_split,
-    std::vector<std::tuple<int, int, int>> q_split,
+    const std::vector<std::tuple<int, int, int>> kv_split,
+    const std::vector<std::tuple<int, int, int>> id_split,
+    const std::vector<std::tuple<int, int, int>> vc_split,
+    const std::vector<std::tuple<int, int, int>> rs_split,
+    const std::vector<std::tuple<int, int, int>> q_split,
     torch::Tensor pinned_temp,
     std::vector<uintptr_t> streams
 );
@@ -56,16 +56,16 @@ void tp_broadcast
     uintptr_t tp_context,
     torch::Tensor source,
     int broadcast_type,
-    const py::list &targets,
+    const std::vector<torch::Tensor> &targets,
     int dim
 );
 
 void tp_gather
 (
     uintptr_t tp_context,
-    const py::list &inputs,
+    const std::vector<torch::Tensor> &inputs,
     int broadcast_type,
-    const py::list &targets,
+    const std::vector<torch::Tensor> &targets,
     int broadcast_type_target,
     int dim
 );
