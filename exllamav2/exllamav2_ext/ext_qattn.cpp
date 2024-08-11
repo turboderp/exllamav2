@@ -249,10 +249,10 @@ int q_attn_set_loras
 }
 
 //MHAFwdKVCacheFunc flash_attn_func = nullptr;
-py::object fwd_kvcache_func;
+//py::object fwd_kvcache_func;
 void set_flash_attn_func()
 {
-    fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
+//    fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
 }
 
 void tp_attn_forward_
@@ -285,6 +285,8 @@ void tp_attn_forward_
     float scaling
 )
 {
+    auto fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
+
     #ifdef TP_MULTITHREADED
         pybind11::gil_scoped_release release;
     #endif
