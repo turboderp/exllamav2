@@ -36,7 +36,7 @@ class TPContext:
 
     device: int | None
     num_devices: int | None
-    streams: list[int] | None
+    streams: list[int | None] | None
 
     ext_tp_context: int | None
 
@@ -154,7 +154,9 @@ class TPContext:
             for idx in range(max_device + 1)
         ]
 
-        self.streams = [global_streams[idx].cuda_stream for idx in self.all_devices()]
+        self.streams = [0] * (max_device + 1)
+        for idx in devices:
+            self.streams[idx] = global_streams[idx].cuda_stream
 
         self.ext_tp_context = ext_c.make_tp_context(
             self.kv_split,
@@ -356,7 +358,8 @@ class TPContext:
     def begin_scratch_alloc_tp(self):
 
         for devctx in self.model.device_context:
-            devctx.begin_scratch_alloc()
+            if devctx:
+                devctx.begin_scratch_alloc()
 
 
     def get_scratch_slice_tp_bc(self, rows: int, dtype: torch.dtype, broadcast_type: int, dim: int = 1):

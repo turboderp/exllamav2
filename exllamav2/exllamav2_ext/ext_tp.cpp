@@ -10,7 +10,7 @@
 
 #include "config.h"
 #include "ext_tp.h"
-//#include "cuda/util.cuh"
+#include "cpp/util.h"
 
 #define cuda_check(ans) { gpu_assert((ans), __FILE__, __LINE__); }
 inline void gpu_assert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -72,13 +72,11 @@ void ExtTPContext::create_events()
     sync_events3.resize(streams.size());
     for (int i = 0; i < streams.size(); ++i)
     {
+        if (!streams[i]) continue;
         cudaSetDevice(i);
         cuda_check(cudaEventCreate(&sync_events[i]));
         cuda_check(cudaEventCreate(&sync_events2[i]));
         cuda_check(cudaEventCreate(&sync_events3[i]));
-//        DBGIX(i, sync_events[i]);
-//        DBGIX(i, sync_events2[i]);
-//        DBGIX(i, sync_events3[i]);
     }
 }
 
@@ -135,13 +133,11 @@ void tp_broadcast
     ctx->create_events();
 
     size_t size = source.numel() * 2;
-//    DBGI(size);
     TORCH_CHECK(size <= ctx->pinned_size, "Temporary tensor is too small")
 
     void* source_g = NULL;
 
     int src_dev = source.device().index();
-//    DBGI(src_dev);
 
     if (src_dev >= 0)
     {
@@ -150,7 +146,6 @@ void tp_broadcast
 
         source_g = (void*) source.data_ptr();
         cuda_check(cudaMemcpyAsync(ctx->pinned_temp, source_g, size, cudaMemcpyDeviceToHost, stream));
-//        DBGIX(src_dev, ctx->sync_events[src_dev]);
         cuda_check(cudaEventRecord(ctx->sync_events[src_dev], stream));
     }
 
@@ -240,8 +235,7 @@ void tp_gather
             ctx->streams[dev]
         ));
 
-//        DBGIX(i, ctx->sync_events3[i]);
-        cuda_check(cudaEventRecord(ctx->sync_events3[i], ctx->streams[dev]));
+        cuda_check(cudaEventRecord(ctx->sync_events3[dev], ctx->streams[dev]));
     }
 
     for (int i = 0; i < split.size(); ++i)

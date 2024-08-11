@@ -469,9 +469,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         for dev, a, b in split:
             self.out_features_tp[dev] = b - a
 
-        new_q_handle: list[int | None]  = [None] * (maxdev + 1)
-        new_q_tensors: list[dict | None] = [None] * (maxdev + 1)
-        new_temp_dq: list[torch.Tensor | None] = [None] * (maxdev + 1)
+        new_q_handle = []
+        new_q_tensors = []
+        new_temp_dq = []
 
         for idx, a, b in split:
             s = b - a
@@ -490,31 +490,30 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             if "bias" in self.q_tensors:
                 w["bias"] = safe_move_tensor(self.q_tensors["bias"][a:b], idx).contiguous()
 
-            new_q_tensors[idx] = w
+            new_q_tensors.append(w)
 
             device_context = self.model.get_device_context(idx)
-            # if not submodule:
             device_context.begin_scratch_alloc()
-            new_temp_dq[idx] = device_context.get_scratch_slice(self.temp_dq_size(s))
+            new_temp_dq.append(device_context.get_scratch_slice(self.temp_dq_size(s)))
             max_dq_rows = cfg.max_dq_size // s
 
-            new_q_handle[idx] = ext_c.make_q_matrix_split(
-                w["q_weight"],
-                w["q_perm"],
-                w["q_invperm"],
-                w["q_scale"],
-                w["q_scale_max"],
-                w["q_groups"],
-                w["q_group_map"],
-                none_tensor,
-                none_tensor,
-                none_tensor,
-                w.get("bias", none_tensor),
-                new_temp_dq[idx],
-                max_dq_rows
+            new_q_handle.append(
+                ext_c.make_q_matrix_split(
+                    w["q_weight"],
+                    w["q_perm"],
+                    w["q_invperm"],
+                    w["q_scale"],
+                    w["q_scale_max"],
+                    w["q_groups"],
+                    w["q_group_map"],
+                    none_tensor,
+                    none_tensor,
+                    none_tensor,
+                    w.get("bias", none_tensor),
+                    new_temp_dq[-1],
+                    max_dq_rows
+                )
             )
-
-            # TODO: Update all QMatrix temp_dqs after parallelizing model
 
         ext_c.free_q_matrix(self.q_handle)
         self.q_handle = new_q_handle

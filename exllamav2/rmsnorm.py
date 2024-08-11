@@ -210,8 +210,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         split = self.model.tp_context.get_split(broadcast_type)
         maxdev = max(dev for dev, _, _ in split)
 
-        new_weight: list[nn.Parameter | None] = [None] * (maxdev + 1)
-        new_bias: list[nn.Parameter | None] = [None] * (maxdev + 1)
+        new_weight = []
+        new_bias = []
 
         for idx, a, b in split:
             s = b - a
@@ -219,15 +219,15 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
 
             if self.weight is not None:
                 if self.weight.device.index == idx:
-                    new_weight[idx] = self.weight.data
+                    new_weight.append(self.weight.data)
                 else:
-                    new_weight[idx] = safe_move_tensor(self.weight, idx)
+                    new_weight.append(safe_move_tensor(self.weight, idx))
 
             if self.bias is not None:
                 if self.bias.device.index == idx:
-                    new_bias[idx] = self.bias.data
+                    new_bias.append(self.bias.data)
                 else:
-                    new_bias[idx] = safe_move_tensor(self.bias, idx)
+                    new_bias.append(safe_move_tensor(self.bias, idx))
 
         self.weight = new_weight
         self.bias = new_bias

@@ -352,8 +352,8 @@ void tp_attn_forward_
                 ctx->streams[dev],
                 (half*) temp_q[i].cast<torch::Tensor>().data_ptr(),
                 (half*) temp_k[i].cast<torch::Tensor>().data_ptr(),
-                (half*) sin[dev].cast<torch::Tensor>().data_ptr(),
-                (half*) cos[dev].cast<torch::Tensor>().data_ptr(),
+                (half*) sin[i].cast<torch::Tensor>().data_ptr(),
+                (half*) cos[i].cast<torch::Tensor>().data_ptr(),
                 batch_size,
                 q_len * num_heads,
                 q_len * num_kv_heads,
@@ -411,7 +411,7 @@ void tp_attn_forward_
             0  // num_splits
         );
 
-     }
+    }
 
     // Allgather
 
