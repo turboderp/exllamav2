@@ -10,7 +10,17 @@
 
 #include "config.h"
 #include "ext_tp.h"
-#include "cuda/util.cuh"
+//#include "cuda/util.cuh"
+
+#define cuda_check(ans) { gpu_assert((ans), __FILE__, __LINE__); }
+inline void gpu_assert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess)
+   {
+      fprintf(stderr,"CUDA error: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 ExtTPContext::ExtTPContext
 (
