@@ -30,7 +30,6 @@ ExtTPContext::ExtTPContext
     std::vector<std::tuple<int, int, int>> _rs_split,
     std::vector<std::tuple<int, int, int>> _q_split,
     torch::Tensor _pinned_temp,
-    std::vector<torch::Tensor> _device_temp,
     std::vector<cudaStream_t> _streams
 ) :
     kv_split(_kv_split),
@@ -42,9 +41,6 @@ ExtTPContext::ExtTPContext
 {
     pinned_temp = (void*) _pinned_temp.data_ptr();
     pinned_size = _pinned_temp.numel() * _pinned_temp.element_size();
-
-    for (int i = 0; i < _device_temp.size(); ++i)
-        device_temp.push_back((void*) _device_temp[i].data_ptr());
 }
 
 ExtTPContext::~ExtTPContext()
@@ -88,7 +84,6 @@ uintptr_t make_tp_context
     std::vector<std::tuple<int, int, int>> rs_split,
     std::vector<std::tuple<int, int, int>> q_split,
     torch::Tensor pinned_temp,
-    std::vector<torch::Tensor> device_temp,
     std::vector<uintptr_t> streams
 )
 {
@@ -104,7 +99,6 @@ uintptr_t make_tp_context
         rs_split,
         q_split,
         pinned_temp,
-        device_temp,
         streams_
     );
 

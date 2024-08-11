@@ -32,7 +32,6 @@ class TPContext:
     q_split_devs: list[int] | None
 
     pinned_temp: torch.Tensor | None
-    device_temp: list[torch.Tensor] | None
 
     device: int | None
     num_devices: int | None
@@ -71,7 +70,6 @@ class TPContext:
         self.num_devices = None
         self.streams = None
         self.pinned_temp = None
-        self.device_temp = None
         self.ext_tp_context = None
 
         self.sin = None
@@ -149,11 +147,6 @@ class TPContext:
         devices = self.all_devices()
         max_device = max(devices)
 
-        self.device_temp = [
-            torch.empty_like(self.pinned_temp, device = idx) if idx in devices else none_tensor
-            for idx in range(max_device + 1)
-        ]
-
         self.streams = [0] * (max_device + 1)
         for idx in devices:
             self.streams[idx] = global_streams[idx].cuda_stream
@@ -165,7 +158,6 @@ class TPContext:
             self.rs_split,
             self.q_split,
             self.pinned_temp,
-            self.device_temp,
             self.streams
         )
 
