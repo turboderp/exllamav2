@@ -546,9 +546,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             for i, s in enumerate(res):
                 scratch[i] = max(scratch[i], s)
 
-        amax(self.gate_proj.scratch_space_tp(BROADCAST_ID, cfg.head_dim))
-        amax(self.up_proj.scratch_space_tp(BROADCAST_ID, cfg.head_dim))
-        amax(self.down_proj.scratch_space_tp(BROADCAST_RS, cfg.head_dim))
+        amax(self.gate_proj.scratch_space_tp(BROADCAST_ID, 1))
+        amax(self.up_proj.scratch_space_tp(BROADCAST_ID, 1))
+        amax(self.down_proj.scratch_space_tp(BROADCAST_RS, 1))
         self.tp_dq_size = [s for s in scratch]
 
         maxrows = cfg.max_batch_size * cfg.max_input_len
