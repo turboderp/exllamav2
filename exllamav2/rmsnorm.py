@@ -157,7 +157,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         if isinstance(hidden_states, torch.Tensor):
             output_shape = hidden_states.shape
             hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-            hidden_states = self.model.tp_context.broadcast(hidden_states, self.broadcast_type)
+            hidden_states = self.model.tp_context.broadcast(0, hidden_states, self.broadcast_type)
         else:
             output_shape = hidden_states[0].shape
             hidden_states = [hs.view(-1, hs.shape[-1]) for hs in hidden_states]

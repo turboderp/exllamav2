@@ -31,7 +31,7 @@ class TPContext:
     q_split: list[tuple[int, int, int]] | None
     q_split_devs: list[int] | None
 
-    pinned_temp: torch.Tensor | None
+    pinned_temp: list[torch.Tensor] | None
 
     device: int | None
     num_devices: int | None
@@ -138,11 +138,10 @@ class TPContext:
         size = (cfg.max_output_len if cfg.max_output_len is not None else cfg.max_input_len) * cfg.vocab_size
         size = max(size, cfg.max_input_len * cfg.intermediate_size)
 
-        self.pinned_temp = torch.empty(
-            (size,),
-            dtype = torch.half,
-            pin_memory = True
-        )
+        self.pinned_temp = [
+            torch.empty((size,), dtype = torch.half, pin_memory = True)
+            for _ in range(2)
+        ]
 
         devices = self.all_devices()
         max_device = max(devices)
@@ -216,15 +215,16 @@ class TPContext:
         return scratch
 
 
-    def get_pinned(self, batch_size: int, q_len: int, dim: int):
+    def get_pinned(self, buffer: int, batch_size: int, q_len: int, dim: int):
 
-        pt = self.pinned_temp[:batch_size * q_len * dim]
+        pt = self.pinned_temp[buffer][:batch_size * q_len * dim]
         pt = pt.view(batch_size, q_len, dim)
         return pt
 
 
     def broadcast(
         self,
+        buffer: int,
         input_tensor: torch.Tensor,
         broadcast_type: int,
         dim: int = 1
@@ -237,6 +237,7 @@ class TPContext:
 
         ext_c.tp_broadcast(
             self.ext_tp_context,
+            buffer,
             input_tensor,
             broadcast_type,
             bc_tensors,
@@ -249,6 +250,7 @@ class TPContext:
 
     def gather(
         self,
+        buffer: int,
         inputs: list[torch.Tensor],
         broadcast_type: int,
         dim: int = 1
@@ -258,6 +260,7 @@ class TPContext:
 
         ext_c.tp_gather(
             self.ext_tp_context,
+            buffer,
             inputs,
             broadcast_type,
             [],
@@ -266,13 +269,14 @@ class TPContext:
             -1
         )
 
-        pt = self.pinned_temp[:split[-1][2] * dim * inputs[0].shape[0]]
+        pt = self.pinned_temp[buffer][:split[-1][2] * dim * inputs[0].shape[0]]
         pt = pt.view(inputs[0].shape[0], split[-1][2] * dim)
         return pt
 
     # @profile
     def allgather(
         self,
+        buffer,
         inputs: list[torch.Tensor],
         broadcast_type_g: int,
         broadcast_type_b: int,
@@ -287,6 +291,7 @@ class TPContext:
 
         ext_c.tp_gather(
             self.ext_tp_context,
+            buffer,
             inputs,
             broadcast_type_g,
             bc_tensors,
@@ -300,9 +305,10 @@ class TPContext:
 
     def copy_pinned(
         self,
+        buffer: int,
         inputs: torch.Tensor
     ):
-        pt = self.pinned_temp[:inputs.numel()]
+        pt = self.pinned_temp[buffer][:inputs.numel()]
         pt = pt.view(inputs.shape)
         pt.copy_(inputs)
         return pt

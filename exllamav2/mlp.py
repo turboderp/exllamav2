@@ -357,7 +357,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             cfg.arch.mlp_act_func == "gelu"
         )
 
-        return ctx.get_pinned(batch_size, q_len, cfg.hidden_size)
+        return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
 
 
     def forward_tp_old(
@@ -375,7 +375,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         batch_size, q_len, _ = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_RS)
+        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_ID)
 
         residual = hidden_states
 
@@ -399,14 +399,14 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             # output.clamp_(min = -65504.0, max = 65504.0)
             outputs.append(output)
 
-        outputs = self.model.tp_context.allgather(outputs, BROADCAST_ID, BROADCAST_ID)
+        outputs = self.model.tp_context.allgather(1, outputs, BROADCAST_ID, BROADCAST_ID)
 
         down = self.down_proj.forward_tp(outputs, output_split = True)
 
         if self.has_residual:
             self.model.tp_context.add_residual(down, residual, BROADCAST_RS)
 
-        down = self.model.tp_context.gather(down, BROADCAST_RS)
+        down = self.model.tp_context.gather(0, down, BROADCAST_RS)
         down = down.view(batch_size, q_len, down.shape[-1])
         return down
 

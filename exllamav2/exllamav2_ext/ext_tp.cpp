@@ -29,7 +29,7 @@ ExtTPContext::ExtTPContext
     std::vector<std::tuple<int, int, int>> _vc_split,
     std::vector<std::tuple<int, int, int>> _rs_split,
     std::vector<std::tuple<int, int, int>> _q_split,
-    torch::Tensor _pinned_temp,
+    std::vector<torch::Tensor> _pinned_temp,
     std::vector<cudaStream_t> _streams
 ) :
     kv_split(_kv_split),
@@ -39,8 +39,12 @@ ExtTPContext::ExtTPContext
     q_split(_q_split),
     streams(_streams)
 {
-    pinned_temp = (void*) _pinned_temp.data_ptr();
-    pinned_size = _pinned_temp.numel() * _pinned_temp.element_size();
+    for (const auto &pt : _pinned_temp)
+    {
+        void* ptp = (void*) pt.data_ptr();
+        pinned_temp.push_back(ptp);
+        pinned_size = pt.numel() * pt.element_size();
+    }
 
     for (int i = 0; i < streams.size(); ++i)
         if (streams[i]) all_devices.push_back(i);
@@ -76,14 +80,18 @@ void ExtTPContext::create_events()
 
     sync_events.resize(streams.size());
     sync_events2.resize(streams.size());
+    sync_events2x.resize(streams.size());
     sync_events3.resize(streams.size());
+    sync_events3x.resize(streams.size());
     for (int i = 0; i < streams.size(); ++i)
     {
         if (!streams[i]) continue;
         cudaSetDevice(i);
         cuda_check(cudaEventCreate(&sync_events[i]));
         cuda_check(cudaEventCreate(&sync_events2[i]));
+        cuda_check(cudaEventCreate(&sync_events2x[i]));
         cuda_check(cudaEventCreate(&sync_events3[i]));
+        cuda_check(cudaEventCreate(&sync_events3x[i]));
     }
 }
 
@@ -94,7 +102,7 @@ uintptr_t make_tp_context
     std::vector<std::tuple<int, int, int>> vc_split,
     std::vector<std::tuple<int, int, int>> rs_split,
     std::vector<std::tuple<int, int, int>> q_split,
-    torch::Tensor pinned_temp,
+    std::vector<torch::Tensor> pinned_temp,
     std::vector<uintptr_t> streams
 )
 {
@@ -128,6 +136,7 @@ void free_tp_context
 void tp_broadcast
 (
     uintptr_t tp_context,
+    int buffer,
     torch::Tensor source,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
@@ -150,7 +159,7 @@ void tp_broadcast
         cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
         source_g = (void*) source.data_ptr();
-        cuda_check(cudaMemcpyAsync(ctx->pinned_temp, source_g, size, cudaMemcpyDeviceToHost, stream));
+        cuda_check(cudaMemcpyAsync(ctx->pinned_temp[buffer], source_g, size, cudaMemcpyDeviceToHost, stream));
         cuda_check(cudaEventRecord(ctx->sync_events[src_dev], stream));
     }
 
@@ -176,7 +185,7 @@ void tp_broadcast
         cudaStream_t stream = ctx->streams[dev];
         if (src_dev >= 0)
             cuda_check(cudaStreamWaitEvent(stream,ctx->sync_events[src_dev], 0));
-        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp, size, cudaMemcpyHostToDevice, stream));
+        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
 
 //        cuda_check(cudaEventRecord(ctx->sync_events2[i], ctx->streams[dev]));
     }
@@ -198,6 +207,7 @@ void tp_broadcast
 void tp_gather
 (
     uintptr_t tp_context,
+    int buffer,
     const std::vector<torch::Tensor> &inputs,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
@@ -209,6 +219,7 @@ void tp_gather
     tp_gather_barrier
     (
         tp_context,
+        buffer,
         inputs,
         broadcast_type,
         targets,
@@ -222,6 +233,7 @@ void tp_gather
 void tp_gather_barrier
 (
     uintptr_t tp_context,
+    int buffer,
     const std::vector<torch::Tensor> &inputs,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
@@ -254,7 +266,7 @@ void tp_gather_barrier
 
         uint8_t* src = (uint8_t*) inputs[i].data_ptr();
         int src_cols = inputs[i].size(1);
-        uint8_t* dst = ((uint8_t*) ctx->pinned_temp) + std::get<1>(split[i]) * esize * dim;
+        uint8_t* dst = ((uint8_t*) ctx->pinned_temp[buffer]) + std::get<1>(split[i]) * esize * dim;
 
         cudaSetDevice(dev);
         cuda_check(cudaMemcpy2DAsync
@@ -269,7 +281,7 @@ void tp_gather_barrier
             ctx->streams[dev]
         ));
 
-        cuda_check(cudaEventRecord(ctx->sync_events3[dev], ctx->streams[dev]));
+        cuda_check(cudaEventRecord(buffer ? ctx->sync_events3x[dev] : ctx->sync_events3[dev], ctx->streams[dev]));
     }
 
     if (barrier)
@@ -285,7 +297,7 @@ void tp_gather_barrier
         {
             int dev2 = std::get<0>(split[j]);
             if (dev == dev2) continue;
-            cuda_check(cudaStreamWaitEvent(ctx->streams[dev], ctx->sync_events3[dev2], 0));
+            cuda_check(cudaStreamWaitEvent(ctx->streams[dev], buffer ? ctx->sync_events3x[dev2] : ctx->sync_events3[dev2], 0));
         }
     }
 
@@ -311,6 +323,6 @@ void tp_gather_barrier
 
         cudaSetDevice(dev);
         cudaStream_t stream = ctx->streams[dev];
-        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp, size, cudaMemcpyHostToDevice, stream));
+        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
     }
 }

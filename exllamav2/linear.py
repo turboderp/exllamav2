@@ -385,7 +385,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         if output_split:
             return outputs
 
-        output = self.model.tp_context.gather(outputs, self.broadcast_type)
+        output = self.model.tp_context.gather(0, outputs, self.broadcast_type)
         hidden_states_out = output.view(output_shape)
         return hidden_states_out
 

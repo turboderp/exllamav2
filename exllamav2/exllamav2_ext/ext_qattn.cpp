@@ -318,7 +318,7 @@ void tp_attn_forward_
 
         // Broadcast
 
-        tp_broadcast(tp_context, hidden_states, BROADCAST_Q, temp_bc0, head_dim, t_device);
+        tp_broadcast(tp_context, 0, hidden_states, BROADCAST_Q, temp_bc0, head_dim, t_device);
 
         // Layernorm
 
@@ -438,7 +438,7 @@ void tp_attn_forward_
 
         // Allgather
 
-        tp_gather_barrier(tp_context, temp_o, BROADCAST_Q, temp_bc2, BROADCAST_Q, head_dim, t_device, sync);
+        tp_gather_barrier(tp_context, 1, temp_o, BROADCAST_Q, temp_bc2, BROADCAST_Q, head_dim, t_device, sync);
 
         // Output projection
 
@@ -471,7 +471,7 @@ void tp_attn_forward_
 
         // Gather
 
-        tp_gather_barrier(tp_context, temp_o, BROADCAST_Q, temp_o, -1, head_dim, t_device, sync);
+        tp_gather_barrier(tp_context, 0, temp_o, BROADCAST_Q, temp_o, -1, head_dim, t_device, sync);
 
     };
 

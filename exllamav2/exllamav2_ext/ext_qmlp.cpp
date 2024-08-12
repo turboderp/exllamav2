@@ -367,7 +367,7 @@ void tp_mlp_forward_
 
         // Broadcast
 
-        tp_broadcast(tp_context, hidden_states, BROADCAST_ID, temp_bc0, 1, t_device);
+        tp_broadcast(tp_context, 0, hidden_states, BROADCAST_ID, temp_bc0, 1, t_device);
 
         // Layernorm
 
@@ -418,7 +418,7 @@ void tp_mlp_forward_
 
         // Allgather
 
-        tp_gather_barrier(tp_context, temp_gate, BROADCAST_ID, temp_bc2, BROADCAST_ID, 1, t_device, sync);
+        tp_gather_barrier(tp_context, 1, temp_gate, BROADCAST_ID, temp_bc2, BROADCAST_ID, 1, t_device, sync);
 
         // Down
 
@@ -451,7 +451,7 @@ void tp_mlp_forward_
 
         // Gather
 
-        tp_gather_barrier(tp_context, temp_down, BROADCAST_RS, temp_down, -1, 1, t_device, sync);
+        tp_gather_barrier(tp_context, 0, temp_down, BROADCAST_RS, temp_down, -1, 1, t_device, sync);
 
     };
 

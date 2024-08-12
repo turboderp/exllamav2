@@ -19,18 +19,22 @@ public:
     std::vector<std::tuple<int, int, int>> vc_split;
     std::vector<std::tuple<int, int, int>> rs_split;
     std::vector<std::tuple<int, int, int>> q_split;
-    void* pinned_temp;
+    std::vector<void*> pinned_temp;
     size_t pinned_size;
     std::vector<cudaStream_t> streams;
 
     cudaEvent_t sync_event;
     std::vector<cudaEvent_t> sync_events;
     std::vector<cudaEvent_t> sync_events2;
+    std::vector<cudaEvent_t> sync_events2x;
     std::vector<cudaEvent_t> sync_events3;
+    std::vector<cudaEvent_t> sync_events3x;
 
     std::vector<int> all_devices;
 
     ThreadPool *thread_pool;
+
+    void* mapped_globals;
 
     ExtTPContext(
         std::vector<std::tuple<int, int, int>> _kv_split,
@@ -38,7 +42,7 @@ public:
         std::vector<std::tuple<int, int, int>> _vc_split,
         std::vector<std::tuple<int, int, int>> _rs_split,
         std::vector<std::tuple<int, int, int>> _q_split,
-        torch::Tensor _pinned_temp,
+        std::vector<torch::Tensor> _pinned_temp,
         std::vector<cudaStream_t> _streams
     );
     ~ExtTPContext();
@@ -53,7 +57,7 @@ uintptr_t make_tp_context
     const std::vector<std::tuple<int, int, int>> vc_split,
     const std::vector<std::tuple<int, int, int>> rs_split,
     const std::vector<std::tuple<int, int, int>> q_split,
-    torch::Tensor pinned_temp,
+    std::vector<torch::Tensor> pinned_temp,
     std::vector<uintptr_t> streams
 );
 
@@ -62,6 +66,7 @@ void free_tp_context(uintptr_t ctx);
 void tp_broadcast
 (
     uintptr_t tp_context,
+    int buffer,
     torch::Tensor source,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
@@ -72,6 +77,7 @@ void tp_broadcast
 void tp_gather
 (
     uintptr_t tp_context,
+    int buffer,
     const std::vector<torch::Tensor> &inputs,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,
@@ -83,6 +89,7 @@ void tp_gather
 void tp_gather_barrier
 (
     uintptr_t tp_context,
+    int buffer,
     const std::vector<torch::Tensor> &inputs,
     int broadcast_type,
     const std::vector<torch::Tensor> &targets,

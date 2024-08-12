@@ -178,7 +178,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         if self.is_tp:
             ctx = self.model.tp_context
-            hidden_states = ctx.copy_pinned(hidden_states)
+            hidden_states = ctx.copy_pinned(0, hidden_states)
 
         if intermediates:
             return {"hidden_states": hidden_states}

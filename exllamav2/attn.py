@@ -681,7 +681,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_params.block_index_tp
         )
 
-        return ctx.get_pinned(batch_size, q_len, cfg.hidden_size)
+        return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
 
 
     # @profile
@@ -715,7 +715,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in k_cache_f]
         v_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in v_cache_f]
 
-        hidden_states = self.model.tp_context.broadcast(hidden_states, BROADCAST_KV, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = cfg.head_dim)
 
         residual = hidden_states
 
@@ -816,14 +816,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_outputs = self.model.tp_context.allgather(attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = cfg.head_dim)
+        attn_outputs = self.model.tp_context.allgather(1, attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = cfg.head_dim)
 
         hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = cfg.head_dim, output_split = True)
 
         if self.has_residual:
             self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = cfg.head_dim)
 
-        hidden_states = self.model.tp_context.gather(hidden_states, BROADCAST_Q, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.gather(0, hidden_states, BROADCAST_Q, dim = cfg.head_dim)
 
         # if self.post_layernorm:  # TODO: ...
         #     hidden_states = self.post_layernorm.forward(hidden_states)
