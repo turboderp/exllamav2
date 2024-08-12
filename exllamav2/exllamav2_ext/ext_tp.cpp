@@ -187,21 +187,21 @@ void tp_broadcast
             cuda_check(cudaStreamWaitEvent(stream,ctx->sync_events[src_dev], 0));
         cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
 
-//        cuda_check(cudaEventRecord(ctx->sync_events2[i], ctx->streams[dev]));
+        cuda_check(cudaEventRecord(buffer ? ctx->sync_events2x[i] : ctx->sync_events2[i], ctx->streams[dev]));
     }
 
-//    for (int i = 0; i < split.size(); ++i)
-//    {
-//        int dev = std::get<0>(split[i]);
-//        cudaSetDevice(dev);
-//
-//        for (int j = 0; j < split.size(); ++j)
-//        {
-//            int dev2 = std::get<0>(split[j]);
-//            if (dev == dev2) continue;
-//            cuda_check(cudaStreamWaitEvent(ctx->streams[dev], ctx->sync_events2[dev2], 0));
-//        }
-//    }
+    for (int i = 0; i < split.size(); ++i)
+    {
+        int dev = std::get<0>(split[i]);
+        cudaSetDevice(dev);
+
+        for (int j = 0; j < split.size(); ++j)
+        {
+            int dev2 = std::get<0>(split[j]);
+            if (dev == dev2) continue;
+            cuda_check(cudaStreamWaitEvent(ctx->streams[dev], buffer ? ctx->sync_events2x[dev2] : ctx->sync_events2[dev2], 0));
+        }
+    }
 }
 
 void tp_gather
