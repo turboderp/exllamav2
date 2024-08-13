@@ -69,7 +69,9 @@ ExtTPContext::~ExtTPContext()
         cuda_check(cudaEventDestroy(sync_events3[i]));
     }
 
-    delete thread_pool;
+    #ifdef TP_MULTITHREADED
+        delete thread_pool;
+    #endif
 }
 
 void ExtTPContext::create_events()
