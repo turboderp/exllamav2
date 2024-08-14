@@ -49,52 +49,24 @@ ExtTPContext::ExtTPContext
     for (int i = 0; i < streams.size(); ++i)
         if (streams[i]) all_devices.push_back(i);
 
-    create_events();
-
     #ifdef TP_MULTITHREADED
 
         int numdevs = all_devices.size();
         thread_pool = new ThreadPool(numdevs);
 
     #endif
+
+    cudaHostAlloc((void**)&tp_data, sizeof(ExtTPData), cudaHostAllocMapped);
+    init_tp_data(tp_data);
 }
 
 ExtTPContext::~ExtTPContext()
 {
-    cudaEventDestroy(sync_event);
-    for (int i = 0; i < streams.size(); ++i)
-    {
-        cuda_check(cudaEventDestroy(sync_events[i]));
-        cuda_check(cudaEventDestroy(sync_events2[i]));
-        cuda_check(cudaEventDestroy(sync_events3[i]));
-    }
-
     #ifdef TP_MULTITHREADED
         delete thread_pool;
     #endif
-}
 
-void ExtTPContext::create_events()
-{
-    if (sync_events.size()) return;
-
-    cuda_check(cudaEventCreate(&sync_event));
-
-    sync_events.resize(streams.size());
-    sync_events2.resize(streams.size());
-    sync_events2x.resize(streams.size());
-    sync_events3.resize(streams.size());
-    sync_events3x.resize(streams.size());
-    for (int i = 0; i < streams.size(); ++i)
-    {
-        if (!streams[i]) continue;
-        cudaSetDevice(i);
-        cuda_check(cudaEventCreate(&sync_events[i]));
-        cuda_check(cudaEventCreate(&sync_events2[i]));
-        cuda_check(cudaEventCreate(&sync_events2x[i]));
-        cuda_check(cudaEventCreate(&sync_events3[i]));
-        cuda_check(cudaEventCreate(&sync_events3x[i]));
-    }
+    cudaFreeHost(tp_data);
 }
 
 uintptr_t make_tp_context
@@ -162,7 +134,6 @@ void tp_broadcast
 
         source_g = (void*) source.data_ptr();
         cuda_check(cudaMemcpyAsync(ctx->pinned_temp[buffer], source_g, size, cudaMemcpyDeviceToHost, stream));
-        cuda_check(cudaEventRecord(ctx->sync_events[src_dev], stream));
     }
 
     std::vector<std::tuple<int, int, int>> split;
@@ -185,25 +156,10 @@ void tp_broadcast
 
         cudaSetDevice(dev);
         cudaStream_t stream = ctx->streams[dev];
-        if (src_dev >= 0)
-            cuda_check(cudaStreamWaitEvent(stream,ctx->sync_events[src_dev], 0));
         cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
-
-        cuda_check(cudaEventRecord(buffer ? ctx->sync_events2x[i] : ctx->sync_events2[i], ctx->streams[dev]));
     }
 
-    for (int i = 0; i < split.size(); ++i)
-    {
-        int dev = std::get<0>(split[i]);
-        cudaSetDevice(dev);
-
-        for (int j = 0; j < split.size(); ++j)
-        {
-            int dev2 = std::get<0>(split[j]);
-            if (dev == dev2) continue;
-            cuda_check(cudaStreamWaitEvent(ctx->streams[dev], buffer ? ctx->sync_events2x[dev2] : ctx->sync_events2[dev2], 0));
-        }
-    }
+    tp_cross_device_barrier(tp_context, broadcast_type);
 }
 
 void tp_gather
@@ -282,26 +238,11 @@ void tp_gather_barrier
             cudaMemcpyDeviceToHost,
             ctx->streams[dev]
         ));
-
-        cuda_check(cudaEventRecord(buffer ? ctx->sync_events3x[dev] : ctx->sync_events3[dev], ctx->streams[dev]));
     }
 
-    if (barrier)
-        barrier->arrive_and_wait();
+    if (broadcast_type_target == -2) return;
 
-    for (int i = 0; i < split.size(); ++i)
-    {
-        int dev = std::get<0>(split[i]);
-        cudaSetDevice(dev);
-        if (t_device != -1 && t_device != dev) continue;
-
-        for (int j = 0; j < split.size(); ++j)
-        {
-            int dev2 = std::get<0>(split[j]);
-            if (dev == dev2) continue;
-            cuda_check(cudaStreamWaitEvent(ctx->streams[dev], buffer ? ctx->sync_events3x[dev2] : ctx->sync_events3[dev2], 0));
-        }
-    }
+    tp_cross_device_barrier(tp_context, broadcast_type);
 
     if (broadcast_type_target == -1) return;
 
@@ -326,5 +267,43 @@ void tp_gather_barrier
         cudaSetDevice(dev);
         cudaStream_t stream = ctx->streams[dev];
         cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
+    }
+}
+
+void tp_cross_device_barrier
+(
+    uintptr_t tp_context,
+    int broadcast_type
+)
+{
+    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+
+    std::vector<std::tuple<int, int, int>> split;
+    switch(broadcast_type)
+    {
+        case BROADCAST_KV: split = ctx->kv_split; break;
+        case BROADCAST_ID: split = ctx->id_split; break;
+        case BROADCAST_VC: split = ctx->vc_split; break;
+        case BROADCAST_RS: split = ctx->rs_split; break;
+        case BROADCAST_Q: split = ctx->q_split; break;
+    }
+
+    uint32_t* sync = ctx->tp_data->sync[ctx->tp_data->next_stage];
+    ctx->tp_data->next_stage = (ctx->tp_data->next_stage + 1) % MAX_SYNC_STAGES;
+    uint32_t* sync_next = ctx->tp_data->sync[ctx->tp_data->next_stage];
+
+    for (int i = 0; i < split.size(); ++i)
+    {
+        int dev = std::get<0>(split[i]);
+        cudaSetDevice(dev);
+
+        cross_device_barrier_cuda
+        (
+            ctx->streams[dev],
+            sync,
+            sync_next,
+            split.size(),
+            i
+        );
     }
 }

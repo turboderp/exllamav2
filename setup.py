@@ -62,6 +62,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cuda/cache.cu",
                 "exllamav2/exllamav2_ext/cuda/util.cu",
                 "exllamav2/exllamav2_ext/cuda/softcap.cu",
+                "exllamav2/exllamav2_ext/cuda/tp.cu",
                 "exllamav2/exllamav2_ext/cuda/comp_units/kernel_select.cu",
                 "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_1.cu",
                 "exllamav2/exllamav2_ext/cuda/comp_units/unit_gptq_2.cu",

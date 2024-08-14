@@ -10,6 +10,7 @@
 //#define TP_MULTITHREADED
 
 #include "cpp/threadpool.h"
+#include "cuda/tp.cuh"
 
 class ExtTPContext
 {
@@ -23,20 +24,15 @@ public:
     size_t pinned_size;
     std::vector<cudaStream_t> streams;
 
-    cudaEvent_t sync_event;
-    std::vector<cudaEvent_t> sync_events;
-    std::vector<cudaEvent_t> sync_events2;
-    std::vector<cudaEvent_t> sync_events2x;
-    std::vector<cudaEvent_t> sync_events3;
-    std::vector<cudaEvent_t> sync_events3x;
-
     std::vector<int> all_devices;
 
-    ThreadPool *thread_pool;
+    ThreadPool* thread_pool;
+    ExtTPData* tp_data;
 
     void* mapped_globals;
 
-    ExtTPContext(
+    ExtTPContext
+    (
         std::vector<std::tuple<int, int, int>> _kv_split,
         std::vector<std::tuple<int, int, int>> _id_split,
         std::vector<std::tuple<int, int, int>> _vc_split,
@@ -46,8 +42,6 @@ public:
         std::vector<cudaStream_t> _streams
     );
     ~ExtTPContext();
-
-    void create_events();
 };
 
 uintptr_t make_tp_context
@@ -97,6 +91,12 @@ void tp_gather_barrier
     int dim,
     int t_device = -1,
     Barrier* barrier = nullptr
+);
+
+void tp_cross_device_barrier
+(
+    uintptr_t tp_context,
+    int broadcast_type
 );
 
 #endif

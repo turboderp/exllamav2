@@ -911,9 +911,4 @@ class ExLlamaV2:
                 x[:, :, -head_padding:] = -65504.
             r["logits"] = x
 
-        # Synchronize if the last operation TP
-
-        if self.tp_context:
-            self.tp_context.wait_streams(BROADCAST_VC)
-
         return r

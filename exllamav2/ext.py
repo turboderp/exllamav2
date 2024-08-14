@@ -232,6 +232,7 @@ if build_jit:
         "cuda/cache.cu",
         "cuda/util.cu",
         "cuda/softcap.cu",
+        "cuda/tp.cu",
         "cuda/comp_units/kernel_select.cu",
         "cuda/comp_units/unit_gptq_1.cu",
         "cuda/comp_units/unit_gptq_2.cu",

@@ -132,4 +132,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("free_tp_context", &free_tp_context, "free_tp_context");
     m.def("tp_broadcast", &tp_broadcast, "tp_broadcast");
     m.def("tp_gather", &tp_gather, "tp_gather");
+    m.def("tp_cross_device_barrier", &tp_cross_device_barrier, "tp_cross_device_barrier");
 }
