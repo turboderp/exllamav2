@@ -7,12 +7,14 @@ class Params:
     batch_size: int
     seq_len: int
     past_len: int | None
+    past_len_tp: list[torch.Tensor | None] | None
     past_lens: list[int] | None
     input_mask: torch.Tensor | None
     multi_cache: bool
     attn_mask: torch.Tensor | None
     attn_masks: torch.Tensor | None
     position_offsets: torch.Tensor | None
+    position_offsets_tp: list[torch.Tensor | None] | None
     past_lens_tensor: torch.Tensor | None
     paged: bool
 
@@ -46,7 +48,9 @@ class Params:
         self.attn_masks = None
 
         self.position_offsets = position_offsets
+        self.position_offsets_tp = None
         self.past_lens_tensor = None
+        self.past_len_tp = None
         self.paged = paged
 
     def is_causal(self) -> bool:
@@ -105,6 +109,25 @@ class Params:
             else:
                 attn_masks.append(self.build_single_attn_mask(1, self.seq_len, past_len, device, self.input_mask[i]))
         return attn_masks
+
+    def prep_tp(self, model):
+        if self.position_offsets_tp is not None:
+            return
+        split = model.tp_context.get_split(BROADCAST_KV)
+        self.position_offsets_tp = []
+        self.past_len_tp = []
+        pl = torch.tensor([self.past_len] * self.batch_size, dtype = torch.int)
+        for dev, a, b in split:
+            context = model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+            if self.position_offsets is None:
+                self.position_offsets_tp.append(None)
+            else:
+                self.position_offsets_tp.append(safe_move_tensor(self.position_offsets, dev, non_blocking = True))
+            if self.past_len is None:
+                self.past_len_tp.append(None)
+            else:
+                self.past_len_tp.append(safe_move_tensor(pl, dev, non_blocking = True))
 
 
 class PagedParams(Params):

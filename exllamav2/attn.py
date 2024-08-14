@@ -970,6 +970,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 **kwargs
             )
 
+        if self.is_tp:
+            return self.forward_tp(
+                hidden_states,
+                cache,
+                attn_params,
+                past_len,
+                intermediates,
+                loras,
+                **kwargs,
+            )
+
         if self.q_handle is None or intermediates:
             return self.forward_torch(
                 hidden_states,
@@ -1088,6 +1099,112 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cfg.arch.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
+        return hidden_states
+
+
+    def forward_tp(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        past_len: int | None = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        ** kwargs
+   ):
+        cfg = self.model.config
+        split = self.model.tp_context.get_split(BROADCAST_KV)
+        batch_size, q_len, _ = hidden_states.shape
+        attn_params.prep_tp(self.model)
+        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        past_len = 0 if cache is None else cache.current_seq_len
+
+        assert self.q_handle is not None
+        use_flash_attn = has_flash_attn and not cfg.no_flash_attn
+        assert use_flash_attn, "Tensor parallel inference requires flash-attn"
+
+        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = cfg.head_dim)
+
+        residual = hidden_states
+
+        post_norm = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+        q = self.q_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+        k = self.k_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+        v = self.v_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+
+        q = [q_.view(batch_size, q_len, q_.shape[1] // cfg.head_dim, cfg.head_dim) for q_ in q]
+        k = [k_.view(batch_size, q_len, k_.shape[1] // cfg.head_dim, cfg.head_dim) for k_ in k]
+        v = [v_.view(batch_size, q_len, v_.shape[1] // cfg.head_dim, cfg.head_dim) for v_ in v]
+
+        if cache:
+            k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+        else:
+            k_cache, v_cache = None, None
+
+        if cfg.arch.rope_style != RopeStyle.NONE:
+            for idx, (dev, a, b) in enumerate(split):
+                constants = self.model.get_device_context(dev, scratch = True)
+                context = self.model.get_device_context(dev)
+                torch.cuda.set_stream(context.stream)
+                for t, heads in [(q[idx], cfg.num_key_value_groups), (k[idx], 1)]:
+                    ext_c.rope_(
+                        t,
+                        constants.sin,
+                        constants.cos,
+                        past_len,
+                        (b - a) * heads,
+                        cfg.head_dim,
+                        attn_params.position_offsets_tp[idx] if attn_params.position_offsets is not None else none_tensor,
+                        cfg.arch.rope_style == RopeStyle.NEOX
+                    )
+
+        attn_outputs = []
+        for idx in range(len(split)):
+            dev, a, b = split[idx]
+            context = self.model.get_device_context(dev)
+            torch.cuda.set_stream(context.stream)
+
+            if k_cache is not None:
+                attn_output = flash_attn_with_kvcache(
+                    q = q[idx],
+                    k = k[idx],
+                    v = v[idx],
+                    k_cache = k_cache[idx],
+                    v_cache = v_cache[idx],
+                    causal = True,
+                    softmax_scale = self.scaling,
+                    cache_seqlens = attn_params.past_len_tp[idx]
+                )
+            else:
+                attn_output = flash_attn_func(
+                    q[idx],
+                    k[idx],
+                    v[idx],
+                    causal = True,
+                    softmax_scale=self.scaling,
+                )
+
+            attn_output = attn_output.view(batch_size * q_len, (b - a) * cfg.head_dim * cfg.num_key_value_groups)
+            attn_outputs.append(attn_output)
+
+        if cache is not None:
+            cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
+
+        # Output projection
+
+        attn_outputs = self.model.tp_context.allgather(1, attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = cfg.head_dim)
+
+        hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = cfg.head_dim, output_split = True)
+
+        if self.has_residual:
+            self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = cfg.head_dim)
+
+        hidden_states = self.model.tp_context.gather(0, hidden_states, BROADCAST_Q, dim = cfg.head_dim)
+
+        # if self.post_layernorm:  # TODO: ...
+        #     hidden_states = self.post_layernorm.forward(hidden_states)
+
+        hidden_states = hidden_states.view(batch_size, q_len, hidden_states.shape[-1])
         return hidden_states
 
 

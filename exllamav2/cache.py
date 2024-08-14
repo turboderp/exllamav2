@@ -799,8 +799,8 @@ class ExLlamaV2Cache_TP(ExLlamaV2CacheBase):
                 offset,
                 width,
                 page_size,
-                cache_seqlens[idx],
-                block_table[idx]
+                cache_seqlens[idx] if cache_seqlens else None,
+                block_table[idx] if block_table else None
             )
             kc.append(k)
             vc.append(v)
@@ -824,8 +824,8 @@ class ExLlamaV2Cache_TP(ExLlamaV2CacheBase):
                 offset,
                 width,
                 page_size,
-                cache_seqlens[idx],
-                block_table[idx]
+                cache_seqlens[idx] if cache_seqlens else None,
+                block_table[idx] if block_table else None
             )
 
 

@@ -10,6 +10,7 @@ from exllamav2 import(
     ExLlamaV2Cache_Q4,
     ExLlamaV2Cache_Q6,
     ExLlamaV2Cache_Q8,
+    ExLlamaV2Cache_TP,
     ExLlamaV2Tokenizer,
     model_init,
 )
@@ -142,15 +143,20 @@ if args.draft_model_dir:
 # Create cache
 
 if args.cache_8bit:
-    cache = ExLlamaV2Cache_8bit(model, lazy = not model.loaded)
+    cache_type = ExLlamaV2Cache_8bit
 elif args.cache_q4:
-    cache = ExLlamaV2Cache_Q4(model, lazy = not model.loaded)
+    cache_type = ExLlamaV2Cache_Q4
 elif args.cache_q6:
-    cache = ExLlamaV2Cache_Q6(model, lazy=not model.loaded)
+    cache_type = ExLlamaV2Cache_Q6
 elif args.cache_q8:
-    cache = ExLlamaV2Cache_Q8(model, lazy = not model.loaded)
+    cache_type = ExLlamaV2Cache_Q8
 else:
-    cache = ExLlamaV2Cache(model, lazy = not model.loaded)
+    cache_type = ExLlamaV2Cache
+
+if model.tp_context:
+    cache = ExLlamaV2Cache_TP(model, base = cache_type)
+else:
+    cache = cache_type(model, lazy = not model.loaded)
 
 # Load model now if auto split enabled
 

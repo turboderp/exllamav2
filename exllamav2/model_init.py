@@ -10,7 +10,8 @@ from exllamav2 import(
 def add_args(parser):
 
     parser.add_argument("-m", "--model_dir", type = str, help = "Path to model directory")
-    parser.add_argument("-gs", "--gpu_split", type = str, help = "\"auto\", or VRAM allocation per GPU in GB")
+    parser.add_argument("-gs", "--gpu_split", type = str, help = "\"auto\", or VRAM allocation per GPU in GB. \"auto\" is implied by default in tensor-parallel mode.")
+    parser.add_argument("-tp", "--tensor_parallel", action = "store_true", help = "Load in tensor-parallel mode (not fully supported for all models)")
     parser.add_argument("-l", "--length", type = int, help = "Maximum sequence length")
     parser.add_argument("-rs", "--rope_scale", type = float, help = "RoPE scaling factor")
     parser.add_argument("-ra", "--rope_alpha", type = float, help = "RoPE alpha value (NTK)")
@@ -33,6 +34,7 @@ def print_options(args):
 
     print_opts = []
     if args.gpu_split is not None: print_opts += [f"gpu_split: {args.gpu_split}"]
+    if args.tensor_parallel is not None: print_opts += ["tensor_parallel"]
     if args.length is not None: print_opts += [f"length: {args.length}"]
     if args.rope_scale is not None: print_opts += [f"rope_scale: {args.rope_scale}"]
     if args.rope_alpha is not None: print_opts += [f"rope_alpha: {args.rope_alpha}"]
@@ -131,13 +133,18 @@ def init(args,
     if args.gpu_split and args.gpu_split != "auto":
         split = [float(alloc) for alloc in args.gpu_split.split(",")]
 
-    if args.gpu_split != "auto" and not skip_load:
+    if args.tensor_parallel:
+        if args.gpu_split == "auto": split = None
+        model.load_tp(split, progress = progress)
+
+    elif args.gpu_split != "auto" and not skip_load:
         if not quiet and not progress: print(" -- Loading model...")
         t = time.time()
         model.load(split, progress = progress)
         t = time.time() - t
         if benchmark and not quiet:
             print(f" -- Loaded model in {t:.4f} seconds")
+
     else:
         assert allow_auto_split, "Auto split not allowed."
 
