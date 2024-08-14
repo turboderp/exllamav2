@@ -321,6 +321,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         return hidden_states
 
 
+    # @profile
     def forward_tp(
         self,
         hidden_states: torch.Tensor,
@@ -336,9 +337,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         ctx = self.model.tp_context
 
         batch_size, q_len, _ = hidden_states.shape
-        # rows = batch_size * q_len
         hidden_states = hidden_states.view(-1, cfg.hidden_size)
-        # dtype = hidden_states.dtype
 
         ext_c.tp_mlp_forward_(
             self.model.tp_context.ext_tp_context,

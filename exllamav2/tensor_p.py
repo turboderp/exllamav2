@@ -34,6 +34,7 @@ class TPContext:
     pinned_temp: list[torch.Tensor] | None
 
     device: int | None
+    all_devs: list[int | None] | None
     num_devices: int | None
     streams: list[int | None] | None
 
@@ -67,6 +68,7 @@ class TPContext:
         self.q_split = None
         self.q_split_devs = None
         self.device = None
+        self.all_devs = None
         self.num_devices = None
         self.streams = None
         self.pinned_temp = None
@@ -127,9 +129,9 @@ class TPContext:
         self.rs_split, self.rs_split_devs = set_split(rs_split)
         self.q_split, self.q_split_devs = set_split(q_split)
 
-        devs = self.all_devices()
-        self.device = devs[0]
-        self.num_devices = max(devs) + 1
+        self.all_devs = self.all_devices()
+        self.device = self.all_devs[0]
+        self.num_devices = max(self.all_devs) + 1
 
 
     def finalize(self):
@@ -336,8 +338,7 @@ class TPContext:
         self,
         broadcast_type: int
     ):
-        split = self.get_split(broadcast_type)
-        for dev, _, _ in split:
+        for dev in self.all_devs:
             s = global_streams[dev]
             s.synchronize()
         torch.cuda.synchronize()
