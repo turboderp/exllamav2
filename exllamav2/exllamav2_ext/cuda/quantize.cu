@@ -66,7 +66,8 @@ void quantize_rtn_cuda
     dim3 threads(BLOCKSIZE_X, 1);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
 
-    quantize_rtn_kernel<<<blocks, threads>>>
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    quantize_rtn_kernel<<<blocks, threads, 0, stream>>>
     (
         weights,
         scale,
@@ -151,7 +152,8 @@ void fused_quantize_adjust_cuda
     dim3 threads(BLOCKSIZE_X, 1);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
 
-    fused_quantize_adjust_kernel<<<blocks, threads>>>
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    fused_quantize_adjust_kernel<<<blocks, threads, 0, stream>>>
     (
         weights,
         quant,
@@ -232,7 +234,8 @@ void quantize_cuda
 //     DBGI2(rows, columns);
 //     DBGF2(qzero, maxq);
 
-    quantize_kernel<<<blocks, threads>>>
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    quantize_kernel<<<blocks, threads, 0, stream>>>
     (
         input,
         output,
@@ -281,7 +284,8 @@ void adjust_error_row_cuda
     dim3 threads(BLOCKSIZE_X, 1);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
 
-    adjust_error_row_kernel<<<blocks, threads>>>(hessian_inv, error, weights, quant, c, columns, hcolumns);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    adjust_error_row_kernel<<<blocks, threads, 0, stream>>>(hessian_inv, error, weights, quant, c, columns, hcolumns);
 }
 
 __global__ void quantize_err_kernel
@@ -353,7 +357,8 @@ void quantize_err_cuda
 //     DBGI2(rows, columns);
 //     DBGF2(qzero, maxq);
 
-    quantize_err_kernel<<<blocks, threads>>>
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    quantize_err_kernel<<<blocks, threads, 0, stream>>>
     (
         input,
         output,
@@ -414,5 +419,6 @@ void vv_mul_sub_cuda
     gridDim.y = DIVIDE(x_size, BLOCKSIZE_Y);
     gridDim.z = 1;
 
-    vv_mul_sub_kernel<<<gridDim, blockDim>>>(x, y, z, x_size, y_size);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    vv_mul_sub_kernel<<<gridDim, blockDim, 0, stream>>>(x, y, z, x_size, y_size);
 }

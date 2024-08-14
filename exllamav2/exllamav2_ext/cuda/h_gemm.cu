@@ -220,6 +220,7 @@ void h_gemm_cuda
     const float beta
 )
 {
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     if ((beta == 1.0f || beta == 0.0f) && (alpha == 1.0f))
     {
         bool clear = (beta == 0.0f);
@@ -241,7 +242,7 @@ void h_gemm_cuda
 //             DBGI3(blockDim.x, blockDim.y, blockDim.z);
 //             DBGI3(gridDim.x, gridDim.y, gridDim.z);
 
-            h_gemm_tall_kernel<<<gridDim, blockDim>>>(size_m, size_n, size_k, a, b, c, clear);
+            h_gemm_tall_kernel<<<gridDim, blockDim, 0, stream>>>(size_m, size_n, size_k, a, b, c, clear);
             cuda_check( cudaPeekAtLastError() );
             return;
         }
@@ -261,7 +262,7 @@ void h_gemm_cuda
 //             DBGI3(blockDim.x, blockDim.y, blockDim.z);
 //             DBGI3(gridDim.x, gridDim.y, gridDim.z);
 
-            h_gemm_wide_kernel<<<gridDim, blockDim>>>(size_m, size_n, size_k, a, b, c, clear);
+            h_gemm_wide_kernel<<<gridDim, blockDim, 0, stream>>>(size_m, size_n, size_k, a, b, c, clear);
             cuda_check( cudaPeekAtLastError() );
             return;
         }

@@ -47,7 +47,8 @@ void pack_rows_4_cuda
     dim3 threads(BLOCKSIZE_X, BLOCKSIZE_Y);
     dim3 blocks(DIVIDE(out_columns, BLOCKSIZE_X), DIVIDE(rows, BLOCKSIZE_Y));
 
-    pack_rows_4_kernel<<<blocks, threads>>>(input, output, rows, out_columns);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    pack_rows_4_kernel<<<blocks, threads, 0, stream>>>(input, output, rows, out_columns);
 }
 
 // Pack rows:
@@ -93,7 +94,8 @@ void pack_rows_6_cuda
     dim3 threads(BLOCKSIZE_X, BLOCKSIZE_Y);
     dim3 blocks(DIVIDE(out_columns, BLOCKSIZE_X), DIVIDE(rows, BLOCKSIZE_Y));
 
-    pack_rows_6_kernel<<<blocks, threads>>>(input, output, rows, out_columns);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    pack_rows_6_kernel<<<blocks, threads, 0, stream>>>(input, output, rows, out_columns);
 }
 
 // Pack columns
