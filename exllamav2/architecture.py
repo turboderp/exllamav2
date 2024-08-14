@@ -292,6 +292,7 @@ class ExLlamaV2ArchParams:
             self.norm = "rmsnorm"
             self.rope_style = RopeStyle.NEOX
             self.attention_bias_qkv = True
+            self.supports_tp = True
 
         # Gemma
 
