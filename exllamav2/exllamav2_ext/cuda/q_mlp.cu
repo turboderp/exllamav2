@@ -106,7 +106,7 @@ void QMLP::forward_
 
         fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
         const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-        kernel<<<gridDim, blockDim, 0, stream>>>temp_a, temp_b, rows, intermediate_size, NULL, 0);
+        kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
     }
 
     // Up proj without gate
