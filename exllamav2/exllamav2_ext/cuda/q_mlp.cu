@@ -105,7 +105,8 @@ void QMLP::forward_
         apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_b, lora_temp, rows);
 
         fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
-        kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
+        const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+        kernel<<<gridDim, blockDim, 0, stream>>>temp_a, temp_b, rows, intermediate_size, NULL, 0);
     }
 
     // Up proj without gate
