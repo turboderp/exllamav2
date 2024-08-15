@@ -78,15 +78,17 @@ def check_args(args):
             sys.exit()
 
 
-def init(args,
-         quiet: bool = False,
-         allow_auto_split: bool = False,
-         skip_load: bool = False,
-         benchmark: bool = False,
-         max_batch_size: int = None,
-         max_input_len: int = None,
-         max_output_len: int = None,
-         progress: bool = False):
+def init(
+    args,
+    quiet: bool = False,
+    allow_auto_split: bool = False,
+    skip_load: bool = False,
+    benchmark: bool = False,
+    max_batch_size: int = None,
+    max_input_len: int = None,
+    max_output_len: int = None,
+    progress: bool = False
+):
 
     # Create config
 
@@ -129,6 +131,34 @@ def init(args,
 
     model = ExLlamaV2(config)
 
+    if not skip_load:
+        post_init_load(
+            model,
+            args,
+            quiet,
+            allow_auto_split,
+            benchmark,
+            progress,
+        )
+
+    # Load tokenizer
+
+    if not quiet: print(" -- Loading tokenizer...")
+
+    tokenizer = ExLlamaV2Tokenizer(config)
+
+    return model, tokenizer
+
+
+def post_init_load(
+    model: ExLlamaV2,
+    args,
+    quiet: bool = False,
+    allow_auto_split: bool = False,
+    benchmark: bool = False,
+    progress: bool = False,
+):
+
     split = None
     if args.gpu_split and args.gpu_split != "auto":
         split = [float(alloc) for alloc in args.gpu_split.split(",")]
@@ -137,7 +167,7 @@ def init(args,
         if args.gpu_split == "auto": split = None
         model.load_tp(split, progress = progress)
 
-    elif args.gpu_split != "auto" and not skip_load:
+    elif args.gpu_split != "auto":
         if not quiet and not progress: print(" -- Loading model...")
         t = time.time()
         model.load(split, progress = progress)
@@ -147,11 +177,3 @@ def init(args,
 
     else:
         assert allow_auto_split, "Auto split not allowed."
-
-    # Load tokenizer
-
-    if not quiet: print(" -- Loading tokenizer...")
-
-    tokenizer = ExLlamaV2Tokenizer(config)
-
-    return model, tokenizer

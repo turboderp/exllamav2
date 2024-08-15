@@ -95,7 +95,7 @@ if system_prompt is None: system_prompt = prompt_format.default_system_prompt()
 
 model_init.check_args(args)
 model_init.print_options(args)
-model, tokenizer = model_init.init(args, allow_auto_split = True, max_output_len = 16)
+model, tokenizer = model_init.init(args, allow_auto_split = True, max_output_len = 16, skip_load = True)
 
 # Initialize draft model if provided, assume it always fits on first device
 
@@ -139,6 +139,12 @@ if args.draft_model_dir:
         draft_cache = ExLlamaV2Cache_Q8(draft_model)
     else:
         draft_cache = ExLlamaV2Cache(draft_model)
+
+# Load model after draft model
+
+print(" -- Loading model...")
+
+model_init.post_init_load(model, args, allow_auto_split = True)
 
 # Create cache
 
