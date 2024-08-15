@@ -299,7 +299,8 @@ class ExLlamaV2:
         gpu_split: list[float] | None = None,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
-        progress: bool = False
+        progress: bool = False,
+        expect_cache_tokens: int = 0
     ):
 
         if progress:
@@ -312,7 +313,7 @@ class ExLlamaV2:
             assert callback is None, \
                 "Cannot use callback function and console progress bar at the same time."
             callback = callback_pb
-        f = self.load_tp_gen(gpu_split, callback, callback_gen)
+        f = self.load_tp_gen(gpu_split, callback, callback_gen, expect_cache_tokens)
         for item in f:
             pass
         if progress:
@@ -323,10 +324,11 @@ class ExLlamaV2:
         self,
         gpu_split: list[float] | None = None,
         callback: Callable[[int, int], None] | None = None,
-        callback_gen: Callable[[int, int], None] | None = None
+        callback_gen: Callable[[int, int], None] | None = None,
+        expect_cache_tokens: int = 0
     ):
         self.config.no_graphs = True
-        self.tp_context = TPContext(self, gpu_split)
+        self.tp_context = TPContext(self, gpu_split, expect_cache_tokens)
 
         # Create device tensors
 
@@ -371,6 +373,9 @@ class ExLlamaV2:
                     module.tp_split(BROADCAST_VC)
 
                 module.set_device_idx(None)
+
+            torch.cuda.empty_cache()
+            gc.collect()
 
             if callback is not None: callback(len(self.modules), len(self.modules))
             if callback_gen is not None: yield from callback_gen(len(self.modules), len(self.modules))

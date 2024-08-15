@@ -308,7 +308,7 @@ def get_all_gpu_memory():
     return gpu_memory
 
 
-def integer_split(x, split: list[int]) -> list[int]:
+def integer_split(x, split: list[int], minimum: int = 0) -> list[int]:
 
     """
     Precisely split x integer into portions according to given ratio, ensuring sum(portions) == x
@@ -322,4 +322,9 @@ def integer_split(x, split: list[int]) -> list[int]:
         max_index = remainders.index(max(remainders))
         portions[max_index] += 1
         remainders[max_index] -= 1
+    adjust = sum((p if p < minimum else 0) for p in portions)
+    portions = [(p if p >= minimum else 0) for p in portions]
+    for i in range(adjust):
+        min_index = min((i for i, v in enumerate(portions) if v != 0), key = lambda i: portions[i], default = -1)
+        portions[min_index] += 1
     return portions

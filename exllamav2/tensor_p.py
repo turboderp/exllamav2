@@ -4,10 +4,12 @@ from exllamav2.util import get_all_gpu_memory, integer_split
 from exllamav2.device import global_streams
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 # from line_profiler import profile
+import sys
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
+    from exllamav2.attn import ExLlamaV2Attention
 
 BROADCAST_KV = 0
 BROADCAST_ID = 1
@@ -47,7 +49,8 @@ class TPContext:
     def __init__(
         self,
         model: ExLlamaV2,
-        gpu_split: list[float] | None
+        gpu_split: list[float] | None,
+        expect_cache_tokens: int = 0
     ):
         self.model = model
         cfg = self.model.config
@@ -77,7 +80,7 @@ class TPContext:
         self.sin = None
         self.cos = None
 
-        self.define_split(gpu_split)
+        self.define_split(gpu_split, expect_cache_tokens)
 
 
     def unload(self):
@@ -95,7 +98,7 @@ class TPContext:
         return sorted(devs)
 
 
-    def define_split(self, gpu_split: list[float] | None):
+    def define_split(self, gpu_split: list[float] | None, expect_cache_tokens):
         cfg = self.model.config
 
         if gpu_split is None:
@@ -103,13 +106,40 @@ class TPContext:
             gpu_split = [0] * (max(gpu_memory.keys()) + 1)
             for k, v in gpu_memory.items():
                 gpu_split[k] = v["free"]
+        else:
+            gpu_split = [gs * 1024 for gs in gpu_split]
 
-        # TODO: Account for relative size of MLP and output layers in case of uneven kv split
+        # Q and KV splits
+
         kv_split = integer_split(cfg.num_key_value_heads, gpu_split)
         q_split = [s * cfg.num_key_value_groups for s in kv_split]
-        id_split = [s * 128 for s in integer_split(cfg.intermediate_size // 128, gpu_split)]
-        vc_split = [s * 32 for s in integer_split(cfg.vocab_size // 32, gpu_split)]
-        rs_split = [s * 32 for s in integer_split(cfg.hidden_size // 32, gpu_split)]
+        attn_ratio = [s / cfg.num_key_value_heads for s in kv_split]
+
+        # Subtract size of cache according to KV split
+
+        if not expect_cache_tokens:
+            expect_cache_tokens = cfg.max_seq_len * cfg.max_batch_size
+
+        cache_size = 2 * 2 * cfg.num_key_value_heads * cfg.head_dim * cfg.num_hidden_layers * expect_cache_tokens
+        gpu_split = [max(0, gs - int(cache_size * r / 1024**2)) for gs, r in zip(gpu_split, attn_ratio)]
+
+        # Subtract size of attn layers
+
+        ExLlamaV2Attention_ = sys.modules["exllamav2.attn"].ExLlamaV2Attention
+        for module in self.model.modules:
+            if not isinstance(module, ExLlamaV2Attention_):
+                continue
+            wfp = module.weight_footprint()
+            gpu_split = [max(0, gs - int(wfp * r / 1024**2)) for gs, r in zip(gpu_split, attn_ratio)]
+
+        # MLP split
+
+        id_split = [s * 128 for s in integer_split(cfg.intermediate_size // 128, gpu_split, 2)]
+        rs_split = [s * 32 for s in integer_split(cfg.hidden_size // 32, gpu_split, 8)]
+
+        # Vocab split
+
+        vc_split = [s * 32 for s in integer_split(cfg.vocab_size // 32, gpu_split, 16)]
 
         def set_split(raw_split):
             b = 0
