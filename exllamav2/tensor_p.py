@@ -371,16 +371,16 @@ class TPContext:
     def get_sin_cos(self):
         if self.sin is not None:
             return self.sin, self.cos
-        devctxs = [self.model.get_device_context(dev) for dev in self.all_devices()]
         self.sin = []
         self.cos = []
-        for devctx in devctxs:
-            if devctx is None:
-                self.sin.append(None)
-                self.cos.append(None)
-            else:
+        for dev in range(self.num_devices):
+            if dev in self.all_devs:
+                devctx = self.model.get_device_context(dev)
                 self.sin.append(devctx.sin)
                 self.cos.append(devctx.cos)
+            else:
+                self.sin.append(none_tensor)
+                self.cos.append(none_tensor)
         return self.sin, self.cos
 
 
