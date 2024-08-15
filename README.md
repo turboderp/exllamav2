@@ -56,17 +56,17 @@ and speeds will vary across GPUs, with slow CPUs still being a potential bottlen
 
 | Model      | Mode         | Size  | grpsz | act | 3090Ti  | 4090        |
 |------------|--------------|-------|-------|-----|---------|-------------|
-| Llama      | GPTQ         | 7B    | 128   | no  | 177 t/s | **198** t/s |
-| Llama      | GPTQ         | 13B   | 128   | no  | 109 t/s | **111** t/s |
+| Llama      | GPTQ         | 7B    | 128   | no  | 181 t/s | **205** t/s |
+| Llama      | GPTQ         | 13B   | 128   | no  | 110 t/s | **114** t/s |
 | Llama      | GPTQ         | 33B   | 128   | yes | 44 t/s  | **48** t/s  |
-| OpenLlama  | GPTQ         | 3B    | 128   | yes | 252 t/s | **283** t/s |
+| OpenLlama  | GPTQ         | 3B    | 128   | yes | 259 t/s | **296** t/s |
 | CodeLlama  | EXL2 4.0 bpw | 34B   | -     | -   | 44 t/s  | **50** t/s  |
-| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 211 t/s | **245** t/s |
-| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 179 t/s | **207** t/s |
-| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 159 t/s | **170** t/s |
-| Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | 33 t/s  | **37** t/s  |
-| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 623 t/s | **730** t/s |
-| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 560 t/s | **643** t/s |
+| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 214 t/s | **252** t/s |
+| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 184 t/s | **210** t/s |
+| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 163 t/s | **178** t/s |
+| Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | 33 t/s  | **38** t/s  |
+| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 650 t/s | **761** t/s |
+| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 600 t/s | **698** t/s |
 
 
 ## How to
