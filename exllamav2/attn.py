@@ -221,10 +221,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if self.pre_layernorm is not None: self.pre_layernorm.load()
         if self.post_layernorm is not None: self.post_layernorm.load()
-        self.q_proj.load()
-        self.k_proj.load()
-        self.v_proj.load()
-        self.o_proj.load()
+        self.q_proj.load(device_context = device_context)
+        self.k_proj.load(device_context = device_context)
+        self.v_proj.load(device_context = device_context)
+        self.o_proj.load(device_context = device_context)
         if self.q_norm is not None: self.q_norm.load()
         if self.k_norm is not None: self.k_norm.load()
 

@@ -123,13 +123,13 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             w1 = nn.Parameter(w12[:cfg.intermediate_size, :].contiguous())
             w2 = nn.Parameter(w12[cfg.intermediate_size:, :].contiguous())
             w3 = self.load_weight(self.key + cfg.arch.fused_mlp_key_3)
-            self.gate_proj.load(w1)
-            self.up_proj.load(w2)
-            self.down_proj.load(w3)
+            self.gate_proj.load(w1, device_context = device_context)
+            self.up_proj.load(w2, device_context = device_context)
+            self.down_proj.load(w3, device_context = device_context)
         else:
-            if self.gate_proj is not None: self.gate_proj.load()
-            self.up_proj.load()
-            self.down_proj.load()
+            if self.gate_proj is not None: self.gate_proj.load(device_context = device_context)
+            self.up_proj.load(device_context = device_context)
+            self.down_proj.load(device_context = device_context)
 
         if self.up_proj.is_quant():
             assert self.gate_proj is None or self.gate_proj.is_quant()
