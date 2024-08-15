@@ -255,7 +255,7 @@ void set_flash_attn_func()
 //    fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
 }
 
-void tp_attn_forward_
+void tp_attn_forward_paged_
 (
     uintptr_t tp_context,
     torch::Tensor hidden_states,
@@ -422,6 +422,242 @@ void tp_attn_forward_
                     none,  // cache_batch_idx
                     none,  // cache_leftpad
                     block_index[i],  // block_table
+                    none,  // alibi_slopes
+                    o, // output
+                    scaling,  // softmax_scale
+                    true,  // causal
+                    10000000,  // window_size[0]
+                    -1,  // window_size[1]
+                    0.0,  // softcap
+                    true,  // rotary_interleaved
+                    0  // num_splits
+                );
+            }
+
+        }
+
+        // Allgather
+
+        tp_gather_barrier(tp_context, 1, temp_o, BROADCAST_Q, temp_bc2, BROADCAST_Q, head_dim, t_device, sync);
+
+        // Output projection
+
+        gemm_half_q_half_tp(temp_bc2, o_proj, temp_o, false, tp_context, t_device);
+
+        // Add residual
+        // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel
+        // TODO: Currently runs only on the first thread, seems libtorch in-place operations are not threadsafe?
+
+        if (t_device == -1 || t_device == ctx->all_devices[0])
+        {
+            int offset = 0;
+            for (int i = 0; i < temp_bc0.size(); ++i)
+            {
+                int dev = temp_bc0[i].device().index();
+                cudaSetDevice(dev);
+
+                auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+                at::cuda::setCurrentCUDAStream(stream);
+
+                int w = temp_o[i].size(1);
+                auto res_slice = temp_bc0[i].narrow(1, offset, w);
+                temp_o[i].add_(res_slice);
+                offset += w;
+            }
+        }
+
+        if (t_device != -1)
+            sync->arrive_and_wait();
+
+        // Gather
+
+        tp_gather_barrier(tp_context, 0, temp_o, BROADCAST_Q, temp_o, -1, head_dim, t_device, sync);
+
+    };
+
+    #ifdef TP_MULTITHREADED
+
+        std::vector<std::future<void>> threads;
+        Barrier sync_point(ctx->all_devices.size());
+        for (const auto &dev : ctx->all_devices)
+            threads.push_back(ctx->thread_pool->enqueue(run_thread, dev, &sync_point));
+        for (auto &t : threads)
+            t.get();
+
+    #else
+
+        run_thread(-1, NULL);
+
+    #endif
+
+}
+
+void tp_attn_forward_
+(
+    uintptr_t tp_context,
+    torch::Tensor hidden_states,
+    const std::vector<torch::Tensor> &temp_bc0_,
+    const std::vector<torch::Tensor> &temp_bc1_,
+    const std::vector<torch::Tensor> &temp_bc2_,
+    const std::vector<torch::Tensor> &temp_q_,
+    const std::vector<torch::Tensor> &temp_k_,
+    const std::vector<torch::Tensor> &temp_v_,
+    const std::vector<torch::Tensor> &temp_o_,
+    const std::vector<torch::Tensor> &k_cache,
+    const std::vector<torch::Tensor> &v_cache,
+    const std::vector<torch::Tensor> &pre_layernorm,
+    float norm_epsilon,
+    const std::vector<uintptr_t> &q_proj,
+    const std::vector<uintptr_t> &k_proj,
+    const std::vector<uintptr_t> &v_proj,
+    const std::vector<uintptr_t> &o_proj,
+    int head_dim,
+    int rope_style,
+    int batch_size,
+    int q_len,
+    const std::vector<torch::Tensor> &sin,
+    const std::vector<torch::Tensor> &cos,
+    const std::vector<torch::Tensor> &past_len_tp,
+    float scaling
+)
+{
+    auto fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
+
+    #ifdef TP_MULTITHREADED
+        pybind11::gil_scoped_release release;
+    #endif
+
+    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+    int rows = batch_size * q_len;
+    int hidden_dim = temp_bc0_[0].size(1);
+
+    std::vector<torch::Tensor> temp_bc0;
+    std::vector<torch::Tensor> temp_bc1;
+    std::vector<torch::Tensor> temp_bc2;
+    std::vector<torch::Tensor> temp_q;
+    std::vector<torch::Tensor> temp_k;
+    std::vector<torch::Tensor> temp_v;
+    std::vector<torch::Tensor> temp_o;
+    for (const auto &item : temp_bc0_) temp_bc0.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_bc1_) temp_bc1.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_bc2_) temp_bc2.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_q_) temp_q.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_k_) temp_k.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_v_) temp_v.push_back(item.narrow(0, 0, rows));
+    for (const auto &item : temp_o_) temp_o.push_back(item.narrow(0, 0, rows));
+
+    auto run_thread = [&] (int t_device, Barrier* sync) -> void
+    {
+        #ifdef TP_MULTITHREADED
+            at::InferenceMode guard(true);
+        #endif
+
+        // Broadcast
+
+        tp_broadcast(tp_context, 0, hidden_states, BROADCAST_Q, temp_bc0, head_dim, t_device);
+
+        // Layernorm
+
+        for (int i = 0; i < pre_layernorm.size(); ++i)
+        {
+            int dev = temp_bc0[i].device().index();
+            if (t_device != -1 && t_device != dev) continue;
+
+            cudaSetDevice(dev);
+            rms_norm_cuda
+            (
+                ctx->streams[dev],
+                (void*) temp_bc0[i].data_ptr(),
+                (half*) pre_layernorm[i].data_ptr(),
+                (void*) temp_bc1[i].data_ptr(),
+                norm_epsilon,
+                rows,
+                hidden_dim,
+                false,
+                false,  // TODO: FP32 residual
+                false
+            );
+        }
+
+        // Q, K, V
+
+        gemm_half_q_half_tp(temp_bc1, q_proj, temp_q, false, tp_context, t_device);
+        gemm_half_q_half_tp(temp_bc1, k_proj, temp_k, false, tp_context, t_device);
+        gemm_half_q_half_tp(temp_bc1, v_proj, temp_v, false, tp_context, t_device);
+
+        // RoPE
+
+        if (rope_style != ROPE_STYLE_NONE)
+        {
+            for (int i = 0; i < temp_q.size(); ++i)
+            {
+                int dev = temp_q[i].device().index();
+                if (t_device != -1 && t_device != dev) continue;
+                cudaSetDevice(dev);
+
+                int num_heads = temp_q[i].size(1) / head_dim;
+                int num_kv_heads = temp_k[i].size(1) / head_dim;
+                int q_len = rows / batch_size;
+
+                rope_cuda_qk
+                (
+                    ctx->streams[dev],
+                    (half*) temp_q[i].data_ptr(),
+                    (half*) temp_k[i].data_ptr(),
+                    (half*) sin[dev].data_ptr(),
+                    (half*) cos[dev].data_ptr(),
+                    batch_size,
+                    q_len * num_heads,
+                    q_len * num_kv_heads,
+                    head_dim,
+                    num_heads,
+                    num_kv_heads,
+                    0, //past_len,
+                    (int32_t*) past_len_tp[i].data_ptr(),
+                    rope_style == ROPE_STYLE_NEOX
+                );
+            }
+        }
+
+        // Attn
+
+        for (int i = 0; i < temp_q.size(); ++i)
+        {
+            int dev = temp_q[i].device().index();
+            if (t_device != -1 && t_device != dev) continue;
+            cudaSetDevice(dev);
+
+            auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+            at::cuda::setCurrentCUDAStream(stream);
+
+            std::vector<int64_t> attn_shape_qo = {batch_size, q_len, temp_q[i].size(1) / head_dim, head_dim};
+            std::vector<int64_t> attn_shape_kv = {batch_size, q_len, temp_k[i].size(1) / head_dim, head_dim};
+
+            torch::Tensor q = temp_q[i].view(attn_shape_qo);
+            torch::Tensor k = temp_k[i].view(attn_shape_kv);
+            torch::Tensor v = temp_v[i].view(attn_shape_kv);
+            torch::Tensor o = temp_o[i].view(attn_shape_qo);
+
+            {
+                #ifdef TP_MULTITHREADED
+                    pybind11::gil_scoped_acquire acquire;
+                #endif
+
+                auto none = py::none();
+
+                fwd_kvcache_func
+                (
+                    q,
+                    k_cache[i],
+                    v_cache[i],
+                    k,
+                    v,
+                    past_len_tp[i],  // cache_seqlens
+                    none,  // rotary_cos
+                    none,  // rotary_sin
+                    none,  // cache_batch_idx
+                    none,  // cache_leftpad
+                    none,  // block_table
                     none,  // alibi_slopes
                     o, // output
                     scaling,  // softmax_scale

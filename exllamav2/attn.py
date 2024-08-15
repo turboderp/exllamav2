@@ -642,7 +642,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         sin, cos = ctx.get_sin_cos()
 
-        ext_c.tp_attn_forward_(
+        ext_c.tp_attn_forward_paged_(
             self.model.tp_context.ext_tp_context,
             hidden_states,
             self.temp_bc0,
@@ -1100,7 +1100,6 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         return hidden_states
 
-
     def forward_tp(
         self,
         hidden_states: torch.Tensor,
@@ -1109,7 +1108,69 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         past_len: int | None = None,
         intermediates: bool = False,
         loras: list[ExLlamaV2Lora] | None = None,
-        ** kwargs
+        **kwargs
+    ) -> torch.Tensor:
+
+        cfg = self.model.config
+        ctx = self.model.tp_context
+
+        assert cache.q_block != 1, \
+            "Models with odd key/value dims not supported in TP mode with quantized cache"
+        assert not self.sliding_window, \
+            "Sliding window not supported in TP mode"
+
+        attn_params.prep_tp(self.model)
+
+        batch_size, q_len, _ = hidden_states.shape
+        hidden_states = hidden_states.view(-1, cfg.hidden_size)
+        past_len = 0 if cache is None else cache.current_seq_len
+
+        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+
+        sin, cos = ctx.get_sin_cos()
+
+        ext_c.tp_attn_forward_(
+            self.model.tp_context.ext_tp_context,
+            hidden_states,
+            self.temp_bc0,
+            self.temp_bc1,
+            self.temp_bc2,
+            self.temp_q,
+            self.temp_k,
+            self.temp_v,
+            self.temp_o,
+            k_cache,
+            v_cache,
+            self.pre_layernorm.weight if self.pre_layernorm is not None else [],
+            self.pre_layernorm.variance_epsilon if self.pre_layernorm is not None else 0.0,
+            self.q_proj.q_handle,
+            self.k_proj.q_handle,
+            self.v_proj.q_handle,
+            self.o_proj.q_handle,
+            cfg.head_dim,
+            int(cfg.arch.rope_style),
+            batch_size,
+            q_len,
+            sin,
+            cos,
+            attn_params.past_len_tp,
+            self.scaling
+        )
+
+        cache.store_kv_state(self.layer_idx, batch_size, 0, q_len)
+
+        return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
+
+
+    def forward_tp_old(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        past_len: int | None = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
    ):
         cfg = self.model.config
         split = self.model.tp_context.get_split(BROADCAST_KV)
