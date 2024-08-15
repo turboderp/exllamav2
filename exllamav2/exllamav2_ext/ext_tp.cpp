@@ -49,6 +49,15 @@ ExtTPContext::ExtTPContext
     for (int i = 0; i < streams.size(); ++i)
         if (streams[i]) all_devices.push_back(i);
 
+    sync_events.resize(streams.size());
+
+    for (int i = 0; i < streams.size(); ++i)
+    {
+        if (!streams[i]) continue;
+        cudaSetDevice(i);
+        cuda_check(cudaEventCreate(&sync_events[i]));
+    }
+
     #ifdef TP_MULTITHREADED
 
         int numdevs = all_devices.size();
@@ -304,19 +313,44 @@ void tp_cross_device_barrier
     uint32_t* sync = ctx->tp_data->sync[stage];
     uint32_t* sync_next = ctx->tp_data->sync[next_stage];
 
+//    for (int i = 0; i < ctx->all_devices.size(); ++i)
+//    {
+//        int dev = ctx->all_devices[i];
+//        // if (t_device != -1 && t_device != dev) continue;
+//        cross_device_barrier_cuda
+//        (
+//            ctx->streams[dev],
+//            sync,
+//            sync_next,
+//            ctx->all_devices.size(),
+//            i
+//        );
+//    }
+
+//    for (int i = 0; i < ctx->all_devices.size(); ++i)
+//    {
+//        int dev = ctx->all_devices[i];
+//        cudaSetDevice(dev);
+//        // if (t_device != -1 && t_device != dev) continue;
+//        cudaStreamSynchronize(ctx->streams[dev]);
+//    }
+
     for (int i = 0; i < ctx->all_devices.size(); ++i)
     {
-        int dev = ctx->all_devices[i];
-        if (t_device != -1 && t_device != dev) continue;
+        int dev_i = ctx->all_devices[i];
+        cudaSetDevice(dev_i);
+        cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->streams[dev_i]));
+    }
 
-        cudaSetDevice(dev);
-        cross_device_barrier_cuda
-        (
-            ctx->streams[dev],
-            sync,
-            sync_next,
-            ctx->all_devices.size(),
-            i
-        );
+    for (int i = 0; i < ctx->all_devices.size(); ++i)
+    {
+        for (int j = 0; j < ctx->all_devices.size(); ++j)
+        {
+            if (i == j) continue;
+            int dev_i = ctx->all_devices[i];
+            int dev_j = ctx->all_devices[j];
+            cudaSetDevice(dev_i);
+            cuda_check(cudaStreamWaitEvent(ctx->streams[dev_i], ctx->sync_events[dev_j], 0));
+        }
     }
 }

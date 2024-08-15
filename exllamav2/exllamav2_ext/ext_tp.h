@@ -31,6 +31,8 @@ public:
 
     void* mapped_globals;
 
+    std::vector<cudaEvent_t> sync_events;
+
     ExtTPContext
     (
         std::vector<std::tuple<int, int, int>> _kv_split,

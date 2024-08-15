@@ -296,7 +296,7 @@ class TPContext:
             inputs,
             broadcast_type,
             [],
-            -2,
+            -1,
             dim,
             -1
         )
