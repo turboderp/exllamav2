@@ -970,15 +970,28 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
 
         if self.is_tp:
-            return self.forward_tp(
-                hidden_states,
-                cache,
-                attn_params,
-                past_len,
-                intermediates,
-                loras,
-                **kwargs,
-            )
+            if cache is not None:
+                return self.forward_tp(
+                    hidden_states,
+                    cache,
+                    attn_params,
+                    past_len,
+                    intermediates,
+                    loras,
+                    **kwargs,
+                )
+            else:
+                # TODO: Can't use the optimized forward function because it writes directly to a fixed output
+                #   tensor, and flash-attn currently has a bug that prevents that from working when q_len == 1
+                return self.forward_tp_old(
+                    hidden_states,
+                    cache,
+                    attn_params,
+                    past_len,
+                    intermediates,
+                    loras,
+                    **kwargs,
+                )
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(
@@ -1114,7 +1127,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cfg = self.model.config
         ctx = self.model.tp_context
 
-        assert cache.q_block != 1, \
+        assert not cache or cache.q_block != 1, \
             "Models with odd key/value dims not supported in TP mode with quantized cache"
         assert not self.sliding_window, \
             "Sliding window not supported in TP mode"
@@ -1125,7 +1138,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         hidden_states = hidden_states.view(-1, cfg.hidden_size)
         past_len = 0 if cache is None else cache.current_seq_len
 
-        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
+        k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len) if cache else ([], [])
 
         sin, cos = ctx.get_sin_cos()
 
@@ -1157,7 +1170,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.scaling
         )
 
-        cache.store_kv_state(self.layer_idx, batch_size, 0, q_len)
+        if cache is not None:
+            cache.store_kv_state(self.layer_idx, batch_size, 0, q_len)
 
         return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
 
