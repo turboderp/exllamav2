@@ -96,7 +96,10 @@ void tp_gather_barrier
 void tp_cross_device_barrier
 (
     uintptr_t tp_context,
-    int broadcast_type
+    int broadcast_type,
+    int t_device = -1,
+    int stage = -1,
+    int next_stage = -1
 );
 
 #endif

@@ -159,7 +159,7 @@ void tp_broadcast
         cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
     }
 
-    tp_cross_device_barrier(tp_context, broadcast_type);
+    tp_cross_device_barrier(tp_context, broadcast_type, t_device);
 }
 
 void tp_gather
@@ -242,7 +242,10 @@ void tp_gather_barrier
 
     if (broadcast_type_target == -2) return;
 
-    tp_cross_device_barrier(tp_context, broadcast_type);
+    if (barrier)
+        barrier->arrive_and_wait();
+
+    tp_cross_device_barrier(tp_context, broadcast_type, t_device);
 
     if (broadcast_type_target == -1) return;
 
@@ -273,7 +276,10 @@ void tp_gather_barrier
 void tp_cross_device_barrier
 (
     uintptr_t tp_context,
-    int broadcast_type
+    int broadcast_type,
+    int t_device,
+    int stage,
+    int next_stage
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
@@ -288,21 +294,28 @@ void tp_cross_device_barrier
         case BROADCAST_Q: split = ctx->q_split; break;
     }
 
-    uint32_t* sync = ctx->tp_data->sync[ctx->tp_data->next_stage];
-    ctx->tp_data->next_stage = (ctx->tp_data->next_stage + 1) % MAX_SYNC_STAGES;
-    uint32_t* sync_next = ctx->tp_data->sync[ctx->tp_data->next_stage];
-
-    for (int i = 0; i < split.size(); ++i)
+    if (stage == -1)
     {
-        int dev = std::get<0>(split[i]);
-        cudaSetDevice(dev);
+        stage = ctx->tp_data->next_stage;
+        ctx->tp_data->next_stage = (ctx->tp_data->next_stage + 1) % MAX_SYNC_STAGES;
+        next_stage = ctx->tp_data->next_stage;
+    }
 
+    uint32_t* sync = ctx->tp_data->sync[stage];
+    uint32_t* sync_next = ctx->tp_data->sync[next_stage];
+
+    for (int i = 0; i < ctx->all_devices.size(); ++i)
+    {
+        int dev = ctx->all_devices[i];
+        if (t_device != -1 && t_device != dev) continue;
+
+        cudaSetDevice(dev);
         cross_device_barrier_cuda
         (
             ctx->streams[dev],
             sync,
             sync_next,
-            split.size(),
+            ctx->all_devices.size(),
             i
         );
     }

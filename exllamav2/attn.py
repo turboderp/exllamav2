@@ -732,14 +732,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             # k = self.k_norm.forward(k)
         if cfg.arch.rope_style != RopeStyle.NONE:
             for idx, (dev, a, b) in enumerate(split):
-                constants = self.model.get_device_context(idx, scratch = True)
                 context = self.model.get_device_context(dev)
                 torch.cuda.set_stream(context.stream)
                 for t, heads in [(q[idx], cfg.num_key_value_groups), (k[idx], 1)]:
                     ext_c.rope_(
                         t,
-                        constants.sin,
-                        constants.cos,
+                        context.sin,
+                        context.cos,
                         0,
                         (b - a) * heads,
                         cfg.head_dim,
@@ -1143,14 +1142,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if cfg.arch.rope_style != RopeStyle.NONE:
             for idx, (dev, a, b) in enumerate(split):
-                constants = self.model.get_device_context(dev, scratch = True)
                 context = self.model.get_device_context(dev)
                 torch.cuda.set_stream(context.stream)
                 for t, heads in [(q[idx], cfg.num_key_value_groups), (k[idx], 1)]:
                     ext_c.rope_(
                         t,
-                        constants.sin,
-                        constants.cos,
+                        context.sin,
+                        context.cos,
                         past_len,
                         (b - a) * heads,
                         cfg.head_dim,
