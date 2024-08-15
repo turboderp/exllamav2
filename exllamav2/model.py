@@ -900,6 +900,11 @@ class ExLlamaV2:
         if cache is not None:
             cache.current_seq_len += seq_len
 
+        # Final sync if gathering logits
+
+        if self.tp_context:
+            self.tp_context.wait_streams()
+
         # Apply logit scale
 
         # if x is not None and self.config.logit_scale != 1:

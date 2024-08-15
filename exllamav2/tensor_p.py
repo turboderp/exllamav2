@@ -303,9 +303,6 @@ class TPContext:
 
         pt = self.pinned_temp[buffer][:split[-1][2] * dim * inputs[0].shape[0]]
         pt = pt.view(inputs[0].shape[0], split[-1][2] * dim)
-
-        # Synchronize streams to CPU
-        self.wait_streams(broadcast_type)
         return pt
 
     # @profile
@@ -364,10 +361,7 @@ class TPContext:
             target[idx].add_(source[idx][:, a * dim : b * dim])
 
 
-    def wait_streams(
-        self,
-        broadcast_type: int
-    ):
+    def wait_streams(self):
         for dev in self.all_devs:
             s = global_streams[dev]
             s.synchronize()
