@@ -104,7 +104,8 @@ void gemm_half_q_half_cuda_part
 
         // Launch kernel
 
-        kernel<<<gridDim, blockDim>>>
+        const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+        kernel<<<gridDim, blockDim, 0, stream>>>
         (
             a,
             b->cuda_q_weight,
@@ -165,7 +166,8 @@ void gemm_half_q_half_cuda_part
 //             print_global_mem(r_weights, 1, 1, 1);
 //         DBGI(r_weights_stride);
 
-        kernel<<<gridDim, blockDim>>>
+        const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+        kernel<<<gridDim, blockDim, 0, stream>>>
         (
             a,
             b->cuda_q_weight,

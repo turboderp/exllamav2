@@ -97,7 +97,8 @@ void array_fp16_to_fp8_cuda(const half* pIn, unsigned char *pOut, int stride, in
     gridDim.x = DIVIDE((max - min) / 8, THREADS);
     gridDim.y = height;
 
-    fp16_to_fp8_kernel<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    fp16_to_fp8_kernel<<<gridDim, blockDim, 0, stream>>>(pIn, pOut, stride, height, min, max);
     // cuda_check( cudaPeekAtLastError() );
 }
 
@@ -113,7 +114,8 @@ void array_fp8_to_fp16_cuda(const unsigned char* pIn, half* pOut, int stride, in
     gridDim.x = DIVIDE((max - min) / 8, THREADS);
     gridDim.y = height;
 
-    fp8_to_fp16_kernel<<<gridDim, blockDim>>>(pIn, pOut, stride, height, min, max);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    fp8_to_fp16_kernel<<<gridDim, blockDim, 0, stream>>>(pIn, pOut, stride, height, min, max);
     // cuda_check( cudaPeekAtLastError() );
 }
 

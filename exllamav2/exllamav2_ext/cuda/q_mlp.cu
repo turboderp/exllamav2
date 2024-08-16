@@ -96,6 +96,7 @@ void QMLP::forward_
 
     // Up proj with gate
 
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     if (gate)
     {
         gemm_half_q_half_cuda(cublas_handle, norm_state, gate, temp_a, rows, intermediate_size, columns, true, temp_dq);
@@ -105,7 +106,7 @@ void QMLP::forward_
         apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_b, lora_temp, rows);
 
         fp_act_mul_kernel kernel = pick_act_mul_kernel(use_half2, false, act_gelu);
-        kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
+        kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, temp_b, rows, intermediate_size, NULL, 0);
     }
 
     // Up proj without gate
@@ -117,7 +118,7 @@ void QMLP::forward_
         apply_loras_cuda(cublas_handle, up_proj_lora,   loras, up,   norm_state, temp_a, lora_temp, rows);
 
         fp_act_kernel kernel = pick_act_kernel(use_half2, false, act_gelu);
-        kernel<<<gridDim, blockDim>>>(temp_a, rows, intermediate_size, NULL, 0);
+        kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, rows, intermediate_size, NULL, 0);
     }
 
     // Down proj without post_layernorm
@@ -244,12 +245,13 @@ void QMoEMLP::forward_
     blockDim.y = 1;
     gridDim.x = 1;
     gridDim.y = DIVIDE(rows, WARPS);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     if (num_experts == 4)
-        softmax4_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+        softmax4_topk_norm_kernel<<<gridDim, blockDim, 0, stream>>>(temp_logits, rows, num_experts_per_token);
     else if (num_experts == 8)
-        softmax8_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+        softmax8_topk_norm_kernel<<<gridDim, blockDim, 0, stream>>>(temp_logits, rows, num_experts_per_token);
     else if (num_experts == 16)
-        softmax16_topk_norm_kernel<<<gridDim, blockDim>>>(temp_logits, rows, num_experts_per_token);
+        softmax16_topk_norm_kernel<<<gridDim, blockDim, 0, stream>>>(temp_logits, rows, num_experts_per_token);
 
     // For small no. rows, execute all kernels but pass the routing weights. Rows with a weight of zero will skip dot
     // product accum and kernels launched with only zero-weights will exit prematurely.
@@ -271,7 +273,7 @@ void QMoEMLP::forward_
             blockDim.y = THREADS_Y;
             gridDim.x = DIVIDE(intermediate_size, THREADS_X) / (use_half2 ? 2 : 1);
             gridDim.y = DIVIDE(rows, THREADS_Y);
-            kernel<<<gridDim, blockDim>>>(temp_a, temp_b, rows, intermediate_size, temp_logits + i, num_experts);
+            kernel<<<gridDim, blockDim, 0, stream>>>(temp_a, temp_b, rows, intermediate_size, temp_logits + i, num_experts);
 
             gemm_half_q_half_cuda(cublas_handle, temp_a, w2[i], x, rows, columns, intermediate_size, false, temp_dq, true, temp_logits + i, num_experts, true);
 

@@ -114,5 +114,6 @@ void head_norm_cuda
 
     float r_dim = 1.0f / (float) head_dim;
 
-    head_norm_kernel<<<gridDim, blockDim>>>(x, w, b, y, epsilon, r_dim, rows, num_heads, head_dim);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    head_norm_kernel<<<gridDim, blockDim, 0, stream>>>(x, w, b, y, epsilon, r_dim, rows, num_heads, head_dim);
 }

@@ -33,7 +33,8 @@ void softcap_cuda_
     blockDim.x = NUM_THREADS;
     gridDim.x = DIVIDE(numel, NUM_THREADS);
 
-    cuda_softcap_kernel<<<gridDim, blockDim>>>(x, numel, scale);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    cuda_softcap_kernel<<<gridDim, blockDim, 0, stream>>>(x, numel, scale);
 }
 
 // TODO: Profile
@@ -73,6 +74,7 @@ void h_softcap_cuda_
     blockDim.x = NUM_THREADS;
     gridDim.x = DIVIDE(numel / 2, NUM_THREADS);
 
-    h_cuda_softcap_kernel<<<gridDim, blockDim>>>(x, numel, scale);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    h_cuda_softcap_kernel<<<gridDim, blockDim, 0, stream>>>(x, numel, scale);
 }
 

@@ -204,5 +204,6 @@ void layer_norm_cuda
 
     int blocks_per_warp = DIVIDE(dim, NUM_THREADS * 2);
     fp_layer_norm_kernel kernel = pick_layer_norm_kernel(blocks_per_warp);
-    kernel<<<gridDim, blockDim>>>(x, w, b, y, epsilon, r_dim, rows, dim, add_residual);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    kernel<<<gridDim, blockDim, 0, stream>>>(x, w, b, y, epsilon, r_dim, rows, dim, add_residual);
 }

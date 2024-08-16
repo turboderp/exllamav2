@@ -178,7 +178,8 @@ QMatrix::QMatrix
     gridDim.x = DIVIDE(width, THREADS_X);
     gridDim.y = 1;
 
-    shuffle_kernel<<<gridDim, blockDim>>>(cuda_q_weight, height, width, rows_8, rows_6, rows_5, rows_4, rows_3, rows_2);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    shuffle_kernel<<<gridDim, blockDim, 0, stream>>>(cuda_q_weight, height, width, rows_8, rows_6, rows_5, rows_4, rows_3, rows_2);
 }
 
 QMatrix::~QMatrix()
@@ -491,10 +492,11 @@ void QMatrix::reconstruct(half* out, int row_a, int row_b)
 
     gridDim.y = DIVIDE(row_b - row_a, BLOCK_KN_SIZE);
 
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
     if (!is_gptq)
     {
         gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
-        reconstruct_kernel<<<gridDim, blockDim>>>
+        reconstruct_kernel<<<gridDim, blockDim, 0, stream>>>
         (
             cuda_q_weight,
             cuda_q_perm,
@@ -519,7 +521,7 @@ void QMatrix::reconstruct(half* out, int row_a, int row_b)
     else
     {
         gridDim.x = DIVIDE(width, BLOCK_KN_SIZE * 4);
-        reconstruct_gptq_kernel<<<gridDim, blockDim>>>
+        reconstruct_gptq_kernel<<<gridDim, blockDim, 0, stream>>>
         (
             cuda_q_weight,
             cuda_q_perm,
@@ -640,7 +642,8 @@ bool QMatrix::make_sequential(const uint32_t* cpu_g_idx)
     gridDim.x = DIVIDE(width, THREADS_X);
     gridDim.y = height / 8;
 
-    make_sequential_kernel<<<gridDim, blockDim>>>
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    make_sequential_kernel<<<gridDim, blockDim, 0, stream>>>
     (
         cuda_q_weight,
         cuda_new_qweight,
@@ -722,7 +725,8 @@ void matrix_fp8_to_fp16_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_F;
     gridDim.x = numel / (BLOCKSIZE_F * THREADS_F);
-    matrix_fp8_to_fp16_kernel<<<gridDim, blockDim>>>(in_ptr, out_ptr);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    matrix_fp8_to_fp16_kernel<<<gridDim, blockDim, 0, stream>>>(in_ptr, out_ptr);
 }
 
 void matrix_fp16_to_fp8_cuda
@@ -738,7 +742,8 @@ void matrix_fp16_to_fp8_cuda
     dim3 blockDim, gridDim;
     blockDim.x = THREADS_F;
     gridDim.x = numel / (BLOCKSIZE_F * THREADS_F);
-    matrix_fp16_to_fp8_kernel<<<gridDim, blockDim>>>(in_ptr, out_ptr);
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    matrix_fp16_to_fp8_kernel<<<gridDim, blockDim, 0, stream>>>(in_ptr, out_ptr);
 }
 
 // Q4/FP16 convert funcs
