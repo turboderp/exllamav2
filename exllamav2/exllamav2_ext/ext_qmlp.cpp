@@ -411,7 +411,7 @@ void tp_mlp_forward_
                 (half*) temp_gate[i].data_ptr(),
                 (half*) temp_up[i].data_ptr(),
                 rows,
-                interm_dim,
+                temp_gate[i].size(1),
                 act_gelu
             );
         }
