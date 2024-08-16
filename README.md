@@ -2,6 +2,12 @@
 
 ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs.
 
+The official and recommended backend server for ExLlamaV2 is [TabbyAPI](https://github.com/theroyallab/tabbyAPI/),
+which provides an OpenAI-compatible API for local or remote inference, with extended features like HF model
+downloading, embedding model support and support for HF Jinja2 chat templates.
+
+See the [wiki](https://github.com/theroyallab/tabbyAPI/wiki/1.-Getting-Started) for help getting started.
+
 
 ## New in v0.1.0+:
 
