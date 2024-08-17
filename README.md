@@ -61,12 +61,12 @@ and speeds will vary across GPUs, with slow CPUs still being a potential bottlen
 | Llama      | GPTQ         | 33B   | 128   | yes | 44 t/s  | **48** t/s  |
 | OpenLlama  | GPTQ         | 3B    | 128   | yes | 259 t/s | **296** t/s |
 | CodeLlama  | EXL2 4.0 bpw | 34B   | -     | -   | 44 t/s  | **50** t/s  |
-| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 214 t/s | **252** t/s |
-| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 184 t/s | **210** t/s |
-| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 163 t/s | **178** t/s |
+| Llama2     | EXL2 3.0 bpw | 7B    | -     | -   | 217 t/s | **257** t/s |
+| Llama2     | EXL2 4.0 bpw | 7B    | -     | -   | 185 t/s | **211** t/s |
+| Llama2     | EXL2 5.0 bpw | 7B    | -     | -   | 164 t/s | **179** t/s |
 | Llama2     | EXL2 2.5 bpw | 70B   | -     | -   | 33 t/s  | **38** t/s  |
-| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 650 t/s | **761** t/s |
-| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 600 t/s | **698** t/s |
+| TinyLlama  | EXL2 3.0 bpw | 1.1B  | -     | -   | 656 t/s | **770** t/s |
+| TinyLlama  | EXL2 4.0 bpw | 1.1B  | -     | -   | 602 t/s | **700** t/s |
 
 
 ## How to
