@@ -209,8 +209,11 @@ __global__ void gemm_half_q_half_kernel
         {
             const half* a_ptr = a_.item_ptr(offset_m + m, 0);
             half* block_a_ptr = block_a[m];
-            half a0 = a_ptr[b_q_perm[offset_k + t]];
-//            half a0 = a_ptr[offset_k + t];
+            half a0;
+            if (b_q_perm)
+                a0 = a_ptr[b_q_perm[offset_k + t]];
+            else
+                a0 = a_ptr[offset_k + t];
             block_a_ptr[t] = a0;
         }
     }

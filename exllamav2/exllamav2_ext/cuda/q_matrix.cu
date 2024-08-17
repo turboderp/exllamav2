@@ -347,7 +347,7 @@ __global__ void reconstruct_kernel
 
     int t = threadIdx.x;
     __shared__ uint16_t perm[BLOCK_KN_SIZE];
-    if (offset_k + t < size_k)
+    if (b_q_perm && offset_k + t < size_k)
         perm[t] = b_q_perm[offset_k + t];
 
     // Column
@@ -382,7 +382,7 @@ __global__ void reconstruct_kernel
 
     int end_k = min(offset_k + BLOCK_KN_SIZE, size_k);
     int k = offset_k;
-    int lk = 0;
+    int lk = b_q_perm ? 0 : k;
 
     __syncthreads();
 
@@ -397,7 +397,7 @@ __global__ void reconstruct_kernel
             dequant_8bit_8(q_0, q_1, dq, size_n);
             for (int j = 0; j < 4; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
+            for (int j = 0; j < 8; j++) b_.set(b_q_perm ? perm[lk++] : lk++, n, dqh[j]);
         }
         k += 32;
     }
@@ -414,7 +414,7 @@ __global__ void reconstruct_kernel
             dequant_6bit_16(q_0, q_1, q_2, dq, size_n);
             for (int j = 0; j < 8; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);
+            for (int j = 0; j < 16; j++) b_.set(b_q_perm ? perm[lk++] : lk++, n, dqh[j]);
         }
         k += 32;
     }
@@ -433,7 +433,7 @@ __global__ void reconstruct_kernel
             dequant_5bit_32(q_0, q_1, q_2, q_3, q_4, dq, size_n);
             for (int j = 0; j < 16; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, dqh[j]);
+            for (int j = 0; j < 32; j++) b_.set(b_q_perm ? perm[lk++] : lk++, n, dqh[j]);
         }
         k += 32;
     }
@@ -448,7 +448,7 @@ __global__ void reconstruct_kernel
             dequant_4bit_8(q_0, dq, size_n);
             for (int j = 0; j < 4; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 8; j++) b_.set(perm[lk++], n, dqh[j]);
+            for (int j = 0; j < 8; j++) b_.set(b_q_perm ? perm[lk++] : lk++, n, dqh[j]);
         }
         k += 32;
     }
@@ -465,7 +465,7 @@ __global__ void reconstruct_kernel
             dequant_3bit_32(q_0, q_1, q_2, dq, size_n);
             for (int j = 0; j < 16; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 32; j++) b_.set(perm[lk++], n, dqh[j]);
+            for (int j = 0; j < 32; j++) b_.set(b_q_perm ? perm[lk++] : lk++, n, dqh[j]);
         }
         k += 32;
     }
@@ -480,7 +480,7 @@ __global__ void reconstruct_kernel
             dequant_2bit_16(q_0, dq, size_n);
             for (int j = 0; j < 8; j++) dq[j] = __hmul2(dq[j], qs_h2);
             half* dqh = (half*) dq;
-            for (int j = 0; j < 16; j++) b_.set(perm[lk++], n, dqh[j]);
+            for (int j = 0; j < 16; j++) b_.set(b_q_perm ? perm[lk++] : lk++, n, dqh[j]);
         }
         k += 16;
     }

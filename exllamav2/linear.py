@@ -7,6 +7,7 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.compat import safe_move_tensor
 from exllamav2.tensor_p import BROADCAST_VC
+from exllamav2.util import unpack_4bit, pack_4bit
 
 from typing import TYPE_CHECKING
 
@@ -107,7 +108,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     @torch.inference_mode
     def load(self,
              w: dict | nn.Parameter | tuple | None = None,
-             device_context: bool = True):
+             device_context: bool = True,
+             unmap: bool = False,
+             output_map: torch.Tensor | None = None):
 
         cfg = self.model.config
 
@@ -129,6 +132,20 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             else:
                 self.temp_dq = none_tensor
             self.q_tensors = w
+
+            if unmap and "q_perm" in w:
+                perm = w["q_perm"]
+                del w["q_perm"]
+                del w["q_invperm"]
+                # w["q_perm"] = torch.arange(0, w["q_perm"].shape[-1], dtype = w["q_perm"].dtype, device = w["q_perm"].device)
+                # w["q_invperm"] = w["q_perm"].clone()
+            else:
+                perm = None
+
+            if output_map is not None:
+                w["q_weight"] = w["q_weight"][:, output_map]
+                w["q_scale"] = pack_4bit(unpack_4bit(w["q_scale"])[:, output_map])
+
             self.q_handle = ext.make_q_matrix(w,
                                               self.temp_dq,
                                               prescale = self.prescale,
@@ -136,6 +153,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                                               offset_qzeros = cfg.checkpoint_offset_qzeros)
             self.prev_prescale = self.prescale
             self.prescale = 1
+
+            if unmap:
+                return perm
 
         # Load FP16 linear layer without bias, optionally quantize to Q4
 
@@ -521,3 +541,4 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         self.q_tensors = new_q_tensors
         self.temp_dq = new_temp_dq
         self.is_tp = True
+

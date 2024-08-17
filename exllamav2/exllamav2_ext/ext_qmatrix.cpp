@@ -59,7 +59,7 @@ uintptr_t make_q_matrix
         TORCH_CHECK_SHAPES(q_weight, 1, q_scale, 1, 8);
         TORCH_CHECK_SHAPES(q_scale_max, 0, q_scale, 0, 1);
         groups = q_scale.size(0);
-        height = q_invperm.size(0);
+        height = q_group_map.size(0) / 2;
     }
     else
     {
@@ -140,7 +140,7 @@ uintptr_t make_q_matrix_split
         TORCH_CHECK_SHAPES(q_weight, 1, q_scale, 1, 8);
         TORCH_CHECK_SHAPES(q_scale_max, 0, q_scale, 0, 1);
         groups = q_scale.size(0);
-        height = q_invperm.size(0);
+        height = q_group_map.size(0) / 2;
 //        DBGI(groups);
 //        DBGI(height);
     }

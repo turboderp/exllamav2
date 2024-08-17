@@ -328,3 +328,43 @@ def integer_split(x, split: list[int], minimum: int = 0) -> list[int]:
         min_index = min((i for i, v in enumerate(portions) if v != 0), key = lambda i: portions[i], default = -1)
         portions[min_index] += 1
     return portions
+
+
+def unpack_4bit(packed: torch.Tensor):
+    """
+    :param packed:
+        (m, n // 8) tensor, dtype torch.int32/uint32, packed 4-bit ints
+    :return:
+        (m, n) tensor, dtype torch.int8
+    TODO: CUDA kernel for this
+    """
+
+    m, n8 = packed.shape
+    n = n8 * 8
+    assert packed.dtype in [torch.int32, torch.uint32]
+
+    # packed = packed.view(torch.uint32)
+    unpacked = torch.empty((m, n), dtype = torch.uint8, device = packed.device)
+    for i in range(8):
+        unpacked[:, i::8] = (packed >> (i * 4)) & 0xF
+    return unpacked
+
+
+def pack_4bit(unpacked: torch.Tensor):
+    """
+    :param unpacked:
+        (m, n) tensor, dtype torch.int8, packed 4-bit ints
+    :return:
+        (m, n, // 8) tensor, dtype torch.int32
+    TODO: CUDA kernel for this
+    """
+
+    m, n = unpacked.shape
+    assert n % 8 == 0
+    assert unpacked.dtype == torch.uint8
+
+    packed = torch.zeros((m, n // 8), dtype = torch.int64, device = unpacked.device)
+    for i in range(8):
+        packed |= (unpacked[:, i::8].to(torch.int64) << (i * 4))
+    packed = packed.to(torch.uint32)
+    return packed.view(torch.int32)

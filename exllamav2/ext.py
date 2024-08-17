@@ -171,9 +171,9 @@ if build_jit:
     # gcc / cl.exe flags
 
     if windows:
-        extra_cflags = ["/Ox"]
+        extra_cflags = ["/Ox", "/openmp"]
     else:
-        extra_cflags = ["-Ofast"]
+        extra_cflags = ["-Ofast", "-fopenmp"]
 
     if ext_debug:
         extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]
@@ -331,15 +331,15 @@ def make_q_matrix(w: dict,
     if "q_weight" in w:
 
         w["q_scale_max"] *= prescale / 256
-        w["q_perm"] = w["q_perm"].short()
-        w["q_invperm"] = w["q_invperm"].short()
+        if "q_perm" in w: w["q_perm"] = w["q_perm"].short()
+        if "q_invperm" in w: w["q_invperm"] = w["q_invperm"].short()
 
         if "q_group_map" not in w:
             w["q_group_map"] = make_group_map(w["q_groups"], w["q_weight"].shape[0])
 
         return ext_c.make_q_matrix(w["q_weight"],
-                                   w["q_perm"],
-                                   w["q_invperm"],
+                                   w.get("q_perm", none_tensor),
+                                   w.get("q_invperm", none_tensor),
                                    w["q_scale"],
                                    w["q_scale_max"],
                                    w["q_groups"],
