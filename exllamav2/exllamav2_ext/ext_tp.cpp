@@ -55,7 +55,7 @@ ExtTPContext::ExtTPContext
     {
         if (!streams[i]) continue;
         cudaSetDevice(i);
-        cuda_check(cudaEventCreate(&sync_events[i]));
+        cuda_check(cudaEventCreateWithFlags(&sync_events[i], cudaEventDisableTiming));
     }
 
     #ifdef TP_MULTITHREADED
