@@ -67,6 +67,13 @@ ExtTPContext::ExtTPContext
 
     cudaHostAlloc((void**)&tp_data, sizeof(ExtTPData), cudaHostAllocMapped);
     init_tp_data(tp_data);
+
+//    comms.resize(all_devices.size());
+//    ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
+//    comms_index.resize(streams.size());
+//    for (int i = 0; i < all_devices.size(); ++i)
+//        comms_index[all_devices[i]] = i;
+
 }
 
 ExtTPContext::~ExtTPContext()
@@ -74,6 +81,9 @@ ExtTPContext::~ExtTPContext()
     #ifdef TP_MULTITHREADED
         delete thread_pool;
     #endif
+
+//    for (int i = 0; i < comms.size(); ++i)
+//        ncclCommDestroy(comms[i]);
 
     cudaFreeHost(tp_data);
 }
@@ -352,5 +362,134 @@ void tp_cross_device_barrier
             cudaSetDevice(dev_i);
             cuda_check(cudaStreamWaitEvent(ctx->streams[dev_i], ctx->sync_events[dev_j], 0));
         }
+    }
+}
+
+//void tp_all_reduce_nccl
+//(
+//    uintptr_t tp_context,
+//    const std::vector<torch::Tensor> &tensors
+//)
+//{
+//    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+//
+//    ncclGroupStart();
+//
+//    for (int i = 0; i < tensors.size(); ++i)
+//    {
+//        int dev = tensors[i].device().index();
+//        int comms_i = ctx->comms_index[dev];
+//
+//        ncclAllReduce
+//        (
+//            tensors[i].data_ptr(),
+//            tensors[i].data_ptr(),
+//            tensors[i].numel(),
+//            ncclFloat16,
+//            ncclSum,
+//            ctx->comms[comms_i],
+//            ctx->streams[dev]
+//        );
+//    }
+//
+//    ncclGroupEnd();
+//}
+
+//void tp_all_reduce
+//(
+//    uintptr_t tp_context,
+//    const std::vector<torch::Tensor> &tensors
+//)
+
+void tp_all_reduce
+(
+    uintptr_t tp_context,
+    int buffer,
+    const std::vector<torch::Tensor> &tensors,
+    const std::vector<torch::Tensor> &residuals
+)
+{
+    ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
+
+    size_t size = tensors[0].numel() * tensors[0].element_size();
+    size_t num = tensors.size();
+
+    // Reduction via host buffer
+
+    for (int i = 0; i < num; ++i)
+    {
+        int dev = tensors[i].device().index();
+        auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+        cudaSetDevice(dev);
+        at::cuda::setCurrentCUDAStream(torch_stream);
+
+        if (i > 0)
+        {
+            int prev_dev = tensors[i - 1].device().index();
+
+            // Copy host buffer to current residual
+
+            cuda_check(cudaStreamWaitEvent
+            (
+                ctx->streams[dev],
+                ctx->sync_events[prev_dev],
+                0
+            ));
+
+            cuda_check(cudaMemcpyAsync
+            (
+                residuals[i].data_ptr(),
+                ctx->pinned_temp[buffer],
+                size,
+                cudaMemcpyHostToDevice,
+                ctx->streams[dev]
+            ));
+        }
+
+        // Add current tensor to current residual
+
+        residuals[i].add_(tensors[i]);
+
+        // Copy current residual to host buffer
+
+        cuda_check(cudaMemcpyAsync
+        (
+            ctx->pinned_temp[buffer],
+            residuals[i].data_ptr(),
+            size,
+            cudaMemcpyDeviceToHost,
+            ctx->streams[dev]
+        ));
+
+        cuda_check(cudaEventRecord
+        (
+            ctx->sync_events[dev],
+            ctx->streams[dev]
+        ));
+    }
+
+    // Broadcast result
+
+    int last_dev = tensors[num - 1].device().index();
+
+    for (int i = 0; i < num - 1; ++i)
+    {
+        int dev = tensors[i].device().index();
+        cudaSetDevice(dev);
+
+        cuda_check(cudaStreamWaitEvent
+        (
+            ctx->streams[dev],
+            ctx->sync_events[last_dev],
+            0
+        ));
+        cuda_check(cudaMemcpyAsync
+        (
+            residuals[i].data_ptr(),
+            ctx->pinned_temp[buffer],
+            size,
+            cudaMemcpyHostToDevice,
+            ctx->streams[dev]
+        ));
     }
 }

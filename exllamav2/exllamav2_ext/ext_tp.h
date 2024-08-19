@@ -9,6 +9,7 @@
 
 //#define TP_MULTITHREADED
 
+//#include <nccl.h>
 #include "cpp/threadpool.h"
 #include "cuda/tp.cuh"
 
@@ -32,6 +33,8 @@ public:
     void* mapped_globals;
 
     std::vector<cudaEvent_t> sync_events;
+//    std::vector<ncclComm_t> comms;
+//    std::vector<int> comms_index;
 
     ExtTPContext
     (
@@ -102,6 +105,20 @@ void tp_cross_device_barrier
     int t_device = -1,
     int stage = -1,
     int next_stage = -1
+);
+
+//void tp_all_reduce
+//(
+//    uintptr_t tp_context,
+//    const std::vector<torch::Tensor> &tensors
+//);
+
+void tp_all_reduce
+(
+    uintptr_t tp_context,
+    int buffer,
+    const std::vector<torch::Tensor> &tensors,
+    const std::vector<torch::Tensor> &residuals
 );
 
 #endif
