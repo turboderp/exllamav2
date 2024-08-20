@@ -39,6 +39,8 @@ def maybe_set_arch_list_env():
         arch = f'{capability[0]}.{capability[1]}'
         if arch not in arch_list:
             arch_list.append(arch)
+    if not arch_list:
+        return
     arch_list = sorted(arch_list)
     arch_list[-1] += '+PTX'
 
