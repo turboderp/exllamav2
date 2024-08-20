@@ -2222,6 +2222,7 @@ class ExLlamaV2DynamicJob:
                             best_match_page = page
                     if best_match_page and best_match > 1:
                         page = seq.allocated_pages[p0]
+                        # print([sap.page_index for sap in seq.allocated_pages])
                         for c in [self.generator.cache] if not self.generator.draft_model else \
                             [self.generator.cache, self.generator.draft_cache]:
                             c.copy_states(

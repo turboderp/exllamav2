@@ -757,16 +757,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
             cache_seqlens_a = attn_params.cache_seqlens_tp
 
-        if cache.q_block == 1:
-            cache.get_kv_state(
-                self.layer_idx,
-                batch_size,
-                0,
-                attn_params.max_cache_seqlen,
-                page_size,
-                attn_params.cache_seqlens_tp,
-                attn_params.block_index_tp
-            )
+        # if cache.q_block == 1:
+        #     cache.get_kv_state(
+        #         self.layer_idx,
+        #         batch_size,
+        #         0,
+        #         attn_params.max_cache_seqlen,
+        #         page_size,
+        #         attn_params.cache_seqlens_tp,
+        #         attn_params.block_index_tp
+        #     )
 
         flash_kwargs = {}
         if self.sliding_window:

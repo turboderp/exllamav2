@@ -845,7 +845,6 @@ class ExLlamaV2Cache_TP(ExLlamaV2CacheBase):
         to_row: int,
         to_rows: int
     ):
-        # TODO: Parallel implementation
         for cache, tcache in zip(self.caches, target.caches):
             cache.copy_states(
                 tcache,
@@ -865,8 +864,10 @@ class ExLlamaV2Cache_TP(ExLlamaV2CacheBase):
 
 
     def all_tensors(self):
-        # TODO: Support defrag with TP cache
-        return []
+        tensors = []
+        for cache in self.caches:
+            tensors += cache.all_tensors()
+        return tensors
 
 
     def reset(self):
