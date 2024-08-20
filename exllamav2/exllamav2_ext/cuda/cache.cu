@@ -172,12 +172,10 @@ __global__ void fp16_to_q_kv_paged_kernel
     int px_a = seqlen - vx_a;
     int px_b = px_a + q_len;
 
-    if (dim < BLOCKSIZE_Q)
+    if (dim % BLOCKSIZE_Q)
     {
-        int g = BLOCKSIZE_Q / dim;
-//        if (px_a > 0) DBGI4(px_a, px_b, px_a / g * g, DIVIDE(px_b, g) * g);
-        px_a = px_a / g * g;
-        px_b = DIVIDE(px_b, g) * g;
+        while ((px_a * dim) % BLOCKSIZE_Q) px_a--;
+        while ((px_b * dim) % BLOCKSIZE_Q) px_b++;
     }
 
     px_a = max(px_a, 0);
@@ -372,10 +370,8 @@ __global__ void q_to_fp16_kv_paged_kernel
 
     if (dim < BLOCKSIZE_Q)
     {
-        int g = BLOCKSIZE_Q / dim;
-//        if (vx_a > 0) DBGI4(vx_a, vx_b, vx_a / g * g, DIVIDE(vx_b, g) * g);
-        vx_a = vx_a / g * g;
-        vx_b = DIVIDE(vx_b, g) * g;
+        while ((vx_a * dim) % BLOCKSIZE_Q) vx_a--;
+        while ((vx_b * dim) % BLOCKSIZE_Q) vx_b++;
     }
 
     int vnum = max(vx_b - vx_a, 0);

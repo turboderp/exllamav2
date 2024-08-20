@@ -432,8 +432,11 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
         # Models with odd key/value dims need to quantize/dequantize in multi-token blocks. Make sure the quant
         # blocksize aligns with a whole number of tokens
 
+        if not num_key_value_heads:
+            num_key_value_heads = cfg.num_key_value_heads
+
         Q_CACHE_BLOCKSIZE_Q = 512
-        kv_dim = cfg.num_key_value_heads * cfg.head_dim
+        kv_dim = num_key_value_heads * cfg.head_dim
         self.q_block = 1
         while (kv_dim * self.q_block) % Q_CACHE_BLOCKSIZE_Q:
             self.q_block += 1

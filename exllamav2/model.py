@@ -221,7 +221,10 @@ class ExLlamaV2:
 
         self.device_context = []
         for idx, scratch_bytes in enumerate(fixed_bytes):
-            self.device_context.append(ExLlamaV2DeviceContext(self, idx, scratch_bytes))
+            if scratch_bytes > 0:
+                self.device_context.append(ExLlamaV2DeviceContext(self, idx, scratch_bytes))
+            else:
+                self.device_context.append(None)
 
         # Create map for cache
 
@@ -300,7 +303,8 @@ class ExLlamaV2:
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
         progress: bool = False,
-        expect_cache_tokens: int = 0
+        expect_cache_tokens: int = 0,
+        expect_cache_base: type = None
     ):
 
         if progress:
@@ -313,7 +317,7 @@ class ExLlamaV2:
             assert callback is None, \
                 "Cannot use callback function and console progress bar at the same time."
             callback = callback_pb
-        f = self.load_tp_gen(gpu_split, callback, callback_gen, expect_cache_tokens)
+        f = self.load_tp_gen(gpu_split, callback, callback_gen, expect_cache_tokens, expect_cache_base)
         for item in f:
             pass
         if progress:
@@ -325,10 +329,11 @@ class ExLlamaV2:
         gpu_split: list[float] | None = None,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
-        expect_cache_tokens: int = 0
+        expect_cache_tokens: int = 0,
+        expect_cache_base: type = None
     ):
         self.config.no_graphs = True
-        self.tp_context = TPContext(self, gpu_split, expect_cache_tokens)
+        self.tp_context = TPContext(self, gpu_split, expect_cache_tokens, expect_cache_base)
 
         # Create device tensors
 

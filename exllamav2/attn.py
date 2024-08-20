@@ -614,8 +614,6 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         cfg = self.model.config
         ctx = self.model.tp_context
 
-        assert cache.q_block != 1, \
-            "Models with odd key/value dims not supported in TP mode with quantized cache"
         assert not self.sliding_window, \
             "Sliding window not supported in TP mode"
 
@@ -631,7 +629,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.layer_idx,
             batch_size,
             0,
-            attn_params.max_cache_seqlen if cache.q_block > 1 else 0,
+            attn_params.max_cache_seqlen,
             page_size,
             attn_params.cache_seqlens_tp,
             attn_params.block_index_tp
@@ -706,7 +704,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.layer_idx,
             batch_size,
             0,
-            attn_params.max_cache_seqlen if cache.q_block > 1 else 0,
+            attn_params.max_cache_seqlen,
             page_size,
             attn_params.cache_seqlens_tp,
             attn_params.block_index_tp
@@ -1171,7 +1169,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         )
 
         if cache is not None:
-            cache.store_kv_state(self.layer_idx, batch_size, 0, q_len)
+            cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
 
         return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
 

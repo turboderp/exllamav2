@@ -155,9 +155,14 @@ void fp16_to_q_kv
         int stride = k_in.size(1) * k_in.size(2) * k_in.size(3);
         int height = batch_size;
 
-        int tsize = k_in.size(2) * k_in.size(3);
-        offset *= tsize;
-        width *= tsize;
+        int dim = k_in.size(2) * k_in.size(3);
+        if (dim % Q_CACHE_BLOCKSIZE_Q)
+        {
+            while ((offset * dim) % Q_CACHE_BLOCKSIZE_Q) offset--;
+            while ((width * dim) % Q_CACHE_BLOCKSIZE_Q) width++;
+        }
+        offset *= dim;
+        width *= dim;
 
         array_fp16_to_q_kv_cuda
         (
@@ -168,7 +173,7 @@ void fp16_to_q_kv
             (const half*) v_in.data_ptr(),
             (unsigned char*) v_out.data_ptr(),
             (half*) v_scales.data_ptr(),
-            tsize,
+            dim,
             stride,
             height,
             offset,
@@ -257,9 +262,14 @@ void q_to_fp16_kv
         int stride = k_out.size(1) * k_out.size(2) * k_out.size(3);
         int height = batch_size;
 
-        int tsize = k_out.size(2) * k_out.size(3);
-        offset *= tsize;
-        width *= tsize;
+        int dim = k_out.size(2) * k_out.size(3);
+        if (dim % Q_CACHE_BLOCKSIZE_Q)
+        {
+            while ((offset * dim) % Q_CACHE_BLOCKSIZE_Q) offset--;
+            while ((width * dim) % Q_CACHE_BLOCKSIZE_Q) width++;
+        }
+        offset *= dim;
+        width *= dim;
 
         array_q_to_fp16_kv_cuda
         (
@@ -270,7 +280,7 @@ void q_to_fp16_kv
             (const unsigned char*) v_in.data_ptr(),
             (const half*) v_scales.data_ptr(),
             (half*) v_out.data_ptr(),
-            tsize,
+            dim,
             stride,
             height,
             offset,

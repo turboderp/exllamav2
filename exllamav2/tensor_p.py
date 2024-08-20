@@ -50,7 +50,8 @@ class TPContext:
         self,
         model: ExLlamaV2,
         gpu_split: list[float] | None,
-        expect_cache_tokens: int = 0
+        expect_cache_tokens: int = 0,
+        expect_cache_base: type = None
     ):
         self.model = model
         cfg = self.model.config
@@ -80,7 +81,7 @@ class TPContext:
         self.sin = None
         self.cos = None
 
-        self.define_split(gpu_split, expect_cache_tokens)
+        self.define_split(gpu_split, expect_cache_tokens, expect_cache_base)
 
 
     def unload(self):
@@ -98,7 +99,12 @@ class TPContext:
         return sorted(devs)
 
 
-    def define_split(self, gpu_split: list[float] | None, expect_cache_tokens):
+    def define_split(
+        self,
+        gpu_split: list[float] | None,
+        expect_cache_tokens: int,
+        expect_cache_base: type
+    ):
         cfg = self.model.config
 
         if gpu_split is None:
@@ -119,8 +125,18 @@ class TPContext:
 
         if not expect_cache_tokens:
             expect_cache_tokens = cfg.max_seq_len * cfg.max_batch_size
+        if expect_cache_base == sys.modules["exllamav2.cache"].ExLlamaV2Cache_8bit:
+            bytes_per_element = 1
+        elif expect_cache_base == sys.modules["exllamav2.cache"].ExLlamaV2Cache_Q8:
+            bytes_per_element = 8.5/8
+        elif expect_cache_base == sys.modules["exllamav2.cache"].ExLlamaV2Cache_Q6:
+            bytes_per_element = 6.5/8
+        elif expect_cache_base == sys.modules["exllamav2.cache"].ExLlamaV2Cache_Q4:
+            bytes_per_element = 4.5/8
+        else:
+            bytes_per_element = 2
 
-        cache_size = 2 * 2 * cfg.num_key_value_heads * cfg.head_dim * cfg.num_hidden_layers * expect_cache_tokens
+        cache_size = 2 * bytes_per_element * cfg.num_key_value_heads * cfg.head_dim * cfg.num_hidden_layers * expect_cache_tokens
         gpu_split = [max(0, gs - int(cache_size * r / 1024**2)) for gs, r in zip(gpu_split, attn_ratio)]
 
         # Subtract size of attn layers
