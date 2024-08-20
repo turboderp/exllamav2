@@ -341,7 +341,7 @@ def unpack_4bit(packed: torch.Tensor):
 
     m, n8 = packed.shape
     n = n8 * 8
-    assert packed.dtype in [torch.int32, torch.uint32]
+    assert packed.dtype in [torch.int32]
 
     # packed = packed.view(torch.uint32)
     unpacked = torch.empty((m, n), dtype = torch.uint8, device = packed.device)
@@ -366,5 +366,5 @@ def pack_4bit(unpacked: torch.Tensor):
     packed = torch.zeros((m, n // 8), dtype = torch.int64, device = unpacked.device)
     for i in range(8):
         packed |= (unpacked[:, i::8].to(torch.int64) << (i * 4))
-    packed = packed.to(torch.uint32)
-    return packed.view(torch.int32)
+    packed = packed.to(torch.int32)
+    return packed
