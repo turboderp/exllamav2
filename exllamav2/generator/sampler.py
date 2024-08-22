@@ -278,6 +278,17 @@ class ExLlamaV2Sampler:
 
             if pass_tokens is not None:
                 assert pass_tokens, "Filter excluded all tokens"
+
+                # Special case if a single token passes
+                if len(pass_tokens) == 1 and return_top_tokens == 0 and prefix_token is None:
+                    single_passed_token = next(iter(pass_tokens))
+                    output_tokens = torch.tensor([[single_passed_token]], dtype=torch.long)
+                    output_probs = torch.tensor([[1]], dtype=torch.float)
+                    output_ktokens = none_tensor
+                    output_kprobs = none_tensor
+                    end_filter = (single_passed_token in end_tokens)
+                    return output_tokens, output_ktokens, output_kprobs, output_probs, end_filter
+
                 if filter_prefer_eos and tokenizer.eos_token_id in pass_tokens:
                     pass_tokens = { tokenizer.eos_token_id }
                 logit_filter = prep_logit_filter(logit_filter)
