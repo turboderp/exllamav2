@@ -66,7 +66,7 @@ void apply_rep_penalty
 
 std::vector<float> sample_basic
 (
-    torch::Tensor logits,           // shape [bsz, vocab_size]
+    torch::Tensor logits,           // shape [bsz, 1, vocab_size]
     float temperature,
     int top_k,
     float top_p,
@@ -96,10 +96,10 @@ std::vector<float> sample_basic
     TORCH_CHECK_DTYPE(output_tokens, kLong);
     TORCH_CHECK_DTYPE(output_probs, kFloat);
     TORCH_CHECK_DTYPE(logits, kFloat);
-    TORCH_CHECK_DTYPE(logit_filter, kBool);
+    TORCH_CHECK_DTYPE_OPT(logit_filter, kBool);
 
-    TORCH_CHECK_SHAPES(logit_filter, 0, logits, 0, 1);
-    TORCH_CHECK_SHAPES(logit_filter, 1, logits, 1, 1);
+    TORCH_CHECK_SHAPES_OPT(logit_filter, 0, logits, 0, 1);
+    TORCH_CHECK_SHAPES_OPT(logit_filter, 1, logits, -1, 1);
 
     int vocab_size = logits.size(-1);
     int bsz = logits.size(0);
@@ -112,7 +112,7 @@ std::vector<float> sample_basic
     if (!output_kprobs.device().is_meta())
         num_probs = output_kprobs.size(2);
 
-    bool* logits_filter_ptr = (bool*) logit_filter.data_ptr();
+    bool* logits_filter_ptr = logit_filter.device().is_meta() ? NULL : (bool*) logit_filter.data_ptr();
 
     Py_BEGIN_ALLOW_THREADS
 
@@ -136,7 +136,7 @@ std::vector<float> sample_basic
              vocab_size,
              temperature,
              logits_ptr + i * vocab_size,
-             logits_filter_ptr + i * vocab_size,
+             logits_filter_ptr ? logits_filter_ptr + i * vocab_size : NULL,
              exponent,
              temp_probs
         );
@@ -282,7 +282,7 @@ std::vector<float> sample_basic
 void logit_filter_exclusive
 (
     torch::Tensor filter,                                       // shape [bsz, vocab_size]
-    const std::vector<std::vector<int>> &exclusive_lists
+    const py::list& exclusive_lists
 )
 {
     TORCH_CHECK_DTYPE(filter, kBool);
@@ -291,13 +291,15 @@ void logit_filter_exclusive
     bool* filter_ptr = (bool*) filter.data_ptr();
     unsigned int vocab_size = filter.size(1);
 
-    Py_BEGIN_ALLOW_THREADS
+//    Py_BEGIN_ALLOW_THREADS
 
-    for(const auto& list : exclusive_lists)
+    for(const auto& list_ : exclusive_lists)
     {
+        auto list = list_.cast<py::list>();
+
         unsigned int id = 0;
         unsigned int next_id_idx = 0;
-        unsigned int next_id = list[next_id_idx];
+        unsigned int next_id = list[next_id_idx].cast<unsigned int>();
 
         while (id < vocab_size)
         {
@@ -309,13 +311,13 @@ void logit_filter_exclusive
             id++;
             next_id_idx++;
             if (next_id_idx >= list.size()) next_id = vocab_size;
-            else next_id = list[next_id_idx];
+            else next_id = list[next_id_idx].cast<unsigned int>();;
         }
 
         filter_ptr += vocab_size;
     }
 
-    Py_END_ALLOW_THREADS
+//    Py_END_ALLOW_THREADS
 }
 
 void fast_fill_cpu_ones_bool(torch::Tensor tensor)

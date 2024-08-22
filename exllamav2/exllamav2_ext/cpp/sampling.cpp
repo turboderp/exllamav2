@@ -129,7 +129,7 @@ int softmax_cpu_nonavx2
 
     for (int i = 0; i < vocab_size; i++)
     {
-        if (!logits_filter[i]) continue;
+        if (logits_filter && !logits_filter[i]) continue;
         if (logits[i] > maxl)
         {
             maxl = logits[i];
@@ -139,7 +139,7 @@ int softmax_cpu_nonavx2
 
     for (int i = 0; i < vocab_size; i++)
     {
-        if (!logits_filter[i]) continue;
+        if (logits_filter && !logits_filter[i]) continue;
         float l = logits[i] - maxl;
         if (exponent == 2.0f)
             l *= -l;
@@ -154,7 +154,7 @@ int softmax_cpu_nonavx2
 
     for (int i = 0; i < vocab_size; i++)
     {
-        if (logits_filter[i]) output[i] *= isum;
+        if (!logits_filter || logits_filter[i]) output[i] *= isum;
         else output[i] = 0.0f;
     }
 

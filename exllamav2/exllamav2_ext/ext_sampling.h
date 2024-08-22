@@ -43,7 +43,7 @@ std::vector<float> sample_basic
 void logit_filter_exclusive
 (
     torch::Tensor filter,                                       // shape [bsz, vocab_size]
-    const std::vector<std::vector<int>> &exclusive_lists
+    const py::list& exclusive_lists
 );
 
 void fast_fill_cpu_ones_bool(torch::Tensor tensor);

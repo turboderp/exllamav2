@@ -34,11 +34,10 @@ int softmax_cpu_avx2
 
     // Apply logit filter and find max logit
 
-    int i = 0;
-    for (; i < vocab_size; ++i)
+    for (int i = 0; i < vocab_size; ++i)
     {
         float l = logits[i];
-        bool f = logits_filter[i];
+        bool f = !logits_filter || logits_filter[i];
         l = f ? l : minf;
         if (l > maxl)
         {
@@ -47,7 +46,8 @@ int softmax_cpu_avx2
         }
         output[i] = l;
     }
-    for (; i < vocab_size_aligned; i++)
+
+    for (int i = vocab_size; i < vocab_size_aligned; i++)
         output[i] = minf;
 
     // SIMD values
@@ -61,8 +61,7 @@ int softmax_cpu_avx2
     if (exponent == 2.0f)
     {
         __m256 sign_mask = _mm256_set1_ps(-0.0f);
-        i = 0;
-        for (; i < vocab_size_aligned; i += 8)
+        for (int i = 0; i < vocab_size_aligned; i += 8)
         {
             __m256 x = _mm256_load_ps(&output[i]);
             x = _mm256_sub_ps(x, maxl8);
@@ -87,10 +86,9 @@ int softmax_cpu_avx2
     }
     else
     {
-        i = 0;
         if (itemp == 1.0f)
         {
-            for (; i < vocab_size_aligned; i += 8)
+            for (int i = 0; i < vocab_size_aligned; i += 8)
             {
                 __m256 x = _mm256_load_ps(&output[i]);
                 x = _mm256_sub_ps(x, maxl8);
@@ -101,7 +99,7 @@ int softmax_cpu_avx2
         }
         else
         {
-            for (; i < vocab_size_aligned; i += 8)
+            for (int i = 0; i < vocab_size_aligned; i += 8)
             {
                 __m256 x = _mm256_load_ps(&output[i]);
                 x = _mm256_sub_ps(x, maxl8);
@@ -121,8 +119,7 @@ int softmax_cpu_avx2
     float isum = 1.0f / esum;
     __m256 isum8  = _mm256_set1_ps(isum);
 
-    i = 0;
-    for (; i < vocab_size_aligned; i += 8)
+    for (int i = 0; i < vocab_size_aligned; i += 8)
     {
         __m256 x = _mm256_load_ps(&output[i]);
         x = _mm256_mul_ps(x, isum8);
