@@ -168,7 +168,6 @@ else:
 
 if not model.loaded:
 
-    print(" -- Loading model...")
     model.load_autosplit(cache)
 
 # Chat context
