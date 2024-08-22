@@ -93,6 +93,7 @@ while generator.num_remaining_jobs():
 
     # We'll always get at least one result for each active job, even if the result contains no output text
     bsz = len(set([r["identifier"] for r in results]))
+    num_tokens += bsz
 
     for result in results:
         if not result["eos"]: continue
@@ -104,7 +105,6 @@ while generator.num_remaining_jobs():
 
         # Measure performance
         num_completions += 1
-        num_tokens += result["new_tokens"]
         elapsed_time = time.time() - time_begin
         rpm = num_completions / (elapsed_time / 60)
         tps = num_tokens / elapsed_time
