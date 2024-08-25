@@ -189,6 +189,8 @@ class STFile:
                    out_dtype = None) -> torch.Tensor:
         global global_tensorcache
 
+        torch.cuda.synchronize()
+
         if self.tensor_remap and (not_fast or not self.fast):
             key = self.tensor_remap[key]
 
@@ -235,5 +237,7 @@ class STFile:
             if len(global_tensorcache) >= num_cached_tensors:
                 global_tensorcache = global_tensorcache[1:]
             global_tensorcache.append((cachekey, tensor))
+
+        torch.cuda.synchronize()
 
         return tensor
