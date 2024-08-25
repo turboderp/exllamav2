@@ -213,6 +213,8 @@ class STFile:
             size = end - beg
             numel = size // esize
             shape = h["shape"]
+            if device != "cpu":
+                torch.cuda.set_stream(torch.cuda.default_stream(device))
             tensor = torch.zeros(shape, dtype = dtype, device = device)
             assert tensor.is_contiguous, "Non-contiguous tensor"
             ext_c.safetensors_read_fb(self.handle_fb, beg + self.header_size, size, tensor)
