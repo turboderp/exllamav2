@@ -47,4 +47,17 @@ uintptr_t safetensors_open_fb(const char* filename);
 void safetensors_close_fb(uintptr_t handle);
 void safetensors_read_fb(uintptr_t handle, size_t beg, size_t size, torch::Tensor target);
 
+void tensor_remap
+(
+    torch::Tensor tensor,
+    torch::Tensor index
+);
+
+void tensor_remap_4bit
+(
+    torch::Tensor tensor,
+    torch::Tensor index
+);
+
+
 #endif

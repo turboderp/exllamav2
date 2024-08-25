@@ -55,6 +55,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("safetensors_pinned_buffer", &safetensors_pinned_buffer, "safetensors_pinned_buffer");
     m.def("safetensors_free_pinned_buffer", &safetensors_free_pinned_buffer, "safetensors_free_pinned_buffer");
     m.def("safetensors_read_fb", &safetensors_read_fb, "safetensors_read_fb");
+    m.def("tensor_remap", &tensor_remap, "tensor_remap");
+    m.def("tensor_remap_4bit", &tensor_remap_4bit, "tensor_remap_4bit");
 
     // qmatrix
 

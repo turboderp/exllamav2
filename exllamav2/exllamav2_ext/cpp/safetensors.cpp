@@ -454,3 +454,64 @@ void safetensors_read_fb(uintptr_t handle, size_t beg, size_t size, torch::Tenso
         }
     }
 }
+
+void tensor_remap
+(
+    torch::Tensor tensor,
+    torch::Tensor index
+)
+{
+    TORCH_CHECK_SHAPES(tensor, 1, index, 0, 1);
+    TORCH_CHECK_DTYPE(tensor, kInt);
+    TORCH_CHECK_DTYPE(index, kInt);
+
+    int rows = tensor.size(0);
+    int cols = tensor.size(1);
+    uint32_t* temp = (uint32_t*) calloc(cols, sizeof(int));
+    uint32_t* a = (uint32_t*) tensor.data_ptr();
+    uint32_t* idx = (uint32_t*) index.data_ptr();
+
+    for (int r = 0; r < rows; ++r)
+    {
+        memcpy(temp, a, sizeof(uint32_t) * cols);
+        for (int c = 0; c < cols; ++c)
+        {
+            *a++ = temp[idx[c]];
+        }
+    }
+    free(temp);
+}
+
+void tensor_remap_4bit
+(
+    torch::Tensor tensor,
+    torch::Tensor index
+)
+{
+    TORCH_CHECK_SHAPES(index, 0, tensor, 1, 8);
+    TORCH_CHECK_DTYPE(tensor, kInt);
+    TORCH_CHECK_DTYPE(index, kInt);
+
+    int rows = tensor.size(0);
+    int cols = index.size(0);
+    uint32_t* temp = (uint32_t*) calloc(cols / 8, sizeof(int));
+    uint32_t* a = (uint32_t*) tensor.data_ptr();
+    uint32_t* idx = (uint32_t*) index.data_ptr();
+
+    for (int r = 0; r < rows; ++r)
+    {
+        memcpy(temp, a, sizeof(uint32_t) * cols / 8);
+        for (int c = 0; c < cols;)
+        {
+            uint32_t rv = 0;
+            for (int b = 0; b < 8; ++b, ++c)
+            {
+                uint32_t i = idx[c];
+                uint32_t v = (temp[i / 8] >> ((i & 7) * 4) & 0x0f);
+                rv |= v << (b * 4);
+            }
+            *a++ = rv;
+        }
+    }
+    free(temp);
+}
