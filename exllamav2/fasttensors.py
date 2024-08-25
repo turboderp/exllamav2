@@ -226,7 +226,8 @@ class STFile:
             offset = data_offsets[0] + self.header_size
             length = data_offsets[1] - data_offsets[0]
             assert np.prod(sh) * dts == length, f"Tensor shape doesn't match storage size: {key}"
-
+            if device != "cpu":
+                torch.cuda.set_stream(torch.cuda.default_stream(device))
             tensor = torch.empty(sh, device = device, dtype = dtt)
             ext_c.safetensors_load(self.handle, tensor, offset, length)
 
