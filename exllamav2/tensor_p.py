@@ -155,7 +155,7 @@ class TPContext:
 
         # Vocab split
 
-        vc_split = [s * 32 for s in integer_split(cfg.vocab_size // 32, gpu_split, 16)]
+        vc_split = [s * 32 for s in integer_split((cfg.vocab_size + 31) // 32, gpu_split, 16)]
 
         def set_split(raw_split):
             b = 0
