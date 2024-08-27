@@ -46,10 +46,10 @@ public:
     void attach_label(cudaStream_t stream, int label, int sublabel);
 
     template <typename T>
-    void update_param(int label, int sublabel, int param, T value);
+    void update_param(int label, int sublabel, int param, T value, bool debug);
 
-    void update_param_ptr(int label, int sublabel, int param, void* value);
-    void update_param_int(int label, int sublabel, int param, int value);
+    void update_param_ptr(int label, int sublabel, int param, void* value, bool debug = false);
+    void update_param_int(int label, int sublabel, int param, int value, bool debug = false);
 };
 
 

@@ -109,7 +109,7 @@ void QMLP::forward_
     if (graph->count())
     {
         graph->begin_capture(stream);
-        forward_run_(stream, cublas_handle, (half*) x, rows, columns, loras, lora_temp, graph);
+        forward_run_(stream, cublas_handle, (void*) x, rows, columns, loras, lora_temp, graph);
         graph->end_capture(stream);
 //        printf("**** record ****\n");
 //        DBGI2(rows, columns);
@@ -225,7 +225,7 @@ void QMLP::forward_run_
 
     else
     {
-        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq, graph, 0);
+        gemm_half_q_half_cuda(stream, cublas_handle, temp_a, down, temp_state, rows, columns, intermediate_size, true, temp_dq, false, NULL, 0, false, graph, 0);
         if (layernorm_is_rms)
             rms_norm_cuda(stream, temp_state, post_layernorm, x, norm_epsilon, rows, columns, true, false, residual_fp32, graph, KernelLabels::POST_NORM);
         else
