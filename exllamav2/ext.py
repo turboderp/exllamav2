@@ -173,9 +173,9 @@ if build_jit:
     # gcc / cl.exe flags
 
     if windows:
-        extra_cflags = ["/Ox", "/openmp"]
+        extra_cflags = ["/Ox"]
     else:
-        extra_cflags = ["-Ofast", "-fopenmp"]
+        extra_cflags = ["-Ofast"]
 
     if ext_debug:
         extra_cflags += ["-ftime-report", "-DTORCH_USE_CUDA_DSA"]

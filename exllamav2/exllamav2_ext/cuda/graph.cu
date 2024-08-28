@@ -133,7 +133,7 @@ void Graph::attach_label(cudaStream_t stream, int label, int sublabel)
 }
 
 template <typename T>
-void Graph::update_param(int label, int sublabel, int param, T value)
+void Graph::update_param(int label, int sublabel, int param, T value, bool debug)
 {
     for (int i = 0; i < node_labels.size(); ++i)
     {
@@ -145,19 +145,22 @@ void Graph::update_param(int label, int sublabel, int param, T value)
 
         node_needs_update[i] = true;
 
-//        printf("-----------------------------------------------------\n");
-//        printf("UPDATED:\n");
-//        DBGI(i);
-//        inspect_graph();
+        if (debug)
+        {
+            printf("-----------------------------------------------------\n");
+            printf("UPDATED: ");
+            DBGI(i);
+            inspect_graph();
+        }
     }
 }
 
-void Graph::update_param_ptr(int label, int sublabel, int param, void* value)
+void Graph::update_param_ptr(int label, int sublabel, int param, void* value, bool debug)
 {
-    update_param<void*>(label, sublabel, param, value);
+    update_param<void*>(label, sublabel, param, value, debug);
 }
 
-void Graph::update_param_int(int label, int sublabel, int param, int value)
+void Graph::update_param_int(int label, int sublabel, int param, int value, bool debug)
 {
-    update_param<int>(label, sublabel, param, value);
+    update_param<int>(label, sublabel, param, value, debug);
 }

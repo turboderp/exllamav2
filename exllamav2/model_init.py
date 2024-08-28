@@ -34,7 +34,7 @@ def print_options(args):
 
     print_opts = []
     if args.gpu_split is not None: print_opts += [f"gpu_split: {args.gpu_split}"]
-    if args.tensor_parallel is not None: print_opts += ["tensor_parallel"]
+    if args.tensor_parallel: print_opts += ["tensor_parallel"]
     if args.length is not None: print_opts += [f"length: {args.length}"]
     if args.rope_scale is not None: print_opts += [f"rope_scale: {args.rope_scale}"]
     if args.rope_alpha is not None: print_opts += [f"rope_alpha: {args.rope_alpha}"]

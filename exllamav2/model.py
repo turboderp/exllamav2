@@ -989,6 +989,10 @@ class ExLlamaV2:
         if self.tp_context:
             self.tp_context.wait_streams()
 
+        if x is not None and x.is_cuda:
+            context = self.get_device_context(x.device.index)
+            torch.cuda.set_stream(context.stream)
+
         # Apply logit scale
 
         # if x is not None and self.config.logit_scale != 1:

@@ -189,6 +189,8 @@ class STFile:
                    out_dtype = None) -> torch.Tensor:
         global global_tensorcache
 
+        torch.cuda.synchronize()
+
         if self.tensor_remap and (not_fast or not self.fast):
             key = self.tensor_remap[key]
 
@@ -211,6 +213,8 @@ class STFile:
             size = end - beg
             numel = size // esize
             shape = h["shape"]
+            if device != "cpu":
+                torch.cuda.set_stream(torch.cuda.default_stream(device))
             tensor = torch.zeros(shape, dtype = dtype, device = device)
             assert tensor.is_contiguous, "Non-contiguous tensor"
             ext_c.safetensors_read_fb(self.handle_fb, beg + self.header_size, size, tensor)
@@ -224,7 +228,8 @@ class STFile:
             offset = data_offsets[0] + self.header_size
             length = data_offsets[1] - data_offsets[0]
             assert np.prod(sh) * dts == length, f"Tensor shape doesn't match storage size: {key}"
-
+            if device != "cpu":
+                torch.cuda.set_stream(torch.cuda.default_stream(device))
             tensor = torch.empty(sh, device = device, dtype = dtt)
             ext_c.safetensors_load(self.handle, tensor, offset, length)
 
@@ -235,5 +240,7 @@ class STFile:
             if len(global_tensorcache) >= num_cached_tensors:
                 global_tensorcache = global_tensorcache[1:]
             global_tensorcache.append((cachekey, tensor))
+
+        torch.cuda.synchronize()
 
         return tensor
