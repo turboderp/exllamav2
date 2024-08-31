@@ -272,7 +272,7 @@ class ExLlamaV2Sampler:
             end_tokens = None
             for f in filters:
 
-                pt, et = f.next()
+                pt, et = f.get_next()
                 if len(filters) > 1 and not isinstance(pt, set):
                     pt, et = set(pt), set(et)
 
@@ -280,7 +280,7 @@ class ExLlamaV2Sampler:
                 if et is not None: end_tokens = et if end_tokens is None else end_tokens | et
 
             if pass_tokens is not None:
-                assert pass_tokens, "Filter excluded all tokens"
+                assert len(pass_tokens), "Filter excluded all tokens"
 
                 # Special case if a single token passes
                 if len(pass_tokens) == 1 and return_top_tokens == 0 and prefix_token is None:
