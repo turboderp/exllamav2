@@ -152,7 +152,7 @@ class ExLlamaV2Sampler:
         blocked_tokens: list[int] | None = None,
         filters: list[ExLlamaV2Filter] | None = None,
         filter_prefer_eos: bool = False,
-        sync: bool = False
+        sync: bool = False,
     ):
 
         """
@@ -273,6 +273,9 @@ class ExLlamaV2Sampler:
             for f in filters:
 
                 pt, et = f.next()
+                if len(filters) > 1 and not isinstance(pt, set):
+                    pt, et = set(pt), set(et)
+
                 if pt is not None: pass_tokens = pt if pass_tokens is None else pass_tokens & pt
                 if et is not None: end_tokens = et if end_tokens is None else end_tokens | et
 
@@ -290,9 +293,15 @@ class ExLlamaV2Sampler:
                     return output_tokens, output_ktokens, output_kprobs, output_probs, end_filter
 
                 if filter_prefer_eos and tokenizer.eos_token_id in pass_tokens:
-                    pass_tokens = { tokenizer.eos_token_id }
-                logit_filter = prep_logit_filter(logit_filter)
-                ext_c.logit_filter_exclusive(logit_filter, [sorted(list(pass_tokens))])
+                    pass_tokens_list = [tokenizer.eos_token_id]
+                    logit_filter = prep_logit_filter(logit_filter)
+                    ext_c.logit_filter_exclusive(logit_filter, pass_tokens_list)
+                else:
+                    logit_filter = prep_logit_filter(logit_filter)
+                    if isinstance(pass_tokens, set):
+                        ext_c.logit_filter_exclusive(logit_filter, [sorted(list(pass_tokens))])
+                    else:
+                        ext_c.logit_filter_exclusive(logit_filter, [pass_tokens])
 
         # Healing
 
