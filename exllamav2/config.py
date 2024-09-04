@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 import math
-from exllamav2.fasttensors import STFile
+from exllamav2.fasttensors import STFile, cleanup_stfiles
 from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
 from typing import Any, Dict, List, TypeVar, Union, cast
@@ -370,7 +370,7 @@ class ExLlamaV2Config:
             if not match:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
 
-        x = 0
+        cleanup_stfiles()
 
 
     def arch_compat_overrides(self, quiet: bool = False, warn_only = False):

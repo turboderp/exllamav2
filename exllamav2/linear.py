@@ -597,6 +597,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 )
             )
 
+        torch.cuda.synchronize()
+
         ext_c.free_q_matrix(self.q_handle)
         self.q_handle = new_q_handle
         self.q_tensors = new_q_tensors
