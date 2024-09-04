@@ -1,0 +1,69 @@
+name: Feature request
+description: Suggest a new idea
+title: "[REQUEST]"
+body:
+
+- type: textarea
+  attributes:
+    label: Problem
+    description: Is the feature request related to a problem? If so, please describe.
+    placeholder: A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+  validations:
+    required: false
+
+- type: textarea
+  attributes:
+    label: Solution
+    description: Describe the solution you'd like.
+    placeholder: A clear and concise description of what you want to happen.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Alternatives
+    description: What alternative options did you consider?
+  validations:
+    required: false
+
+- type: textarea
+  attributes:
+    label: Explanation
+    description: Why should this feature be added?
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Examples
+    description: |
+      Examples of the feature in action and its significance.
+
+      Not required, but will make your request easier to understand. Real-world examples are helpful for samplers.
+  validations:
+    required: false
+
+- type: textarea
+  attributes:
+    label: Additional context
+    description: Anything else to add?
+  validations:
+    required: false
+
+- type: checkboxes
+  attributes:
+    label: Acknowledgements
+    description: Before submitting this issue, please make sure you have completed the following checklist.
+    options:
+    - label: I have looked for similar requests before submitting this one.
+      required: true
+    - label: I understand that the developers have lives and my issue will be answered when possible.
+      required: true
+    - label: I understand the developers of this program are human, and I will make my requests politely.
+      required: true
+
+- type: markdown
+  attributes:
+    value: |
+      ## Thanks!
+      Well-formatted issues improve ExllamaV2 and make the development process easier.
