@@ -1,0 +1,109 @@
+name: Bug report
+description: Report bugs with the project
+title: "[BUG]"
+labels: bug
+body:
+
+- type: markdown
+  attributes:
+    value: |
+      ### Disclaimer:
+      Github Issues are **only** for code related bugs.
+      Please fill in as many fields as possible so we can understand the relevant parts of the issue.
+
+- type: dropdown
+  attributes:
+    label: OS
+    options:
+      - Windows
+      - Linux
+  validations:
+    required: true
+
+- type: dropdown
+  attributes:
+    label: GPU Library
+    description: Ex. CUDA, ROCm
+    options:
+      - CUDA 12.x
+      - CUDA 11.8
+      - AMD ROCm
+  validations:
+    required: true
+
+- type: dropdown
+  attributes:
+    label: Python version
+    options:
+      - '3.12'
+      - '3.11'
+      - '3.10'
+  validations:
+    required: true
+
+- type: input
+  attributes:
+    label: Pytorch version
+  validations:
+    required: True
+
+- type: input
+  attributes:
+    label: Model
+    description: Provide a model if the issue is related to one
+    placeholder: HF Repo Author/Model Name
+  validations:
+    required: False
+
+- type: textarea
+  attributes:
+    label: Describe the bug
+    description: A clear and concise description of what the bug is.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Reproduction steps
+    description: Walk us through how the bug occurred and how to make it happen.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Expected behavior
+    description: What was expected to happen?
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Logs
+    description: If applicable, add logs and tracebacks to help explain your problem.
+  validations:
+    required: false
+
+- type: textarea
+  attributes:
+    label: Additional context
+    description: Add any other context about the problem here.
+  validations:
+    required: false
+
+- type: checkboxes
+  attributes:
+    label: Acknowledgements
+    description: Before submitting this issue, please make sure you have completed the following checklist.
+    options:
+    - label: I have looked for similar issues before submitting this one.
+      required: true
+    - label: I understand that the developers have lives and my issue will be answered when possible.
+      required: true
+    - label: I understand the developers of this program are human, and I will ask my questions politely.
+      required: true
+
+- type: markdown
+  attributes:
+    value: |
+      ## Thanks!
+      Well-formatted issues improve ExllamaV2 and make the development process easier.
