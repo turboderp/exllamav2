@@ -13,7 +13,7 @@ class ExLlamaV2Filter:
     tokenizer: ExLlamaV2Tokenizer
     sequence_str: str
 
-    background_result: Future | None = None
+    background_result: Future | None
 
     # For compatibility
     allow_return_type_list: bool = True
@@ -25,6 +25,7 @@ class ExLlamaV2Filter:
         self.model = model
         self.tokenizer = tokenizer
         self.sequence_str = ""
+        self.background_result = None
 
 
     def clone(self, c = None):
