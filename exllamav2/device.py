@@ -17,6 +17,13 @@ import math
 global_streams = {}
 
 
+def set_device_streams():
+    global global_streams
+    for(k, v) in global_streams.items():
+        with torch.cuda.device(torch.device(k)):
+            torch.cuda.set_stream(v)
+
+
 class ExLlamaV2DeviceContext:
 
     model: ExLlamaV2

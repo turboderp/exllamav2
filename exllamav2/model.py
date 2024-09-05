@@ -47,7 +47,7 @@ from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
-from exllamav2.device import ExLlamaV2DeviceContext
+from exllamav2.device import ExLlamaV2DeviceContext, set_device_streams
 from exllamav2.tensor_p import TPContext, BROADCAST_VC
 import gc
 import threading
@@ -923,6 +923,10 @@ class ExLlamaV2:
             seq_len <= self.config.max_output_len, \
             "seq_len exceeds max_output_len"
 
+        # Ensure streams are always set in the current thread
+
+        set_device_streams()
+
         # Output
 
         r = {}
@@ -944,10 +948,6 @@ class ExLlamaV2:
                 cache.current_seq_len = past_len
 
         device = self.modules[0].device_idx
-        if device is not None and device >= 0:
-            context = self.get_device_context(device)
-            if context:
-                torch.cuda.set_stream(context.stream)
 
         for idx, module in enumerate(self.modules):
 
@@ -969,9 +969,6 @@ class ExLlamaV2:
             n_device = module.device_idx
             if n_device is not None and n_device != device and n_device >= 0:
                 x = safe_move_tensor(x, n_device, non_blocking = True)
-                device = n_device
-                context = self.get_device_context(device)
-                torch.cuda.set_stream(context.stream)
 
             x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras, **kwargs)
 
