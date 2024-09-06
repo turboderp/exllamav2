@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -22,8 +22,8 @@ void rope_
     torch::Tensor x,
     torch::Tensor sin,
     torch::Tensor cos,
-    int past_len,
-    int num_heads,
+    int64_t past_len,
+    int64_t num_heads,
     int head_dim,
     torch::Tensor offsets,
     bool neox_style

@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -20,8 +20,8 @@ void gemm_half_half_half
     torch::Tensor a,
     torch::Tensor b,
     torch::Tensor c,
-    const float alpha,
-    const float beta,
+    const double alpha,
+    const double beta,
     bool force_cublas
 )
 {

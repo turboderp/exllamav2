@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <cstdint>
 #include <cstdio>
 #include <pybind11/pybind11.h>

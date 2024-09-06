@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -17,7 +17,7 @@
 void softcap_
 (
     torch::Tensor x,
-    float scale
+    double scale
 )
 {
     const at::cuda::OptionalCUDAGuard device_guard(device_of(x));

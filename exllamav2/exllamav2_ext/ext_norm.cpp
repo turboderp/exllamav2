@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -25,7 +25,7 @@ void rms_norm
     torch::Tensor x,
     torch::Tensor w,
     torch::Tensor y,
-    float epsilon
+    double epsilon
 )
 {
     bool input_fp32 = x.dtype() == torch::kFloat;
@@ -61,7 +61,7 @@ void rms_norm_tp
     std::vector<torch::Tensor> x,
     std::vector<torch::Tensor> w,
     std::vector<torch::Tensor> y,
-    float epsilon,
+    double epsilon,
     uintptr_t tp_context
 )
 {
@@ -96,7 +96,7 @@ void rms_norm_
 (
     torch::Tensor x,
     torch::Tensor w,
-    float epsilon
+    double epsilon
 )
 {
     rms_norm(x, w, x, epsilon);
@@ -111,7 +111,7 @@ void layer_norm
     torch::Tensor w,
     torch::Tensor b,
     torch::Tensor y,
-    float epsilon
+    double epsilon
 )
 {
     TORCH_CHECK_DTYPE(x, kHalf);
@@ -147,7 +147,7 @@ void layer_norm_
     torch::Tensor x,
     torch::Tensor w,
     torch::Tensor b,
-    float epsilon
+    double epsilon
 )
 {
     layer_norm(x, w, b, x, epsilon);
@@ -162,7 +162,7 @@ void head_norm
     torch::Tensor w,
     torch::Tensor b,
     torch::Tensor y,
-    float epsilon
+    double epsilon
 )
 {
     TORCH_CHECK_DTYPE(x, kHalf);
@@ -202,7 +202,7 @@ void head_norm_
     torch::Tensor x,
     torch::Tensor w,
     torch::Tensor b,
-    float epsilon
+    double epsilon
 )
 {
     head_norm(x, w, b, x, epsilon);
