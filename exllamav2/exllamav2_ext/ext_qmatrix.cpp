@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -32,7 +32,7 @@ uintptr_t make_q_matrix
     torch::Tensor gptq_g_idx,
     torch::Tensor bias,
     torch::Tensor temp_dq,
-    int max_dq_rows
+    int64_t max_dq_rows
 )
 {
     TORCH_CHECK_DTYPE(q_weight, kInt);
@@ -120,7 +120,7 @@ uintptr_t make_q_matrix_split
     torch::Tensor gptq_g_idx,
     torch::Tensor bias,
     torch::Tensor temp_dq,
-    int max_dq_rows
+    int64_t max_dq_rows
 )
 {
     TORCH_CHECK(
@@ -245,7 +245,7 @@ void gemm_half_q_half_tp
     const std::vector<torch::Tensor> &c,
     bool force_cuda,
     uintptr_t tp_context,
-    int t_device
+    int64_t t_device
 )
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);

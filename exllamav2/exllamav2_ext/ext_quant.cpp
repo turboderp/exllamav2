@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -50,7 +50,7 @@ void pack_columns
 (
     torch::Tensor input,
     torch::Tensor output,
-    int bits
+    int64_t bits
 )
 {
     const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
@@ -84,12 +84,12 @@ void quantize_err
     torch::Tensor input,
     torch::Tensor output,
     torch::Tensor scale,
-    float qzero,
-    float maxq,
-    float err_norm,
-    float min_p,
-    float max_p,
-    int p_grid
+    double qzero,
+    double maxq,
+    double err_norm,
+    double min_p,
+    double max_p,
+    int64_t p_grid
 )
 {
     TORCH_CHECK_DTYPE(input, kFloat);
@@ -126,8 +126,8 @@ void quantize
     torch::Tensor output,
     torch::Tensor scale,
     torch::Tensor out_q,
-    float qzero,
-    float maxq
+    double qzero,
+    double maxq
 )
 {
     TORCH_CHECK_DTYPE(input, kFloat);
@@ -152,15 +152,15 @@ void quantize
     );
 }
 
-std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, uint64_t, float> sim_anneal
+std::tuple<std::vector<std::tuple<uint64_t, double>>, std::vector<int64_t>, double, uint64_t, double> sim_anneal
 (
-    const std::vector<std::vector<std::tuple<uint64_t, float>>>& slots,
+    const std::vector<std::vector<std::tuple<uint64_t, double>>>& slots,
     uint64_t max_cost,
-    float initial_temp,
-    float cooling_factor,
-    float min_temp,
-    int iterations,
-    float norm
+    double initial_temp,
+    double cooling_factor,
+    double min_temp,
+    int64_t iterations,
+    double norm
 )
 {
     int num_slots = slots.size();

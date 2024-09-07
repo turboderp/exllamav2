@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -15,7 +15,8 @@
 
 #include "cpp/util.h"
 
-void fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_size, int offset, int width)
+void fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor,
+                 int64_t batch_size, int64_t offset, int64_t width)
 {
     TORCH_CHECK_DTYPE(in_tensor, kHalf);
     TORCH_CHECK_DTYPE(out_tensor, kUInt8);
@@ -46,7 +47,8 @@ void fp16_to_fp8(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_si
     );
 }
 
-void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor, int batch_size, int offset, int width)
+void fp8_to_fp16(torch::Tensor in_tensor, torch::Tensor out_tensor,
+                 int64_t batch_size, int64_t offset, int64_t width)
 {
     TORCH_CHECK_DTYPE(in_tensor, kUInt8);
     TORCH_CHECK_DTYPE(out_tensor, kHalf);
@@ -85,15 +87,15 @@ void fp16_to_q_kv
     torch::Tensor v_in,
     torch::Tensor v_out,
     torch::Tensor v_scales,
-    int batch_size,
-    int offset,
-    int width,
-    int page_size,
+    int64_t batch_size,
+    int64_t offset,
+    int64_t width,
+    int64_t page_size,
     torch::Tensor cache_seqlens,
     torch::Tensor block_table,
     torch::Tensor cal_k,
     torch::Tensor cal_v,
-    int wbits
+    int64_t wbits
 )
 {
     TORCH_CHECK_DTYPE(k_in, kHalf);
@@ -193,15 +195,15 @@ void q_to_fp16_kv
     torch::Tensor v_in,
     torch::Tensor v_out,
     torch::Tensor v_scales,
-    int batch_size,
-    int offset,
-    int width,
-    int page_size,
+    int64_t batch_size,
+    int64_t offset,
+    int64_t width,
+    int64_t page_size,
     torch::Tensor cache_seqlens,
     torch::Tensor block_table,
     torch::Tensor cal_k,
     torch::Tensor cal_v,
-    int wbits
+    int64_t wbits
 )
 {
     TORCH_CHECK_DTYPE(k_in, kUInt8);
@@ -310,7 +312,7 @@ int count_match
 (
     torch::Tensor a,
     torch::Tensor b,
-    int max_a
+    int64_t max_a
 )
 {
     uint64_t* pa = (uint64_t*) a.data_ptr();

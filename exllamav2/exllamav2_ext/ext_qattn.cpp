@@ -1,4 +1,4 @@
-#include <torch/extension.h>
+#include <torch/all.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
@@ -37,14 +37,14 @@ uintptr_t make_q_attn
 //    torch::Tensor temp_k,
 //    torch::Tensor temp_v,
     torch::Tensor temp_dq,
-    int max_rows,
-    int hidden_size,
-    int num_heads,
-    int num_kv_heads,
-    int head_dim,
-    int max_seq_len,
-    bool has_residual,
-    int rope_style,
+    int64_t max_rows,
+    int64_t hidden_size,
+    int64_t num_heads,
+    int64_t num_kv_heads,
+    int64_t head_dim,
+    int64_t max_seq_len,
+    bool64_t has_residual,
+    int64_t rope_style,
     torch::Tensor q_norm,
     torch::Tensor k_norm,
     torch::Tensor post_layernorm,
@@ -113,9 +113,9 @@ void q_attn_forward_1
 (
     uintptr_t q_attn,
     torch::Tensor x,
-    int batch_size,
-    int q_len,
-    int past_len,
+    int64_t batch_size,
+    int64_t q_len,
+    int64_t past_len,
     torch::Tensor past_lens,
     torch::Tensor q_temp,
     torch::Tensor k_temp,
@@ -160,8 +160,8 @@ void q_attn_forward_2
     uintptr_t q_attn,
     torch::Tensor x,
     torch::Tensor attn_output,
-    int batch_size,
-    int q_len,
+    int64_t batch_size,
+    int64_t q_len,
     const std::vector<uintptr_t>& loras,
     torch::Tensor loras_temp
 )
@@ -269,20 +269,20 @@ void tp_attn_forward_paged_
     const std::vector<torch::Tensor> &k_cache,
     const std::vector<torch::Tensor> &v_cache,
     const std::vector<torch::Tensor> &pre_layernorm,
-    float norm_epsilon,
+    double norm_epsilon,
     const std::vector<uintptr_t> &q_proj,
     const std::vector<uintptr_t> &k_proj,
     const std::vector<uintptr_t> &v_proj,
     const std::vector<uintptr_t> &o_proj,
-    int head_dim,
-    int rope_style,
-    int batch_size,
-    int q_len,
+    int64_t head_dim,
+    int64_t rope_style,
+    int64_t batch_size,
+    int64_t q_len,
     const std::vector<torch::Tensor> &sin,
     const std::vector<torch::Tensor> &cos,
     const std::vector<torch::Tensor> &past_lens,
     const std::vector<torch::Tensor> &block_index,
-    float scaling
+    double scaling
 )
 {
     auto fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
@@ -506,19 +506,19 @@ void tp_attn_forward_
     const std::vector<torch::Tensor> &k_cache,
     const std::vector<torch::Tensor> &v_cache,
     const std::vector<torch::Tensor> &pre_layernorm,
-    float norm_epsilon,
+    double norm_epsilon,
     const std::vector<uintptr_t> &q_proj,
     const std::vector<uintptr_t> &k_proj,
     const std::vector<uintptr_t> &v_proj,
     const std::vector<uintptr_t> &o_proj,
-    int head_dim,
-    int rope_style,
-    int batch_size,
-    int q_len,
+    int64_t head_dim,
+    int64_t rope_style,
+    int64_t batch_size,
+    int64_t q_len,
     const std::vector<torch::Tensor> &sin,
     const std::vector<torch::Tensor> &cos,
     const std::vector<torch::Tensor> &past_len_tp,
-    float scaling
+    double scaling
 )
 {
     auto fwd_kvcache_func = py::module_::import("flash_attn_2_cuda").attr("fwd_kvcache");
