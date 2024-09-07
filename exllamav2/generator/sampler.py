@@ -9,6 +9,7 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from copy import copy
 import threading
 from functools import lru_cache
+from collections import deque
 import re
 # import line_profiler
 
@@ -82,14 +83,16 @@ class ExLlamaV2Sampler:
 
         post_sampling_hooks: list[ExLlamaV2PostSamplingHook] = field(default_factory = list)
 
-        dry_allowed_length: int = 0  # 0 to disable
-        dry_base: float = 2.0
-        dry_multiplier: float = 2.0
-        dry_sequence_breakers: set[int] | None = None
+        dry_allowed_length: int = 2
+        dry_base: float = 1.75
+        dry_multiplier: float = 0.0  # 0 to disable
+        dry_sequence_breakers: set[int] | None = None  # None to default set derived from special characters (eng)
+        dry_range: int = 0  # 0 for unlimited reange
         dry_max_ngram: int = 20
 
         ngram_trie: dict[int, NgramNode] = None
         ngram_index: int = 0
+        ngram_history: deque[int] = field(default_factory = deque)
 
         @staticmethod
         def greedy(**kwargs) -> ExLlamaV2Sampler.Settings:
@@ -198,7 +201,11 @@ class ExLlamaV2Sampler:
 
         # Update trie with new ngrams
         seq_len = max(len(sequence_list) - 1, 0)
-        for i in range(max(settings.ngram_index - settings.dry_max_ngram, 0), seq_len):
+        new_beg = max(settings.ngram_index - settings.dry_max_ngram, 0)
+        new_end = seq_len
+        if settings.dry_range:
+            new_beg = max(new_beg, new_end - settings.dry_range)
+        for i in range(new_beg, new_end):
             node = settings.ngram_trie
             for j in range(i, min(i + settings.dry_max_ngram, seq_len)):
                 t = sequence_list[j]
@@ -206,10 +213,30 @@ class ExLlamaV2Sampler:
                     break
                 if t not in node.children:
                     node.children[t] = NgramNode(0, {})
-                if j >= settings.ngram_index:
-                    node.children[t].value += 1
                 node = node.children[t]
+                if j >= settings.ngram_index:
+                    node.value += 1
+            if len(settings.ngram_history) == 0 or settings.ngram_history[-1] < i:
+                settings.ngram_history.append(i)
         settings.ngram_index = seq_len
+
+        # Remove old ngrams
+        if settings.dry_range > 0:
+            assert settings.dry_range > settings.dry_max_ngram
+            tail_index = max(len(sequence_list) - settings.dry_range - 1, 0)
+            while settings.ngram_history[0] < tail_index:
+                i = settings.ngram_history.popleft()
+                node = settings.ngram_trie
+                for j in range(i, i + settings.dry_max_ngram):
+                    t = sequence_list[j]
+                    if t in settings.dry_sequence_breakers:
+                        break
+                    assert t in node.children
+                    node.children[t].value -= 1
+                    if node.children[t].value == 0:
+                        del node.children[t]
+                        break
+                    node = node.children[t]
 
         # Find longest ngram
         seq_len = len(sequence_list)
@@ -364,7 +391,7 @@ class ExLlamaV2Sampler:
 
         # DRY
 
-        if settings.dry_allowed_length:
+        if settings.dry_multiplier > 0.0:
             ExLlamaV2Sampler.apply_dry(settings, tokenizer, sequence_ids, logits)
 
         # Evaluate filters
