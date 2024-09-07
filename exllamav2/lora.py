@@ -67,7 +67,9 @@ class ExLlamaV2Lora:
             read_config = json.load(f)
 
         self.lora_r = read_config["r"]
-        self.lora_alpha = float(read_config["lora_alpha"])
+        self.lora_alpha = float(read_config["lora_alpha"] * math.sqrt(self.lora_r)
+                               ) if read_config.get("use_rslora", False
+                                                   ) else float(read_config["lora_alpha"])
         self.lora_scaling *= self.lora_alpha / self.lora_r
 
         if "fan_in_fan_out" in read_config and read_config["fan_in_fan_out"]:
