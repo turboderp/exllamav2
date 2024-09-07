@@ -8,6 +8,8 @@ from exllamav2.generator.hooks import ExLlamaV2PostSamplingHook
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from copy import copy
 import threading
+from functools import lru_cache
+import re
 # import line_profiler
 
 _tl_tensors = threading.local()
@@ -35,6 +37,12 @@ def _get_output_probs(shape, dtype):
         or _tl_tensors.output_probs.dtype != dtype:
         _tl_tensors.output_probs = torch.empty(shape, dtype = dtype)
     return _tl_tensors.output_probs
+
+
+@dataclass
+class NgramNode:
+    value: int = 0
+    children: dict[int, NgramNode] = field(default_factory = dict)
 
 
 class ExLlamaV2Sampler:
@@ -74,6 +82,15 @@ class ExLlamaV2Sampler:
 
         post_sampling_hooks: list[ExLlamaV2PostSamplingHook] = field(default_factory = list)
 
+        dry_allowed_length: int = 0  # 0 to disable
+        dry_base: float = 2.0
+        dry_multiplier: float = 2.0
+        dry_sequence_breakers: set[int] | None = None
+        dry_max_ngram: int = 20
+
+        ngram_trie: dict[int, NgramNode] = None
+        ngram_index: int = 0
+
         @staticmethod
         def greedy(**kwargs) -> ExLlamaV2Sampler.Settings:
             defaults = {
@@ -101,6 +118,11 @@ class ExLlamaV2Sampler:
             c.token_frequency_penalty = self.token_frequency_penalty
             c.token_presence_penalty = self.token_presence_penalty
             c.token_bias = None
+            c.dry_allowed_length = self.dry_allowed_length
+            c.dry_base = self.dry_allowed_length
+            c.dry_multiplier = self.dry_multiplier
+            c.dry_sequence_breakers = self.dry_sequence_breakers
+            c.dry_max_ngram = self.dry_max_ngram
             c.filters = []
             return c
 
@@ -138,6 +160,82 @@ class ExLlamaV2Sampler:
                 else:
                     raise ValueError("Incorrect type in allow_tokens list")
 
+
+    @staticmethod
+    @lru_cache(10)
+    def get_dry_default_sequence_breaker_tokens(
+        tokenizer: ExLlamaV2Tokenizer
+    ) -> set[int]:
+        result = set()
+        dry_default_sequence_breaker_chars = r".,!?<>\[\]\(\)\{\}\n\t\""
+        pattern = re.compile(r"[" + dry_default_sequence_breaker_chars + "]")
+        pieces = tokenizer.get_id_to_piece_list(include_special_tokens = True)
+        for t in range(len(pieces)):
+            if bool(pattern.search(pieces[t])):
+                result.add(t)
+        for t in tokenizer.extended_id_to_piece.keys():
+            result.add(t)
+        return result
+
+
+    @staticmethod
+    def apply_dry(
+        settings: ExLlamaV2Sampler.Settings,
+        tokenizer: ExLlamaV2Tokenizer,
+        sequence_ids: torch.Tensor,
+        logits: torch.Tensor
+    ):
+        if settings.ngram_trie is None:
+            settings.ngram_trie = NgramNode(0, {})
+            settings.ngram_index = 0
+
+        if settings.dry_sequence_breakers is None:
+            settings.dry_sequence_breakers = \
+                ExLlamaV2Sampler.get_dry_default_sequence_breaker_tokens(tokenizer)
+
+        # Convert sequence IDs to list once since .item() is slow
+        sequence_list = sequence_ids[0].tolist()
+
+        # Update trie with new ngrams
+        seq_len = max(len(sequence_list) - 1, 0)
+        for i in range(max(settings.ngram_index - settings.dry_max_ngram, 0), seq_len):
+            node = settings.ngram_trie
+            for j in range(i, min(i + settings.dry_max_ngram, seq_len)):
+                t = sequence_list[j]
+                if t in settings.dry_sequence_breakers:
+                    break
+                if t not in node.children:
+                    node.children[t] = NgramNode(0, {})
+                if j >= settings.ngram_index:
+                    node.children[t].value += 1
+                node = node.children[t]
+        settings.ngram_index = seq_len
+
+        # Find longest ngram
+        seq_len = len(sequence_list)
+        beg = max(seq_len - settings.dry_max_ngram, 0)
+        end = max(seq_len - settings.dry_allowed_length + 1, 0)
+        penalty_tokens = None
+        for i in range(beg, end):
+            node = settings.ngram_trie
+            for j in range(i, seq_len):
+                t = sequence_list[j]
+                if t not in node.children:
+                    break
+                node = node.children[t]
+            else:
+                penalty_tokens = node.children
+                ngram_prefix_length = j - i + 1
+                break
+
+        # Apply penalties if a node with children was reached at the end of the context, in which case
+        # those children count all ngrams of length > ngram_prefix_length
+        if penalty_tokens:
+            indices = torch.tensor([[list(penalty_tokens.keys())]], dtype = torch.long)
+            exc_length = ngram_prefix_length - settings.dry_allowed_length
+            penalty = -settings.dry_multiplier * settings.dry_base ** exc_length
+            penalties = torch.tensor([[[penalty * node.value for node in penalty_tokens.values()]]], dtype = torch.float)
+            logits.scatter_add_(-1, indices, penalties)
 
     @staticmethod
     # @profile
@@ -264,6 +362,11 @@ class ExLlamaV2Sampler:
             # logits = logits + settings.token_bias
             ext_c.fast_fadd_cpu(logits, settings.token_bias)
 
+        # DRY
+
+        if settings.dry_allowed_length:
+            ExLlamaV2Sampler.apply_dry(settings, tokenizer, sequence_ids, logits)
+
         # Evaluate filters
 
         if len(filters) > 0:
@@ -285,8 +388,8 @@ class ExLlamaV2Sampler:
                 # Special case if a single token passes
                 if len(pass_tokens) == 1 and return_top_tokens == 0 and prefix_token is None:
                     single_passed_token = next(iter(pass_tokens))
-                    output_tokens = torch.tensor([[single_passed_token]], dtype=torch.long)
-                    output_probs = torch.tensor([[1]], dtype=torch.float)
+                    output_tokens = torch.tensor([[single_passed_token]], dtype = torch.long)
+                    output_probs = torch.tensor([[1]], dtype = torch.float)
                     output_ktokens = none_tensor
                     output_kprobs = none_tensor
                     end_filter = (single_passed_token in end_tokens)
