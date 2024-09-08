@@ -72,10 +72,11 @@ class ExLlamaV2CacheBase:
         self.fixed_device = fixed_device
 
 
-    def create_state_tensors(self,
-                             copy_from: ExLlamaV2CacheBase | None,
-                             lazy = False):
-
+    def create_state_tensors(
+        self,
+        copy_from: ExLlamaV2CacheBase | None,
+        lazy = False
+    ):
         assert copy_from is None or lazy == False, "Cannot use lazy cache initialization while copying"
 
         if copy_from:
@@ -149,40 +150,45 @@ class ExLlamaV2CacheBase:
         self.current_seq_len -= 1
 
 
-    def get_kv_state(self,
-                     layer_idx: int,
-                     batch_size: int,
-                     offset: int,
-                     width: int,
-                     page_size: int = 0,
-                     cache_seqlens: torch.Tensor | None = None,
-                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
+    def get_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ) -> (torch.Tensor, torch.Tensor):
         raise NotImplementedError
 
 
-    def store_kv_state(self,
-                       layer_idx: int,
-                       batch_size: int,
-                       offset: int,
-                       width: int,
-                       page_size: int = 0,
-                       cache_seqlens: torch.Tensor | None = None,
-                       block_table: torch.Tensor | None = None):
+    def store_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ):
         raise NotImplementedError
 
 
     @torch.inference_mode
-    def copy_states(self,
-                    target: ExLlamaV2CacheBase,
-                    from_column: int,
-                    from_columns: int,
-                    to_column: int,
-                    to_columns: int,
-                    from_row: int,
-                    from_rows: int,
-                    to_row: int,
-                    to_rows: int):
-
+    def copy_states(
+        self,
+        target: ExLlamaV2CacheBase,
+        from_column: int,
+        from_columns: int,
+        to_column: int,
+        to_columns: int,
+        from_row: int,
+        from_rows: int,
+        to_row: int,
+        to_rows: int
+    ):
         assert from_rows == 1
         assert from_columns == to_columns
         assert to_column + to_columns <= target.max_seq_len
@@ -236,7 +242,6 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
         num_key_value_heads: int | None = None,
         fixed_device: int | None = None
     ):
-
         super().__init__(
             model,
             batch_size,
@@ -251,27 +256,30 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
         self.create_state_tensors(copy_from, lazy)
 
 
-    def get_kv_state(self,
-                     layer_idx: int,
-                     batch_size: int,
-                     offset: int,
-                     width: int,
-                     page_size: int = 0,
-                     cache_seqlens: torch.Tensor | None = None,
-                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
+    def get_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ) -> (torch.Tensor, torch.Tensor):
 
         return self.key_states[layer_idx], self.value_states[layer_idx]
 
 
-    def store_kv_state(self,
-                       layer_idx: int,
-                       batch_size: int,
-                       offset: int,
-                       width: int,
-                       page_size: int = 0,
-                       cache_seqlens: torch.Tensor | None = None,
-                       block_table: torch.Tensor | None = None):
-
+    def store_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ):
         pass
 
 
@@ -289,6 +297,7 @@ class ExLlamaV2Cache(ExLlamaV2CacheBase):
 
         new = ExLlamaV2Cache(self.model, self.batch_size, self.max_seq_len, self)
         return new
+
 
     def all_tensors(self):
         return self.key_states + self.value_states
@@ -339,14 +348,16 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
         self.temp_tensors[device] = (k, v)
 
 
-    def get_kv_state(self,
-                     layer_idx: int,
-                     batch_size: int,
-                     offset: int,
-                     width: int,
-                     page_size: int = 0,
-                     cache_seqlens: torch.Tensor | None = None,
-                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
+    def get_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ) -> (torch.Tensor, torch.Tensor):
 
         device = self.model.cache_map.get(layer_idx, self.fixed_device)
 
@@ -356,15 +367,16 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
         return temp_key_state, temp_value_state
 
 
-    def store_kv_state(self,
-                       layer_idx: int,
-                       batch_size: int,
-                       offset: int,
-                       width: int,
-                       page_size: int = 0,
-                       cache_seqlens: torch.Tensor | None = None,
-                       block_table: torch.Tensor | None = None):
-
+    def store_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ):
         device = self.model.cache_map.get(layer_idx, self.fixed_device)
 
         temp_key_state, temp_value_state = self.temp_tensors[device]
@@ -386,9 +398,9 @@ class ExLlamaV2Cache_8bit(ExLlamaV2CacheBase):
 
 
     def clone(self) -> ExLlamaV2Cache_8bit:
-
         new = ExLlamaV2Cache_8bit(self.model, self.batch_size, self.max_seq_len, self)
         return new
+
 
     def all_tensors(self):
         return self.key_states + self.value_states
@@ -413,7 +425,6 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
         num_key_value_heads: int | None = None,
         fixed_device: int | None = None
     ):
-
         super().__init__(
             model,
             batch_size,
@@ -466,14 +477,16 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
         self.temp_tensors[device] = (k, v)
 
 
-    def get_kv_state(self,
-                     layer_idx: int,
-                     batch_size: int,
-                     offset: int,
-                     width: int,
-                     page_size: int = 0,
-                     cache_seqlens: torch.Tensor | None = None,
-                     block_table: torch.Tensor | None = None) -> (torch.Tensor, torch.Tensor):
+    def get_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ) -> (torch.Tensor, torch.Tensor):
 
         device = self.model.cache_map.get(layer_idx, self.fixed_device)
 
@@ -515,15 +528,16 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
         return temp_key_state, temp_value_state
 
 
-    def store_kv_state(self,
-                       layer_idx: int,
-                       batch_size: int,
-                       offset: int,
-                       width: int,
-                       page_size: int = 0,
-                       cache_seqlens: torch.Tensor | None = None,
-                       block_table: torch.Tensor | None = None):
-
+    def store_kv_state(
+        self,
+        layer_idx: int,
+        batch_size: int,
+        offset: int,
+        width: int,
+        page_size: int = 0,
+        cache_seqlens: torch.Tensor | None = None,
+        block_table: torch.Tensor | None = None
+    ):
         if width == 0: return
 
         if self.q_block > 1 and not page_size:
@@ -672,7 +686,6 @@ class ExLlamaV2Cache_Q4(ExLlamaV2Cache_Q):
         num_key_value_heads: int | None = None,
         fixed_device: int | None = None
     ):
-
         super().__init__(
             model,
             batch_size,
@@ -698,7 +711,6 @@ class ExLlamaV2Cache_Q6(ExLlamaV2Cache_Q):
         num_key_value_heads: int | None = None,
         fixed_device: int | None = None
     ):
-
         super().__init__(
             model,
             batch_size,
@@ -724,7 +736,6 @@ class ExLlamaV2Cache_Q8(ExLlamaV2Cache_Q):
         num_key_value_heads: int | None = None,
         fixed_device: int | None = None
     ):
-
         super().__init__(
             model,
             batch_size,
@@ -794,6 +805,7 @@ class ExLlamaV2Cache_TP(ExLlamaV2CacheBase):
         cache_seqlens: torch.Tensor | list[torch.Tensor] | None = None,
         block_table: torch.Tensor | list[torch.Tensor] | None = None
     ) -> (torch.Tensor, torch.Tensor):
+
         kc, vc = [], []
         for idx, cache in enumerate(self.caches):
             k, v = cache.get_kv_state(

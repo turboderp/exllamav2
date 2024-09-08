@@ -9,16 +9,13 @@ from exllamav2.headnorm import ExLlamaV2HeadNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-from exllamav2.compat import safe_move_tensor
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
 from exllamav2.tensor_p import BROADCAST_KV, BROADCAST_Q
 import math
-# from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 import torch.nn.functional as F
 import inspect
 import os
-# from line_profiler import profile
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -30,6 +27,9 @@ has_flash_attn = False
 has_flash_attn_with_paged = False
 has_flash_attn_with_window = False
 has_flash_attn_with_softcap = False
+has_xformers = False
+has_lower_right_sdpa = False
+
 if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
 
     try:
@@ -63,8 +63,6 @@ if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
     except NameError:
         pass
 
-
-has_xformers = False
 if 'EXLLAMA_NO_XFORMERS' not in os.environ:
 
     try:
@@ -75,8 +73,6 @@ if 'EXLLAMA_NO_XFORMERS' not in os.environ:
     except ModuleNotFoundError:
         pass
 
-
-has_lower_right_sdpa = False
 if 'EXLLAMA_NO_SDPA' not in os.environ:
     try:
         from torch.nn.attention.bias import causal_lower_right
@@ -86,6 +82,9 @@ if 'EXLLAMA_NO_SDPA' not in os.environ:
 
 
 def assert_paged_attn():
+    """
+    Raise an exception if paged attention is not available.
+    """
     global has_flash_attn_with_paged
     assert has_flash_attn_with_paged, \
         "Paged attention required Flash Attention 2.5.7 or later"
@@ -128,14 +127,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     from exllamav2.attn_params import Params
     from exllamav2.attn_params import PagedParams
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 layer_idx: int,
-                 has_norm: bool = True,
-                 has_residual: bool = True,
-                 sliding_window: int = 0):
-
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        layer_idx: int,
+        has_norm: bool = True,
+        has_residual: bool = True,
+        sliding_window: int = 0
+    ):
         super().__init__(model, key)
 
         cfg = self.model.config
@@ -1312,14 +1312,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache: ExLlamaV2CacheBase | None = None,
-                      attn_params: ExLlamaV2Attention.Params | None = None,
-                      past_len: int | None = None,
-                      intermediates: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      **kwargs) -> torch.Tensor | dict:
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        past_len: int | None = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict:
+    
         global has_flash_attn
         global has_xformers
 
