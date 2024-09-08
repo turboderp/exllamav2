@@ -91,9 +91,11 @@ class ExLlamaV2Module:
         return size if measure else tensors
 
 
-    def load_weight(self,
-                    override_key: str | None = None,
-                    cpu: bool = False):
+    def load_weight(
+        self,
+        override_key: str | None = None,
+        cpu: bool = False
+    ):
 
         if override_key is not None:
             keys = [override_key]
@@ -142,14 +144,15 @@ class ExLlamaV2Module:
         return None
 
 
-    def load_weight_fused(self,
-                          f_key: str,
-                          f_beg: int,
-                          f_end: int,
-                          in_feat: int,
-                          out_feat: int,
-                          altpack_qkv: bool):
-
+    def load_weight_fused(
+        self,
+        f_key: str,
+        f_beg: int,
+        f_end: int,
+        in_feat: int,
+        out_feat: int,
+        altpack_qkv: bool
+    ):
         res = []
         for key in [f_key, f_key + ".weight", f_key + ".bias"]:
 

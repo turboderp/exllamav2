@@ -18,8 +18,10 @@ except AttributeError:
 
 tested_peer_copy = None
 
-def test_gpu_peer_copy(device_a: torch.Device,
-                       device_b: torch.Device):
+def test_gpu_peer_copy(
+    device_a: torch.Device,
+    device_b: torch.Device
+):
     global tested_peer_copy
 
     if tested_peer_copy is None:
@@ -47,9 +49,11 @@ def test_gpu_peer_copy(device_a: torch.Device,
         return False
 
 
-def safe_move_tensor(tensor: torch.Tensor | tuple[torch.Tensor],
-                     device: torch.Device | str | int,
-                     non_blocking = False):
+def safe_move_tensor(
+    tensor: torch.Tensor | tuple[torch.Tensor],
+    device: torch.Device | str | int,
+    non_blocking = False
+):
 
     # Accept tensor or tuple of tensors
 

@@ -232,6 +232,8 @@ class ExLlamaV2DynamicGenerator:
     max_sampling_threads: int
     min_sampling_threads: int
     sampling_pool: ThreadPoolExecutor
+    filter_pool: ThreadPoolExecutor
+    filter_queue: list
 
 
     def __init__(
@@ -442,6 +444,11 @@ class ExLlamaV2DynamicGenerator:
         self.min_sampling_threads = min_sampling_threads
         if max_sampling_threads > 1:
             self.sampling_pool = ThreadPoolExecutor(max_workers = max_sampling_threads)
+
+        # Filter threads
+
+        self.filter_pool = ThreadPoolExecutor(max_workers = 16)
+        self.filter_queue = []
 
         # Temp buffers for defrag
 
@@ -1130,6 +1137,14 @@ class ExLlamaV2DynamicGenerator:
             loras = self.current_loras,
         )["logits"]
 
+        # GPU workload is scheduled here, so launch any sampling filters that can run while waiting for CUDA
+
+        if self.filter_queue:
+            for f in self.filter_queue:
+                f.background_next(self.filter_pool)
+            time.sleep(0)
+            self.filter_queue.clear()
+
         # Pass logits to jobs for sampling
 
         batch_logits = self.logits_pinned[:device_logits.shape[0], :device_logits.shape[1], :]
@@ -1729,10 +1744,10 @@ class ExLlamaV2DynamicJob:
 
         # Start filters
 
-        # TODO: Try to move filter evaluation to the end of the forward pass, before sampling so it can potentially
-        #   occur while waiting for the CUDA queue
         if self.new_tokens == 0:
-            for f in self.filters: f.begin("")
+            for f in self.filters:
+                f.background_drop()
+                f.begin("")
 
         # Sample
 
@@ -1780,7 +1795,11 @@ class ExLlamaV2DynamicJob:
         # Feed filters
 
         if self.new_tokens >= 0:
-            for f in self.filters: f.feed(next_token)
+            for f in self.filters:
+                f.feed(next_token)
+                # Evaluate filter in background when possible
+                if f.use_background_worker():
+                    self.generator.filter_queue.append(f)
 
         # Accept token
 

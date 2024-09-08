@@ -91,8 +91,6 @@ void fp16_to_q_kv
     int page_size,
     torch::Tensor cache_seqlens,
     torch::Tensor block_table,
-    torch::Tensor cal_k,
-    torch::Tensor cal_v,
     int wbits
 )
 {
@@ -113,12 +111,6 @@ void fp16_to_q_kv
     TORCH_CHECK_SHAPES(k_in, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
 //    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
-
-    if (!cal_k.device().is_meta())
-        TORCH_CHECK_SHAPES_OPT(cal_k, 0, k_in, 2, 1);
-        TORCH_CHECK_SHAPES_OPT(cal_k, 1, k_in, 3, 1);
-        TORCH_CHECK_SHAPES_OPT(cal_v, 0, v_in, 2, 1);
-        TORCH_CHECK_SHAPES_OPT(cal_v, 1, v_in, 3, 1);
 
     if (page_size)
     {
@@ -145,8 +137,6 @@ void fp16_to_q_kv
             (const int*) block_table.data_ptr(),
             page_size,
             width,
-            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
-            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
             wbits
         );
     }
@@ -178,8 +168,6 @@ void fp16_to_q_kv
             height,
             offset,
             width,
-            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
-            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
             wbits
         );
     }
@@ -199,8 +187,6 @@ void q_to_fp16_kv
     int page_size,
     torch::Tensor cache_seqlens,
     torch::Tensor block_table,
-    torch::Tensor cal_k,
-    torch::Tensor cal_v,
     int wbits
 )
 {
@@ -221,12 +207,6 @@ void q_to_fp16_kv
     TORCH_CHECK_SHAPES(k_in, 1, v_in, 1, 1);
     TORCH_CHECK_SHAPES(k_in, 2, v_in, 2, 1);
 //    TORCH_CHECK_SHAPES(k_in, 3, v_in, 3, 1);
-
-    if (!cal_k.device().is_meta())
-        TORCH_CHECK_SHAPES_OPT(cal_k, 0, k_out, 2, 1);
-        TORCH_CHECK_SHAPES_OPT(cal_k, 1, k_out, 3, 1);
-        TORCH_CHECK_SHAPES_OPT(cal_v, 0, v_out, 2, 1);
-        TORCH_CHECK_SHAPES_OPT(cal_v, 1, v_out, 3, 1);
 
     if (page_size)
     {
@@ -252,8 +232,6 @@ void q_to_fp16_kv
             (const int*) cache_seqlens.data_ptr(),
             (const int*) block_table.data_ptr(),
             page_size,
-            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
-            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
             wbits
         );
     }
@@ -285,8 +263,6 @@ void q_to_fp16_kv
             height,
             offset,
             width,
-            cal_k.device().is_meta() ? NULL : (half*) cal_k.data_ptr(),
-            cal_v.device().is_meta() ? NULL : (half*) cal_v.data_ptr(),
             wbits
         );
     }

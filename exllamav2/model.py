@@ -47,7 +47,7 @@ from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
 from exllamav2.fasttensors import cleanup_stfiles
-from exllamav2.device import ExLlamaV2DeviceContext
+from exllamav2.device import ExLlamaV2DeviceContext, set_device_streams
 from exllamav2.tensor_p import TPContext, BROADCAST_VC
 import gc
 import threading
@@ -151,9 +151,11 @@ class ExLlamaV2:
         self.last_kv_layer_idx = layer_idx
 
 
-    def set_device_map(self,
-                       allocation: list[float],
-                       embed_cpu: bool = True) -> list[float]:
+    def set_device_map(
+        self,
+        allocation: list[float],
+        embed_cpu: bool = True
+    ) -> list[float]:
 
         self.cache_map = {}
 
@@ -727,19 +729,20 @@ class ExLlamaV2:
 
 
     @torch.inference_mode()
-    def forward(self,
-                input_ids: torch.Tensor,
-                cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
-                input_mask: torch.Tensor | None = None,
-                preprocess_only: bool = False,
-                last_id_only: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None,
-                return_last_state: bool = False,
-                position_offsets: torch.Tensor | None = None,
-                abort_event: threading.Event | None = None,
-                cpu_logits: bool = False,
-                **kwargs) \
-        -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
+        input_mask: torch.Tensor | None = None,
+        preprocess_only: bool = False,
+        last_id_only: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        return_last_state: bool = False,
+        position_offsets: torch.Tensor | None = None,
+        abort_event: threading.Event | None = None,
+        cpu_logits: bool = False,
+        **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         """
         Runs a forward pass through the model. If a cache is used, also appends keys/values to the cache
         and advances it.
@@ -897,20 +900,21 @@ class ExLlamaV2:
 
     @torch.inference_mode()
     # @profile
-    def forward_chunk(self,
-                      input_ids: torch.Tensor,
-                      cache: ExLlamaV2CacheBase | None = None,
-                      input_mask: torch.Tensor | None = None,
-                      preprocess_only: bool = False,
-                      last_id_only: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      return_last_state: bool = False,
-                      position_offsets: torch.Tensor | None = None,
-                      abort_event: threading.Event | None = None,
-                      attn_params: ExLlamaV2Attention.Params | None = None,
-                      extract_state_indices: list[int] | None = None,
-                      **kwargs) \
-        -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    def forward_chunk(
+        self,
+        input_ids: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        input_mask: torch.Tensor | None = None,
+        preprocess_only: bool = False,
+        last_id_only: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        return_last_state: bool = False,
+        position_offsets: torch.Tensor | None = None,
+        abort_event: threading.Event | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        extract_state_indices: list[int] | None = None,
+        **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         batch_size, seq_len = input_ids.shape
         past_len = 0
@@ -922,6 +926,10 @@ class ExLlamaV2:
             last_id_only or \
             seq_len <= self.config.max_output_len, \
             "seq_len exceeds max_output_len"
+
+        # Ensure streams are always set in the current thread
+
+        set_device_streams()
 
         # Output
 
@@ -944,10 +952,6 @@ class ExLlamaV2:
                 cache.current_seq_len = past_len
 
         device = self.modules[0].device_idx
-        if device is not None and device >= 0:
-            context = self.get_device_context(device)
-            if context:
-                torch.cuda.set_stream(context.stream)
 
         for idx, module in enumerate(self.modules):
 
@@ -969,9 +973,6 @@ class ExLlamaV2:
             n_device = module.device_idx
             if n_device is not None and n_device != device and n_device >= 0:
                 x = safe_move_tensor(x, n_device, non_blocking = True)
-                device = n_device
-                context = self.get_device_context(device)
-                torch.cuda.set_stream(context.stream)
 
             x = module.forward(x, cache = cache, attn_params = attn_params, past_len = past_len, loras = loras, **kwargs)
 

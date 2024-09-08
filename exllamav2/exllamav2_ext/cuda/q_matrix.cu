@@ -772,8 +772,6 @@ void matrix_q4_to_fp16_cuda
         1,
         0,
         numel,
-        NULL,
-        NULL,
         4
     );
 }
@@ -801,8 +799,6 @@ void matrix_fp16_to_q4_cuda
         1,
         0,
         numel,
-        NULL,
-        NULL,
         4
     );
 }

@@ -9,16 +9,13 @@ from exllamav2.headnorm import ExLlamaV2HeadNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-from exllamav2.compat import safe_move_tensor
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.architecture import RopeStyle
 from exllamav2.tensor_p import BROADCAST_KV, BROADCAST_Q
 import math
-# from exllamav2.util import list_live_tensors, set_snapshot, diff_snapshot, print_vram_usage_peak
 import torch.nn.functional as F
 import inspect
 import os
-# from line_profiler import profile
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -30,6 +27,9 @@ has_flash_attn = False
 has_flash_attn_with_paged = False
 has_flash_attn_with_window = False
 has_flash_attn_with_softcap = False
+has_xformers = False
+has_lower_right_sdpa = False
+
 if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
 
     try:
@@ -63,8 +63,6 @@ if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
     except NameError:
         pass
 
-
-has_xformers = False
 if 'EXLLAMA_NO_XFORMERS' not in os.environ:
 
     try:
@@ -75,8 +73,6 @@ if 'EXLLAMA_NO_XFORMERS' not in os.environ:
     except ModuleNotFoundError:
         pass
 
-
-has_lower_right_sdpa = False
 if 'EXLLAMA_NO_SDPA' not in os.environ:
     try:
         from torch.nn.attention.bias import causal_lower_right
@@ -86,6 +82,9 @@ if 'EXLLAMA_NO_SDPA' not in os.environ:
 
 
 def assert_paged_attn():
+    """
+    Raise an exception if paged attention is not available.
+    """
     global has_flash_attn_with_paged
     assert has_flash_attn_with_paged, \
         "Paged attention required Flash Attention 2.5.7 or later"
@@ -128,14 +127,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     from exllamav2.attn_params import Params
     from exllamav2.attn_params import PagedParams
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 layer_idx: int,
-                 has_norm: bool = True,
-                 has_residual: bool = True,
-                 sliding_window: int = 0):
-
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        layer_idx: int,
+        has_norm: bool = True,
+        has_residual: bool = True,
+        sliding_window: int = 0
+    ):
         super().__init__(model, key)
 
         cfg = self.model.config
@@ -831,6 +831,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
 
+        num_attn_heads = q_states.shape[2]
+        head_dim = q_states.shape[3]
+
         q_states = q_states.transpose(1, 2)
         k_states = k_states.transpose(1, 2)
         v_states = v_states.transpose(1, 2)
@@ -881,7 +884,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_output = torch.matmul(attn_weights, v_states)
 
         attn_output = attn_output.transpose(1, 2)
-        attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+        attn_output = attn_output.reshape((batch_size, q_len, num_attn_heads * head_dim))
         return attn_output
 
 
@@ -955,8 +958,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 loras: list[ExLlamaV2Lora] | None = None,
                 **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
 
+        cfg = self.model.config
         global has_flash_attn
         global has_xformers
+        use_flash_attn = has_flash_attn and not cfg.no_flash_attn
 
         if isinstance(attn_params, ExLlamaV2Attention.PagedParams):
             return self.forward_paged(
@@ -968,7 +973,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             )
 
         if self.is_tp:
-            if cache is not None:
+            if cache is not None and use_flash_attn:
                 return self.forward_tp(
                     hidden_states,
                     cache,
@@ -1002,7 +1007,6 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 **kwargs
             )
 
-        cfg = self.model.config
         constants = self.model.get_device_context(self.device_idx)
 
         batch_size, q_len, _ = hidden_states.shape
@@ -1193,7 +1197,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         assert self.q_handle is not None
         use_flash_attn = has_flash_attn and not cfg.no_flash_attn
-        assert use_flash_attn, "Tensor parallel inference requires flash-attn"
+        if not use_flash_attn:
+            assert has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa and not cfg.attn_logit_softcapping, \
+                "TP attention without flash-attn must use Torch SDPA with lower-right attention mask " \
+                "(use PyTorch 2.4.0+) and does not support logit softcapping."
 
         hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = cfg.head_dim)
 
@@ -1236,24 +1243,50 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             torch.cuda.set_stream(context.stream)
 
             if k_cache is not None:
-                attn_output = flash_attn_with_kvcache(
-                    q = q[idx],
-                    k = k[idx],
-                    v = v[idx],
-                    k_cache = k_cache[idx],
-                    v_cache = v_cache[idx],
-                    causal = True,
-                    softmax_scale = self.scaling,
-                    cache_seqlens = attn_params.past_len_tp[idx]
-                )
+                if use_flash_attn:
+                    attn_output = flash_attn_with_kvcache(
+                        q = q[idx],
+                        k = k[idx],
+                        v = v[idx],
+                        k_cache = k_cache[idx],
+                        v_cache = v_cache[idx],
+                        causal = True,
+                        softmax_scale = self.scaling,
+                        cache_seqlens = attn_params.past_len_tp[idx]
+                    )
+                else:
+                    cache_a = attn_params.past_len
+                    cache_b = attn_params.past_len + q_len
+                    k_cache[idx][:batch_size, cache_a:cache_b, :, :].copy_(k[idx])
+                    v_cache[idx][:batch_size, cache_a:cache_b, :, :].copy_(v[idx])
+                    attn_output = self._attn_torch(
+                        batch_size,
+                        q_len,
+                        q[idx],
+                        k_cache[idx][:batch_size, :cache_b, :, :],
+                        v_cache[idx][:batch_size, :cache_b, :, :],
+                        attn_params,
+                        cfg
+                    )
             else:
-                attn_output = flash_attn_func(
-                    q[idx],
-                    k[idx],
-                    v[idx],
-                    causal = True,
-                    softmax_scale=self.scaling,
-                )
+                if use_flash_attn:
+                    attn_output = flash_attn_func(
+                        q[idx],
+                        k[idx],
+                        v[idx],
+                        causal = True,
+                        softmax_scale = self.scaling,
+                    )
+                else:
+                    attn_output = self._attn_torch(
+                        batch_size,
+                        q_len,
+                        q[idx],
+                        k[idx],
+                        v[idx],
+                        attn_params,
+                        cfg
+                    )
 
             attn_output = attn_output.view(batch_size * q_len, (b - a) * cfg.head_dim * cfg.num_key_value_groups)
             attn_outputs.append(attn_output)
@@ -1279,14 +1312,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache: ExLlamaV2CacheBase | None = None,
-                      attn_params: ExLlamaV2Attention.Params | None = None,
-                      past_len: int | None = None,
-                      intermediates: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      **kwargs) -> torch.Tensor | dict:
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        past_len: int | None = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict:
+    
         global has_flash_attn
         global has_xformers
 

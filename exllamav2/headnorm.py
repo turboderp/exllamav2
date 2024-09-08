@@ -21,11 +21,13 @@ class ExLlamaV2HeadNorm(ExLlamaV2Module):
     num_heads: int
 
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 num_heads: int,
-                 head_dim: int):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        num_heads: int,
+        head_dim: int
+    ):
         super().__init__(model, key)
 
         self.layernorm = None
@@ -101,14 +103,16 @@ class ExLlamaV2HeadNorm(ExLlamaV2Module):
         return 0
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras = None,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         norm = torch.empty_like(hidden_states)
         ext_c.head_norm(hidden_states,
@@ -122,14 +126,16 @@ class ExLlamaV2HeadNorm(ExLlamaV2Module):
         else:
             return hidden_states
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache = None,
-                      attn_params = None,
-                      past_len = None,
-                      intermediates: bool = False,
-                      loras = None,
-                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)

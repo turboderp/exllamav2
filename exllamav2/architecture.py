@@ -101,7 +101,17 @@ class RopeStyle(IntEnum):
 
 class ExLlamaV2ArchParams:
 
-    def __init__(self, arch_string, read_config):
+    def __init__(self, arch_string: str, read_config: dict):
+        """
+        Get architecture definition from model config. If the architecture isn't recognized, defaults to Llama
+        architecture.
+W
+        :param arch_string:
+            Architecture string from config.json
+
+        :param read_config:
+            config.json as Python dict
+        """
 
         self.arch_string = arch_string
         arch_recognized = False
