@@ -51,21 +51,23 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     broadcast_type_out: int | None
     is_sub_module: bool
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 in_features: int,
-                 out_features: int,
-                 has_bias: bool,
-                 pad32: bool = True,
-                 max_out_len: int | None = None,
-                 prescale: float = 1,
-                 f_key: str = None,
-                 f_beg: int = None,
-                 f_end: int = None,
-                 is_sub_module: bool = True,
-                 altpack_qkv: bool = False,
-                 normalize_unq: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        in_features: int,
+        out_features: int,
+        has_bias: bool,
+        pad32: bool = True,
+        max_out_len: int | None = None,
+        prescale: float = 1,
+        f_key: str = None,
+        f_beg: int = None,
+        f_end: int = None,
+        is_sub_module: bool = True,
+        altpack_qkv: bool = False,
+        normalize_unq: bool = False
+    ):
         super().__init__(model, key)
 
         self.is_sub_module = is_sub_module
@@ -110,12 +112,13 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
 
     @torch.inference_mode
-    def load(self,
-             w: dict | nn.Parameter | tuple | None = None,
-             device_context: bool = True,
-             unmap: bool = False,
-             output_map: torch.Tensor | None = None):
-
+    def load(
+        self,
+        w: dict | nn.Parameter | tuple | None = None,
+        device_context: bool = True,
+        unmap: bool = False,
+        output_map: torch.Tensor | None = None
+    ):
         cfg = self.model.config
 
         if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features, self.altpack_qkv)

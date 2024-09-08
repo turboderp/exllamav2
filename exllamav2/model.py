@@ -151,9 +151,11 @@ class ExLlamaV2:
         self.last_kv_layer_idx = layer_idx
 
 
-    def set_device_map(self,
-                       allocation: list[float],
-                       embed_cpu: bool = True) -> list[float]:
+    def set_device_map(
+        self,
+        allocation: list[float],
+        embed_cpu: bool = True
+    ) -> list[float]:
 
         self.cache_map = {}
 
@@ -727,19 +729,20 @@ class ExLlamaV2:
 
 
     @torch.inference_mode()
-    def forward(self,
-                input_ids: torch.Tensor,
-                cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
-                input_mask: torch.Tensor | None = None,
-                preprocess_only: bool = False,
-                last_id_only: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None,
-                return_last_state: bool = False,
-                position_offsets: torch.Tensor | None = None,
-                abort_event: threading.Event | None = None,
-                cpu_logits: bool = False,
-                **kwargs) \
-        -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        cache: ExLlamaV2CacheBase | list[ExLlamaV2CacheBase] | None = None,
+        input_mask: torch.Tensor | None = None,
+        preprocess_only: bool = False,
+        last_id_only: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        return_last_state: bool = False,
+        position_offsets: torch.Tensor | None = None,
+        abort_event: threading.Event | None = None,
+        cpu_logits: bool = False,
+        **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
         """
         Runs a forward pass through the model. If a cache is used, also appends keys/values to the cache
         and advances it.
@@ -897,20 +900,21 @@ class ExLlamaV2:
 
     @torch.inference_mode()
     # @profile
-    def forward_chunk(self,
-                      input_ids: torch.Tensor,
-                      cache: ExLlamaV2CacheBase | None = None,
-                      input_mask: torch.Tensor | None = None,
-                      preprocess_only: bool = False,
-                      last_id_only: bool = False,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      return_last_state: bool = False,
-                      position_offsets: torch.Tensor | None = None,
-                      abort_event: threading.Event | None = None,
-                      attn_params: ExLlamaV2Attention.Params | None = None,
-                      extract_state_indices: list[int] | None = None,
-                      **kwargs) \
-        -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    def forward_chunk(
+        self,
+        input_ids: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        input_mask: torch.Tensor | None = None,
+        preprocess_only: bool = False,
+        last_id_only: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        return_last_state: bool = False,
+        position_offsets: torch.Tensor | None = None,
+        abort_event: threading.Event | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        extract_state_indices: list[int] | None = None,
+        **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         batch_size, seq_len = input_ids.shape
         past_len = 0

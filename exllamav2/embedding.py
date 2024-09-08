@@ -20,9 +20,11 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
     is_tp: bool
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str
+    ):
         super().__init__(model, key)
 
         self.is_tp = False
@@ -93,14 +95,16 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         return 0
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params: ExLlamaV2Attention.Params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras = None,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params: ExLlamaV2Attention.Params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         cfg = self.model.config
 

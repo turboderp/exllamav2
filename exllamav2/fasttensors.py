@@ -52,11 +52,12 @@ class STFile:
     st_context = None
     tensor_remap: dict | None
 
-    def __init__(self,
-                 filename: str,
-                 fast: bool = True,
-                 keymap: list[tuple[str, str]] = None):
-
+    def __init__(
+        self,
+        filename: str,
+        fast: bool = True,
+        keymap: list[tuple[str, str]] = None
+    ):
         global global_stfiles
 
         self.metadata = None
@@ -101,9 +102,11 @@ class STFile:
 
 
     @staticmethod
-    def open(filename,
-             fast = True,
-             keymap: list[tuple[str, str]] = None) -> STFile:
+    def open(
+        filename,
+        fast = True,
+        keymap: list[tuple[str, str]] = None
+    ) -> STFile:
         """
         Open safetensors file, scan header and retain handle.
 
@@ -181,12 +184,14 @@ class STFile:
         return f
 
 
-    def get_tensor(self,
-                   key: str,
-                   device,
-                   not_fast: bool = False,
-                   cached: bool = False,
-                   out_dtype = None) -> torch.Tensor:
+    def get_tensor(
+        self,
+        key: str,
+        device,
+        not_fast: bool = False,
+        cached: bool = False,
+        out_dtype = None
+    ) -> torch.Tensor:
         global global_tensorcache
 
         torch.cuda.synchronize()

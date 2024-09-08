@@ -40,11 +40,12 @@ class ExLlamaV2DeviceContext:
 
     stream: torch.cuda.Stream
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 device_idx: int,
-                 scratch_bytes: int):
-
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        device_idx: int,
+        scratch_bytes: int
+    ):
         self.model = model
         self.device_idx = device_idx
         self.ready = False

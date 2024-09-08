@@ -106,24 +106,26 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         if self.w1[0].is_quant():
             device_context = self.model.get_device_context(self.device_idx)
             device_context.begin_scratch_alloc()
-            self.q_handle = ext_c.make_q_moe_mlp(self.post_attention_layernorm.weight,
-                                                 self.post_attention_layernorm.bias if self.post_attention_layernorm.bias is not None else none_tensor,
-                                                 isinstance(self.post_attention_layernorm, ExLlamaV2RMSNorm),
-                                                 self.post_attention_layernorm.variance_epsilon,
-                                                 self.gate.linear.weight,
-                                                 self.num_experts,
-                                                 self.num_experts_per_token,
-                                                 [w.q_handle for w in self.w1],
-                                                 [w.q_handle for w in self.w2],
-                                                 [w.q_handle for w in self.w3],
-                                                 device_context.get_scratch_slice(self.temp_state_size()),
-                                                 device_context.get_scratch_slice(self.temp_gathered_state_size()),
-                                                 device_context.get_scratch_slice(self.temp_a_size()),
-                                                 device_context.get_scratch_slice(self.temp_b_size()),
-                                                 device_context.get_scratch_slice(self.temp_logit_size()),
-                                                 device_context.get_scratch_slice(self.temp_dq_size()),
-                                                 self.model.config.max_input_len * self.model.config.max_batch_size,
-                                                 self.model.config.arch.mlp_act_func == "gelu")
+            self.q_handle = ext_c.make_q_moe_mlp(
+                self.post_attention_layernorm.weight,
+                self.post_attention_layernorm.bias if self.post_attention_layernorm.bias is not None else none_tensor,
+                isinstance(self.post_attention_layernorm, ExLlamaV2RMSNorm),
+                self.post_attention_layernorm.variance_epsilon,
+                self.gate.linear.weight,
+                self.num_experts,
+                self.num_experts_per_token,
+                [w.q_handle for w in self.w1],
+                [w.q_handle for w in self.w2],
+                [w.q_handle for w in self.w3],
+                device_context.get_scratch_slice(self.temp_state_size()),
+                device_context.get_scratch_slice(self.temp_gathered_state_size()),
+                device_context.get_scratch_slice(self.temp_a_size()),
+                device_context.get_scratch_slice(self.temp_b_size()),
+                device_context.get_scratch_slice(self.temp_logit_size()),
+                device_context.get_scratch_slice(self.temp_dq_size()),
+                self.model.config.max_input_len * self.model.config.max_batch_size,
+                self.model.config.arch.mlp_act_func == "gelu"
+            )
 
 
     def unload(self):
@@ -212,14 +214,16 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             self.w3[e].set_device_idx(idx)
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         batch_size, sequence_length, hidden_dim = hidden_states.shape
 
@@ -243,14 +247,16 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         return hidden_states
 
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache = None,
-                      attn_params = None,
-                      past_len = None,
-                      intermediates = False,
-                      loras: list[ExLlamaV2Lora] | None = None,
-                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         residual = hidden_states
 
