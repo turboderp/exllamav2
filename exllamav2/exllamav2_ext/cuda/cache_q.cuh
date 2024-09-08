@@ -9,7 +9,6 @@ inline __device__ void fp16_to_q
     unsigned char* __restrict__ out,
     half* __restrict__ scales,
     int block_offset,
-    const half* cal,
     int dim
 )
 {
@@ -18,7 +17,6 @@ inline __device__ void fp16_to_q
     __shared__ half s_buffer[BLOCKSIZE_Q / 32];
 
     half2 w2 = in2[t];
-    if (cal) w2 = __h2div(w2, *((half2*)(cal + (block_offset + t * 2) % dim)));
 
     // Perform hadamard transform on two interleaved 32-element groups. Don't scale output by 1/sqrt(32) here, instead
     // scale by 1/32 when dequantizing
@@ -118,7 +116,6 @@ inline __device__ void q_to_fp16
     const half* __restrict__ scales,
     half* __restrict__ out,
     int block_offset,
-    const half* cal,
     int dim
 )
 {
@@ -184,7 +181,6 @@ inline __device__ void q_to_fp16
     // Store
 
     half2* out2 = (half2*) (out + block_offset);
-    if (cal) w2 = __hmul2(w2, *((half2*)(cal + (block_offset + t * 2) % dim)));
     __stcg(&out2[t], w2);
 }
 

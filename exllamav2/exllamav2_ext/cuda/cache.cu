@@ -151,9 +151,7 @@ __global__ void fp16_to_q_kv_paged_kernel
     int pages_per_seq,
     int page_size,
     int dim,
-    int q_len,
-    const half* cal_k,
-    const half* cal_v
+    int q_len
 )
 {
     int t = threadIdx.x;
@@ -161,7 +159,6 @@ __global__ void fp16_to_q_kv_paged_kernel
     const half* in = kv ? v_in : k_in;
     half* scales = kv ? v_scales : k_scales;
     unsigned char* out = kv ? v_out : k_out;
-    const half* cal = kv ? cal_v : cal_k;
 
     int x = blockIdx.x;
     int y = blockIdx.z >> 1;
@@ -189,9 +186,9 @@ __global__ void fp16_to_q_kv_paged_kernel
         int j = i + blockIdx.y * BLOCKSIZE_Q;
         if (j >= block_b) continue;
         if (kv)
-            fp16_to_q<wbits_v>(t, in, out, scales, j, cal, dim);
+            fp16_to_q<wbits_v>(t, in, out, scales, j, dim);
         else
-            fp16_to_q<wbits_k>(t, in, out, scales, j, cal, dim);
+            fp16_to_q<wbits_k>(t, in, out, scales, j, dim);
     }
 }
 
@@ -206,9 +203,7 @@ __global__ void fp16_to_q_kv_kernel
     half* __restrict__ v_scales,
     int dim,
     int offset,
-    int stride,
-    const half* cal_k,
-    const half* cal_v
+    int stride
 )
 {
     int t = threadIdx.x;
@@ -216,13 +211,12 @@ __global__ void fp16_to_q_kv_kernel
     const half* in = kv ? v_in : k_in;
     unsigned char* out = kv ? v_out : k_out;
     half* scales = kv ? v_scales : k_scales;
-    const half* cal = kv ? cal_v : cal_k;
     int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
 
     if (kv)
-        fp16_to_q<wbits_v>(t, in, out, scales, block_offset, cal, dim);
+        fp16_to_q<wbits_v>(t, in, out, scales, block_offset, dim);
     else
-        fp16_to_q<wbits_k>(t, in, out, scales, block_offset, cal, dim);
+        fp16_to_q<wbits_k>(t, in, out, scales, block_offset, dim);
 }
 
 void array_fp16_to_q_kv_paged_cuda
@@ -241,8 +235,6 @@ void array_fp16_to_q_kv_paged_cuda
     const int* block_table,
     int page_size,
     int q_len,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 )
 {
@@ -259,8 +251,7 @@ void array_fp16_to_q_kv_paged_cuda
             v_in, v_out, v_scales,
             cache_seqlens, block_table,
             pages_per_seq, page_size,
-            dim, q_len,
-            cal_k, cal_v
+            dim, q_len
         );
     else if (wbits == 6)
         fp16_to_q_kv_paged_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>
@@ -269,8 +260,7 @@ void array_fp16_to_q_kv_paged_cuda
             v_in, v_out, v_scales,
             cache_seqlens, block_table,
             pages_per_seq, page_size,
-            dim, q_len,
-            cal_k, cal_v
+            dim, q_len
         );
     else if (wbits == 8)
         fp16_to_q_kv_paged_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>
@@ -279,8 +269,7 @@ void array_fp16_to_q_kv_paged_cuda
             v_in, v_out, v_scales,
             cache_seqlens, block_table,
             pages_per_seq, page_size,
-            dim, q_len,
-            cal_k, cal_v
+            dim, q_len
         );
 }
 
@@ -298,8 +287,6 @@ void array_fp16_to_q_kv_cuda
     int height,
     int offset,
     int width,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 )
 {
@@ -313,22 +300,19 @@ void array_fp16_to_q_kv_cuda
         fp16_to_q_kv_kernel<4, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
-            dim, offset, stride,
-            cal_k, cal_v
+            dim, offset, stride
         );
     else if (wbits == 6)
         fp16_to_q_kv_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
-            dim, offset, stride,
-            cal_k, cal_v
+            dim, offset, stride
         );
     else if (wbits == 8)
         fp16_to_q_kv_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_out, k_scales,
             v_in, v_out, v_scales,
-            dim, offset, stride,
-            cal_k, cal_v
+            dim, offset, stride
         );
 }
 
@@ -347,9 +331,7 @@ __global__ void q_to_fp16_kv_paged_kernel
     const int* __restrict__ block_table,
     int pages_per_seq,
     int page_size,
-    int dim,
-    const half* cal_k,
-    const half* cal_v
+    int dim
 )
 {
     int t = threadIdx.x;
@@ -357,7 +339,6 @@ __global__ void q_to_fp16_kv_paged_kernel
     const unsigned char* in = kv ? v_in : k_in;
     const half* scales = kv ? v_scales : k_scales;
     half* out = kv ? v_out : k_out;
-    const half* cal = kv ? cal_v : cal_k;
 
     int x = blockIdx.x;
     int y = blockIdx.z >> 1;
@@ -383,9 +364,9 @@ __global__ void q_to_fp16_kv_paged_kernel
         int j = i + blockIdx.y * BLOCKSIZE_Q;
         if (j >= block_b) continue;
         if (kv)
-            q_to_fp16<wbits_v>(t, in, scales, out, j, cal, dim);
+            q_to_fp16<wbits_v>(t, in, scales, out, j, dim);
         else
-            q_to_fp16<wbits_k>(t, in, scales, out, j, cal, dim);
+            q_to_fp16<wbits_k>(t, in, scales, out, j, dim);
     }
 }
 
@@ -400,9 +381,7 @@ __global__ void q_to_fp16_kv_kernel
     half* __restrict__ v_out,
     int dim,
     int offset,
-    int stride,
-    const half* cal_k,
-    const half* cal_v
+    int stride
 )
 {
     int t = threadIdx.x;
@@ -410,13 +389,12 @@ __global__ void q_to_fp16_kv_kernel
     const unsigned char* in = kv ? v_in : k_in;
     const half* scales = kv ? v_scales : k_scales;
     half* out = kv ? v_out : k_out;
-    const half* cal = kv ? cal_v : cal_k;
     int block_offset = (offset + blockIdx.y * stride + blockIdx.x * BLOCKSIZE_Q);
 
     if (kv)
-        q_to_fp16<wbits_v>(t, in, scales, out, block_offset, cal, dim);
+        q_to_fp16<wbits_v>(t, in, scales, out, block_offset, dim);
     else
-        q_to_fp16<wbits_k>(t, in, scales, out, block_offset, cal, dim);
+        q_to_fp16<wbits_k>(t, in, scales, out, block_offset, dim);
 }
 
 void array_q_to_fp16_kv_paged_cuda
@@ -434,8 +412,6 @@ void array_q_to_fp16_kv_paged_cuda
     const int* cache_seqlens,
     const int* block_table,
     int page_size,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 )
 {
@@ -452,8 +428,7 @@ void array_q_to_fp16_kv_paged_cuda
             v_in, v_scales, v_out,
             cache_seqlens, block_table,
             pages_per_seq, page_size,
-            dim,
-            cal_k, cal_v
+            dim
         );
     else if (wbits == 6)
         q_to_fp16_kv_paged_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>
@@ -462,8 +437,7 @@ void array_q_to_fp16_kv_paged_cuda
             v_in, v_scales, v_out,
             cache_seqlens, block_table,
             pages_per_seq, page_size,
-            dim,
-            cal_k, cal_v
+            dim
         );
     else if (wbits == 8)
         q_to_fp16_kv_paged_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>
@@ -472,8 +446,7 @@ void array_q_to_fp16_kv_paged_cuda
             v_in, v_scales, v_out,
             cache_seqlens, block_table,
             pages_per_seq, page_size,
-            dim,
-            cal_k, cal_v
+            dim
         );
 }
 
@@ -491,8 +464,6 @@ void array_q_to_fp16_kv_cuda
     int height,
     int offset,
     int width,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 )
 {
@@ -506,21 +477,18 @@ void array_q_to_fp16_kv_cuda
         q_to_fp16_kv_kernel<4, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
-            dim, offset, stride,
-            cal_k, cal_v
+            dim, offset, stride
         );
     else if (wbits == 6)
         q_to_fp16_kv_kernel<8, 4><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
-            dim, offset, stride,
-            cal_k, cal_v
+            dim, offset, stride
         );
     else if (wbits == 8)
         q_to_fp16_kv_kernel<8, 8><<<gridDim, blockDim, 0, stream>>>(
             k_in, k_scales, k_out,
             v_in, v_scales, v_out,
-            dim, offset, stride,
-            cal_k, cal_v
+            dim, offset, stride
         );
 }

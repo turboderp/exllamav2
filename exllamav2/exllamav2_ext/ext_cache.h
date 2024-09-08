@@ -16,8 +16,6 @@ void fp16_to_q_kv
     int page_size,
     torch::Tensor cache_seqlens,
     torch::Tensor block_table,
-    torch::Tensor cal_k,
-    torch::Tensor cal_v,
     int wbits
 );
 
@@ -35,8 +33,6 @@ void q_to_fp16_kv
     int page_size,
     torch::Tensor cache_seqlens,
     torch::Tensor block_table,
-    torch::Tensor cal_k,
-    torch::Tensor cal_v,
     int wbits
 );
 
@@ -49,6 +45,3 @@ int count_match
 
 //void array_fp16_to_fp8_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size);
 //void array_fp8_to_fp16_ref(torch::Tensor in_tensor, torch::Tensor out_tensor, int size);
-
-
-

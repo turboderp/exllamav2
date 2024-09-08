@@ -40,8 +40,6 @@ void array_fp16_to_q_kv_cuda
     int height,
     int offset,
     int width,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 );
 
@@ -59,8 +57,6 @@ void array_q_to_fp16_kv_cuda
     int height,
     int offset,
     int width,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 );
 
@@ -80,8 +76,6 @@ void array_fp16_to_q_kv_paged_cuda
     const int* block_table,
     int page_size,
     int q_len,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 );
 
@@ -100,8 +94,6 @@ void array_q_to_fp16_kv_paged_cuda
     const int* cache_seqlens,
     const int* block_table,
     int page_size,
-    const half* cal_k,
-    const half* cal_v,
     int wbits
 );
 

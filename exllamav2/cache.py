@@ -460,14 +460,6 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
             devs = self.model.get_cache_devices() if self.fixed_device is None else [self.fixed_device]
             for device in devs: self.touch_device(device)
 
-        # Calibration mode
-
-        self.calibrated = False
-        self.calibrating = False
-        self.calibration_rows = [0] * cfg.num_hidden_layers
-        self.calibration_k = {}
-        self.calibration_v = {}
-
 
     def touch_device(self, device):
 
@@ -516,14 +508,8 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
             block_table if block_table is not None else none_tensor,
             # none_tensor,
             # none_tensor
-            self.calibration_k[layer_idx] if self.calibrated else none_tensor,
-            self.calibration_v[layer_idx] if self.calibrated else none_tensor,
             self.wbits
         )
-
-        # if self.calibrated:
-        #     temp_key_state *= self.calibration_k[layer_idx]
-        #     temp_value_state *= self.calibration_v[layer_idx]
 
         return temp_key_state, temp_value_state
 
@@ -551,10 +537,6 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
         device = self.model.cache_map.get(layer_idx, self.fixed_device)
         temp_key_state, temp_value_state = self.temp_tensors[device]
 
-        # if self.calibrated:
-        #     temp_key_state /= self.calibration_k[layer_idx]
-        #     temp_value_state /= self.calibration_v[layer_idx]
-
         ext_c.fp16_to_q_kv(
             temp_key_state,
             self.key_states[layer_idx],
@@ -570,39 +552,8 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
             block_table if block_table is not None else none_tensor,
             # none_tensor,
             # none_tensor
-            self.calibration_k[layer_idx] if self.calibrated else none_tensor,
-            self.calibration_v[layer_idx] if self.calibrated else none_tensor,
             self.wbits
         )
-
-        # Collect calibration data
-
-        if self.calibrating:
-
-            cfg = self.model.config
-
-            if layer_idx not in self.calibration_k:
-                self.calibration_k[layer_idx] = torch.zeros(
-                    (cfg.num_key_value_heads, cfg.head_dim,),
-                    dtype = torch.float,
-                    device = temp_key_state.device
-                )
-                self.calibration_v[layer_idx] = torch.zeros(
-                    (cfg.num_key_value_heads, cfg.head_dim,),
-                    dtype = torch.float,
-                    device = temp_key_state.device
-                )
-
-            b, l, h, d = temp_key_state.shape
-            cal_k = self.calibration_k[layer_idx]
-            cal_v = self.calibration_v[layer_idx]
-            cal_k_input = temp_key_state[:, offset:offset+width, :, :].view(b * width, h * d)
-            cal_v_input = temp_value_state[:, offset:offset+width, :, :].view(b * width, h * d)
-            cal_k_sum = torch.norm(cal_k_input, p = 1, dim = 0, dtype = torch.float)
-            cal_v_sum = torch.norm(cal_v_input, p = 1, dim = 0, dtype = torch.float)
-            cal_k.add_(cal_k_sum.view(h, d))
-            cal_v.add_(cal_v_sum.view(h, d))
-            self.calibration_rows[layer_idx] += width
 
 
     def footprint(self) -> list[int]:
@@ -623,55 +574,11 @@ class ExLlamaV2Cache_Q(ExLlamaV2CacheBase):
 
 
     def clone(self) -> ExLlamaV2Cache_Q4:
-
         new = ExLlamaV2Cache_Q4(self.model, self.batch_size, self.max_seq_len, self)
         return new
 
-
     def all_tensors(self):
         return self.key_states + self.value_states + self.key_scales + self.value_scales
-
-
-    def calibrate(self,
-        tokenizer: ExLlamaV2Tokenizer,
-        num_batches = 8,
-        num_samples_per_batch = 256
-    ):
-        """
-        Unfinished
-        """
-
-        assert self.max_seq_len >= num_samples_per_batch, \
-            f"Cache max_seq_len must be at least {num_samples_per_batch} to calibrate."
-
-        self.calibrating = True
-        torch.manual_seed(123)
-
-        for _ in range(num_batches):
-
-            input_ids = torch.randint(
-                low = 0,
-                high = tokenizer.get_vocab_size() - 1,
-                size = (1, num_samples_per_batch),
-                dtype = torch.long
-            )
-
-            self.reset()
-            self.model.forward(input_ids, preprocess_only = True, cache = self)
-
-        self.calibrating = False
-
-        for i in range(self.model.config.num_hidden_layers):
-            cal_k = self.calibration_k[i] / self.calibration_rows[i]  # self.calibration_k[i].mean()
-            cal_v = self.calibration_v[i] / self.calibration_rows[i]  # self.calibration_v[i].mean()
-            cal_k = cal_k ** (1/8)
-            cal_v = cal_v ** (1/8)
-            cal_k = cal_k.half() * (-1)
-            cal_v = cal_v.half() * (-1)
-            self.calibration_k[i] = cal_k
-            self.calibration_v[i] = cal_v
-        self.calibrating = False
-        # self.calibrated = True
 
 
 class ExLlamaV2Cache_Q4(ExLlamaV2Cache_Q):
