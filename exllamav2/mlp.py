@@ -9,6 +9,7 @@ from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.tensor_p import BROADCAST_ID, BROADCAST_RS
+from exllamav2.util import substitute_inf_with_max
 # from line_profiler import profile
 
 from typing import TYPE_CHECKING
@@ -288,7 +289,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         if self.is_tp:
-            return self.forward_tp(
+            return substitute_inf_with_max(self.forward_tp(
                 hidden_states,
                 cache,
                 attn_params,
@@ -296,7 +297,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 intermediates,
                 loras,
                 **kwargs
-            )
+            ))
 
         cfg = self.model.config
 
@@ -319,7 +320,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if cfg.arch.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
-        return hidden_states
+        return substitute_inf_with_max(hidden_states)
 
 
     # @profile
@@ -457,9 +458,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if intermediates:
             return {"post_norm": post_norm,
                     "pre_down": y,
-                    "hidden_states": hidden_states}
+                    "hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)
 
 
     def update_loras(self):

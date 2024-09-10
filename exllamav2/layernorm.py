@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
+from exllamav2.util import substitute_inf_with_max
+
 class ExLlamaV2LayerNorm(ExLlamaV2Module):
 
     name: str = "LayerNorm"
@@ -119,9 +121,9 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         hidden_states = norm.view(output_shape)
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)
 
 
     def forward_torch(
@@ -139,8 +141,8 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         hidden_states = self.layernorm(hidden_states)
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)
 
 

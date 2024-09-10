@@ -2,6 +2,7 @@ from __future__ import annotations
 import os, sys
 
 from exllamav2.architecture import RopeStyle
+from exllamav2.util import substitute_inf_with_max
 
 min_version = (3, 8)
 if sys.version_info < min_version:
@@ -820,9 +821,9 @@ class ExLlamaV2:
             if abort_event and abort_event.is_set(): return
 
             if "last_state" in result:
-                return result.get("logits"), result["last_state"]
+                return substitute_inf_with_max(result.get("logits")), substitute_inf_with_max(result["last_state"])
             else:
-                return result.get("logits")
+                return substitute_inf_with_max(result.get("logits"))
 
         # Confirm that the input fits within the allocated cache space
 
@@ -893,9 +894,9 @@ class ExLlamaV2:
             last_state = r.get("last_state")
 
         if last_state is None:
-            return result
+            return substitute_inf_with_max(result)
         else:
-            return result, last_state
+            return substitute_inf_with_max(result), substitute_inf_with_max(last_state)
 
 
     @torch.inference_mode()

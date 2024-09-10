@@ -16,6 +16,7 @@ import math
 import torch.nn.functional as F
 import inspect
 import os
+from exllamav2.util import substitute_inf_with_max
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -964,17 +965,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         use_flash_attn = has_flash_attn and not cfg.no_flash_attn
 
         if isinstance(attn_params, ExLlamaV2Attention.PagedParams):
-            return self.forward_paged(
+            return substitute_inf_with_max(self.forward_paged(
                 hidden_states,
                 cache,
                 attn_params,
                 loras = loras,
                 **kwargs
-            )
+            ))
 
         if self.is_tp:
             if cache is not None and use_flash_attn:
-                return self.forward_tp(
+                return substitute_inf_with_max(self.forward_tp(
                     hidden_states,
                     cache,
                     attn_params,
@@ -982,11 +983,11 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                     intermediates,
                     loras,
                     **kwargs,
-                )
+                ))
             else:
                 # TODO: Can't use the optimized forward function because it writes directly to a fixed output
                 #   tensor, and flash-attn currently has a bug that prevents that from working when q_len == 1
-                return self.forward_tp_old(
+                return substitute_inf_with_max(self.forward_tp_old(
                     hidden_states,
                     cache,
                     attn_params,
@@ -994,7 +995,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                     intermediates,
                     loras,
                     **kwargs,
-                )
+                ))
 
         if self.q_handle is None or intermediates:
             return self.forward_torch(
@@ -1113,7 +1114,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cfg.arch.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
-        return hidden_states
+        return substitute_inf_with_max(hidden_states)
 
     def forward_tp(
         self,
@@ -1428,9 +1429,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if intermediates:
             return {"post_norm": post_norm,
                     "attn_output": attn_output,
-                    "hidden_states": hidden_states}
+                    "hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)
 
 
     def update_loras(self):
