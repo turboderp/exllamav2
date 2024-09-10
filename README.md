@@ -1,3 +1,7 @@
+## About this Fork
+
+This fork includes the changes needed to quantize Merge models (models made by merging others instead of finetuning).
+
 # ExLlamaV2
 
 ExLlamaV2 is an inference library for running local LLMs on modern consumer GPUs.
