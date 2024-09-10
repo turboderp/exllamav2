@@ -370,7 +370,7 @@ def pack_4bit(unpacked: torch.Tensor):
     return packed
 
 
-# Example function to substitute inf with the maximum value of the type
+# Function to substitute inf and NaN with the maximum value of the type
 def substitute_inf_with_max(tensor):
     dtype = tensor.dtype
     max_value = torch.finfo(dtype).max if dtype.is_floating_point else torch.iinfo(dtype).max
