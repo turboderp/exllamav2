@@ -11,6 +11,7 @@ import threading
 from functools import lru_cache
 from collections import deque
 import re
+import random
 # import line_profiler
 
 _tl_tensors = threading.local()
@@ -90,6 +91,11 @@ class ExLlamaV2Sampler:
         dry_range: int = 0  # 0 for unlimited reange
         dry_max_ngram: int = 20
 
+        xtc_threshold: float = 0.1
+        xtc_probability: float = 0.0 # 0 to disable
+        xtc_skipping_tokens: list[int] | None = None  # None to default list to newline and eos only
+        xtc_filter_value: float = float("-inf")
+
         ngram_trie: dict[int, NgramNode] = None
         ngram_index: int = 0
         ngram_history: deque[int] = field(default_factory = deque)
@@ -126,6 +132,10 @@ class ExLlamaV2Sampler:
             c.dry_multiplier = self.dry_multiplier
             c.dry_sequence_breakers = self.dry_sequence_breakers
             c.dry_max_ngram = self.dry_max_ngram
+            c.xtc_threshold = self.xtc_threshold
+            c.xtc_probability = self.xtc_probability
+            c.xtc_skipping_tokens = self.xtc_skipping_tokens
+            c.xtc_filter_value = self.xtc_filter_value
             c.filters = []
             return c
 
@@ -263,6 +273,59 @@ class ExLlamaV2Sampler:
             penalty = -settings.dry_multiplier * settings.dry_base ** exc_length
             penalties = torch.tensor([[[penalty * node.value for node in penalty_tokens.values()]]], dtype = torch.float)
             logits.scatter_add_(-1, indices, penalties)
+
+    @staticmethod
+    @lru_cache(10)
+    def get_xtc_default_skipping_tokens(
+        tokenizer: ExLlamaV2Tokenizer
+    ) -> list[int]:
+        # tokens to skip for xtc, including newline and eos tokens.
+        result = []
+        xtc_skipping_chars = r"\n"
+        pattern = re.compile(r"[" + xtc_skipping_chars + "]")
+        pieces = tokenizer.get_id_to_piece_list(include_special_tokens = True)
+        for t in range(len(pieces)):
+            if bool(pattern.search(pieces[t])):
+                result.append(t)
+        result.append(tokenizer.eos_token_id)
+        return result
+
+    @staticmethod
+    def apply_xtc(
+        settings: ExLlamaV2Sampler.Settings,
+        tokenizer: ExLlamaV2Tokenizer,
+        logits: torch.Tensor
+    ):
+        if random.random() >= settings.xtc_probability:
+            return
+        
+        # Create list for "\n" and eos tokens
+        if settings.xtc_skipping_tokens is None:
+            settings.xtc_skipping_tokens = \
+                ExLlamaV2Sampler.get_xtc_default_skipping_tokens(tokenizer)
+
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+        probs = sorted_logits.softmax(dim=-1)
+
+        sorted_indices_to_remove = torch.full_like(probs, False, dtype=torch.bool)
+
+        # This operation sets exactly those indices to `True` for which the next index has
+        # probability above the threshold. Since `probs` is sorted, those are the indices
+        # of all tokens that meet the threshold, *except* the least probable one.
+        sorted_indices_to_remove[..., :-1] = probs[..., 1:] >= settings.xtc_threshold
+
+        # Convert sorted_indices_to_remove to the original indices
+        indices_to_remove = sorted_indices_to_remove.scatter(-1, sorted_indices, sorted_indices_to_remove)
+        
+        # Check eos and newline tokens
+        if indices_to_remove[:, :, settings.xtc_skipping_tokens].any():
+            return
+
+        # Otherwise, remove tokens with the mask
+        # Original implementation used a "filter value" which is not modified anywhere
+        logits.masked_fill_(indices_to_remove, settings.xtc_filter_value)
+
+
 
     @staticmethod
     # @profile
@@ -504,6 +567,10 @@ class ExLlamaV2Sampler:
             settings.smoothing_factor,
             settings.skew
         )
+
+        # XTC
+        if settings.xtc_probability > 0.0:
+            ExLlamaV2Sampler.apply_xtc(settings, tokenizer, logits)
 
         if settings.mirostat: settings.mirostat_mu = m
 
