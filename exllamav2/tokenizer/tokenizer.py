@@ -8,6 +8,16 @@ from exllamav2.tokenizer import (
     ExLlamaV2TokenizerSPM,
     ExLlamaV2TokenizerHF
 )
+import threading
+
+
+lock = threading.RLock()
+def synchronized_init(func):
+    def wrapper(*args, **kwargs):
+        with lock:
+            return func(*args, **kwargs)
+    return wrapper
+
 
 class ExLlamaV2Tokenizer:
 
@@ -19,7 +29,6 @@ class ExLlamaV2Tokenizer:
         def __init__(self, children = None, leaf = None):
             self.children = children if children is not None else {}
             self.leaf = leaf if leaf is not None else []
-
 
     config: ExLlamaV2Config
 
@@ -567,8 +576,8 @@ class ExLlamaV2Tokenizer:
 
     # Get ordinals of single-byte tokens
 
+    @synchronized_init
     def get_id_to_ord_list(self):
-
         if self.id_to_ord is not None: return self.id_to_ord
 
         self.id_to_ord = []
@@ -594,6 +603,7 @@ class ExLlamaV2Tokenizer:
 
     # Copy vocabulary from model
 
+    @synchronized_init
     def get_id_to_piece_list(self, include_special_tokens = False):
 
         if include_special_tokens:
@@ -633,6 +643,7 @@ class ExLlamaV2Tokenizer:
         return self.id_to_piece
 
 
+    @synchronized_init
     def get_piece_to_id_dict(self):
 
         if self.piece_to_id is not None: return self.piece_to_id
@@ -644,6 +655,7 @@ class ExLlamaV2Tokenizer:
 
     # Create dictionary mapping prefixes to token IDs
 
+    @synchronized_init
     def get_prefix_to_ids_dict(self):
 
         if self.prefix_to_ids is not None: return self.prefix_to_ids
@@ -671,6 +683,7 @@ class ExLlamaV2Tokenizer:
 
     # Create dictionary mapping each ID to any IDs that it prefixes
 
+    @synchronized_init
     def get_prefix_id_to_ids_dict(self):
 
         if self.prefix_id_to_ids is not None: return self.prefix_id_to_ids
@@ -712,6 +725,7 @@ class ExLlamaV2Tokenizer:
         return trie
 
 
+    @synchronized_init
     def get_char_trie(self):
 
         if self.char_trie is not None: return self.char_trie
@@ -720,6 +734,7 @@ class ExLlamaV2Tokenizer:
         return self.char_trie
 
 
+    @synchronized_init
     def get_char_trie_ci(self):
 
         if self.char_trie_ci is not None: return self.char_trie_ci
