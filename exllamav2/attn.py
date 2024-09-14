@@ -840,7 +840,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # SDPA
 
-        if has_lower_right_sdpa and attn_params.is_causal() and not cfg.no_sdpa and not cfg.attn_logit_softcapping:
+        if has_lower_right_sdpa and not cfg.no_sdpa and not cfg.attn_logit_softcapping:
 
             k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
             v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
@@ -849,7 +849,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 k_states = k_states[:, :, -self.sliding_window:, :]
                 v_states = v_states[:, :, -self.sliding_window:, :]
 
-            attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
+            if attn_params.is_causal():
+                attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
+            else:
+                attn_mask_lr = attn_params.get_attn_mask(q_states.device)
             attn_output = F.scaled_dot_product_attention(
                 q_states,
                 k_states,
