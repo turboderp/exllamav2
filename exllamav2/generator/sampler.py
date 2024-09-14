@@ -400,12 +400,18 @@ class ExLlamaV2Sampler:
 
             pass_tokens = None
             end_tokens = None
-            for f in filters:
 
+            pts = []
+            ets = []
+            for f in filters:
                 pt, et = f.get_next()
-                if len(filters) > 1 and not isinstance(pt, set):
-                    if pt is not None: pt = set(pt)
-                    if et is not None: et = set(et)
+                if pt is not None:
+                    pts.append(pt)
+                    ets.append(et)
+
+            for pt, et in zip(pts, ets):
+                if len(pts) > 1 and not isinstance(pt, set):
+                    pt, et = set(pt), set(et)
 
                 if pt is not None: pass_tokens = pt if pass_tokens is None else pass_tokens & pt
                 if et is not None: end_tokens = et if end_tokens is None else end_tokens | et
