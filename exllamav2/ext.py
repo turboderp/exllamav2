@@ -298,13 +298,11 @@ none_tensor = torch.empty((1, 1), device = "meta")
 
 # Group map needed for irregular group sizes
 
-def make_group_map(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
-
+def make_group_map_py(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
     gr = q_groups.tolist()
     group_map = []
     num_groups = len(gr) // 2
     row = 0
-
     for i in range(num_groups):
         bits = gr[i * 2]
         if i < num_groups - 1:
@@ -315,8 +313,11 @@ def make_group_map(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
         for j in range(rows):
             group_map += [i]
             group_map += [rows - j]
-
     return torch.tensor(group_map, dtype = torch.short, device = q_groups.device)
+
+def make_group_map(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
+    group_map = ext_c.make_group_map(q_groups.cpu(), num_qrows).to(q_groups.device)
+    return group_map
 
 
 # Create Q matrix

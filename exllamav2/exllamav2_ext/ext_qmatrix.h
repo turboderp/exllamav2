@@ -1,4 +1,6 @@
 
+#include <vector>
+
 uintptr_t make_q_matrix
 (
     torch::Tensor q_weight,
@@ -75,5 +77,8 @@ void matrix_fp16_to_q4
     torch::Tensor out,
     torch::Tensor scales
 );
+
+torch::Tensor make_group_map(torch::Tensor& q_groups, int num_qrows);
+
 
 

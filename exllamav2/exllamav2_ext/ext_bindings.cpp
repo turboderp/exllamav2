@@ -68,6 +68,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("gemm_half_q_half_tp", &gemm_half_q_half_tp, "gemm_half_q_half_tp");
     m.def("matrix_fp16_to_q4", &matrix_fp16_to_q4, "matrix_fp16_to_q4");
     m.def("matrix_q4_to_fp16", &matrix_q4_to_fp16, "matrix_q4_to_fp16");
+    m.def("make_group_map", &make_group_map, "make_group_map");
 
     // qattn
 

@@ -578,7 +578,11 @@ class ExLlamaV2:
 
                     module.set_device_idx(current_device)
 
-                    hidden_state_backup = safe_move_tensor(hidden_state, "cpu").clone()
+                    hidden_state_backup = hidden_state
+                    # if hidden_state.device == "cpu":
+                    #     hidden_state_backup = hidden_state.clone()
+                    # else:
+                    #     hidden_state_backup = safe_move_tensor(hidden_state, "cpu").clone()
 
                     try:
                         if isinstance(module, ExLlamaV2Attention) or \

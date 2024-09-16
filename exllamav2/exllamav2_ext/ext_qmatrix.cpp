@@ -329,3 +329,25 @@ void matrix_fp16_to_q4
         numel
     );
 }
+
+torch::Tensor make_group_map(torch::Tensor& q_groups, int num_qrows)
+{
+    TORCH_CHECK_DTYPE(q_groups, kShort);
+    int num_groups = q_groups.size(0) / 2;
+    int16_t* gr = (int16_t*) q_groups.data_ptr();
+
+    std::vector<int16_t> group_map;
+    for (int i = 0; i < num_groups; ++i)
+    {
+        int bits = gr[i * 2];
+        int qrows = i < num_groups - 1 ? gr[i * 2 + 3] - gr[i * 2 + 1] : num_qrows - gr[i * 2 + 1];
+        int rows = (qrows * 32) / bits;
+        for (int j = 0; j < rows; ++j)
+        {
+            group_map.push_back(i);
+            group_map.push_back(rows - j);
+        }
+    }
+
+    return torch::tensor(group_map, torch::kShort);
+}
