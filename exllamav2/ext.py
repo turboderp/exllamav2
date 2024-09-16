@@ -213,7 +213,7 @@ if build_jit:
         "ext_qmlp.cpp",
         "ext_quant.cpp",
         "ext_rope.cpp",
-        "ext_safetensors.cpp",
+        "ext_stloader.cpp",
         "ext_sampling.cpp",
         "ext_element.cpp",
         "ext_tp.cpp",
@@ -250,7 +250,6 @@ if build_jit:
         "cpp/generator.cpp",
         "cpp/sampling.cpp",
         "cpp/sampling_avx2.cpp",
-        "cpp/safetensors.cpp"
     ]
 
     sources = [os.path.join(sources_dir, s) for s in sources_]

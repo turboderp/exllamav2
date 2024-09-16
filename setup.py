@@ -41,7 +41,7 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/ext_qmlp.cpp",
                 "exllamav2/exllamav2_ext/ext_quant.cpp",
                 "exllamav2/exllamav2_ext/ext_rope.cpp",
-                "exllamav2/exllamav2_ext/ext_safetensors.cpp",
+                "exllamav2/exllamav2_ext/ext_stloader.cpp",
                 "exllamav2/exllamav2_ext/ext_sampling.cpp",
                 "exllamav2/exllamav2_ext/ext_element.cpp",
                 "exllamav2/exllamav2_ext/ext_tp.cpp",
@@ -78,7 +78,6 @@ setup_kwargs = {
                 "exllamav2/exllamav2_ext/cpp/generator.cpp",
                 "exllamav2/exllamav2_ext/cpp/sampling.cpp",
                 "exllamav2/exllamav2_ext/cpp/sampling_avx2.cpp",
-                "exllamav2/exllamav2_ext/cpp/safetensors.cpp"
             ],
             extra_compile_args=extra_compile_args,
             libraries=["cublas"] if windows else [],

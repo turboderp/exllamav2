@@ -2,7 +2,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from exllamav2.config import ExLlamaV2Config
-from exllamav2.fasttensors import STFile
+from exllamav2.stloader import STFile
 from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
@@ -81,7 +81,7 @@ class ExLlamaV2Module:
             submap_i[v].append(k)
 
         for v, ks in submap_i.items():
-            stfile = STFile.open(v, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
+            stfile = STFile.open(v, keymap = self.model.config.arch.keymap)
             for k in ks:
                 if measure:
                     size += stfile.measure(key + "." + k)
@@ -160,9 +160,8 @@ class ExLlamaV2Module:
             filename = cfg.tensor_file_map.get(key)
             if not filename: continue
 
-            stfile = STFile.open(filename, fast = cfg.fasttensors, keymap = cfg.arch.keymap)
-            # tensor = stfile.get_tensor(key, device = self.device()).half()
-            tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
+            stfile = STFile.open(filename, keymap = cfg.arch.keymap)
+            tensor = stfile.get_tensor(key, device = "cpu", out_dtype = torch.half)
 
             if cfg.arch.orig_weights_transposed and len(tensor.shape) == 2:
                 tensor = tensor.T

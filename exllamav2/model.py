@@ -46,7 +46,7 @@ from exllamav2.parallel_decoder import ExLlamaV2ParallelDecoder
 from exllamav2.embedding import ExLlamaV2Embedding
 from exllamav2.pos_embedding import ExLlamaV2PosEmbedding
 from exllamav2.compat import safe_move_tensor
-from exllamav2.fasttensors import cleanup_stfiles
+from exllamav2.stloader import cleanup_stfiles
 from exllamav2.device import ExLlamaV2DeviceContext, set_device_streams
 from exllamav2.tensor_p import TPContext, BROADCAST_VC
 import gc

@@ -22,7 +22,7 @@ def add_args(parser):
     parser.add_argument("-lm", "--low_mem", action = "store_true", help = "Enable VRAM optimizations, potentially trading off speed")
     parser.add_argument("-ept", "--experts_per_token", type = int, help = "Override MoE model's default number of experts per token")
     parser.add_argument("-lq4", "--load_q4", action = "store_true", help = "Load weights in Q4 mode")
-    parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Use alternative safetensors loader (with direct I/O when available)")
+    parser.add_argument("-fst", "--fast_safetensors", action = "store_true", help = "Deprecated (does nothing)")
     parser.add_argument("-ic", "--ignore_compatibility", action = "store_true", help = "Do not override model config options in case of compatibility issues")
     parser.add_argument("-chunk", "--chunk_size", type = int, help = "Chunk size ('input length')")
 
@@ -43,7 +43,6 @@ def print_options(args):
     if args.no_sdpa: print_opts += ["no_sdpa"]
     if args.no_graphs: print_opts += ["no_graphs"]
     if args.low_mem: print_opts += ["low_mem"]
-    if hasattr(args, "fast_safetensors") and args.fast_safetensors: print_opts += ["fast_safetensors"]
     if args.experts_per_token is not None: print_opts += [f"experts_per_token: {args.experts_per_token}"]
     if args.load_q4: print_opts += ["load_q4"]
     if args.ignore_compatibility: print_opts += ["ignore_compatibility"]
@@ -94,7 +93,6 @@ def init(
 
     config = ExLlamaV2Config()
     config.model_dir = args.model_dir
-    config.fasttensors = hasattr(args, "fast_safetensors") and args.fast_safetensors
     config.prepare()
 
     # Set config options
