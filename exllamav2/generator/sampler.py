@@ -510,7 +510,7 @@ class ExLlamaV2Sampler:
         # Stop condition from filters
 
         end_filter = False
-        if len(filters) > 0 and output_tokens[0].item() in end_tokens:
+        if len(filters) > 0 and end_tokens is not None and output_tokens[0].item() in end_tokens:
             end_filter = True
 
         return output_tokens, output_ktokens, output_kprobs, output_probs, end_filter
