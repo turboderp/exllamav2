@@ -72,7 +72,13 @@ class ExLlamaV2Tokenizer:
 
     tokenizer_config_dict: dict | None
 
-    def __init__(self, config, lazy_init = True, force_json = False):
+    def __init__(
+        self,
+        config,
+        lazy_init = True,
+        force_json = False,
+        force_spm = False
+    ):
         """
         Initialize tokenizer from model config
 
@@ -83,7 +89,13 @@ class ExLlamaV2Tokenizer:
             Defer initialization of some data structures to speed up loading
 
         :param force_json:
-            Use only tokenizer.json (HF) even if tokenizer.model (SPM) is available
+            No effect from v0.2.3. tokenizer.json is now preferred over tokenizer.model by default.
+            If True and no tokenizer.json is present in the model directory, will emit a warning before
+            falling back to SPM
+
+        :param force_spm:
+            Use only tokenizer.model (SentencePiece) even if tokenizer.model (HF Tokenizers)
+            is available
         """
 
         self.config = config
@@ -110,9 +122,14 @@ class ExLlamaV2Tokenizer:
         path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
         path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
 
-        if os.path.exists(path_spm) and not force_json: self.tokenizer_model = ExLlamaV2TokenizerSPM(path_spm)
-        elif os.path.exists(path_hf): self.tokenizer_model = ExLlamaV2TokenizerHF(path_hf)
-        else: raise FileNotFoundError("No supported tokenizer found.")
+        if os.path.exists(path_hf) and not force_spm:
+            self.tokenizer_model = ExLlamaV2TokenizerHF(path_hf)
+        elif os.path.exists(path_spm):
+            if force_json:
+                print(" !! Warning: Tokenizer loading with force_json = True but no tokenizer.json found, falling back to tokenizer.model")
+            self.tokenizer_model = ExLlamaV2TokenizerSPM(path_spm)
+        else:
+            raise FileNotFoundError("No supported tokenizer found.")
 
         # Attempt to load added tokens from tokenizer.json
 
