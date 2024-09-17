@@ -61,7 +61,6 @@ class ExLlamaV2Config:
     no_flash_attn: bool                         # Implementation will automatically use flash-attn-2 when available, set True to override
     no_xformers: bool                           # Implementation will automatically use xformers for sm<80 when available, unless flash-attn-2 is available, set True to override
     no_sdpa: bool                               # Do not use Torch SDPA even if causal_lower_right bias is available (seems to be unreliable on ROCm (?))
-    fasttensors: bool                           # Deprecated, has no effect
     load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
     no_graphs: bool                             # Do not use CUDA graphs
 
@@ -115,6 +114,10 @@ class ExLlamaV2Config:
     checkpoint_fused_mlp: bool
     checkpoint_offset_qzeros: bool
 
+    # Deprecated fields, kept for compatibiltiy
+
+    fasttensors: bool                           # Fasttensors loader removed in v0.2.3
+
 
     def __init__(self,
                  model_dir: str | None = None):
@@ -136,7 +139,6 @@ class ExLlamaV2Config:
         self.no_flash_attn = 'EXLLAMA_NO_FLASH_ATTN' in os.environ
         self.no_xformers = 'EXLLAMA_NO_XFORMERS' in os.environ
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
-        self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
         self.load_in_q4 = False
         self.no_graphs = 'EXLLAMA_NO_GRAPHS' in os.environ
 
