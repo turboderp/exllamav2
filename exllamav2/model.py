@@ -299,6 +299,7 @@ class ExLlamaV2:
         callback_gen: Callable[[int, int], None] | None = None
     ):
         with torch.inference_mode():
+            set_device_streams()
 
             stats_ = self.set_device_map(gpu_split or [99999])
 
@@ -406,6 +407,7 @@ class ExLlamaV2:
         # Load module weights
 
         with torch.inference_mode():
+            set_device_streams()
 
             for idx in range(len(self.modules)):
                 module = self.modules[idx]
@@ -514,6 +516,7 @@ class ExLlamaV2:
         loras = None  # TODO: Autosplit load with LoRAs
 
         with torch.inference_mode():
+            set_device_streams()
 
             self.device_context = []
 

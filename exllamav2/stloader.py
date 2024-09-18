@@ -155,6 +155,7 @@ class STFile:
         size = end - beg
         shape = h["shape"]
         tensor = torch.zeros(shape, dtype = dtype, device = device)
+        torch.cuda.synchronize()
         assert tensor.is_contiguous, "Non-contiguous tensor"
         ext_c.stloader_read(
             self.filename,
