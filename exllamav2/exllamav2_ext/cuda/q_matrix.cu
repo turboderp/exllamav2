@@ -48,6 +48,8 @@ __global__ void shuffle_kernel
 
 QMatrix::QMatrix
 (
+    cudaStream_t stream,
+
     const int _device,
     const int _height,
     const int _width,
@@ -115,7 +117,15 @@ QMatrix::QMatrix
     if (!is_gptq)
     {
         uint16_t* cpu_q_groups = (uint16_t*)calloc(groups * 2, sizeof(uint16_t));
-        cudaMemcpy(cpu_q_groups, cuda_q_groups, groups * 2 * sizeof(uint16_t), cudaMemcpyDeviceToHost);
+        if (stream)
+        {
+            cudaMemcpyAsync(cpu_q_groups, cuda_q_groups, groups * 2 * sizeof(uint16_t), cudaMemcpyDeviceToHost, stream);
+            cudaDeviceSynchronize();
+        }
+        else
+        {
+            cudaMemcpy(cpu_q_groups, cuda_q_groups, groups * 2 * sizeof(uint16_t), cudaMemcpyDeviceToHost);
+        }
 
         int row = 0;
         for (int i = 0; i < groups; i++)
@@ -156,7 +166,7 @@ QMatrix::QMatrix
 
         if (_gptq_g_idx)
         {
-            if (!make_sequential(_gptq_g_idx))
+            if (!make_sequential(_gptq_g_idx, stream))
             {
                 failed = true;
                 //printf("FAIL\n");
@@ -584,7 +594,7 @@ __global__ void make_sequential_kernel
     w_new2[w_new2_row * w2_stride + w2_column] = dst;
 }
 
-bool QMatrix::make_sequential(const uint32_t* cpu_g_idx)
+bool QMatrix::make_sequential(const uint32_t* cpu_g_idx, cudaStream_t stream)
 {
     uint32_t* cuda_new_qweight = NULL;
     cudaError_t err = cudaMalloc(&cuda_new_qweight, height / 8 * width * sizeof(uint32_t));

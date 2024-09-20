@@ -80,8 +80,10 @@ uintptr_t make_q_matrix
         TORCH_CHECK(temp_dq.size(0) >= dq_req, "Insufficient size of temp_dq buffer")
     }
 
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
     QMatrix* m = new QMatrix
     (
+        stream,
         device,
         height,
         width,
@@ -149,8 +151,11 @@ uintptr_t make_q_matrix_split
         TORCH_CHECK(false, "Tensor split not implemented for GPTQ matrices");
     }
 
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+
     QMatrix* m = new QMatrix
     (
+        stream,
         device,
         height,
         width,

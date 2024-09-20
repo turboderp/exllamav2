@@ -46,6 +46,8 @@ public:
 
     QMatrix
     (
+        cudaStream_t stream,
+
         const int _device,
         const int _height,
         const int _width,
@@ -74,7 +76,7 @@ public:
     ~QMatrix();
 
     void reconstruct(cudaStream_t stream, half* out, int row_a = 0, int row_b = 0);
-    bool make_sequential(const uint32_t* cpu_g_idx);
+    bool make_sequential(const uint32_t* cpu_g_idx, cudaStream_t stream);
 
 private:
 

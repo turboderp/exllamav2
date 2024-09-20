@@ -184,7 +184,7 @@ class ExLlamaV2Module:
                     tensor.shape[0] == in_feat:
                     tensor = tensor.T
 
-            tensor = tensor.contiguous().to(self.device())
+            tensor = safe_move_tensor(tensor.contiguous(), self.device())
             res.append(nn.Parameter(tensor, requires_grad = False))
 
         if len(res) == 2: return res[0], res[1]

@@ -18,6 +18,7 @@ void stloader_read
 {
     c10::optional<torch::Device> device = torch::device_of(target);
     bool target_cpu = (device.has_value() && device->type() == torch::kCPU);
+    cudaStream_t stream;
 
     // Buffers
 
@@ -33,6 +34,8 @@ void stloader_read
         load_buffer = (uint8_t*) malloc(size);
         TORCH_CHECK(load_buffer, "Can't allocate buffer for tensor");
         cuda_buffer = (uint8_t*) target.data_ptr();
+        cudaSetDevice(device.value().index());
+        stream = at::cuda::getCurrentCUDAStream().stream();
     }
 
     // Synchronization
@@ -117,7 +120,8 @@ void stloader_read
                 cuda_buffer + pos_a,
                 load_buffer + pos_a,
                 pos_b - pos_a,
-                cudaMemcpyHostToDevice
+                cudaMemcpyHostToDevice,
+                stream
             );
             if (cr != cudaSuccess) goto error;
         }
