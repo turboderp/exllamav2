@@ -36,6 +36,7 @@ __global__ void pack_rows_4_kernel
 
 void pack_rows_4_cuda
 (
+    cudaStream_t stream,
     const uint16_t* input,
     uint32_t* output,
     const int rows,
@@ -47,7 +48,7 @@ void pack_rows_4_cuda
     dim3 threads(BLOCKSIZE_X, BLOCKSIZE_Y);
     dim3 blocks(DIVIDE(out_columns, BLOCKSIZE_X), DIVIDE(rows, BLOCKSIZE_Y));
 
-    pack_rows_4_kernel<<<blocks, threads>>>(input, output, rows, out_columns);
+    pack_rows_4_kernel<<<blocks, threads, 0, stream>>>(input, output, rows, out_columns);
 }
 
 // Pack rows:
@@ -82,6 +83,7 @@ __global__ void pack_rows_6_kernel
 
 void pack_rows_6_cuda
 (
+    cudaStream_t stream,
     const uint16_t* input,
     uint32_t* output,
     const int rows,
@@ -93,7 +95,7 @@ void pack_rows_6_cuda
     dim3 threads(BLOCKSIZE_X, BLOCKSIZE_Y);
     dim3 blocks(DIVIDE(out_columns, BLOCKSIZE_X), DIVIDE(rows, BLOCKSIZE_Y));
 
-    pack_rows_6_kernel<<<blocks, threads>>>(input, output, rows, out_columns);
+    pack_rows_6_kernel<<<blocks, threads, 0, stream>>>(input, output, rows, out_columns);
 }
 
 // Pack columns
@@ -247,6 +249,7 @@ __global__ void pack_columns_kernel
 
 void pack_columns_cuda
 (
+    cudaStream_t stream,
     const uint16_t* input,
     uint32_t* output,
     const int in_rows,
@@ -258,11 +261,11 @@ void pack_columns_cuda
     dim3 threads(BLOCKSIZE_X, BLOCKSIZE_Y);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), DIVIDE(out_rows, BLOCKSIZE_Y));
 
-    if (bits == 2) pack_columns_kernel<2><<<blocks, threads>>>(input, output, out_rows, columns);
-    if (bits == 3) pack_columns_kernel<3><<<blocks, threads>>>(input, output, out_rows, columns);
-    if (bits == 4) pack_columns_kernel<4><<<blocks, threads>>>(input, output, out_rows, columns);
-    if (bits == 5) pack_columns_kernel<5><<<blocks, threads>>>(input, output, out_rows, columns);
-    if (bits == 6) pack_columns_kernel<6><<<blocks, threads>>>(input, output, out_rows, columns);
-    if (bits == 8) pack_columns_kernel<8><<<blocks, threads>>>(input, output, out_rows, columns);
+    if (bits == 2) pack_columns_kernel<2><<<blocks, threads, 0, stream>>>(input, output, out_rows, columns);
+    if (bits == 3) pack_columns_kernel<3><<<blocks, threads, 0, stream>>>(input, output, out_rows, columns);
+    if (bits == 4) pack_columns_kernel<4><<<blocks, threads, 0, stream>>>(input, output, out_rows, columns);
+    if (bits == 5) pack_columns_kernel<5><<<blocks, threads, 0, stream>>>(input, output, out_rows, columns);
+    if (bits == 6) pack_columns_kernel<6><<<blocks, threads, 0, stream>>>(input, output, out_rows, columns);
+    if (bits == 8) pack_columns_kernel<8><<<blocks, threads, 0, stream>>>(input, output, out_rows, columns);
 }
 

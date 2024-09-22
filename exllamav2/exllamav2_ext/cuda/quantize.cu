@@ -53,6 +53,7 @@ __global__ void quantize_rtn_kernel
 
 void quantize_rtn_cuda
 (
+    cudaStream_t    stream,
     float*          weights,
     const float*    scale,
     uint16_t*       out_q,
@@ -66,7 +67,7 @@ void quantize_rtn_cuda
     dim3 threads(BLOCKSIZE_X, 1);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
 
-    quantize_rtn_kernel<<<blocks, threads>>>
+    quantize_rtn_kernel<<<blocks, threads, 0, stream>>>
     (
         weights,
         scale,
@@ -135,6 +136,7 @@ __global__ void fused_quantize_adjust_kernel
 
 void fused_quantize_adjust_cuda
 (
+    cudaStream_t    stream,
     const float*    weights,
     float*          quant,
     const float*    scale,
@@ -151,7 +153,7 @@ void fused_quantize_adjust_cuda
     dim3 threads(BLOCKSIZE_X, 1);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
 
-    fused_quantize_adjust_kernel<<<blocks, threads>>>
+    fused_quantize_adjust_kernel<<<blocks, threads, 0, stream>>>
     (
         weights,
         quant,
@@ -216,7 +218,8 @@ __global__ void quantize_kernel
 
 void quantize_cuda
 (
-    const float* input,
+    cudaStream_t stream,
+     const float* input,
     float* output,
     const float* scale,
     uint16_t* out_q,
@@ -232,7 +235,7 @@ void quantize_cuda
 //     DBGI2(rows, columns);
 //     DBGF2(qzero, maxq);
 
-    quantize_kernel<<<blocks, threads>>>
+    quantize_kernel<<<blocks, threads, 0, stream>>>
     (
         input,
         output,
@@ -269,6 +272,7 @@ __global__ void adjust_error_row_kernel
 
 void adjust_error_row_cuda
 (
+    cudaStream_t stream,
     const float* hessian_inv,
     float* error,
     const float* weights,
@@ -281,7 +285,7 @@ void adjust_error_row_cuda
     dim3 threads(BLOCKSIZE_X, 1);
     dim3 blocks(DIVIDE(columns, BLOCKSIZE_X), 1);
 
-    adjust_error_row_kernel<<<blocks, threads>>>(hessian_inv, error, weights, quant, c, columns, hcolumns);
+    adjust_error_row_kernel<<<blocks, threads, 0, stream>>>(hessian_inv, error, weights, quant, c, columns, hcolumns);
 }
 
 __global__ void quantize_err_kernel
@@ -334,6 +338,7 @@ __global__ void quantize_err_kernel
 
 void quantize_err_cuda
 (
+    cudaStream_t stream,
     const float* input,
     float* output,
     const float* scale,
@@ -353,7 +358,7 @@ void quantize_err_cuda
 //     DBGI2(rows, columns);
 //     DBGF2(qzero, maxq);
 
-    quantize_err_kernel<<<blocks, threads>>>
+    quantize_err_kernel<<<blocks, threads, 0, stream>>>
     (
         input,
         output,
@@ -399,6 +404,7 @@ __global__ void vv_mul_sub_kernel
 
 void vv_mul_sub_cuda
 (
+    cudaStream_t stream,
     const float* x,
     const float* y,
     float* z,
@@ -414,5 +420,5 @@ void vv_mul_sub_cuda
     gridDim.y = DIVIDE(x_size, BLOCKSIZE_Y);
     gridDim.z = 1;
 
-    vv_mul_sub_kernel<<<gridDim, blockDim>>>(x, y, z, x_size, y_size);
+    vv_mul_sub_kernel<<<gridDim, blockDim, 0, stream>>>(x, y, z, x_size, y_size);
 }

@@ -28,6 +28,7 @@ void pack_rows_4
 )
 {
     const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     TORCH_CHECK_DTYPE(input, kShort);
     TORCH_CHECK_DTYPE(output, kInt);
@@ -39,6 +40,7 @@ void pack_rows_4
 
     pack_rows_4_cuda
     (
+        stream,
         (uint16_t*) input.data_ptr(),
         (uint32_t*) output.data_ptr(),
         rows,
@@ -54,6 +56,7 @@ void pack_columns
 )
 {
     const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     TORCH_CHECK_DTYPE(input, kShort);
     TORCH_CHECK_DTYPE(output, kInt);
@@ -67,6 +70,7 @@ void pack_columns
 
     pack_columns_cuda
     (
+        stream,
         (uint16_t*) input.data_ptr(),
         (uint32_t*) output.data_ptr(),
         in_rows,
@@ -100,12 +104,14 @@ void quantize_err
     TORCH_CHECK(output.size(0) == p_grid + 1, "Output vector shape doesn't match grid")
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     int rows = input.size(0);
     int columns = input.size(1);
 
     quantize_err_cuda
     (
+        stream,
         (float*) input.data_ptr(),
         (float*) output.data_ptr(),
         (float*) scale.data_ptr(),
@@ -136,11 +142,15 @@ void quantize
     TORCH_CHECK_SHAPES(input, 1, output, 1, 1);
     TORCH_CHECK_SHAPES(input, 1, scale, 0, 1);
 
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+
     int rows = input.size(0);
     int columns = input.size(1);
 
     quantize_cuda
     (
+        stream,
         (float*) input.data_ptr(),
         (float*) output.data_ptr(),
         (float*) scale.data_ptr(),

@@ -8,6 +8,7 @@
 
 void quantize_cuda
 (
+    cudaStream_t stream,
     const float* input,
     float* output,
     const float* scale,
@@ -20,6 +21,7 @@ void quantize_cuda
 
 void adjust_error_row_cuda
 (
+    cudaStream_t stream,
     const float* hessian_inv,
     float* error,
     const float* weights,
@@ -31,6 +33,7 @@ void adjust_error_row_cuda
 
 void fused_quantize_adjust_cuda
 (
+    cudaStream_t stream,
     const float*    weights,
     float*          quant,
     const float*    scale,
@@ -46,6 +49,7 @@ void fused_quantize_adjust_cuda
 
 void quantize_rtn_cuda
 (
+    cudaStream_t stream,
     float*          weights,
     const float*    scale,
     uint16_t*       out_q,
@@ -58,6 +62,7 @@ void quantize_rtn_cuda
 
 void quantize_err_cuda
 (
+    cudaStream_t stream,
     const float* input,
     float* output,
     const float* scale,
@@ -73,6 +78,7 @@ void quantize_err_cuda
 
 void vv_mul_sub_cuda
 (
+    cudaStream_t stream,
     const float* x,
     const float* y,
     float* z,

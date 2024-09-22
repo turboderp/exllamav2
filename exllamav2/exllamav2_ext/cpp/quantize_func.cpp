@@ -21,11 +21,13 @@ void quantize_range
     TORCH_CHECK(hcolumns == weights.size(0), "H shape mismatch")
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(weights));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     for (int c = a; c < b; c++)
     {
         fused_quantize_adjust_cuda
         (
+            stream,
             (const float*) weights.data_ptr(),
             (float*) quant.data_ptr(),
             (const float*) scale.data_ptr(),
@@ -41,6 +43,7 @@ void quantize_range
 
         vv_mul_sub_cuda
         (
+            stream,
             ((const float*) hessian_inv.data_ptr()) + (uint64_t)c * (uint64_t)hcolumns + (uint64_t)c,
             ((const float*) error.data_ptr()) + (uint64_t)c * (uint64_t)columns,
             ((float*) weights.data_ptr()) + (uint64_t)c * (uint64_t)columns,
@@ -69,11 +72,13 @@ void quantize_range_inplace
     int rows = weights.size(0);
 
     const at::cuda::OptionalCUDAGuard device_guard(device_of(weights));
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
     for (int c = a; c < b; c++)
     {
         quantize_rtn_cuda
         (
+            stream,
             (float*) weights.data_ptr(),
             (const float*) scale.data_ptr(),
             out_q.device().is_meta() ? NULL : (uint16_t*) out_q.data_ptr(),

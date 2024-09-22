@@ -8,6 +8,7 @@
 
 void pack_rows_4_cuda
 (
+    cudaStream_t stream,
     const uint16_t* input,
     uint32_t* output,
     const int rows,
@@ -16,6 +17,7 @@ void pack_rows_4_cuda
 
 void pack_rows_6_cuda
 (
+    cudaStream_t stream,
     const uint16_t* input,
     uint32_t* output,
     const int rows,
@@ -24,6 +26,7 @@ void pack_rows_6_cuda
 
 void pack_columns_cuda
 (
+    cudaStream_t stream,
     const uint16_t* input,
     uint32_t* output,
     const int in_rows,
