@@ -64,6 +64,23 @@ void apply_rep_penalty
     Py_END_ALLOW_THREADS
 }
 
+void dbg_candidates
+(
+    int num_candidates,
+    float* temp_probs,
+    int* temp_indices
+)
+{
+    float sum = 0.0f;
+    for (int i = 0; i < num_candidates; ++i)
+    {
+        DBGIF(temp_indices[i], temp_probs[i]);
+        sum += temp_probs[i];
+    }
+    DBGF(sum);
+    printf("----------\n");
+}
+
 std::vector<float> sample_basic
 (
     torch::Tensor logits,           // shape [bsz, 1, vocab_size]
@@ -85,6 +102,9 @@ std::vector<float> sample_basic
     float mirostat_tau,
     float mirostat_eta,
     float post_temperature,
+    torch::Tensor xtc_mask,
+    float xtc_probability = 0.0f,
+    float xtc_threshold = 0.1f,
     float min_temp = 0,
     float max_temp = 0.0f,
     float temp_exponent = 1.0f,
@@ -191,7 +211,24 @@ std::vector<float> sample_basic
             num_candidates = post_softmax_temperature(num_candidates, temp_probs, temp_indices, post_temperature, min_temp, max_temp, temp_exponent);
         }
 
-        if (num_probs || (skew != 0.0f))
+        if (xtc_probability > 0.0f)
+        {
+            // dbg_candidates(num_candidates, temp_probs, temp_indices);
+
+            num_candidates = xtc_cpu
+            (
+                num_candidates,
+                temp_probs,
+                temp_indices,
+                (bool*) xtc_mask.data_ptr(),
+                xtc_probability,
+                xtc_threshold
+            );
+
+            // dbg_candidates(num_candidates, temp_probs, temp_indices);
+        }
+
+        if (num_probs || skew != 0.0f)
         {
             num_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
             sort_descending(num_candidates, temp_probs, temp_indices, num_probs);
@@ -229,19 +266,6 @@ std::vector<float> sample_basic
         {
             random_s = powf(random, expf(-skew));
         }
-
-//        {
-//            float sum = 0.0f;
-//            float pmin = temp_probs[0];
-//            float pmax = pmin;
-//            for (int i = 0; i < num_candidates; ++i)
-//            {
-//                if (temp_probs[i] < pmin) pmin = temp_probs[i];
-//                if (temp_probs[i] > pmax) pmax = temp_probs[i];
-//                sum += temp_probs[i];
-//            }
-//            DBGF4(pmin, pmax, sum, random_s);
-//        }
 
         // Scale random sampling point a little to account for FP32 rounding errors during softmax. Probs
         // can potentially sum to slightly less than 1 for large-vocab models

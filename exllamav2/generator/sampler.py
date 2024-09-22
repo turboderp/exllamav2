@@ -94,6 +94,10 @@ class ExLlamaV2Sampler:
         ngram_index: int = 0
         ngram_history: deque[int] = field(default_factory = deque)
 
+        xtc_probability: float = 0.0  # 0 to disable
+        xtc_threshold: float = 0.1
+        xtc_ignore_tokens: frozenset[int] | None = None
+
         @staticmethod
         def greedy(**kwargs) -> ExLlamaV2Sampler.Settings:
             defaults = {
@@ -127,6 +131,9 @@ class ExLlamaV2Sampler:
             c.dry_sequence_breakers = self.dry_sequence_breakers
             c.dry_max_ngram = self.dry_max_ngram
             c.filters = []
+            c.xtc_probability = self.xtc_probability
+            c.xtc_threshold = self.xtc_threshold
+            c.xtc_ignore_tokens = self.xtc_ignore_tokens
             return c
 
 
@@ -263,6 +270,38 @@ class ExLlamaV2Sampler:
             penalty = -settings.dry_multiplier * settings.dry_base ** exc_length
             penalties = torch.tensor([[[penalty * node.value for node in penalty_tokens.values()]]], dtype = torch.float)
             logits.scatter_add_(-1, indices, penalties)
+
+
+    @staticmethod
+    @lru_cache(10)
+    def get_default_xtc_mask_tokens(
+        tokenizer: ExLlamaV2Tokenizer,
+    ) -> frozenset[int]:
+        result = set()
+        xtc_mask_chars = r"\n"
+        pattern = re.compile(r"[" + xtc_mask_chars + "]")
+        pieces = tokenizer.get_id_to_piece_list(include_special_tokens = True)
+        for t in range(len(pieces)):
+            if bool(pattern.search(pieces[t])):
+                result.add(t)
+        for t in tokenizer.extended_id_to_piece.keys():
+            result.add(t)
+        return frozenset(result)
+
+
+    @staticmethod
+    @lru_cache(10)
+    def get_xtc_mask_tensor(
+        tokenizer: ExLlamaV2Tokenizer,
+        vocab_size: int,
+        xtc_mask_tokens: frozenset[int] | None
+    ):
+        if xtc_mask_tokens is None:
+            xtc_mask_tokens = ExLlamaV2Sampler.get_default_xtc_mask_tokens(tokenizer)
+        mask = torch.ones((vocab_size,), dtype = torch.bool)
+        mask[list(xtc_mask_tokens)] = False
+        return mask
+
 
     @staticmethod
     # @profile
@@ -465,6 +504,14 @@ class ExLlamaV2Sampler:
         if vs < logits.shape[-1]:
             logits[:, :, vs:] = float("-inf")
 
+        # XTC mask
+
+        xtc_mask = none_tensor
+        if settings.xtc_probability > 0.0:
+            xtc_mask = ExLlamaV2Sampler.get_xtc_mask_tensor(
+                tokenizer, logits.shape[-1], settings. xtc_ignore_tokens
+            )
+
         # Sampling
 
         output_tokens = torch.empty((batch_size, 1), dtype = torch.long)
@@ -498,6 +545,9 @@ class ExLlamaV2Sampler:
             settings.mirostat_tau,
             settings.mirostat_eta,
             settings.temperature if settings.temperature_last else 1.0,
+            xtc_mask,
+            settings.xtc_probability,
+            settings.xtc_threshold,
             settings.min_temp,
             settings.max_temp,
             settings.temp_exponent,

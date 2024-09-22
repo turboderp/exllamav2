@@ -806,6 +806,65 @@ int typical_cpu
     return num;
 }
 
+int xtc_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    bool* xtc_mask,
+    float xtc_probability,
+    float xtc_threshold
+)
+{
+    profile_start("xtc_cpu");
+
+    int index = 0;
+    float x_mass = 0.0f;
+    int x_tokens = 0;
+    float min_prob = 2.0f;
+    int min_index = -1;
+
+    // Sum up probs >= xtc_threshold and find the smalles such prob so it can be excluded
+    for (int i = 0; i < num_candidates; ++i)
+    {
+        if (temp_probs[i] >= xtc_threshold && xtc_mask[temp_indices[i]])
+        {
+            x_tokens++;
+            x_mass += temp_probs[i];
+            if (temp_probs[i] < min_prob)
+            {
+                min_prob = temp_probs[i];
+                min_index = i;
+            }
+        }
+    }
+
+    // The least probable token over the threshold is never excluded, so do nothing unless at least two tokens
+    // cross the threshold
+    if (x_tokens <= 1) return num_candidates;
+
+    // Adjust the sum to account for the least probable token being skipped below
+    x_mass -= min_prob;
+
+    // Adjust probabilities
+    for (int i = 0; i < num_candidates; ++i)
+    {
+        // If token is being excluded with probability p, its weight in the new distribution is scaled by 1-p
+        if (temp_probs[i + 1] >= xtc_threshold && xtc_mask[temp_indices[i]] && i != min_prob)
+            temp_probs[i] *= (1.0f - xtc_probability);
+
+        // Scale any tokens we don't remove so so that we end up with a normalized distribution
+        else
+            temp_probs[i] = temp_probs[i] * (1.0f + xtc_probability * x_mass / (1.0f - x_mass));
+    }
+
+    profile_stop();
+
+    // Return unsorted probs since it doesn't affect the multinomial pick. Calling function will sort the probs
+    // if necessary
+    return num_candidates;
+}
+
 AVX2_TARGET_OPTIONAL
 int multinomial_cpu
 (

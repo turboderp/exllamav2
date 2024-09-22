@@ -135,6 +135,16 @@ int post_softmax_temperature
     float temp_exponent
 );
 
+int xtc_cpu
+(
+    const int num_candidates,
+    float* temp_probs,
+    int* temp_indices,
+    bool* xtc_mask,
+    float xtc_probability,
+    float xtc_threshold
+);
+
 int multinomial_cpu
 (
     const int num_candidates,
