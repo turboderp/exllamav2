@@ -8,6 +8,7 @@ from exllamav2.module import ExLlamaV2Module
 from exllamav2.compat import safe_move_tensor
 from exllamav2.tensor_p import BROADCAST_VC
 from exllamav2.util import unpack_4bit, pack_4bit
+import gc
 
 from typing import TYPE_CHECKING
 
@@ -50,21 +51,23 @@ class ExLlamaV2Linear(ExLlamaV2Module):
     broadcast_type_out: int | None
     is_sub_module: bool
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 in_features: int,
-                 out_features: int,
-                 has_bias: bool,
-                 pad32: bool = True,
-                 max_out_len: int | None = None,
-                 prescale: float = 1,
-                 f_key: str = None,
-                 f_beg: int = None,
-                 f_end: int = None,
-                 is_sub_module: bool = True,
-                 altpack_qkv: bool = False,
-                 normalize_unq: bool = False):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        in_features: int,
+        out_features: int,
+        has_bias: bool,
+        pad32: bool = True,
+        max_out_len: int | None = None,
+        prescale: float = 1,
+        f_key: str = None,
+        f_beg: int = None,
+        f_end: int = None,
+        is_sub_module: bool = True,
+        altpack_qkv: bool = False,
+        normalize_unq: bool = False
+    ):
         super().__init__(model, key)
 
         self.is_sub_module = is_sub_module
@@ -109,16 +112,17 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
 
     @torch.inference_mode
-    def load(self,
-             w: dict | nn.Parameter | tuple | None = None,
-             device_context: bool = True,
-             unmap: bool = False,
-             output_map: torch.Tensor | None = None):
-
+    def load(
+        self,
+        w: dict | nn.Parameter | tuple | None = None,
+        device_context: bool = True,
+        unmap: bool = False,
+        output_map: torch.Tensor | None = None
+    ):
         cfg = self.model.config
 
         if self.f_key: w = self.load_weight_fused(self.f_key, self.f_beg, self.f_end, self.in_features, self.out_features, self.altpack_qkv)
-        if w is None: w = self.load_weight()
+        if w is None: w = self.load_weight(cpu = output_map is not None)
 
         # Load quantized linear layer from dictionary
 
@@ -137,7 +141,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             self.q_tensors = w
 
             if unmap and "q_perm" in w:
-                perm = w["q_perm"]
+                perm = w["q_perm"].cpu()
                 del w["q_perm"]
                 del w["q_invperm"]
                 # w["q_perm"] = torch.arange(0, w["q_perm"].shape[-1], dtype = w["q_perm"].dtype, device = w["q_perm"].device)
@@ -146,8 +150,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                 perm = None
 
             if output_map is not None:
-                w["q_weight"] = w["q_weight"][:, output_map]
-                w["q_scale"] = pack_4bit(unpack_4bit(w["q_scale"])[:, output_map])
+                ext_c.tensor_remap(w["q_weight"], output_map)
+                ext_c.tensor_remap_4bit(w["q_scale"], output_map)
+                for k in w.keys():
+                    w[k] = safe_move_tensor(w[k], self.device())
 
             self.q_handle = ext.make_q_matrix(w,
                                               self.temp_dq,
@@ -593,6 +599,8 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                     max_dq_rows
                 )
             )
+
+        torch.cuda.synchronize()
 
         ext_c.free_q_matrix(self.q_handle)
         self.q_handle = new_q_handle

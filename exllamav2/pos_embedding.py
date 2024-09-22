@@ -17,9 +17,11 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
     native_ctx_size: int | None
 
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str
+    ):
         super().__init__(model, key)
 
         self.native_ctx_size = model.config.max_seq_len
@@ -65,14 +67,16 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
         return 0
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params: ExLlamaV2Attention.Params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras = None,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params: ExLlamaV2Attention.Params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         if attn_params is None:
 

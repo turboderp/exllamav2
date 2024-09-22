@@ -18,9 +18,11 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
     variance_epsilon: float
 
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str
+    ):
         super().__init__(model, key)
 
         self.layernorm = None
@@ -93,15 +95,17 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
         return 0
 
 
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache = None,
-                attn_params = None,
-                past_len = None,
-                intermediates: bool = False,
-                loras = None,
-                output_fp32 = False,  # TODO:
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        output_fp32 = False,  # TODO:
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -120,15 +124,17 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
             return hidden_states
 
 
-    def forward_torch(self,
-                      hidden_states: torch.Tensor,
-                      cache = None,
-                      attn_params = None,
-                      past_len = None,
-                      intermediates: bool = False,
-                      loras = None,
-                      output_fp32 = False,  # TODO:
-                      **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward_torch(
+        self,
+        hidden_states: torch.Tensor,
+        cache = None,
+        attn_params = None,
+        past_len = None,
+        intermediates: bool = False,
+        loras = None,
+        output_fp32 = False,  # TODO:
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         hidden_states = self.layernorm(hidden_states)
 

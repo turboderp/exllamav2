@@ -108,9 +108,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
 
     @torch.inference_mode
-    def load(self,
-             device_context: bool = True):
-
+    def load(
+        self,
+        device_context: bool = True
+    ):
         cfg = self.model.config
 
         if self.pre_layernorm is not None:

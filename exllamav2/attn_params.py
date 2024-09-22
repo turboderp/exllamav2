@@ -19,13 +19,13 @@ class Params:
     paged: bool
 
     def __init__(
-            self,
-            batch_size: int,
-            seq_len: int | None = None,
-            past_len: int | list[int] | None = None,
-            input_mask: torch.Tensor | None = None,
-            position_offsets: torch.Tensor | None = None,
-            paged=False
+        self,
+        batch_size: int,
+        seq_len: int | None = None,
+        past_len: int | list[int] | None = None,
+        input_mask: torch.Tensor | None = None,
+        position_offsets: torch.Tensor | None = None,
+        paged=False
     ):
 
         self.batch_size = batch_size

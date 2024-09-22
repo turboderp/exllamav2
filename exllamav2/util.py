@@ -291,19 +291,19 @@ def get_all_gpu_memory():
     try:
         nvidia_memory = get_nvidia_gpu_memory(visible_devices)
         gpu_memory.update(nvidia_memory)
-    except FileNotFoundError:
+    except:
         pass
         # print("nvidia-smi not found. Skipping NVIDIA GPU check.")
 
     try:
         amd_memory = get_amd_gpu_memory()
         gpu_memory.update(amd_memory)
-    except FileNotFoundError:
+    except:
         pass
-        # print("rocm-smi not found. Skipping AMD GPU check.")  # TODO: remove warning on NVidia, test on AMD
+        # print("rocm-smi not found. Skipping AMD GPU check.")  # TODO: test on AMD
 
     assert gpu_memory, \
-        "Unable to read available VRAM from nvidia-smi or rocm-smi"
+        "Unable to read available VRAM from either nvidia-smi or rocm-smi"
 
     return gpu_memory
 

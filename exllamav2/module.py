@@ -60,7 +60,8 @@ class ExLlamaV2Module:
     def load_multi(self,
                    key: str,
                    keys: list[str],
-                   measure: bool = False) -> int | dict[str: torch.Tensor]:
+                   measure: bool = False,
+                   cpu: bool = False) -> int | dict[str: torch.Tensor]:
 
         tensors = {}
         submap = {}
@@ -85,13 +86,16 @@ class ExLlamaV2Module:
                 if measure:
                     size += stfile.measure(key + "." + k)
                 else:
-                    tensors[k] = stfile.get_tensor(key + "." + k, device = self.device())
+                    tensors[k] = stfile.get_tensor(key + "." + k, device = self.device() if not cpu else "cpu")
 
         return size if measure else tensors
 
 
-    def load_weight(self,
-                    override_key: str | None = None):
+    def load_weight(
+        self,
+        override_key: str | None = None,
+        cpu: bool = False
+    ):
 
         if override_key is not None:
             keys = [override_key]
@@ -105,14 +109,14 @@ class ExLlamaV2Module:
             # EXL2
 
             if key + ".q_weight" in self.model.config.tensor_file_map:
-                qtensors = self.load_multi(key, ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "bias"])
+                qtensors = self.load_multi(key, ["q_weight", "q_invperm", "q_scale", "q_scale_max", "q_groups", "q_perm", "bias"], cpu = cpu)
                 qtensors["q_perm"] = torch.argsort(qtensors["q_invperm"]).to(torch.int)
                 return qtensors
 
             # GPTQ
 
             if key + ".qweight" in self.model.config.tensor_file_map:
-                qtensors = self.load_multi(key, ["qweight", "qzeros", "scales", "g_idx", "bias"])
+                qtensors = self.load_multi(key, ["qweight", "qzeros", "scales", "g_idx", "bias"], cpu = cpu)
                 if "bias" in qtensors and torch.all(qtensors["bias"].eq(0)):
                     del qtensors["bias"]
                 qtensors["scales"] = qtensors["scales"].half()
@@ -122,14 +126,14 @@ class ExLlamaV2Module:
 
             if key + ".weight" in self.model.config.tensor_file_map:
                 if key + ".bias" in self.model.config.tensor_file_map:
-                    tensors = self.load_multi(key, ["weight", "bias"])
+                    tensors = self.load_multi(key, ["weight", "bias"], cpu = cpu)
                     tensor = tensors["weight"].half()
                     bias = tensors["bias"].half()
                     if self.model.config.arch.orig_weights_transposed and len(tensor.shape) == 2:
                         tensor = tensor.T
                     return nn.Parameter(tensor, requires_grad = False), nn.Parameter(bias, requires_grad = False)
                 else:
-                    tensors = self.load_multi(key, ["weight"])
+                    tensors = self.load_multi(key, ["weight"], cpu = cpu)
                     tensor = tensors["weight"].half()
                     # if self.model.config.arch.orig_weights_transposed:
                     #     tensor = tensor.T
@@ -140,14 +144,15 @@ class ExLlamaV2Module:
         return None
 
 
-    def load_weight_fused(self,
-                          f_key: str,
-                          f_beg: int,
-                          f_end: int,
-                          in_feat: int,
-                          out_feat: int,
-                          altpack_qkv: bool):
-
+    def load_weight_fused(
+        self,
+        f_key: str,
+        f_beg: int,
+        f_end: int,
+        in_feat: int,
+        out_feat: int,
+        altpack_qkv: bool
+    ):
         res = []
         for key in [f_key, f_key + ".weight", f_key + ".bias"]:
 
