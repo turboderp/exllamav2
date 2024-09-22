@@ -131,6 +131,7 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
         x = x.cuda()
         xref = xref.cuda()
         xtest = module.forward(x, cache, attn_params)
+        xtest.clamp_(-65504, 65504)
         xtest = xtest[0].float()
         xref = xref[0].float()
         rfn_sum += torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')
@@ -416,7 +417,7 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
     overall_rolling_accuracy = 0  
 
     last_snapshot_time = time.time()
-    snapshot_interval_s = 180
+    snapshot_interval_s = 45
 
     temp_filename = os.path.join(job["out_dir"], "hidden_states_temp.safetensors")
     states_filename = os.path.join(job["out_dir"], "hidden_states.safetensors")
@@ -549,12 +550,26 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
             target_device = "cuda:0" if i < hidden_state_offload_layers else "cpu"
 
             for k, v in outputs.items():
-                if torch.isnan(v).any():
+                num_inf = torch.isinf(v).sum()
+                num_nan = torch.isnan(v).sum()
+                p_inf = num_inf / v.numel()
+                p_nan = num_nan / v.numel()
+
+                if num_nan:
                     print(f" ## Measurement/inference error (2): {k}")
+                    print(f" ## NaN elements in output states row {i}: {num_nan} / {v.numel()} = {p_nan*100:.2f}%")
                     os._exit(1)
-                if torch.isinf(v).any():
-                    print(f" ## Measurement/inference error (3): {k}")
-                    os._exit(1)
+                if num_inf:
+                    if p_inf < 0.005:
+                        print(f" !! Measurement/inference warning (3): {k}")
+                        print(f" !! inf elements in output states row {i}: {num_inf} / {v.numel()} = {p_inf*100:.2f}%")
+                        print(f" !! clamping state")
+                        v.clamp_(-65504, 65504)
+                    else:
+                        print(f" ## Measurement/inference error (3): {k}")
+                        print(f" ## inf elements in output states row {i}: {num_inf} / {v.numel()} = {p_inf*100:.2f}%")
+                        print(f" ## Number of inf elements above threshold, aborting")
+                        os._exit(1)
 
             # Hessians
 
