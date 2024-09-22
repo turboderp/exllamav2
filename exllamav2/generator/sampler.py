@@ -400,10 +400,17 @@ class ExLlamaV2Sampler:
 
             pass_tokens = None
             end_tokens = None
-            for f in filters:
 
+            pts = []
+            ets = []
+            for f in filters:
                 pt, et = f.get_next()
-                if len(filters) > 1 and not isinstance(pt, set):
+                if pt is not None:
+                    pts.append(pt)
+                    ets.append(et)
+
+            for pt, et in zip(pts, ets):
+                if len(pts) > 1 and not isinstance(pt, set):
                     pt, et = set(pt), set(et)
 
                 if pt is not None: pass_tokens = pt if pass_tokens is None else pass_tokens & pt
@@ -425,7 +432,7 @@ class ExLlamaV2Sampler:
                 if filter_prefer_eos and tokenizer.eos_token_id in pass_tokens:
                     pass_tokens_list = [tokenizer.eos_token_id]
                     logit_filter = prep_logit_filter(logit_filter)
-                    ext_c.logit_filter_exclusive(logit_filter, pass_tokens_list)
+                    ext_c.logit_filter_exclusive(logit_filter, [pass_tokens_list])
                 else:
                     logit_filter = prep_logit_filter(logit_filter)
                     if isinstance(pass_tokens, set):
