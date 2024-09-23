@@ -35,7 +35,7 @@ void stloader_read
         TORCH_CHECK(load_buffer, "Can't allocate buffer for tensor");
         cuda_buffer = (uint8_t*) target.data_ptr();
         cudaSetDevice(device.value().index());
-        stream = at::cuda::getCurrentCUDAStream().stream();
+        stream = at::cuda::getCurrentCUDAStream(device.value().index()).stream();
     }
 
     // Synchronization

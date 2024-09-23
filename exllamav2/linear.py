@@ -560,16 +560,16 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
             w = {
                 "q_scale": safe_move_tensor(self.q_tensors["q_scale"][:, a // 8:b // 8], idx).contiguous(),
-                "q_scale_max": safe_move_tensor(self.q_tensors["q_scale_max"], idx).contiguous(),
-                "q_group_map": safe_move_tensor(self.q_tensors["q_group_map"], idx).contiguous(),
-                "q_groups": safe_move_tensor(self.q_tensors["q_groups"], idx).contiguous(),
+                "q_scale_max": safe_move_tensor(self.q_tensors["q_scale_max"], idx),
+                "q_group_map": safe_move_tensor(self.q_tensors["q_group_map"], idx),
+                "q_groups": safe_move_tensor(self.q_tensors["q_groups"], idx),
                 "q_weight": safe_move_tensor(self.q_tensors["q_weight"][:, a:b], idx).contiguous()
             }
 
             if "q_perm" in self.q_tensors:
                 w.update({
-                    "q_perm": safe_move_tensor(self.q_tensors["q_perm"], idx).contiguous(),
-                    "q_invperm": safe_move_tensor(self.q_tensors["q_invperm"], idx).contiguous(),
+                    "q_perm": safe_move_tensor(self.q_tensors["q_perm"], idx),
+                    "q_invperm": safe_move_tensor(self.q_tensors["q_invperm"], idx),
                 })
 
             if "bias" in self.q_tensors:

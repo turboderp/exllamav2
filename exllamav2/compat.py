@@ -1,6 +1,7 @@
 from __future__ import annotations
 import torch
 import itertools
+from exllamav2.device import get_device_stream
 
 # Emulate pairwise on Python <3.10
 
@@ -63,6 +64,8 @@ def safe_move_tensor(
     # Accept torch.device, string or int
 
     device = torch.device(device)
+    from_index = tensor.device.index
+    to_index = device.index
 
     # No move
 
@@ -71,15 +74,68 @@ def safe_move_tensor(
 
     # Copies to/from system RAM are always fine
 
-    if tensor.device.type == "cpu" or device.type == "cpu":
-        return tensor.to(device, non_blocking = non_blocking)
+    if tensor.device.type == "cpu":
+        stream = get_device_stream(to_index)
+        if stream is not None:
+            with torch.cuda.stream(stream):
+                r = tensor.to(device, non_blocking = True)
+                torch.cuda.synchronize(to_index)
+            return r
+        else:
+            return tensor.to(device, non_blocking = non_blocking)
+
+    if device.type == "cpu":
+        stream = get_device_stream(from_index)
+        if stream is not None:
+            with torch.cuda.stream(stream):
+                r = tensor.to(device, non_blocking = True)
+                torch.cuda.synchronize(from_index)
+            return r
+        else:
+            return tensor.to(device, non_blocking = non_blocking)
 
     # Source and dest are distinct CUDA devices
     # Test tensor.to (once) and if it seems to be working, let Torch decide
 
     if test_gpu_peer_copy(tensor.device, device):
-        return tensor.to(device, non_blocking = non_blocking)
+        from_stream = get_device_stream(from_index)
+        to_stream = get_device_stream(to_index)
+
+        if from_stream is not None and to_stream is not None:
+            with torch.cuda.stream(from_stream):
+                with torch.cuda.stream(to_stream):
+                    r = tensor.to(device, non_blocking = True)
+        elif from_stream is not None:
+            with torch.cuda.stream(from_stream):
+                r = tensor.to(device, non_blocking = True)
+        elif to_stream is not None:
+            with torch.cuda.stream(to_stream):
+                r = tensor.to(device, non_blocking = True)
+        else:
+            r = tensor.to(device, non_blocking = True)
+
+        if not non_blocking:
+            torch.cuda.synchronize(to_index)
+        return r
 
     # Force move tensor via CPU
 
-    return tensor.cpu().to(device)
+    from_stream = get_device_stream(from_index)
+    to_stream = get_device_stream(to_index)
+
+    if from_stream is not None:
+        with torch.cuda.stream(from_stream):
+            tensor_cpu = tensor.to("cpu", non_blocking = True)
+            torch.cuda.synchronize(from_index)
+    else:
+        tensor_cpu = tensor.cpu()
+
+    if to_stream is not None:
+        with torch.cuda.stream(to_stream):
+            r = tensor_cpu.to(device, non_blocking = True)
+            torch.cuda.synchronize(to_index)
+            return r
+    else:
+        return tensor_cpu.to(device)
+
+

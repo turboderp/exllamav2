@@ -6,6 +6,7 @@ import sys
 import platform
 import threading
 from exllamav2.util import get_basic_progress
+from exllamav2.compat import safe_move_tensor
 
 extension_name = "exllamav2_ext"
 verbose = False  # Print wall of text when compiling
@@ -315,8 +316,8 @@ def make_group_map_py(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
     return torch.tensor(group_map, dtype = torch.short, device = q_groups.device)
 
 def make_group_map(q_groups: torch.Tensor, num_qrows: int) -> torch.Tensor:
-    group_map = ext_c.make_group_map(q_groups.cpu(), num_qrows).to(q_groups.device)
-    return group_map
+    group_map = ext_c.make_group_map(q_groups.cpu(), num_qrows)
+    return safe_move_tensor(group_map, q_groups.device)
 
 
 # Create Q matrix

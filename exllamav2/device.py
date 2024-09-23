@@ -21,7 +21,13 @@ def set_device_streams():
     global global_streams
     for(k, v) in global_streams.items():
         with torch.cuda.device(torch.device(k)):
+            torch.cuda.set_device(torch.device(k))
             torch.cuda.set_stream(v)
+
+
+def get_device_stream(index: int):
+    global global_streams
+    return global_streams.get(index)
 
 
 class ExLlamaV2DeviceContext:
@@ -56,7 +62,8 @@ class ExLlamaV2DeviceContext:
         # Create streams (only one per device)
 
         if device_idx not in global_streams:
-            global_streams[device_idx] = torch.cuda.Stream(torch.device(device_idx), -100)
+            s = torch.cuda.Stream(torch.device(device_idx), -100)
+            global_streams[device_idx] = s
 
         self.stream = global_streams[device_idx]
 
