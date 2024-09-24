@@ -1,6 +1,7 @@
 from __future__ import annotations
-import sys, os
-from email.policy import default
+
+import os
+import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from human_eval.data import write_jsonl, read_problems
