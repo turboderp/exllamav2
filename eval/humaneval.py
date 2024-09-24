@@ -119,7 +119,7 @@ generator = ExLlamaV2DynamicGenerator(
 
 gen_settings = ExLlamaV2Sampler.Settings(
     token_repetition_penalty = 1.0,
-    temperature = 0.6,
+    temperature = args.temperature if args.temperature is not None else 0.6,
     top_k = 50,
     top_p = 0.6
 )
