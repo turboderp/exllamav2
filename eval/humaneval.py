@@ -1,5 +1,7 @@
 from __future__ import annotations
 import sys, os
+from email.policy import default
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from human_eval.data import write_jsonl, read_problems
 from exllamav2 import model_init
@@ -21,7 +23,10 @@ parser.add_argument("--max_tokens", type = int, default = 768, help = "Max numbe
 parser.add_argument("-pf", "--prompt_format", type = str, help = "Instruct format to apply. Default is raw completion (for base models) ")
 parser.add_argument("-v", "--verbose", action = "store_true", help = "Spam completions to console while generating")
 parser.add_argument("-e", "--eval", action = "store_true", help = "Run evaluation script on output file after sampling")
-parser.add_argument("-temp", "--temperature", type = float, help = "Sampling temperature (0 for greedy), default: 0.6")
+parser.add_argument("-temp", "--temperature", type = float, help = "Sampling temperature (0 for greedy), default: 0.6", default = 0.6)
+parser.add_argument("--top_k", type = int, help = "Top-k sampling, default: 50", default = 50)
+parser.add_argument("--top_p", type = float, help = "Top-p sampling, default: 0.6", default = 0.6)
+parser.add_argument("-trp", "--token_repetition_penalty", type = float, help = "Token repetition penalty, default: 1.0", default = 1.0)
 model_init.add_args(parser)
 args = parser.parse_args()
 
@@ -118,10 +123,10 @@ generator = ExLlamaV2DynamicGenerator(
 )
 
 gen_settings = ExLlamaV2Sampler.Settings(
-    token_repetition_penalty = 1.0,
-    temperature = args.temperature if args.temperature is not None else 0.6,
-    top_k = 50,
-    top_p = 0.6
+    token_repetition_penalty=args.token_repetition_penalty,
+    temperature=args.temperature,
+    top_k=args.top_k,
+    top_p=args.top_p
 )
 
 # Get problems
