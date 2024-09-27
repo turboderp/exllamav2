@@ -308,7 +308,7 @@ class ExLlamaV2Config:
                 self.l3_rope_low_freq_factor = rs["low_freq_factor"]
                 self.l3_rope_high_freq_factor = rs["high_freq_factor"]
                 self.l3_rope_original_max_position_embeddings = rs["original_max_position_embeddings"]
-             if scaling_type == "yarn":
+            if scaling_type == "yarn":
                 self.alt_rope_method = "yarn"
                 self.yarn_rope_factor = rs["factor"]
                 self.yarn_rope_original_max_position_embeddings = rs["original_max_position_embeddings"]
