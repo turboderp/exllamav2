@@ -582,12 +582,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         # Hold text if it contains an incomplete character
 
-        if self.held_text.endswith("�") and not self.held_text.endswith("�����"):
+        if 1 <= self.held_text.count("�") < 5:
             test_decode = self.tokenizer.decode(
                 self.held_tokens,
-                decode_special_tokens=self.decode_special_tokens
+                decode_special_tokens = self.decode_special_tokens
             )[0]
-            if not test_decode.endswith("�"):
+            if not "�" in test_decode:
                 self.held_text = test_decode
             else:
                 return "", False, self.no_tokens, self.no_probs, self.no_ptokens, self.no_pprobs, self.no_logits, None
