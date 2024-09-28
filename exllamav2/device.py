@@ -187,7 +187,7 @@ class ExLlamaV2DeviceContext:
         
         elif cfg.alt_rope_method == "yarn":
 
-            yarn_max_position_embeddings = cfg.yarn_rope_original_max_position_embeddings
+            yarn_max_position_embeddings = cfg.max_seq_len
 
             # Only activate if longer than original ctx
             if cfg.max_seq_len > cfg.yarn_rope_original_max_position_embeddings:
