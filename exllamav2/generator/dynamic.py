@@ -1989,6 +1989,7 @@ class ExLlamaV2DynamicJob:
             return emit(results, emit_eos = True, eos_reason = "stop_token", stop_token = next_token.item())
 
         # Stop if we reach max_new_tokens
+        # TODO: Auto-extend option
 
         if self.new_tokens >= self.max_new_tokens - self.generator.num_draft_tokens:
             return emit(results, emit_eos = True, emit_held = True, eos_reason = "max_new_tokens")
