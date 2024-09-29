@@ -435,7 +435,16 @@ class ExLlamaV2Sampler:
 
         # Evaluate filters
 
-        if len(filters) > 0:
+        if len(filters) > 0 and all(f.can_mask_logits() for f in filters) and \
+            logits.shape[0] == 1 and logits.shape[1] == 1:
+            for f in filters:
+                assert f.get_next(mask = True) == True, \
+                    "Attempting to use precomputed logit mask, but filter is not precomputing mask"
+                flat_logits = logits[0][0]
+                logits = f.mask_logits(flat_logits).view(1, 1, -1)
+            end_tokens = None
+
+        elif len(filters) > 0:
 
             pass_tokens = None
             end_tokens = None

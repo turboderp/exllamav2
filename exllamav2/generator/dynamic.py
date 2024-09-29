@@ -1140,8 +1140,11 @@ class ExLlamaV2DynamicGenerator:
         # GPU workload is scheduled here, so launch any sampling filters that can run while waiting for CUDA
 
         if self.filter_queue:
-            for f in self.filter_queue:
-                f.background_next(self.filter_pool)
+            for f, p in self.filter_queue:
+                if p:
+                    f.background_prepare_logit_mask(self.filter_pool)
+                else:
+                    f.background_next(self.filter_pool)
             time.sleep(0)
             self.filter_queue.clear()
 
@@ -1795,11 +1798,20 @@ class ExLlamaV2DynamicJob:
         # Feed filters
 
         if self.new_tokens >= 0:
+            all_mask = True
             for f in self.filters:
                 f.feed(next_token)
-                # Evaluate filter in background when possible
-                if f.use_background_worker():
-                    self.generator.filter_queue.append(f)
+                if not f.can_mask_logits() or not f.use_background_worker():
+                    all_mask = False
+            if all_mask:
+                # Using logit mask(s)
+                for f in self.filters:
+                    self.generator.filter_queue.append((f, True))
+            else:
+                # Using allowed token list(s)
+                for f in self.filters:
+                    if f.use_background_worker():
+                        self.generator.filter_queue.append((f, False))
 
         # Accept token
 
