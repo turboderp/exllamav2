@@ -7,7 +7,7 @@ from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.compat import safe_move_tensor
 from exllamav2.tensor_p import BROADCAST_VC
-from exllamav2.util import unpack_4bit, pack_4bit
+from exllamav2.util import unpack_4bit, pack_4bit, substitute_inf_with_max
 import gc
 from exllamav2.experimental.fpx import fpxify
 
@@ -298,8 +298,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         max_len = self.model.config.max_input_len if self.max_out_len is None else \
             min(self.max_out_len, self.model.config.max_input_len)
         return self.out_features * max_len * self.model.config.max_batch_size * 4 + 128
-
-
+    
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -315,7 +314,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
 
         if self.is_tp:
             if self.out_features_tp:
-                return self.forward_tp(
+                return substitute_inf_with_max(self.forward_tp(
                     hidden_states,
                     cache,
                     attn_params,
@@ -325,9 +324,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                     force_recons,
                     force_cuda,
                     **kwargs
-                )
+                ))
             elif self.in_features_tp:
-                return self.forward_tp_row(
+                return substitute_inf_with_max(self.forward_tp_row(
                     hidden_states,
                     cache,
                     attn_params,
@@ -337,7 +336,7 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                     force_recons,
                     force_cuda,
                     **kwargs
-                )
+                ))
             else:
                 assert False, "Unitialized TP linear layer"
 
@@ -347,9 +346,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
             hidden_states_out = loras[0].lm_head(hidden_states)
 
             if intermediates:
-                return {"hidden_states": hidden_states_out}
+                return {"hidden_states": substitute_inf_with_max(hidden_states_out)}
             else:
-                return hidden_states_out
+                return substitute_inf_with_max(hidden_states_out)
 
         if self.q_handle is not None and not force_recons:
 
@@ -383,9 +382,9 @@ class ExLlamaV2Linear(ExLlamaV2Module):
                     hidden_states_out += torch.matmul(temp, lora_b)
 
         if intermediates:
-            return {"hidden_states": hidden_states_out}
+            return {"hidden_states": substitute_inf_with_max(hidden_states_out)}
         else:
-            return hidden_states_out
+            return substitute_inf_with_max(hidden_states_out)
 
 
     def forward_tp(

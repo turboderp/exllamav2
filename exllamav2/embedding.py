@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
+from exllamav2.util import substitute_inf_with_max
+
 EMBEDDING_INDEX: int = 1000000
 
 class ExLlamaV2Embedding(ExLlamaV2Module):
@@ -185,6 +187,6 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
             hidden_states = ctx.copy_pinned(0, hidden_states)
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)

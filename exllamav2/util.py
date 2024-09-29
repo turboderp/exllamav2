@@ -368,3 +368,12 @@ def pack_4bit(unpacked: torch.Tensor):
         packed |= (unpacked[:, i::8].to(torch.int64) << (i * 4))
     packed = packed.to(torch.int32)
     return packed
+
+
+# Function to substitute inf and NaN with the maximum value of the type
+def substitute_inf_with_max(tensor):
+    dtype = tensor.dtype
+    max_value = torch.finfo(dtype).max if dtype.is_floating_point else torch.iinfo(dtype).max
+    tensor = torch.where(torch.isinf(tensor), max_value, tensor)
+    tensor = torch.where(torch.isnan(tensor), max_value, tensor)
+    return tensor

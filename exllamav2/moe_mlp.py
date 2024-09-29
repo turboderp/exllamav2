@@ -7,6 +7,7 @@ from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.linear import ExLlamaV2Linear
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.util import substitute_inf_with_max
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -244,7 +245,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         # ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]), pass_loras, pass_lora_temp)
         ext_c.q_moe_mlp_forward_(self.q_handle, hidden_states.view(-1, hidden_states.shape[-1]))
 
-        return hidden_states
+        return substitute_inf_with_max(hidden_states)
 
 
     def forward_torch(
@@ -313,9 +314,9 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
         if intermediates:
             result["hidden_states"] = final_hidden_states
-            return result
+            return substitute_inf_with_max(result)
         else:
-            return final_hidden_states
+            return substitute_inf_with_max(final_hidden_states)
 
 
     def update_loras(self):

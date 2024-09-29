@@ -9,6 +9,7 @@ from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
+from exllamav2.util import substitute_inf_with_max
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -119,7 +120,7 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         b = self.mlp.forward(b, cache, attn_params, past_len, intermediates, loras, **kwargs)
         hidden_states += a
         hidden_states += b
-        return hidden_states
+        return substitute_inf_with_max(hidden_states)
 
 
     def forward_interm(

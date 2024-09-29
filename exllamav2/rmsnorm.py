@@ -4,6 +4,7 @@ from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.ext import exllamav2_ext as ext_c
 from exllamav2.compat import safe_move_tensor
+from exllamav2.util import substitute_inf_with_max
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -114,7 +115,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         if self.is_tp:
-            return self.forward_tp(
+            return substitute_inf_with_max(self.forward_tp(
                 hidden_states,
                 cache,
                 attn_params,
@@ -123,7 +124,7 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
                 loras,
                 output_fp32,
                 **kwargs
-            )
+            ))
 
         output_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
@@ -137,9 +138,9 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         hidden_states = norm.view(output_shape)
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)
 
 
     def forward_tp(
@@ -198,9 +199,9 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         hidden_states *= self.weight
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)
 
 
     def tp_split(self, broadcast_type: int):

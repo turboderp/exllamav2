@@ -4,6 +4,7 @@ from torch import nn
 from exllamav2.module import ExLlamaV2Module
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.compat import safe_move_tensor
+from exllamav2.util import substitute_inf_with_max
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -118,6 +119,6 @@ class ExLlamaV2PosEmbedding(ExLlamaV2Module):
                 hidden_states[b, target_a:target_b] += emb_slice
 
         if intermediates:
-            return {"hidden_states": hidden_states}
+            return {"hidden_states": substitute_inf_with_max(hidden_states)}
         else:
-            return hidden_states
+            return substitute_inf_with_max(hidden_states)

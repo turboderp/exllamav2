@@ -4,6 +4,7 @@ import torch.nn as nn
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.stloader import STFile
 from exllamav2.compat import safe_move_tensor
+from exllamav2.util import substitute_inf_with_max
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -281,4 +282,4 @@ class Intervention(ExLlamaV2Module):
             hidden_states = self.post_forward(hidden_states, *args, **kwargs)
             hidden_states = safe_move_tensor(hidden_states, dev)
 
-        return hidden_states
+        return substitute_inf_with_max(hidden_states)
