@@ -287,31 +287,30 @@ class ExLlamaV2Config:
         rs = read(read_config, dict, "rope_scaling", None)
         if rs:
             scaling_type = rs.get("type", None)
+            rope_type = rs.get("rope_type", None)
+            assert not (scaling_type and rope_type), "rope_scaling key has both `type` and `rope_type` subkeys"
             if scaling_type == "linear":
                 assert "factor" in rs, "'factor' missing from 'rope_scaling' config"
                 self.scale_pos_emb = rs.get("factor", 1.0)
             if scaling_type == "su" or scaling_type == "longrope":
-                assert "long_factor" in rs, "'long_factor' missing from 'rope_scaling' config"
-                assert "short_factor" in rs, "'short_factor' missing from 'rope_scaling' config"
+                assert "long_factor" in rs, "'long_factor' missing from 'rope_scaling' config ('su' mode)"
+                assert "short_factor" in rs, "'short_factor' missing from 'rope_scaling' config ('su' mode)"
                 assert "original_max_position_embeddings" in read_config, \
                     "'original_max_position_embeddings' required for 'su' scaling"
                 self.scale_long_factor = rs["long_factor"]
                 self.scale_short_factor = rs["short_factor"]
                 self.original_max_seq_len = read_config["original_max_position_embeddings"]
                 self.alt_rope_method = "su"
-            # if scaling_type == "yarn":
-            #     self.scale_alpha_value = factor
-            rope_type = rs.get("rope_type", None)
+            if scaling_type == "yarn":
+                self.alt_rope_method = "yarn"
+                self.yarn_rope_factor = rs["factor"]
+                self.yarn_rope_original_max_position_embeddings = rs["original_max_position_embeddings"]
             if rope_type == "llama3":
                 self.alt_rope_method = "llama3"
                 self.l3_rope_factor = rs["factor"]
                 self.l3_rope_low_freq_factor = rs["low_freq_factor"]
                 self.l3_rope_high_freq_factor = rs["high_freq_factor"]
                 self.l3_rope_original_max_position_embeddings = rs["original_max_position_embeddings"]
-            if scaling_type == "yarn":
-                self.alt_rope_method = "yarn"
-                self.yarn_rope_factor = rs["factor"]
-                self.yarn_rope_original_max_position_embeddings = rs["original_max_position_embeddings"]
 
         # Checkpoint format (for GPTQ models)
 
