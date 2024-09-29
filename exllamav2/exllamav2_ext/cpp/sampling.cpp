@@ -487,12 +487,15 @@ int top_k_cpu
 
         for (int i = 0; i < top_k; ++i) min_heap.push({temp_probs[i], temp_indices[i]});
 
+        float t = min_heap.top().first;
         for (int i = top_k; i < num_candidates; i++)
         {
-            if (temp_probs[i] > min_heap.top().first)
+            float p = temp_probs[i];
+            if (p > t)
             {
                 min_heap.pop();
-                min_heap.push({temp_probs[i], temp_indices[i]});
+                min_heap.push({p, temp_indices[i]});
+                t = min_heap.top().first;
             }
         }
 

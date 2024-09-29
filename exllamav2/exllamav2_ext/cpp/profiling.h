@@ -9,6 +9,8 @@
 #include <string>
 #include <map>
 
+//#define SAMPLE_PROFILING
+
 struct ProfileItem
 {
     uint64_t min;
