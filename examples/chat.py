@@ -44,6 +44,7 @@ parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom sys
 parser.add_argument("-temp", "--temperature", type = float, default = 0.95, help = "Sampler temperature, default = 0.95 (1 to disable)")
 parser.add_argument("-smooth", "--smoothing_factor", type = float, default = 0.0, help = "Smoothing Factor, default = 0.0 (0 to disable")
 parser.add_argument("-dyntemp", "--dynamic_temperature", type = str, help = "Dynamic temperature min,max,exponent, e.g. -dyntemp 0.2,1.5,1")
+
 parser.add_argument("-topk", "--top_k", type = int, default = 50, help = "Sampler top-K, default = 50 (0 to disable)")
 parser.add_argument("-topp", "--top_p", type = float, default = 0.8, help = "Sampler top-P, default = 0.8 (0 to disable)")
 parser.add_argument("-topa", "--top_a", type = float, default = 0.0, help = "Sampler top-A, default = 0.0 (0 to disable)")
@@ -52,6 +53,13 @@ parser.add_argument("-typical", "--typical", type = float, default = 0.0, help =
 parser.add_argument("-repp", "--repetition_penalty", type = float, default = 1.01, help = "Sampler repetition penalty, default = 1.01 (1 to disable)")
 parser.add_argument("-freqpen", "--frequency_penalty", type = float, default = 0.0, help = "Sampler frequency penalty, default = 0.0 (0 to disable)")
 parser.add_argument("-prespen", "--presence_penalty", type = float, default = 0.0, help = "Sampler presence penalty, default = 0.0 (0 to disable)")
+parser.add_argument("-xtcp", "--xtc_probability", type = float, default = 0.0, help = "XTC sampling probability, default = 0.0 (0 to disable)")
+parser.add_argument("-xtct", "--xtc_threshold", type = float, default = 0.1, help = "XTC sampling threshold, default = 0.1, ignored when xtc_probability is 0")
+parser.add_argument("-drym", "--dry_multiplier", type = float, default = 0.0, help = "DRY multiplier, default = 0.0 (0 to disable)")
+parser.add_argument("-drya", "--dry_allowed_length", type = int, default = 2, help = "DRY allowed length, default = 2, ignored when dry_multiplier is 0")
+parser.add_argument("-dryb", "--dry_base", type = float, default = 1.75, help = "DRY base value, default = 1.75, ignored when dry_multiplier is 0")
+parser.add_argument("-dryr", "--dry_range", type = int, default = 0, help = "DRY range, default = 0 (0 for unlimited range)")
+
 parser.add_argument("-maxr", "--max_response_tokens", type = int, default = 1000, help = "Max tokens per response, default = 1000")
 parser.add_argument("-resc", "--response_chunk", type = int, default = 250, help = "Space to reserve in context for reply, default = 250")
 parser.add_argument("-ncf", "--no_code_formatting", action = "store_true", help = "Disable code formatting/syntax highlighting")
@@ -234,6 +242,12 @@ settings = ExLlamaV2Sampler.Settings(
     token_frequency_penalty = args.frequency_penalty,
     token_presence_penalty = args.presence_penalty,
     smoothing_factor = args.smoothing_factor,
+    xtc_probability = args.xtc_probability,
+    xtc_threshold = args.xtc_threshold,
+    dry_allowed_length = args.dry_allowed_length,
+    dry_base = args.dry_base,
+    dry_multiplier = args.dry_multiplier,
+    dry_range = args.dry_range,
 )
 
 if args.dynamic_temperature:
