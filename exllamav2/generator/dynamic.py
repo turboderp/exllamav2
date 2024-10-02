@@ -6,7 +6,7 @@ from exllamav2.generator.filters import ExLlamaV2Filter
 from exllamav2.cache import ExLlamaV2CacheBase, ExLlamaV2Cache_8bit
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
-from exllamav2.util import cuda_sync_active
+from exllamav2.util import cuda_sync_active, timed
 from concurrent.futures import ThreadPoolExecutor
 
 from exllamav2.compat import pairwise
@@ -525,7 +525,7 @@ class ExLlamaV2DynamicGenerator:
             self.current_loras = loras
         else:
             self.current_loras = [loras]
-        
+
 
     def generate(
         self,
@@ -667,6 +667,7 @@ class ExLlamaV2DynamicGenerator:
 
         while self.num_remaining_jobs():
             results = self.iterate()
+
             for r in results:
                 idx = order[r["serial"]]
                 if r["stage"] == "streaming":

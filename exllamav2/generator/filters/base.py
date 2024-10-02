@@ -2,6 +2,7 @@ from __future__ import annotations
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, Future
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer
+from exllamav2.util import timed
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 import torch
 

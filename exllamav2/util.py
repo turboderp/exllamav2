@@ -1,6 +1,7 @@
 from __future__ import annotations
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 import gc, subprocess, time, os, json
+from collections import deque
 import torch
 
 
@@ -12,6 +13,28 @@ class Timer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end_time = time.time()
         self.interval = self.end_time - self.start_time
+
+
+timings: dict[str: deque[float]] = {}
+num_run_avg = 10
+
+def timed(func):
+    def wrapper(*args, **kwargs):
+        global timings, num_run_avg
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        fname = func.__name__
+        if fname not in timings:
+            timings[fname] = deque()
+        if len(timings[fname]) >= num_run_avg:
+            timings[fname].popleft()
+        timings[fname].append(elapsed_time)
+        avg = sum(timings[fname]) / len(timings[fname])
+        print(f"{fname} executed in {elapsed_time:.4f} seconds, running avg. ({num_run_avg}): {avg:.4f}")
+        return result
+    return wrapper
 
 
 class SeqTensor:

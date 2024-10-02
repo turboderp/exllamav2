@@ -53,7 +53,7 @@ import gc
 import threading
 from typing import Callable
 # from exllamav2.util import list_live_tensors, print_vram_usage, set_snapshot, diff_snapshot, print_vram_usage_peak
-from exllamav2.util import get_basic_progress
+from exllamav2.util import get_basic_progress, timed
 # from line_profiler import profile
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 
