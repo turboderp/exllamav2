@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Cache, ExLlamaV2Tokenizer
 from exllamav2.generator import ExLlamaV2DynamicGenerator
 from exllamav2.generator.filters import ExLlamaV2PrefixFilter
-from inference_json_lmfe_wrapper import ExLlamaV2TokenEnforcerFilter
+from inference_lmfe_wrapper import ExLlamaV2TokenEnforcerFilter
 from lmformatenforcer import JsonSchemaParser
 from pydantic import BaseModel, conlist
 from typing import Literal
