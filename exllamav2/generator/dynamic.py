@@ -1146,7 +1146,7 @@ class ExLlamaV2DynamicGenerator:
                     f.background_prepare_logit_mask(self.filter_pool)
                 else:
                     f.background_next(self.filter_pool)
-            time.sleep(0)
+            # time.sleep(0)
             self.filter_queue.clear()
 
         # Pass logits to jobs for sampling
