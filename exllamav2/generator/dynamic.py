@@ -74,7 +74,7 @@ class CachePage:
     kv_position: int
     kv_position_revert: int
     # Specific tokens for which KV is valid assuming prev_hash
-    sequence: torch.Tensor
+    sequence: torch.Tensors
     can_revert: bool
     # Used by defragmenter
     new_page_index: int
@@ -525,7 +525,7 @@ class ExLlamaV2DynamicGenerator:
             self.current_loras = loras
         else:
             self.current_loras = [loras]
-        
+
 
     def generate(
         self,
@@ -1766,6 +1766,7 @@ class ExLlamaV2DynamicJob:
         ExLlamaV2Sampler.sample(
             logits,
             self.gen_settings,
+            self.sequences[0].input_ids.torch(),
             self.sequences[0].sequence_ids.torch(),
             self.rng.random(),
             self.generator.tokenizer,
