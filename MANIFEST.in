@@ -1,3 +1,4 @@
 recursive-include exllamav2 *
+global-include *.typed
 global-exclude *.pyc
 global-exclude dni_*

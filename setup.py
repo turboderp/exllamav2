@@ -123,6 +123,9 @@ setup(
         "rich"
     ],
     include_package_data = True,
+    package_data={
+        "": ["py.typed"],  # This will include py.typed in all packages
+    },
     verbose = verbose,
     **setup_kwargs,
 )
