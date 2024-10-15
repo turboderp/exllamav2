@@ -7,7 +7,7 @@ from exllamav2.generator import ExLlamaV2DynamicGenerator
 from formatron.schemas.pydantic import ClassSchema
 from formatron.integrations.exllamav2 import create_formatter_filter
 from formatron.formatter import FormatterBuilder
-# from pydantic import conlist
+from pydantic import conlist
 from typing import Literal, Optional
 import json
 import argparse
@@ -23,7 +23,7 @@ def create_superhero_json_formatter():
         name: str
         secret_identity: str
         gender: Literal["male", "female"]
-        # superpowers: conlist(str, max_length = 5)  # conlist is not currently supported by Formatron
+        superpowers: conlist(str, max_length = 5)
         first_appearance: SuperheroAppearance
 
     f = FormatterBuilder()
