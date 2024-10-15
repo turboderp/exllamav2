@@ -67,8 +67,13 @@ if args.bits < 2 or args.bits > 8:
     print(f" !! Warning: target bitrate {args.bits} will likely not be attainable")
 
 if not os.path.exists(args.out_dir):
-    print(f" ## Error: Directory not found: {args.out_dir}")
-    sys.exit()
+    try:
+        os.makedirs(args.out_dir, exist_ok=True)
+        print(f" -- Created output directory: {args.out_dir}")
+    except OSError as e:
+        print(f" ## Error: Failed to create output directory: {args.out_dir}")
+        print(f"    {str(e)}")
+        sys.exit()
 
 # Create job
 
