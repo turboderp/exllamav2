@@ -84,6 +84,8 @@ void stloader_read
         return;
 
         error:
+        if (file && ferror(file))
+            printf("Error reading file: %s (errno: %d)\n", strerror(errno), errno);
         load_failed = true;
     };
 
@@ -91,6 +93,8 @@ void stloader_read
 
     auto copy_worker = [&] ()
     {
+        cudaSetDevice(device.value().index());
+
         size_t total_blocks = DIVIDE(size, STLOADER_BLOCK_SIZE);
         while (total_blocks && !load_failed)
         {
@@ -114,7 +118,6 @@ void stloader_read
                 }
             }
 
-            // DBGX2(pos_a, pos_b);
             cudaError_t cr = cudaMemcpyAsync
             (
                 cuda_buffer + pos_a,
@@ -123,7 +126,11 @@ void stloader_read
                 cudaMemcpyHostToDevice,
                 stream
             );
-            if (cr != cudaSuccess) goto error;
+            if (cr != cudaSuccess)
+            {
+                fprintf(stderr,"GPUassert: %s\n", cudaGetErrorString(cr));
+                goto error;
+            }
         }
         return;
 
