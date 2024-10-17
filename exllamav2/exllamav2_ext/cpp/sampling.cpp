@@ -440,6 +440,73 @@ int sort_descending
 }
 
 AVX2_TARGET_OPTIONAL
+int logit_threshold_restore
+(
+    float logit_min_threshold,
+    float logit_temp_threshold,
+    const int maxlogit,
+    const int vocab_size,
+    const float* logits,
+    const float exponent,
+    float* temp_probs,
+    int* temp_indices
+)
+{
+    profile_start("logit_threshold_restore");
+
+    float esum = 0.0f;
+    int n = 0;
+    float maxl = logits[maxlogit];
+    float effective_min = std::min(maxl, logit_min_threshold);
+
+    for (int i = 0; i < vocab_size; i++)
+    {
+        float target_logit = logits[i];
+        if (target_logit < effective_min) continue;
+        float l = target_logit - maxl;
+        if (exponent == 2.0f)
+            l *= -l;
+        else if (exponent != 1.0f)
+            l = -powf(fabs(l), exponent);
+        float e = expf(l);
+        esum += e;
+        if (target_logit < logit_temp_threshold)
+            temp_probs[i] = e;
+    }
+
+    float isum = 1.0f / esum;
+    float diffsum = 0.0f;
+
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (logits[i] < effective_min) continue;
+        if (logits[i] < logit_temp_threshold)
+        {
+            temp_probs[i] *= isum;
+            diffsum += temp_probs[i];
+            n++;
+        }
+    }
+
+    float adjfactor = 1.0f - diffsum;
+
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (logits[i] >= logit_temp_threshold)
+        {
+            temp_probs[i] *= adjfactor;
+            n++;
+        }
+    }
+
+    sort_descending(vocab_size, temp_probs, temp_indices, n);
+
+    profile_stop();
+    return n;
+
+}
+
+AVX2_TARGET_OPTIONAL
 int top_k_cpu
 (
     const int num_candidates,

@@ -85,6 +85,8 @@ std::vector<float> sample_basic
 (
     torch::Tensor logits,           // shape [bsz, 1, vocab_size]
     float temperature,
+    float logit_temp_threshold,
+    float logit_min_threshold,
     int top_k,
     float top_p,
     float top_a,
@@ -164,7 +166,22 @@ std::vector<float> sample_basic
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
-        if (top_k > 0 && top_k < vocab_size)
+        if ((logit_temp_threshold > logit_min_threshold) && logit_min_threshold > 0.0f)
+        {
+            num_candidates = logit_threshold_restore
+            (
+                logit_min_threshold,
+                logit_temp_threshold,
+                maxlogit,
+                vocab_size,
+                logits_ptr + i * vocab_size,
+                exponent,
+                temp_probs,
+                temp_indices
+            );
+        }
+
+        if (num_candidates > top_k && top_k > 0 && top_k < vocab_size)
         {
             num_candidates = top_k_cpu(num_candidates, temp_probs, temp_indices, top_k, maxlogit);
             normalize_cpu(num_candidates, temp_probs);
