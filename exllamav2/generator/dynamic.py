@@ -525,7 +525,7 @@ class ExLlamaV2DynamicGenerator:
             self.current_loras = loras
         else:
             self.current_loras = [loras]
-        
+
 
     def generate(
         self,
@@ -1170,10 +1170,10 @@ class ExLlamaV2DynamicGenerator:
             for i in range(batch_logits.shape[1]):
                 job_logits = batch_logits[a:b, i:i+1, :]
                 if i == 0 and mt_sample:
-                    next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
+                    next_token, next_k_tokens, next_k_probs, next_prob, filter_eos, confidence_flag = \
                     futures.popleft().result()
                 else:
-                    next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
+                    next_token, next_k_tokens, next_k_probs, next_prob, filter_eos, confidence_flag = \
                     job.receive_logits(job_logits)
 
                 eos, sampled_token = job.receive_sample(
@@ -1183,6 +1183,7 @@ class ExLlamaV2DynamicGenerator:
                     next_k_probs,
                     next_prob,
                     filter_eos,
+                    confidence_flag,
                     results
                 )
 
@@ -1661,6 +1662,12 @@ class ExLlamaV2DynamicJob:
 
         self.checkpoint = None
 
+        # Confidence breaker
+
+        self.confidence_breaker = gen_settings.confidence_breaker
+        self.confidence_breaker_debug = gen_settings.confidence_breaker_debug
+        self.confidence_flag_sequence = [False] * self.confidence_breaker
+
         # Measurement
 
         self.time_enqueue = None
@@ -1762,7 +1769,7 @@ class ExLlamaV2DynamicJob:
             else:
                 blocked_tokens = self.stop_tokens_list
 
-        next_token, next_k_tokens, next_k_probs, next_prob, filter_eos = \
+        next_token, next_k_tokens, next_k_probs, next_prob, filter_eos, confidence_flag = \
         ExLlamaV2Sampler.sample(
             logits,
             self.gen_settings,
@@ -1777,7 +1784,7 @@ class ExLlamaV2DynamicJob:
             # sync = True
         )
 
-        return next_token, next_k_tokens, next_k_probs, next_prob, filter_eos
+        return next_token, next_k_tokens, next_k_probs, next_prob, filter_eos, confidence_flag
 
 
     def receive_sample(
@@ -1788,6 +1795,7 @@ class ExLlamaV2DynamicJob:
             next_k_probs: torch.Tensor | None,
             next_prob: torch.Tensor | None,
             filter_eos: bool | None,
+            confidence_flag: bool | None,
             results: list
     ):
         page_size = self.generator.page_size
@@ -1800,6 +1808,14 @@ class ExLlamaV2DynamicJob:
                 # Evaluate filter in background when possible
                 if f.use_background_worker():
                     self.generator.filter_queue.append(f)
+
+        # Update confidence_flag_sequence
+
+        if confidence_flag is not None:
+            self.confidence_flag_sequence.append(confidence_flag)
+            # Limit the size of the sequence to prevent it from growing indefinitely
+            if len(self.confidence_flag_sequence) > self.confidence_breaker + 1:
+                self.confidence_flag_sequence.pop(0)
 
         # Accept token
 
@@ -2011,7 +2027,8 @@ class ExLlamaV2DynamicJob:
             else:
                 return emit(results)
 
-        # Hold text as long as it contains part of a banned string
+        # Hold text as long as it contains part of a banned string,
+        # or until we know a confidence breaker will not be triggered
 
         def unset_checkpoint():
             self.checkpoint = None
@@ -2026,6 +2043,7 @@ class ExLlamaV2DynamicJob:
                     "held_k_tokens": self.held_k_tokens.clone(1),
                     "held_k_probs": self.held_k_probs.clone(1),
                     "held_logits": self.held_logits.clone(1),
+                    "flag_sequence": self.confidence_flag_sequence[:-1].copy(),
                     "explored_tokens": [next_token.item()],
                 }
             else:
@@ -2054,28 +2072,59 @@ class ExLlamaV2DynamicJob:
             off_tokens = self.held_tokens.slice(len(self.checkpoint["held_tokens"]), None)
             off_text = self.held_text[len(self.checkpoint["held_text"]):]
             self.held_text = self.checkpoint["held_text"]
-            self.held_token = self.checkpoint["held_tokens"]
+            self.held_tokens = self.checkpoint["held_tokens"]
             self.held_probs = self.checkpoint["held_probs"]
             self.held_k_tokens = self.checkpoint["held_k_tokens"]
             self.held_k_probs = self.checkpoint["held_k_probs"]
             self.held_logits = self.checkpoint["held_logits"]
+            self.confidence_flag_sequence = self.checkpoint["flag_sequence"]
             self.checkpoint["offset"] = 0
             return off_tokens, off_text
 
-        if self.banned_strings_utf32_offsets is not None and self.new_tokens > 0:
-            match = ext_c.partial_strings_match(
-                np.frombuffer(self.held_text.lower().encode("utf-32-le"), dtype = np.uint8),
-                self.banned_strings_utf32_offsets,
-                self.banned_strings_utf32_buffer
-            )
-            if match >= 0:
+        # Handle banned strings and confidence flags using checkpointing
+
+        if self.new_tokens > 0:
+            # Check for banned strings
+            banned_string_match = -1
+            if self.banned_strings_utf32_offsets is not None:
+                banned_string_match = ext_c.partial_strings_match(
+                    np.frombuffer(self.held_text.lower().encode("utf-32-le"), dtype = np.uint8),
+                    self.banned_strings_utf32_offsets,
+                    self.banned_strings_utf32_buffer
+                )
+
+            confidence_breaker_match = -1
+            if self.confidence_breaker > 0:
+                # Check for confidence_flag sequence
+                if confidence_flag is not None:
+                    last_n_flags = self.confidence_flag_sequence[-self.confidence_breaker:]
+                    if not confidence_flag:
+                        confidence_breaker_match = -1  # False flag
+                    elif all(last_n_flags):
+                        confidence_breaker_match = 1  # Match
+                    else:
+                        confidence_breaker_match = -2  # Partial match, wait and see
+                elif self.confidence_flag_sequence[-1]:
+                    confidence_breaker_match = -2  # Pause current sequence without resetting partial match
+                else:
+                    confidence_breaker_match = -1  # Treat None as False flag, following previous False flag
+
+            if confidence_breaker_match >= 0:  # Match confidence breaker
+                set_checkpoint()
+                if self.confidence_breaker_debug:
+                    print(f'[Confidence breaker activated on text: "{self.held_text}"]', flush=True)
+                offending_tokens, offending_text = rewind_checkpoint()
+                return emit(results, suppressed_text = offending_text, suppressed_tokens = offending_tokens)
+            elif banned_string_match >= 0:
                 set_checkpoint()
                 offending_tokens, offending_text = rewind_checkpoint()
-                return emit(results, emit_held = True, suppressed_text = offending_text, suppressed_tokens = offending_tokens)
-            elif match == -2:
+                return emit(results, suppressed_text = offending_text, suppressed_tokens = offending_tokens)
+            elif banned_string_match == -2 or confidence_breaker_match == -2:  # Partial match
                 set_checkpoint()
                 return emit(results)
-            else:
+            else:  # Reset and permit text passthrough
+                if len(self.full_completion) > 0:
+                    set_checkpoint()
                 unset_checkpoint()
 
         # End on stop strings

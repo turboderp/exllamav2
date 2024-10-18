@@ -55,6 +55,18 @@ int sort_descending
     int max_index
 );
 
+int logit_threshold_restore
+(
+    float logit_min_threshold,
+    float logit_temp_threshold,
+    const int maxlogit,
+    const int vocab_size,
+    const float* logits,
+    const float exponent,
+    float* temp_probs,
+    int* temp_indices
+);
+
 int top_k_cpu
 (
     const int num_candidates,

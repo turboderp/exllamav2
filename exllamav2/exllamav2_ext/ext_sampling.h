@@ -16,6 +16,8 @@ std::vector<float> sample_basic
 (
     torch::Tensor logits,           // shape [bsz, vocab_size]
     float temperature,
+    float logit_temp_threshold,
+    float logit_min_threshold,
     int top_k,
     float top_p,
     float top_a,
