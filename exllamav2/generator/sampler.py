@@ -78,6 +78,7 @@ class ExLlamaV2Sampler:
         logit_min_threshold: float = 0.0
 
         confidence_breaker: int = 0
+        confidence_breaker_debug: bool = False
         cb_mid_threshold: float = 0.0
         cb_high_threshold: float = 0.0
 
