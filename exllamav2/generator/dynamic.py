@@ -630,7 +630,7 @@ class ExLlamaV2DynamicGenerator:
         if not embeddings:
             embeddings = [None] * len(prompts)
         else:
-            assert len(embeddings) == len(prompts) and all((isinstance(f, list)) for f in embeddings), \
+            assert len(embeddings) == len(prompts) and all((isinstance(f, list) or not f) for f in embeddings), \
                 "Must provide one list of embeddings per prompt."
 
         prompts = prompt if isinstance(prompt, list) else [prompt]
