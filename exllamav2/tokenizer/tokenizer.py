@@ -10,6 +10,10 @@ from exllamav2.tokenizer import (
 )
 import threading
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from exllamav2.generator import ExLlamaV2MMEmbedding
+
 
 lock = threading.RLock()
 def synchronized_init(func):
@@ -382,14 +386,45 @@ class ExLlamaV2Tokenizer:
         return encoded
 
 
+    def encode_special_or_unspecial(
+        self,
+        text: str,
+        special: bool,
+        embeddings: list[ExLlamaV2MMEmbedding]
+    ):
+        out_parts = []
+
+        if embeddings:
+            aliases = { e.text_alias: e for e in embeddings }
+            split_pattern = r"(" + "|".join(re.escape(k) for k in aliases.keys()) + ")"
+            in_parts = re.split(split_pattern, text)
+        else:
+            aliases = {}
+            in_parts = [text]
+
+        for text in in_parts:
+            if text in aliases:
+                out_parts += aliases[text].get_ids()
+            else:
+                if special:
+                    out_parts += self.encode_special(text)
+                else:
+                    out_parts += self.encode_unspecial(text)
+
+        return out_parts
+
+
     # Encode string or list of strings
 
-    def encode(self,
-               text: str | list[str],
-               add_bos: bool = False,
-               add_eos: bool = False,
-               encode_special_tokens: bool = False,
-               return_offsets: bool = False) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    def encode(
+        self,
+        text: str | list[str],
+        add_bos: bool = False,
+        add_eos: bool = False,
+        encode_special_tokens: bool = False,
+        return_offsets: bool = False,
+        embeddings: list[ExLlamaV2MMEmbedding] | None = None
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
 
         """
         Encode string or list of strings
@@ -410,15 +445,21 @@ class ExLlamaV2Tokenizer:
         :param return_offsets:
             Also return a tensor of padding lengths
 
+        :param embeddings:
+            List of ExLlamaV2MMEmbeddings. If present, aliases in the input will be replaced with token ID ranges.
+
         :return:
             Tensor of shape (batch_size, max_seq_len), optionally offsets Tensor of shape (batch_size)
         """
+
+        if embeddings is None: embeddings = []
 
         if isinstance(text, list):
 
             # text is a list of strings
 
-            list_ids = [self.encode_special(t) for t in text] if encode_special_tokens else [self.encode_unspecial(t) for t in text]
+            # list_ids = [self.encode_special(t) for t in text] if encode_special_tokens else [self.encode_unspecial(t) for t in text]
+            list_ids = [self.encode_special_or_unspecial(t, encode_special_tokens, embeddings) for t in text]
 
             if add_bos and self.bos_token_id is not None:
                 for ids in list_ids: ids.insert(0, self.bos_token_id)
@@ -446,7 +487,8 @@ class ExLlamaV2Tokenizer:
 
             # text is a single string
 
-            ids = self.encode_special(text) if encode_special_tokens else self.encode_unspecial(text)
+            # ids = self.encode_special(text) if encode_special_tokens else self.encode_unspecial(text)
+            ids = self.encode_special_or_unspecial(text, encode_special_tokens, embeddings)
             if add_bos and self.bos_token_id is not None:
                 ids.insert(0, self.bos_token_id)
             if add_eos and self.eos_token_id is not None:

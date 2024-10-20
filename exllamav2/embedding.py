@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from exllamav2.model import ExLlamaV2
 
-EMBEDDING_INDEX: int = 1000000
+EMBEDDING_INDEX: int = 1000000000
 
 class ExLlamaV2Embedding(ExLlamaV2Module):
 
@@ -116,24 +116,28 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
         # Apply indexed embeddings
 
         indexed_embeddings = kwargs.get("indexed_embeddings")
-        if indexed_embeddings is not None:
+        if indexed_embeddings:
 
             # Split prompt
 
-            offset = EMBEDDING_INDEX
             input_ids = hidden_states
-            standard_mask = input_ids < offset
-            indexed_mask = input_ids >= offset
+            standard_mask = input_ids < EMBEDDING_INDEX
+            indexed_masks = [
+                (input_ids >= e.first_index) & (input_ids < (e.first_index + e.length))
+                for e in indexed_embeddings
+            ]
 
-        if indexed_embeddings is not None and indexed_mask.any():
+        if indexed_embeddings and any(im.any() for im in indexed_masks):
 
             # Create combined tensor on the target device
 
             batch_size, seq_len = input_ids.shape
             hidden_size = cfg.hidden_size
-            combined_embeddings = torch.empty(batch_size, seq_len, hidden_size,
-                                              device = indexed_embeddings.device,
-                                              dtype = indexed_embeddings.dtype)
+            combined_embeddings = torch.empty(
+                batch_size, seq_len, hidden_size,
+                device = indexed_embeddings[0].embeddings.device,
+                dtype = indexed_embeddings[0].embeddings.dtype
+            )
 
             # Extract standard embeddings, copy to target device and insert in-place
 
@@ -147,7 +151,7 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                         standard_embeddings_ = loras[0].embed_tokens(standard_ids_)
                     else:
                         standard_embeddings_ = self.embedding(standard_ids_)
-                    standard_embeddings_ = safe_move_tensor(standard_embeddings_, indexed_embeddings.device)
+                    standard_embeddings_ = safe_move_tensor(standard_embeddings_, indexed_embeddings[0].embeddings.device)
                     combined_embeddings[i][standard_mask_] = standard_embeddings_
 
             # Normalization
@@ -159,9 +163,11 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
             # Extract indexed embeddings and insert in-place
 
-            for i in range(batch_size):
-                indexed_ids_ = input_ids[i][indexed_mask[i]] - offset
-                combined_embeddings[i][indexed_mask[i]] = indexed_embeddings[i][indexed_ids_]
+            for im, ie in zip(indexed_masks, indexed_embeddings):
+                if im.any():
+                    for i in range(batch_size):
+                        indexed_ids_ = input_ids[i][im[i]] - ie.first_index
+                        combined_embeddings[i][im[i]] = ie.embeddings[indexed_ids_]
 
             hidden_states = combined_embeddings
 
