@@ -55,10 +55,10 @@ int sort_descending
     int max_index
 );
 
-int logit_threshold_restore
+int logit_threshold_temperature
 (
-    float logit_min_threshold,
     float logit_temp_threshold,
+    float logit_high_temp,
     const int maxlogit,
     const int vocab_size,
     const float* logits,

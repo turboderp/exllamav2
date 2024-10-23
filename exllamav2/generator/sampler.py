@@ -73,9 +73,8 @@ class ExLlamaV2Sampler:
 
         temperature_last: bool = False
 
-        logit_threshold_stats: bool = False
         logit_temp_threshold: float = 0.0
-        logit_min_threshold: float = 0.0
+        logit_high_temp: float = 0.0
 
         confidence_breaker: int = 0
         confidence_breaker_debug: bool = False
@@ -535,18 +534,9 @@ class ExLlamaV2Sampler:
             output_ktokens = torch.empty((batch_size, 1, return_top_tokens), dtype = torch.long)
             output_kprobs = torch.empty((batch_size, 1, return_top_tokens), dtype = torch.float)
 
-        if settings.logit_temp_threshold > 0.0 or settings.logit_min_threshold > 0.0:
-            logit_filter = prep_logit_filter(logit_filter)
-            effective_filter = max(settings.logit_temp_threshold, settings.logit_min_threshold)
-            logit_filter[logits.squeeze(1) < effective_filter] = False
-            if not torch.any(logit_filter):
-                logit_filter.view(-1)[torch.argmax(logits.squeeze(1))] = True
-
         m = ext_c.sample_basic(
             logits,
             1.0 if settings.temperature_last else settings.temperature,
-            settings.logit_temp_threshold,
-            settings.logit_min_threshold,
             settings.top_k,
             settings.top_p,
             settings.top_a,
@@ -571,6 +561,8 @@ class ExLlamaV2Sampler:
             settings.max_temp,
             settings.temp_exponent,
             settings.smoothing_factor,
+            settings.logit_temp_threshold,
+            settings.logit_high_temp,
             settings.skew
         )
 
@@ -595,39 +587,6 @@ class ExLlamaV2Sampler:
                     confidence_flag = None
         else:
             confidence_flag = None
-
-        if settings.logit_threshold_stats:
-            selected_token = output_tokens
-            batch_logits_squeezed = logits[0, 0, :]
-            token_logit = batch_logits_squeezed[selected_token]
-            min_logit_threshold = min(torch.max(batch_logits_squeezed).item(),
-                                      settings.logit_min_threshold if settings.logit_min_threshold > 0
-                                      else settings.logit_temp_threshold)
-            filtered_indices_mask = batch_logits_squeezed >= min_logit_threshold
-            filtered_logits = batch_logits_squeezed[filtered_indices_mask]
-            probs = F.softmax(batch_logits_squeezed, dim=-1)
-            filtered_probs = probs[filtered_indices_mask]
-
-            # Calculate the statistics for filtered_logits
-            min_filtered = filtered_logits.min().item() if len(filtered_logits) > 0 else float('nan')
-            mean_filtered = filtered_logits.mean().item() if len(filtered_logits) > 0 else float('nan')
-            max_filtered = filtered_logits.max().item() if len(filtered_logits) > 0 else float('nan')
-            std_filtered = filtered_logits.std().item() if len(filtered_logits) > 0 else float('nan')
-            min_p_equivalent = filtered_probs[filtered_logits.argmin()].item()
-
-            debug_string = (
-                f"total logits: {batch_logits_squeezed.size(0):<7} "
-                f"filtered to: {filtered_logits.size(0):<4} "
-                f"min: {min_filtered:>5.2f}  "
-                f"mean: {mean_filtered:>5.2f}  "
-                f"max: {max_filtered:>5.2f}  "
-                f"std: {std_filtered:>5.2f}   "
-                f"selected logit: {token_logit.item():>5.2f}   "
-                f"selected token: {selected_token.item():<7}  "
-                f"min_p: {min_p_equivalent:>6.5f}"
-            )
-            print(debug_string, flush=True)
-
 
         if settings.mirostat: settings.mirostat_mu = m
 

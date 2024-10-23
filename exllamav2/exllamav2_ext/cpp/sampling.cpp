@@ -440,10 +440,10 @@ int sort_descending
 }
 
 AVX2_TARGET_OPTIONAL
-int logit_threshold_restore
+int logit_threshold_temperature
 (
-    float logit_min_threshold,
     float logit_temp_threshold,
+    float logit_high_temp,
     const int maxlogit,
     const int vocab_size,
     const float* logits,
@@ -452,51 +452,52 @@ int logit_threshold_restore
     int* temp_indices
 )
 {
-    profile_start("logit_threshold_restore");
+    profile_start("logit_threshold_temperature");
 
     float esum = 0.0f;
+    float static_pmass = 0.0f;
+    float itemp = 1.0f / std::max(logit_high_temp, 0.01f);
     int n = 0;
     float maxl = logits[maxlogit];
-    float effective_min = std::min(maxl, logit_min_threshold);
 
     for (int i = 0; i < vocab_size; i++)
     {
         float target_logit = logits[i];
-        if (target_logit < effective_min) continue;
+
         float l = target_logit - maxl;
         if (exponent == 2.0f)
             l *= -l;
         else if (exponent != 1.0f)
             l = -powf(fabs(l), exponent);
-        float e = expf(l);
+
+        float e = expf(l * itemp);
         esum += e;
-        if (target_logit < logit_temp_threshold)
+
+        if (target_logit >= logit_temp_threshold)
             temp_probs[i] = e;
+        else static_pmass += temp_probs[i];
+
+        n++;
     }
 
     float isum = 1.0f / esum;
-    float diffsum = 0.0f;
-
-    for (int i = 0; i < vocab_size; i++)
-    {
-        if (logits[i] < effective_min) continue;
-        if (logits[i] < logit_temp_threshold)
-        {
-            temp_probs[i] *= isum;
-            diffsum += temp_probs[i];
-            n++;
-        }
-    }
-
-    float adjfactor = 1.0f - diffsum;
+    float temp_pmass = 0.0f;
 
     for (int i = 0; i < vocab_size; i++)
     {
         if (logits[i] >= logit_temp_threshold)
         {
-            temp_probs[i] *= adjfactor;
-            n++;
+            temp_probs[i] *= isum;
+            temp_pmass += temp_probs[i];
         }
+    }
+
+    float adjfactor = (1.0f - static_pmass) / temp_pmass;
+
+    for (int i = 0; i < vocab_size; i++)
+    {
+        if (logits[i] >= logit_temp_threshold)
+            temp_probs[i] *= adjfactor;
     }
 
     sort_descending(vocab_size, temp_probs, temp_indices, n);
