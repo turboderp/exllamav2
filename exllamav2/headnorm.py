@@ -26,9 +26,10 @@ class ExLlamaV2HeadNorm(ExLlamaV2Module):
         model: ExLlamaV2,
         key: str,
         num_heads: int,
-        head_dim: int
+        head_dim: int,
+        archparams = None
     ):
-        super().__init__(model, key)
+        super().__init__(model, key, archparams)
 
         self.layernorm = None
         self.weight = None

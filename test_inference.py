@@ -283,7 +283,7 @@ if args.eval_dataset or args.standard_perplexity:
             eval_len = [eval_tokens.shape[1]] * eval_tokens.shape[0]
 
             # if args.eval_bos:
-            if model.config.arch.requires_bos:
+            if model.config.arch.lm.requires_bos:
                 boss = torch.full((eval_tokens.shape[0], 1), tokenizer.bos_token_id, dtype = torch.long)
                 eval_tokens = torch.cat((boss, eval_tokens[:, :-1]), dim = 1)
 

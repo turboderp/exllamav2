@@ -9,7 +9,7 @@ def optimize(job, save_fn, model):
 
     cfg = model.config
 
-    has_gate = cfg.arch.mlp_gate
+    has_gate = cfg.arch.lm.mlp_gate
     if has_gate: mlp_key_gate = cfg.arch.mlp_key_gate
     mlp_key_up = cfg.arch.mlp_key_up
     mlp_key_down = cfg.arch.mlp_key_down
@@ -38,7 +38,7 @@ def optimize(job, save_fn, model):
     key_v = key + ".self_attn.v_proj"
     key_o = key + ".self_attn.o_proj"
 
-    if not cfg.arch.is_moe:
+    if not cfg.arch.lm.is_moe:
         if has_gate: key_g = key + mlp_key_gate
         key_u = key + mlp_key_up
         key_d = key + mlp_key_down
@@ -83,7 +83,7 @@ def optimize(job, save_fn, model):
     params = []
 
     for i in range(num_layers):
-        if cfg.arch.parallel_decoder_blocks:
+        if cfg.arch.lm.parallel_decoder_blocks:
             m1 = measurement["model.layers." + str(i) + ".parallel_decoder"]["attn"]
             m2 = measurement["model.layers." + str(i) + ".parallel_decoder"]["mlp"]
         else:

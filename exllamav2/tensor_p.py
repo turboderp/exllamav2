@@ -56,7 +56,7 @@ class TPContext:
         self.model = model
         cfg = self.model.config
 
-        assert cfg.arch.supports_tp, \
+        assert cfg.arch.lm.supports_tp, \
             f"Tensor-parallel is not supported for {cfg.arch.arch_string}"
         assert cfg.intermediate_size % 128 == 0, \
             "Model intermediate size must be divisible by 128"

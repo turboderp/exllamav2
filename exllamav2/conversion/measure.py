@@ -204,7 +204,7 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
 
 def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params, reuse_h_up_proj = None):
 
-    has_gate = module.model.config.arch.mlp_gate
+    has_gate = module.model.config.arch.lm.mlp_gate
 
     qjobs, qmaps = get_qparams_reduced(qparams_mlp, not has_gate)
     results = []
@@ -490,7 +490,7 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
-            has_gate = module.model.config.arch.mlp_gate
+            has_gate = module.model.config.arch.lm.mlp_gate
             if has_gate: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.down_proj.linear)
@@ -508,7 +508,7 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
             quantizers["k_proj"] = AdaptiveGPTQ(module.attn.k_proj.linear)
             quantizers["v_proj"] = AdaptiveGPTQ(module.attn.v_proj.linear)
             quantizers["o_proj"] = AdaptiveGPTQ(module.attn.o_proj.linear)
-            has_gate = module.model.config.arch.mlp_gate
+            has_gate = module.model.config.arch.lm.mlp_gate
             if has_gate: quantizers["gate_proj"] = AdaptiveGPTQ(module.mlp.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.mlp.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.mlp.down_proj.linear)

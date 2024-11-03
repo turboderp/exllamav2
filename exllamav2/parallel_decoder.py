@@ -24,18 +24,23 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
     attn: ExLlamaV2Attention
     mlp: ExLlamaV2MLP
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 layer_idx: int):
-        super().__init__(model, key)
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        layer_idx: int,
+        archparams = None
+    ):
+        super().__init__(model, key, archparams)
+
+        cfg = self.model.config
 
         self.layer_idx = layer_idx
 
-        if self.model.config.arch.norm == "layernorm":
-            self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_1)
-        elif self.model.config.arch.norm == "rmsnorm":
-            self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_1)
+        if self.archparams.norm == "layernorm":
+            self.input_layernorm = ExLlamaV2LayerNorm(model, key + self.archparams.keys["norm_1"])
+        elif self.archparams.norm == "rmsnorm":
+            self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.archparams.keys["norm_1"])
 
         self.attn = ExLlamaV2Attention(model, key, layer_idx, has_norm = False, has_residual = False)
         self.mlp = ExLlamaV2MLP(model, key, layer_idx, has_norm = False, has_residual = False)

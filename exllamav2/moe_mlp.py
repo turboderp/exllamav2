@@ -29,13 +29,18 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
 
     temp_lora_size: int
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 layer_idx: int):
-        super().__init__(model, key)
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        layer_idx: int,
+        archparams = None
+    ):
+        super().__init__(model, key, archparams)
 
         cfg = self.model.config
+        ap = self.archparams
+        km = self.archparams.keys
 
         self.layer_idx = layer_idx
 
@@ -47,19 +52,19 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
         self.num_experts = cfg.num_experts
         self.num_experts_per_token = cfg.num_experts_per_token
 
-        if cfg.arch.norm == "layernorm":
-            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + self.model.config.arch.norm_key_2)
-        elif cfg.arch.norm == "rmsnorm":
-            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + self.model.config.arch.norm_key_2)
+        if ap.norm == "layernorm":
+            self.post_attention_layernorm = ExLlamaV2LayerNorm(model, key + km["norm_2"])
+        elif ap.norm == "rmsnorm":
+            self.post_attention_layernorm = ExLlamaV2RMSNorm(model, key + km["norm_2"])
 
-        w1_key = key + cfg.arch.mlp_key_gate
-        w2_key = key + cfg.arch.mlp_key_down
-        w3_key = key + cfg.arch.mlp_key_up
+        w1_key = key + km["mlp_gate"]
+        w2_key = key + km["mlp_down"]
+        w3_key = key + km["mlp_up"]
         w1_f_key = w1_key.replace(".*.", ".")
         w2_f_key = w2_key.replace(".*.", ".")
         w3_f_key = w3_key.replace(".*.", ".")
 
-        gate_key = cfg.arch.mlp_key_expert_gate
+        gate_key = km["mlp_expert_gate"]
 
         self.w1 = []
         self.w2 = []
@@ -72,9 +77,9 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             # ad = bd
             bu += intermediate_size
             # bd += hidden_size
-            w1 = ExLlamaV2Linear(model, w1_key.replace("*", str(e)), hidden_size, intermediate_size, cfg.arch.mlp_bias, f_key = w1_f_key, f_beg = au, f_end = bu)
-            w2 = ExLlamaV2Linear(model, w2_key.replace("*", str(e)), intermediate_size, hidden_size, cfg.arch.mlp_bias, f_key = w2_f_key, f_beg = au, f_end = bu)
-            w3 = ExLlamaV2Linear(model, w3_key.replace("*", str(e)), hidden_size, intermediate_size, cfg.arch.mlp_bias, f_key = w3_f_key, f_beg = au, f_end = bu)
+            w1 = ExLlamaV2Linear(model, w1_key.replace("*", str(e)), hidden_size, intermediate_size, ap.mlp_bias, f_key = w1_f_key, f_beg = au, f_end = bu)
+            w2 = ExLlamaV2Linear(model, w2_key.replace("*", str(e)), intermediate_size, hidden_size, ap.mlp_bias, f_key = w2_f_key, f_beg = au, f_end = bu)
+            w3 = ExLlamaV2Linear(model, w3_key.replace("*", str(e)), hidden_size, intermediate_size, ap.mlp_bias, f_key = w3_f_key, f_beg = au, f_end = bu)
             self.w1.append(w1)
             self.w2.append(w2)
             self.w3.append(w3)
@@ -124,7 +129,7 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
                 device_context.get_scratch_slice(self.temp_logit_size()),
                 device_context.get_scratch_slice(self.temp_dq_size()),
                 self.model.config.max_input_len * self.model.config.max_batch_size,
-                self.model.config.arch.mlp_act_func == "gelu"
+                self.archparams.mlp_act_func == "gelu"
             )
 
 
@@ -296,9 +301,9 @@ class ExLlamaV2MoEMLP(ExLlamaV2Module):
             gate = self.w1[expert_idx].forward(current_state, loras = loras)
             up = self.w3[expert_idx].forward(current_state, loras = loras)
 
-            if self.model.config.arch.mlp_act_func == "silu":
+            if self.archparams.mlp_act_func == "silu":
                 current_hidden_states = F.silu(gate)
-            elif self.model.config.arch.mlp_act_func == "gelu":
+            elif self.archparams.mlp_act_func == "gelu":
                 current_hidden_states = F.gelu(gate)
             current_hidden_states *= up
             if intermediates: result[f"pre_down.{expert_idx}"] = current_hidden_states

@@ -67,9 +67,10 @@ class ExLlamaV2Linear(ExLlamaV2Module):
         f_end: int = None,
         is_sub_module: bool = True,
         altpack_qkv: bool = False,
-        normalize_unq: bool = False
+        normalize_unq: bool = False,
+        archparams = None
     ):
-        super().__init__(model, key)
+        super().__init__(model, key, archparams)
 
         self.is_sub_module = is_sub_module
 

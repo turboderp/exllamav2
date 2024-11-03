@@ -208,7 +208,7 @@ model.load(lazy = True)
 
 # Limit context length if necessary
 
-if model.config.arch.rope_style == RopeStyle.NONE:
+if model.config.arch.lm.rope_style == RopeStyle.NONE:
     max_ctx = model.config.max_seq_len
     if job["length"] > max_ctx:
         print (f" !! Warning: Reducing calibration length to model max context: {max_ctx}")

@@ -5,6 +5,7 @@ import os, json
 from safetensors.torch import load_file as safe_load_file
 from torch import load as load_file
 import torch
+import math
 from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
@@ -58,7 +59,7 @@ class ExLlamaV2Lora:
 
         # Compatibility check
 
-        assert not self.model.config.arch.residual_stream_fp32, \
+        assert not self.model.config.arch.lm.residual_stream_fp32, \
             "LoRAs not (yet) supported for models with FP32 residual stream"
 
         # Grab relevant items from LoRA config
@@ -88,7 +89,7 @@ class ExLlamaV2Lora:
             tensor = f[key]
 
             # Find target
-            if key.endswith(f'{self.config.arch.lm_head_key}.weight'):
+            if key.endswith(f'{self.config.arch.lm.keys["lm_head"]}.weight'):
                 if tensor.dtype == torch.bfloat16:
                     tensor = tensor.to(torch.float16)
                 elif tensor.dtype == torch.float32:

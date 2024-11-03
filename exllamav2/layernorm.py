@@ -21,9 +21,10 @@ class ExLlamaV2LayerNorm(ExLlamaV2Module):
     def __init__(
         self,
         model: ExLlamaV2,
-        key: str
+        key: str,
+        archparams = None
     ):
-        super().__init__(model, key)
+        super().__init__(model, key, archparams)
 
         self.layernorm = None
         self.weight = None

@@ -1,8 +1,6 @@
 from __future__ import annotations
 import os, sys
 
-from exllamav2.architecture import RopeStyle
-
 min_version = (3, 8)
 if sys.version_info < min_version:
     print("")
@@ -49,6 +47,7 @@ from exllamav2.compat import safe_move_tensor
 from exllamav2.stloader import cleanup_stfiles
 from exllamav2.device import ExLlamaV2DeviceContext, set_device_streams
 from exllamav2.tensor_p import TPContext, BROADCAST_VC
+from exllamav2.architecture import RopeStyle
 import gc
 import threading
 from typing import Callable
@@ -76,7 +75,12 @@ class ExLlamaV2:
 
     tp_context: TPContext | None
 
-    def __init__(self, config: ExLlamaV2Config, lazy_load = False):
+    def __init__(
+        self,
+        config: ExLlamaV2Config,
+        lazy_load = False,
+        archparams = None
+    ):
 
         self.config = config
         self.modules = []
@@ -88,47 +92,57 @@ class ExLlamaV2:
 
         # Build model
 
-        emb = ExLlamaV2Embedding(self, "model.embed_tokens")
+        cfg = self.config
+        if archparams is None: archparams = cfg.arch.lm
+        self.archparams = archparams
+
+        emb = ExLlamaV2Embedding(self, cfg.arch.lm_prefix + "model.embed_tokens")
         self.modules += [emb]
 
-        if self.config.arch.learned_pos_emb_key:
-            pos_emb = ExLlamaV2PosEmbedding(self, self.config.arch.learned_pos_emb_key)
+        if archparams.keys["learned_pos_emb"]:
+            pos_emb = ExLlamaV2PosEmbedding(self, archparams.keys["learned_pos_emb"])
             self.modules += [pos_emb]
 
-        for layer_idx in range(self.config.num_hidden_layers):
+        for layer_idx in range(cfg.num_hidden_layers):
 
-            layer_key = f"model.layers.{layer_idx}"
-            if self.config.arch.parallel_decoder_blocks:
+            layer_key = cfg.arch.lm_prefix + f"model.layers.{layer_idx}"
+            if cfg.arch.lm.parallel_decoder_blocks:
                 pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx)
                 self.modules += [pd]
             else:
-                if self.config.arch.alternating_swa:
-                    swa = self.config.sliding_window if not bool(layer_idx % 2) else 0
-                elif self.config.arch.swa:
-                    swa = self.config.sliding_window
+                if cfg.arch.lm.alternating_swa:
+                    swa = cfg.sliding_window if not bool(layer_idx % 2) else 0
+                elif cfg.arch.lm.swa:
+                    swa = cfg.sliding_window
                 else:
                     swa = 0
                 attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
-                if self.config.arch.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)
+                if cfg.arch.lm.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)
                 else: mlp = ExLlamaV2MLP(self, layer_key, layer_idx)
                 self.modules += [attn, mlp]
 
-        if self.config.arch.norm == "layernorm": norm = ExLlamaV2LayerNorm(self, "model.norm")
-        elif self.config.arch.norm == "rmsnorm": norm = ExLlamaV2RMSNorm(self, "model.norm")
-        else: raise ValueError("unknown norm type")
+        if cfg.arch.lm.norm == "layernorm":
+            norm = ExLlamaV2LayerNorm(self, cfg.arch.lm_prefix + "model.norm")
+        elif cfg.arch.lm.norm == "rmsnorm":
+            norm = ExLlamaV2RMSNorm(self, cfg.arch.lm_prefix + "model.norm")
+        else:
+            raise ValueError("unknown norm type")
         self.modules += [norm]
 
         self.head_layer_idx = len(self.modules)
-        head = ExLlamaV2Linear(self, "lm_head",
-                               self.config.hidden_size,
-                               self.config.vocab_size,
-                               False,
-                               max_out_len = self.config.max_output_len,
-                               prescale = self.config.logit_scale,
-                               is_sub_module = False,
-                               normalize_unq = bool(self.config.norm_head))
-        if self.config.arch.lm_head_key != "lm_head":
-            head.alt_key = self.config.arch.lm_head_key
+        head = ExLlamaV2Linear(
+            self,
+            cfg.arch.lm_prefix + "lm_head",
+            cfg.hidden_size,
+            cfg.vocab_size,
+            False,
+            max_out_len = cfg.max_output_len,
+            prescale = cfg.logit_scale,
+            is_sub_module = False,
+            normalize_unq = bool(cfg.norm_head)
+        )
+        if archparams.keys["lm_head"] != "lm_head":
+            head.alt_key = archparams.keys["lm_head"]
         self.modules += [head]
 
         # Compile dictionary of modules
@@ -157,17 +171,21 @@ class ExLlamaV2:
         embed_cpu: bool = True
     ) -> list[float]:
 
+        cfg = self.config
         self.cache_map = {}
 
         # Constant shared between layers
 
-        sincos_size = self.config.head_dim * self.config.max_seq_len * 2
-        constant_size = sincos_size * 2
+        if self.archparams.rope_style != RopeStyle.NONE:
+            sincos_size = cfg.head_dim * cfg.max_seq_len * 2
+            constant_size = sincos_size * 2
+        else:
+            constant_size = 0
 
         # Max size of hidden state
 
-        state_size = self.config.hidden_size * self.config.max_input_len * self.config.max_batch_size * 2
-        mask_size = self.config.max_input_len ** 2 * self.config.max_batch_size * 2
+        state_size = cfg.hidden_size * cfg.max_input_len * cfg.max_batch_size * 2
+        mask_size = cfg.max_input_len ** 2 * cfg.max_batch_size * 2
 
         # Bytes remaining per device
 
@@ -184,7 +202,7 @@ class ExLlamaV2:
 
             # Special case for token embeddings on CPU
 
-            if idx == 0 and embed_cpu:
+            if isinstance(module, ExLlamaV2Embedding) and embed_cpu:
 
                 module.set_device_idx(-1)
                 continue
@@ -245,6 +263,7 @@ class ExLlamaV2:
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
         progress: bool = False
+        progress: bool = False,
     ):
         """
         Load model, regular manual split mode.

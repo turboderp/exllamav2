@@ -25,9 +25,16 @@ class ExLlamaV2Module:
     submodules: list[ExLlamaV2Module]
     assumed_footprint: int
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str):
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        archparams = None,
+    ):
+
+        if archparams is None:
+            archparams = model.config.arch.lm
+        self.archparams = archparams
 
         self.model = model
         self.key = key

@@ -23,9 +23,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
     def __init__(
         self,
         model: ExLlamaV2,
-        key: str
+        key: str,
+        archparams = None
     ):
-        super().__init__(model, key)
+        super().__init__(model, key, archparams)
 
         self.is_tp = False
 
@@ -156,9 +157,9 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
             # Normalization
 
-            if cfg.arch.residual_stream_fp32:
+            if self.archparams.residual_stream_fp32:
                 combined_embeddings = combined_embeddings.float()
-            if cfg.arch.normalize_embeddings:
+            if self.archparams.normalize_embeddings:
                 combined_embeddings *= cfg.hidden_size ** 0.5
 
             # Extract indexed embeddings and insert in-place
@@ -179,9 +180,9 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
             else:
                 hidden_states = self.embedding(hidden_states)
 
-            if cfg.arch.residual_stream_fp32:
+            if self.archparams.residual_stream_fp32:
                 hidden_states = hidden_states.float()
-            if cfg.arch.normalize_embeddings:
+            if self.archparams.normalize_embeddings:
                 hidden_states *= cfg.hidden_size ** 0.5
 
         # Move to pinned temp buffer for TP

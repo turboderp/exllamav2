@@ -20,8 +20,13 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     is_tp: bool
     broadcast_type: int | None
 
-    def __init__(self, model, key):
-        super().__init__(model, key)
+    def __init__(
+        self,
+        model,
+        key,
+        archparams = None
+    ):
+        super().__init__(model, key, archparams)
 
         self.is_tp = False
         self.broadcast_type = None
@@ -50,8 +55,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
         self.variance_epsilon = self.model.config.norm_eps
 
         # Gemma adds 1 to the norm tensor for some reason
-        if self.model.config.arch.norm_constant_bias != 0:
-            self.weight += self.model.config.arch.norm_constant_bias
+        if self.archparams.norm_constant_bias != 0:
+            self.weight += self.archparams.norm_constant_bias
 
 
     def unload(self):
@@ -74,8 +79,8 @@ class ExLlamaV2RMSNorm(ExLlamaV2Module):
     def get_weight(self) -> torch.Tensor:
 
         # Make sure to return the original weight tensor for Gemma
-        if self.model.config.arch.norm_constant_bias != 0:
-            return self.weight.data - self.model.config.arch.norm_constant_bias
+        if self.archparams.norm_constant_bias != 0:
+            return self.weight.data - self.archparams.norm_constant_bias
 
         return self.weight.data
 

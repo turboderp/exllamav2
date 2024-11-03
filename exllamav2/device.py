@@ -50,7 +50,8 @@ class ExLlamaV2DeviceContext:
         self,
         model: ExLlamaV2,
         device_idx: int,
-        scratch_bytes: int
+        scratch_bytes: int,
+        archparams = None
     ):
         self.model = model
         self.device_idx = device_idx
@@ -58,6 +59,7 @@ class ExLlamaV2DeviceContext:
         self.scratch = None
         self.scratch_bytes = scratch_bytes
         self.scratch_idx = 0
+        self.archparams = archparams or model.config.arch.lm
 
         # Create streams (only one per device)
 
@@ -140,7 +142,7 @@ class ExLlamaV2DeviceContext:
         device = _torch_device(self.device_idx)
 
         cfg = self.model.config
-        if cfg.arch.rope_style == RopeStyle.NONE:
+        if self.archparams.rope_style == RopeStyle.NONE:
             self.sin = torch.zeros((1,), device = device, dtype = torch.half)
             self.cos = self.sin
             return
@@ -254,9 +256,9 @@ class ExLlamaV2DeviceContext:
         if scale != 1.0: t /= scale
 
         freqs = torch.einsum("i,j->ij", t, inv_freq)
-        if cfg.arch.rope_style == RopeStyle.NEOX:
+        if self.archparams.rope_style == RopeStyle.NEOX:
             emb = torch.cat((freqs, freqs), dim=-1)
-        elif cfg.arch.rope_style == RopeStyle.GPTJ:
+        elif self.archparams.rope_style == RopeStyle.GPTJ:
             emb = torch.repeat_interleave(freqs, 2, dim=-1)
         else:
             raise ValueError()

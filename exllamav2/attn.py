@@ -134,11 +134,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         layer_idx: int,
         has_norm: bool = True,
         has_residual: bool = True,
-        sliding_window: int = 0
+        sliding_window: int = 0,
+        archparams = None
     ):
-        super().__init__(model, key)
+        super().__init__(model, key, archparams)
 
         cfg = self.model.config
+        ap = self.archparams
+        km = self.archparams.keys
+
         self.is_tp = False
         self.tp_dq_size = None
 
@@ -151,27 +155,28 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         hidden_size = cfg.hidden_size
 
-        if self.has_norm:
-            if cfg.arch.norm == "layernorm":
-                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1)
-                self.post_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_1_post) if cfg.arch.norm_key_1_post else None
-            elif cfg.arch.norm == "rmsnorm":
-                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1)
-                self.post_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_1_post) if cfg.arch.norm_key_1_post else None
+        if self.has_norm and (km["norm_1"] or km["norm_1_post"]):
+            if ap.norm == "layernorm":
+                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + km["norm_1"], archparams)
+                self.post_layernorm = ExLlamaV2LayerNorm(model, key + km["norm_1_post"], archparams) if km["norm_1_post"] else None
+            elif ap.norm == "rmsnorm":
+                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + km["norm_1"], archparams)
+                self.post_layernorm = ExLlamaV2RMSNorm(model, key + km["norm_1_post"], archparams) if km["norm_1_post"] else None
         else:
             self.pre_layernorm = None
             self.post_layernorm = None
+            self.has_norm = False
 
         f_a = 0
         f_b = cfg.num_attention_heads * cfg.head_dim
         f_c = f_b + cfg.num_key_value_heads * cfg.head_dim
         f_d = f_c + cfg.num_key_value_heads * cfg.head_dim
-        f_key = (key + ".self_attn." + cfg.arch.fused_qkv_key) if cfg.arch.fused_qkv_key else None
+        f_key = (key + ".self_attn." + km["fused_qkv"]) if km["fused_qkv"] else None
 
-        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = cfg.arch.fused_qkv_altpack)
-        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = cfg.arch.fused_qkv_altpack)
-        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, cfg.arch.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = cfg.arch.fused_qkv_altpack)
-        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, cfg.arch.attention_bias_o, prescale = cfg.scale_depth)
+        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = ap.fused_qkv_altpack)
+        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = ap.fused_qkv_altpack)
+        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = ap.fused_qkv_altpack)
+        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, ap.attention_bias_o, prescale = cfg.scale_depth)
 
         if cfg.use_qk_norm:
             self.q_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.q_norm", cfg.num_attention_heads, cfg.head_dim)
@@ -180,10 +185,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.q_norm = None
             self.k_norm = None
 
-        self.submodules = [self.q_proj,
-                           self.k_proj,
-                           self.v_proj,
-                           self.o_proj]
+        self.submodules = [
+            self.q_proj,
+            self.k_proj,
+            self.v_proj,
+            self.o_proj
+        ]
         if self.pre_layernorm:
             self.submodules += [self.pre_layernorm]
         if self.post_layernorm:
@@ -294,12 +301,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 cfg.head_dim,
                 cfg.max_seq_len,
                 self.has_residual,
-                cfg.arch.rope_style.value,
+                self.archparams.rope_style.value,
                 q_norm,
                 k_norm,
                 post_norm_weight,
                 post_norm_bias,
-                cfg.arch.residual_stream_fp32,
+                self.archparams.residual_stream_fp32,
                 not cfg.no_graphs
             )
 
@@ -522,7 +529,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             if cfg.use_qk_norm:
                 q = self.q_norm.forward(q)
                 k = self.k_norm.forward(k)
-            if cfg.arch.rope_style != RopeStyle.NONE:
+            if self.archparams.rope_style != RopeStyle.NONE:
                 for t, heads in [(q, cfg.num_attention_heads), (k, cfg.num_key_value_heads)]:
                     ext_c.rope_(
                         t,
@@ -532,7 +539,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                         heads,
                         cfg.head_dim,
                         cache_seqlens,
-                        cfg.arch.rope_style == RopeStyle.NEOX
+                        self.archparams.rope_style == RopeStyle.NEOX
                     )
             if attn_params.is_sequential:
                 k_ = k_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
@@ -659,7 +666,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.v_proj.q_handle,
             self.o_proj.q_handle,
             cfg.head_dim,
-            int(cfg.arch.rope_style),
+            int(self.archparams.rope_style),
             batch_size,
             q_len,
             sin,
@@ -728,7 +735,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             assert False, "TP not implemented for QK norm"  # TODO: ...
             # q = self.q_norm.forward(q)
             # k = self.k_norm.forward(k)
-        if cfg.arch.rope_style != RopeStyle.NONE:
+        if self.archparams.rope_style != RopeStyle.NONE:
             for idx, (dev, a, b) in enumerate(split):
                 context = self.model.get_device_context(dev)
                 torch.cuda.set_stream(context.stream)
@@ -741,7 +748,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                         (b - a) * heads,
                         cfg.head_dim,
                         attn_params.cache_seqlens_tp[idx],
-                        cfg.arch.rope_style == RopeStyle.NEOX
+                        self.archparams.rope_style == RopeStyle.NEOX
                     )
         if attn_params.is_sequential:
             k_ = [x[:, attn_params.first_index: attn_params.first_index + q_len, :, :] for x in k_cache_f]
@@ -1113,7 +1120,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             pass_lora_temp
         )
 
-        if cfg.arch.clamp_hidden_states:
+        if self.archparams.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
         return hidden_states
@@ -1166,7 +1173,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.v_proj.q_handle,
             self.o_proj.q_handle,
             cfg.head_dim,
-            int(cfg.arch.rope_style),
+            int(self.archparams.rope_style),
             batch_size,
             q_len,
             sin,
@@ -1223,7 +1230,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
             k_cache, v_cache = None, None
 
-        if cfg.arch.rope_style != RopeStyle.NONE:
+        if self.archparams.rope_style != RopeStyle.NONE:
             for idx, (dev, a, b) in enumerate(split):
                 context = self.model.get_device_context(dev)
                 torch.cuda.set_stream(context.stream)
@@ -1236,7 +1243,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                         (b - a) * heads,
                         cfg.head_dim,
                         attn_params.position_offsets_tp[idx] if attn_params.position_offsets is not None else none_tensor,
-                        cfg.arch.rope_style == RopeStyle.NEOX
+                        self.archparams.rope_style == RopeStyle.NEOX
                     )
 
         attn_outputs = []
@@ -1370,9 +1377,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
             position_offsets = none_tensor
 
-        if cfg.arch.rope_style != RopeStyle.NONE:
-            ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, cfg.arch.rope_style == RopeStyle.NEOX)
-            ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, cfg.arch.rope_style == RopeStyle.NEOX)
+        if self.archparams.rope_style != RopeStyle.NONE:
+            ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
+            ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
 
         # Add keys and values to cache
 
@@ -1417,15 +1424,15 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         # Post layernorm
 
         if self.post_layernorm:
-            attn_proj = self.post_layernorm.forward(attn_proj, output_fp32 = cfg.arch.residual_stream_fp32)
+            attn_proj = self.post_layernorm.forward(attn_proj, output_fp32 = self.archparams.residual_stream_fp32)
 
         # Add residual connection
 
         hidden_states = (attn_proj + residual) if self.has_residual else attn_proj
 
-        if cfg.arch.residual_stream_fp32:
+        if self.archparams.residual_stream_fp32:
             hidden_states = hidden_states.float()
-        elif cfg.arch.clamp_hidden_states:
+        elif self.archparams.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
         if intermediates:

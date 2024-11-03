@@ -38,15 +38,29 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     tp_dq_size: list[int] | None
 
 
-    def __init__(self,
-                 model: ExLlamaV2,
-                 key: str,
-                 layer_idx: int,
-                 has_norm: bool = True,
-                 has_residual: bool = True):
-
-        super().__init__(model, key)
+    def __init__(
+        self,
+        model: ExLlamaV2,
+        key: str,
+        layer_idx: int,
+        has_norm: bool = True,
+        has_residual: bool = True,
+        archparams = None,
+        in_features: int | None = None,
+        out_features: int | None = None,
+        interm_features: int | None = None,
+    ):
+        super().__init__(model, key, archparams)
         cfg = self.model.config
+        ap = self.archparams
+        km = self.archparams.keys
+
+        if in_features is None: in_features = cfg.hidden_size
+        if out_features is None: out_features = cfg.hidden_size
+        if interm_features is None: interm_features = cfg.intermediate_size
+        self.in_features = in_features
+        self.out_features = out_features
+        self.interm_features = interm_features
 
         self.is_tp = False
         self.tp_dq_size = None
@@ -59,23 +73,23 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.temp_lora_size = 0
 
         f_a = 0
-        f_b = cfg.intermediate_size
-        f_c = f_b + cfg.intermediate_size
-        f_key = (key + ".mlp." + cfg.arch.fused_mlp_key_12) if cfg.arch.fused_mlp_key_12 else None
+        f_b = interm_features
+        f_c = f_b + interm_features
+        f_key = (key + ".mlp." + km["fused_mlp_12"]) if km["fused_mlp_12"] else None
 
-        if self.has_norm:
-            if cfg.arch.norm == "layernorm":
-                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_2)
-                self.post_layernorm = ExLlamaV2LayerNorm(model, key + cfg.arch.norm_key_2_post) if cfg.arch.norm_key_2_post else None
-            elif cfg.arch.norm == "rmsnorm":
-                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_2)
-                self.post_layernorm = ExLlamaV2RMSNorm(model, key + cfg.arch.norm_key_2_post) if cfg.arch.norm_key_2_post else None
+        if self.has_norm and (km["norm_2"] or km["norm_2_post"]):
+            if ap.norm == "layernorm":
+                self.pre_layernorm = ExLlamaV2LayerNorm(model, key + km["norm_2"])
+                self.post_layernorm = ExLlamaV2LayerNorm(model, key + km["norm_2_post"]) if km["norm_2_post"] else None
+            elif ap.norm == "rmsnorm":
+                self.pre_layernorm = ExLlamaV2RMSNorm(model, key + km["norm_2"])
+                self.post_layernorm = ExLlamaV2RMSNorm(model, key + km["norm_2_post"]) if km["norm_2_post"] else None
         else:
             self.pre_layernorm = None
             self.post_layernorm = None
 
-        self.up_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_up, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c)
-        self.down_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_down, cfg.intermediate_size, cfg.hidden_size, self.model.config.arch.mlp_bias, prescale = cfg.scale_depth)
+        self.up_proj = ExLlamaV2Linear(model, key + km["mlp_up"], in_features, interm_features, ap.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c)
+        self.down_proj = ExLlamaV2Linear(model, key + km["mlp_down"], interm_features, out_features, ap.mlp_bias, prescale = cfg.scale_depth)
 
         self.submodules = [self.up_proj,
                            self.down_proj]
@@ -84,8 +98,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         if self.post_layernorm:
             self.submodules += [self.post_layernorm]
 
-        if cfg.arch.mlp_gate:
-            self.gate_proj = ExLlamaV2Linear(model, key + cfg.arch.mlp_key_gate, cfg.hidden_size, cfg.intermediate_size, self.model.config.arch.mlp_bias, f_key = f_key, f_beg = f_a, f_end = f_b)
+        if ap.mlp_gate:
+            self.gate_proj = ExLlamaV2Linear(model, key + km["mlp_gate"], in_features, interm_features, ap.mlp_bias, f_key = f_key, f_beg = f_a, f_end = f_b)
             self.submodules += [self.gate_proj]
         else:
             self.gate_proj = None
@@ -96,7 +110,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         numel = self.up_proj.numel() + \
                 self.down_proj.numel()
 
-        if self.model.config.arch.mlp_gate:
+        if self.archparams.arch.mlp_gate:
             numel += self.gate_proj.numel()
 
         if self.pre_layernorm is not None:
@@ -113,6 +127,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         device_context: bool = True
     ):
         cfg = self.model.config
+        km = self.archparams.keys
 
         if self.pre_layernorm is not None:
             self.pre_layernorm.load()
@@ -120,10 +135,10 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.post_layernorm.load()
 
         if cfg.checkpoint_fused_mlp:
-            w12 = self.load_weight(self.key + cfg.arch.fused_mlp_key_12)
-            w1 = nn.Parameter(w12[:cfg.intermediate_size, :].contiguous())
-            w2 = nn.Parameter(w12[cfg.intermediate_size:, :].contiguous())
-            w3 = self.load_weight(self.key + cfg.arch.fused_mlp_key_3)
+            w12 = self.load_weight(self.key + km["fused_mlp_12"])
+            w1 = nn.Parameter(w12[:self.interm_features, :].contiguous())
+            w2 = nn.Parameter(w12[self.interm_features:, :].contiguous())
+            w3 = self.load_weight(self.key + km["fused_mlp_3"])
             self.down_proj.load(w3, device_context = device_context)
             self.gate_proj.load(w1, device_context = device_context)
             self.up_proj.load(w2, device_context = device_context)
@@ -180,11 +195,11 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 temp_b,
                 temp_dq,
                 cfg.max_input_len * cfg.max_batch_size,
-                cfg.arch.mlp_act_func == "gelu",
+                self.archparams.mlp_act_func == "gelu",
                 self.has_residual,
                 post_norm_weight,
                 post_norm_bias,
-                cfg.arch.residual_stream_fp32,
+                self.archparams.residual_stream_fp32,
                 not cfg.no_graphs
             )
 
@@ -205,7 +220,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
     def weight_footprint(self) -> int:
 
         if self.model.config.checkpoint_fused_mlp:
-            fp = 3 * self.model.config.intermediate_size * self.model.config.hidden_size * 2
+            fp = 2 * self.in_features * self.interm_features * 2 + \
+                self.interm_features * self.out_features * 2
         else:
             fp = self.up_proj.weight_footprint() + \
                  self.down_proj.weight_footprint()
@@ -230,30 +246,31 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def scratch_space(self) -> int:
 
-        cfg = self.model.config
-        assert cfg.intermediate_size >= cfg.hidden_size
-        return self.temp_state_size() + \
-               self.temp_a_size() + \
-               self.temp_b_size() + \
-               self.temp_dq_size()
+        assert self.interm_features >= self.in_features and self.interm_features >= self.out_features
+        return (
+            self.temp_state_size() +
+            self.temp_a_size() +
+            self.temp_b_size() +
+            self.temp_dq_size()
+        )
 
 
     def temp_state_size(self) -> int:
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.hidden_size * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * self.out_features * 2 + 128
 
 
     def temp_a_size(self) -> int:
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.intermediate_size * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * self.interm_features * 2 + 128
 
 
     def temp_b_size(self) -> int:
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.intermediate_size * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * self.interm_features * 2 + 128
 
 
     def temp_dq_size(self) -> int:
@@ -316,7 +333,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                              pass_loras,
                              pass_lora_temp)
 
-        if cfg.arch.clamp_hidden_states:
+        if self.archparams.clamp_hidden_states:
             hidden_states.clamp_(-65504, 65504)
 
         return hidden_states
@@ -354,7 +371,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.gate_proj.q_handle if self.gate_proj is not None else [],
             self.up_proj.q_handle,
             self.down_proj.q_handle,
-            cfg.arch.mlp_act_func == "gelu"
+            self.archparams.mlp_act_func == "gelu"
         )
 
         return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
@@ -391,9 +408,9 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             context = self.model.get_device_context(dev)
             torch.cuda.set_stream(context.stream)
 
-            if cfg.arch.mlp_act_func == "silu":
+            if self.archparams.mlp_act_func == "silu":
                 output = F.silu(gate[idx])
-            elif cfg.arch.mlp_act_func == "gelu":
+            elif self.archparams.mlp_act_func == "gelu":
                 output = F.gelu(gate[idx], approximate = "tanh")
             output *= up[idx]
             # output.clamp_(min = -65504.0, max = 65504.0)
@@ -430,28 +447,28 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
         if self.gate_proj is not None:
             gate = self.gate_proj.forward(post_norm, loras = loras)
-            if cfg.arch.mlp_act_func == "silu":
+            if self.archparams.mlp_act_func == "silu":
                 y = F.silu(gate)
-            elif cfg.arch.mlp_act_func == "gelu":
+            elif self.archparams.mlp_act_func == "gelu":
                 y = F.gelu(gate, approximate = "tanh")
             up = self.up_proj.forward(post_norm, loras = loras)
             y *= up
             y.clamp_(min = -65504.0, max = 65504.0)
         else:
             up = self.up_proj.forward(post_norm, loras = loras)
-            if cfg.arch.mlp_act_func == "silu":
+            if self.archparams.mlp_act_func == "silu":
                 y = F.silu(up)
-            elif cfg.arch.mlp_act_func == "gelu":
+            elif self.archparams.mlp_act_func == "gelu":
                 y = F.gelu(up, approximate = "tanh")
 
         down = self.down_proj.forward(y, loras = loras)
         if self.post_layernorm:
-            down = self.post_layernorm.forward(down, output_fp32 = cfg.arch.residual_stream_fp32)
+            down = self.post_layernorm.forward(down, output_fp32 = self.archparams.residual_stream_fp32)
         hidden_states = down + residual if self.has_residual else down
 
-        if cfg.arch.residual_stream_fp32:
+        if self.archparams.residual_stream_fp32:
             hidden_states = hidden_states.float()
-        elif cfg.arch.clamp_hidden_states:
+        elif self.archparams.clamp_hidden_states:
             hidden_states = hidden_states.clamp(-65504, 65504)
 
         if intermediates:

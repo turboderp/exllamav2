@@ -90,7 +90,7 @@ def compile_model(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2MLP):
 
-            has_gate = model.config.arch.mlp_gate
+            has_gate = model.config.arch.lm.mlp_gate
             d = get_f_module(job, module.pre_layernorm)
             if d: out_dict.update(d); current_size += _dsize(d)
             d = get_f_module(job, module.post_layernorm)
@@ -110,7 +110,7 @@ def compile_model(job, save_fn, model):
 
         if isinstance(module, ExLlamaV2ParallelDecoder):
 
-            has_gate = model.config.arch.mlp_gate
+            has_gate = model.config.arch.lm.mlp_gate
             has_qk_norm = model.config.use_qk_norm
             d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
             d = get_q_module(job, module.attn.q_proj); out_dict.update(d); current_size += _dsize(d)

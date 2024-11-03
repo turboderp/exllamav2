@@ -153,7 +153,7 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, attn_param
 
 def quant_mlp(job, module, hidden_states, target_states, quantizers, attn_params, strat, reuse_h_up_proj = None):
 
-    has_mlp = module.model.config.arch.mlp_gate
+    has_mlp = module.model.config.arch.lm.mlp_gate
 
     if reuse_h_up_proj is not None:
         quantizers["up_proj"].reuse_h(quantizers[reuse_h_up_proj])
@@ -311,7 +311,7 @@ def quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
-            has_mlp = model.config.arch.mlp_gate
+            has_mlp = model.config.arch.lm.mlp_gate
             # testc(module, hidden_states, hidden_i_states, module.post_attention_layernorm, [module.gate_proj, module.up_proj])
             if has_mlp: quantizers["gate_proj"] = AdaptiveGPTQ(module.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.up_proj.linear)
@@ -341,7 +341,7 @@ def quant(job, save_fn, model):
             quantizers["k_proj"] = AdaptiveGPTQ(module.attn.k_proj.linear)
             quantizers["v_proj"] = AdaptiveGPTQ(module.attn.v_proj.linear)
             quantizers["o_proj"] = AdaptiveGPTQ(module.attn.o_proj.linear)
-            has_gate = module.model.config.arch.mlp_gate
+            has_gate = module.model.config.arch.lm.mlp_gate
             if has_gate: quantizers["gate_proj"] = AdaptiveGPTQ(module.mlp.gate_proj.linear)
             quantizers["up_proj"] = AdaptiveGPTQ(module.mlp.up_proj.linear)
             quantizers["down_proj"] = AdaptiveGPTQ(module.mlp.down_proj.linear)
