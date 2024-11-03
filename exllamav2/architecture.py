@@ -247,18 +247,6 @@ class ExLlamaV2ArchParams:
                 layer_keys_mixtral_mlp
             self.lm.expect_keys += \
                 expect_keys_llama
-            self.norm_eps_key = "rms_norm_eps"
-            self.mlp_key_gate = ".block_sparse_moe.experts.*.w1"
-            self.mlp_key_up = ".block_sparse_moe.experts.*.w3"
-            self.mlp_key_down = ".block_sparse_moe.experts.*.w2"
-            self.mlp_key_expert_gate = ".block_sparse_moe.gate"
-            self.lm_head_key = "lm_head"
-            self.norm_key_1 = ".input_layernorm"
-            self.norm_key_2 = ".post_attention_layernorm"
-            self.mlp_act_func = "silu"
-            self.norm = "rmsnorm"
-            self.rope_style = RopeStyle.NEOX
-            self.is_moe = True
             self.lm.keys.update({
                 "mlp_gate": ".block_sparse_moe.experts.*.w1",
                 "mlp_up": ".block_sparse_moe.experts.*.w3",
@@ -266,6 +254,35 @@ class ExLlamaV2ArchParams:
                 "mlp_expert_gate": ".block_sparse_moe.gate"
             })
             self.lm.is_moe = True
+
+        # Pixtral
+
+        if (
+            arch_string == "LlavaForConditionalGeneration" and
+            "vision_config" in read_config and
+            read_config["vision_config"].get("model_type") == "pixtral"
+        ):
+            arch_recognized = True
+            self.lm.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.lm.expect_keys += \
+                expect_keys_llama
+
+            self.lm_prefix = "language_model."
+
+            self.vt_prefix = "vision_tower."
+
+            self.mmp_prefix = "multi_modal_projector."
+            self.mmp.keys.update({
+                "mlp_gate": None,
+                "mlp_up": "linear_1",
+                "mlp_down": "linear_2",
+            })
+            self.mmp.mlp_gate = False
+            self.mmp.mlp_act_func = "gelu"
+            self.mmp.mlp_bias = True
 
         # Yi
 

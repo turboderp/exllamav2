@@ -434,6 +434,17 @@ class ExLlamaV2Config:
         check_keys(self.arch.mmp, self.arch.mmp_prefix)
         check_keys(self.arch.vt, self.arch.vt_prefix)
 
+        # Vision models
+
+        self.vision_model_type = read(read_config, str, "vision_config->model_type", None)
+        if self.vision_model_type == "pixtral":
+            self.vision_head_dim = read(read_config, int, ["vision_config->head_dim"], no_default)
+            self.vision_hidden_act = read(read_config, str, ["vision_config->hidden_act"], no_default)
+            self.vision_hidden_size = read(read_config, int, ["vision_config->image_size"], no_default)
+            self.vision_patch_size = read(read_config, int, ["vision_config->patch_size"], no_default)
+            self.vision_rope_theta = read(read_config, int, ["vision_config->rope_theta"], no_default)
+            self.vision_feature_layer = read(read_config, int, ["vision_feature_layer"], no_default)
+
         # Cleanup
 
         cleanup_stfiles()
