@@ -1,7 +1,6 @@
 from exllamav2.version import __version__
 
 from exllamav2.model import ExLlamaV2
-from exllamav2.vlm import ExLlamaV2MultimodalProjector
 from exllamav2.cache import ExLlamaV2CacheBase
 from exllamav2.cache import ExLlamaV2Cache
 from exllamav2.cache import ExLlamaV2Cache_Q4
@@ -15,3 +14,6 @@ from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.util import SeqTensor
 from exllamav2.util import Timer
 from exllamav2.module import Intervention
+
+from exllamav2.vlm.mmprojector import ExLlamaV2MultimodalProjector
+from exllamav2.vlm.vision_tower import ExLlamaV2VisionTower
