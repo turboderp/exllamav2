@@ -136,6 +136,13 @@ class ExLlamaV2Config:
     vision_rope_theta: float | None
     vision_feature_layer: int | None
     vision_patch_size: dict | None
+    vision_image_mean: list | None
+    vision_image_std: list | None
+    vision_resample: int | None
+    vision_rescale_factor: float | None
+    vision_size: dict | None
+    vision_num_channels: int | None
+    vision_num_layers: int | None
 
     # Deprecated fields, kept for compatibiltiy
 
@@ -442,13 +449,45 @@ class ExLlamaV2Config:
         # Vision models
 
         self.vision_model_type = read(read_config, str, "vision_config->model_type", None)
-        if self.vision_model_type == "pixtral":
+
+        if self.vision_model_type:
+            self.model_config = os.path.join(self.model_dir, "preprocessor_config.json")
+            assert os.path.exists(self.model_config), "Can't find " + self.model_config
+            with open(self.model_config, encoding = "utf8") as f:
+                read_prep_config = json.load(f)
+
+        if self.vision_model_type is None:
+            pass
+
+        elif self.vision_model_type == "pixtral":
             self.vision_head_dim = read(read_config, int, ["vision_config->head_dim"], no_default)
+            self.vision_num_attention_heads = read(read_config, int, ["vision_config->num_attention_heads"], no_default)
+            self.vision_num_key_value_heads = read(read_config, int, ["vision_config->num_key_value_heads"], self.vision_num_attention_heads)
+            self.vision_num_key_value_groups = self.vision_num_attention_heads // self.vision_num_key_value_heads
+
             self.vision_hidden_act = read(read_config, str, ["vision_config->hidden_act"], no_default)
             self.vision_hidden_size = read(read_config, int, ["vision_config->image_size"], no_default)
-            self.vision_patch_size = read(read_config, int, ["vision_config->patch_size"], no_default)
+            patch_size = read(read_config, int, ["vision_config->patch_size"], no_default)
             self.vision_rope_theta = read(read_config, int, ["vision_config->rope_theta"], no_default)
             self.vision_feature_layer = read(read_config, int, ["vision_feature_layer"], no_default)
+            self.vision_num_layers = 24
+            self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], self.vision_hidden_size * 4)
+
+            image_processor_type = read(read_prep_config, str, ["image_processor_type"], no_default)
+            assert image_processor_type == "PixtralImageProcessor", \
+                f"Wrong image processor type: {image_processor_type}"
+            self.vision_image_mean = read(read_prep_config, list, ["image_mean"], no_default)
+            self.vision_image_std = read(read_prep_config, list, ["image_std"], no_default)
+            self.vision_patch_size = read(read_prep_config, dict, ["patch_size"], no_default)
+            assert all(self.vision_patch_size.get(x) == patch_size for x in ["width", "height"]), \
+                "Patch size inconsistency between config.json and preprocessor_config.json"
+            self.vision_resample = read(read_prep_config, int, ["resample"], no_default)
+            self.vision_rescale_factor = read(read_prep_config, float, ["rescale_factor"], no_default)
+            self.vision_size = read(read_prep_config, dict, ["size"], no_default)
+            self.vision_num_channels = 3
+
+        else:
+            raise ValueError(f"Unsupported vision model type: {self.vision_model_type}")
 
         # Cleanup
 

@@ -208,6 +208,10 @@ class ExLlamaV2ArchParams:
             expect_keys: list[str] = field(default_factory = lambda: [])
             layer_keys: list[str] = field(default_factory = lambda: [])
 
+            # Vision stuff
+            patch_conv_bias: bool = False
+            is_vision: bool = False
+
         # Component models
         self.lm_prefix = ""
         self.vt_prefix = ""
@@ -225,6 +229,8 @@ class ExLlamaV2ArchParams:
             "fused_mlp_3": None,
         })
         self.mmp.rope_style = RopeStyle.NONE
+
+        self.vt.is_vision = True
 
         # Tensors are transposed in original model weights
         self.orig_weights_transposed = False
@@ -275,9 +281,18 @@ class ExLlamaV2ArchParams:
             self.lm.expect_keys += \
                 expect_keys_llama
 
-            self.lm_prefix = "language_model."
-
             self.vt_prefix = "vision_tower."
+            self.vt.keys.update({
+                "attn_q": ".attention.q_proj",
+                "attn_k": ".attention.k_proj",
+                "attn_v": ".attention.v_proj",
+                "attn_o": ".attention.o_proj",
+                "mlp_gate": ".feed_forward.gate_proj",
+                "mlp_up": ".feed_forward.up_proj",
+                "mlp_down": ".feed_forward.down_proj",
+                "norm_1": ".attention_norm",
+                "norm_2": ".ffn_norm",
+            })
 
             self.mmp_prefix = "multi_modal_projector."
             self.mmp.keys.update({
