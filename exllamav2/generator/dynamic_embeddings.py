@@ -35,6 +35,8 @@ class ExLlamaV2MMEmbedding:
     first_index: int
     length: int
 
+    metadata: dict
+
     def __init__(
         self,
         model: ExLlamaV2,
@@ -57,6 +59,7 @@ class ExLlamaV2MMEmbedding:
         self.embeddings = embeddings
         self.text_alias = text_alias
         self.model = model
+        self.metadata = {}
 
         self.length = embeddings.shape[0]
         dim = embeddings.shape[1]

@@ -4,15 +4,17 @@ import os, sys
 import threading
 
 import torch
-from exllamav2 import ExLlamaV2
+from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer
 from exllamav2.conv2d import ExLlamaV2Conv2D
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.module import ExLlamaV2Module
-from exllamav2.vlm.preprocessor import pixtral
+from exllamav2.vlm.processor import pixtral
 from exllamav2.compat import safe_move_tensor
+from exllamav2.generator import ExLlamaV2MMEmbedding
+from typing import Callable
 
 from PIL.Image import Image
 from exllamav2.vlm.util import position_ids_in_meshgrid
@@ -35,7 +37,8 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         # Preprocessor
 
         if cfg.vision_model_type == "pixtral":
-            self.preprocessor = pixtral.preprocess
+            self.preprocess_func = pixtral.preprocess
+            self.postprocess_func = pixtral.postprocess
         else:
             raise ValueError(f"Unknown vision model type: {cfg.vision_model_type}")
 
@@ -90,16 +93,34 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             mlp = ExLlamaV2MLP(self, layer_key, layer_idx, archparams = self.archparams)
             self.modules += [attn, mlp]
 
+        # Multimodal projection
+
+        mmp = ExLlamaV2MLP(
+            self,
+            cfg.arch.mmp_prefix,
+            0,
+            archparams = cfg.arch.mmp,
+            in_features = cfg.vision_hidden_size,
+            out_features = cfg.hidden_size,
+            interm_features = cfg.hidden_size,
+            has_norm = False,
+            has_residual = False
+        )
+        self.modules += [mmp]
+
 
     def forward(self, **kwargs):
         raise NotImplementedError()
-
-
-    def preprocess(self, image: Image) -> torch.Tensor:
-        """
-        Preprocess image and prepare for vision tower
-        """
-        return self.preprocessor(self.config, image)
+    def forward_chunk(self, **kwargs):
+        raise NotImplementedError()
+    def load_tp(self, **kwargs):
+        raise ValueError("load_tp not supported for vision model")
+    def load_tp_gen(self, **kwargs):
+        raise ValueError("load_tp not supported for vision model")
+    def load_autosplit(self, **kwargs):
+        raise ValueError("load_autosplit not supported for vision model")
+    def load_autosplit_gen(self, **kwargs):
+        raise ValueError("load_autosplit not supported for vision model")
 
 
     def process(
@@ -134,7 +155,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             # Onward
 
             n_device = module.device_idx
-            if n_device is not None and n_device != device and n_device >= 0:
+            if idx == 0 or (n_device is not None and n_device != device and n_device >= 0):
                 hidden_states = safe_move_tensor(hidden_states, n_device, non_blocking = True)
 
             if cos.device != hidden_states.device:
@@ -150,3 +171,61 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             )
 
         return hidden_states
+
+
+    def get_image_embeddings(
+        self,
+        model: ExLlamaV2,
+        tokenizer: ExLlamaV2Tokenizer,
+        image: Image,
+        text_alias: str,
+    ) -> ExLlamaV2MMEmbedding:
+        """
+        :param model:
+            Text model for which to produce embeddings
+
+        :param tokenizer:
+            Tokenizer
+
+        :param image:
+            Input PIL image
+
+        :param text_alias:
+            Text string to represent this embedding for tokenizing
+
+        :return:
+            ExLlamaV2MMEmbedding
+        """
+
+        width, height = image.size
+        original_size = (height, width)
+
+        image_tensor = self.preprocess_func(self.config, image)
+        image_size = tuple(image_tensor.shape[1:])
+
+        embedding_tensor = self.process(image_tensor)
+
+        features_y = image_size[0] // 16
+        features_x = image_size[1] // 16
+
+        embedding_tensor = self.postprocess_func(
+            model,
+            tokenizer,
+            embedding_tensor[0],
+            features_y,
+            features_x,
+        )
+
+        mme = ExLlamaV2MMEmbedding(
+            model = model,
+            embeddings = embedding_tensor,
+            text_alias = text_alias
+        )
+
+        mme.metadata.update({
+            "original_size": original_size,
+            "preprocessed_size": image_size,
+            "patches_size": (features_y, features_x),
+        })
+
+        return mme

@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from PIL import Image
+from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.vlm.util import (
     convert_to_rgb,
@@ -42,3 +43,31 @@ def preprocess(
     image = image.transpose(2, 0, 1)
     image = torch.from_numpy(image).half()
     return image
+
+def postprocess(
+    model: ExLlamaV2,
+    tokenizer: ExLlamaV2Tokenizer,
+    embeddings: torch.Tensor,
+    features_y: int,
+    features_x: int,
+):
+    """
+    Insert [IMG_BREAK] and [IMG_END] tokens in image feature embeddings
+    """
+
+    assert embeddings.shape[0] == features_y * features_x, \
+        "Invalid shape for embeddings"
+
+    id_break = tokenizer.single_id("[IMG_BREAK]")
+    id_end = tokenizer.single_id("[IMG_END]")
+    img_break = model.modules[0].forward(torch.tensor([id_break], dtype=torch.long)).to("cuda:0")
+    img_end = model.modules[0].forward(torch.tensor([id_end], dtype=torch.long)).to("cuda:0")
+
+    dim = embeddings.shape[-1]
+    embeddings = embeddings.view((features_y, features_x, dim))
+    break_col = img_break.expand(features_y, -1, -1)
+    embeddings = torch.cat((embeddings, break_col), dim = 1)
+    embeddings = embeddings.view((features_y * (features_x + 1)), dim)
+    embeddings = torch.cat((embeddings, img_end), dim = 0)
+
+    return embeddings
