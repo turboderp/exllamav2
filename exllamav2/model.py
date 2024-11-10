@@ -263,7 +263,6 @@ class ExLlamaV2:
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
         progress: bool = False
-        progress: bool = False,
     ):
         """
         Load model, regular manual split mode.
@@ -832,16 +831,18 @@ class ExLlamaV2:
 
             assert q_len <= effective_max_input_len, "Maximum input length exceeded in model.forward"
 
-            result = self.forward_chunk(input_ids = input_ids,
-                                        cache = cache,
-                                        input_mask = input_mask,
-                                        preprocess_only = preprocess_only,
-                                        last_id_only = last_id_only,
-                                        loras = loras,
-                                        return_last_state = return_last_state,
-                                        position_offsets = position_offsets,
-                                        abort_event = abort_event,
-                                        **kwargs)
+            result = self.forward_chunk(
+                input_ids = input_ids,
+                cache = cache,
+                input_mask = input_mask,
+                preprocess_only = preprocess_only,
+                last_id_only = last_id_only,
+                loras = loras,
+                return_last_state = return_last_state,
+                position_offsets = position_offsets,
+                abort_event = abort_event,
+                **kwargs
+            )
 
             if abort_event and abort_event.is_set(): return
 
