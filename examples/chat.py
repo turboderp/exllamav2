@@ -262,7 +262,7 @@ min_space_in_context = args.response_chunk
 # Stop conditions
 
 sc = prompt_format.stop_conditions(tokenizer)
-sc = [x for x in sc if x]
+sc = [x for x in sc if x is not None]
 generator.set_stop_conditions(sc)
 
 # ANSI color codes

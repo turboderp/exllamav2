@@ -401,6 +401,7 @@ class ExLlamaV2ArchParams:
                 "mlp_up": ".mlp.c_fc",
                 "mlp_down": ".mlp.c_proj",
                 "lm_head": "model.embed_tokens",
+                "norm_eps": "layer_norm_epsilon",
             })
             self.lm.mlp_act_func = "gelu"
             self.lm.norm = "layernorm"
@@ -471,9 +472,9 @@ class ExLlamaV2ArchParams:
                 "mlp_up": ".block_sparse_moe.experts.*.v1",
                 "mlp_down": ".block_sparse_moe.experts.*.w2",
                 "mlp_expert_gate": ".block_sparse_moe.gate",
-                "lm_head": "model.embed_tokens",
                 "fused_qkv": ".self_attn.Wqkv",
             })
+            self.lm.norm = "layernorm"
             self.lm.is_moe = True
 
         # Phi3
