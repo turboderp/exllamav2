@@ -17,21 +17,28 @@ class Params:
     position_offsets_tp: list[torch.Tensor | None] | None
     past_lens_tensor: torch.Tensor | None
     paged: bool
+    alt_rope_embed: tuple[torch.Tensor, torch.Tensor] | None
+    non_causal_attn: bool
 
     def __init__(
         self,
-        batch_size: int,
+        batch_size: int = 1,
         seq_len: int | None = None,
         past_len: int | list[int] | None = None,
         input_mask: torch.Tensor | None = None,
         position_offsets: torch.Tensor | None = None,
-        paged=False
+        paged = False,
+        alt_rope_embed: tuple[torch.Tensor, torch.Tensor] | None = None,
+        non_causal_attn: bool = False,
     ):
 
         self.batch_size = batch_size
         self.paged = paged
 
         if paged: return
+
+        self.alt_rope_embed = alt_rope_embed
+        self.non_causal_attn = non_causal_attn
 
         self.seq_len = seq_len
         if isinstance(past_len, list):

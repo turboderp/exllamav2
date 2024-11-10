@@ -836,7 +836,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return hidden_states
 
 
-    def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+    def _attn_torch(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg, causal = True):
 
         num_attn_heads = q_states.shape[2]
         head_dim = q_states.shape[3]
@@ -864,7 +864,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 q_states,
                 k_states,
                 v_states,
-                attn_mask_lr,
+                attn_mask_lr if causal else None,
                 scale = self.scaling
             )
 
@@ -878,11 +878,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_weights = torch.matmul(q_states, k_states)
 
             attn_weights *= self.scaling
-            attn_mask = attn_params.get_attn_mask(attn_weights.device)
+            if causal:
+                attn_mask = attn_params.get_attn_mask(attn_weights.device)
 
             if cfg.attn_logit_softcapping:
                 ext_c.softcap_(attn_weights, cfg.attn_logit_softcapping)
-            if attn_mask is not None:
+            if causal and attn_mask is not None:
                 attn_weights = attn_weights + attn_mask
             if self.sliding_window and k_states.shape[-1] >= self.sliding_window:
                 attn_weights = attn_weights[:, :, :, -self.sliding_window:]
@@ -898,7 +899,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return attn_output
 
 
-    def _attn_flash(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+    def _attn_flash(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg, causal = True):
 
         flash_kwargs = {}
         if self.sliding_window:
@@ -916,7 +917,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             q_states,
             k_states,
             v_states,
-            causal = True,
+            causal = causal,
             softmax_scale = self.scaling,
             **flash_kwargs
         )
@@ -924,7 +925,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         return attn_output
 
 
-    def _attn_xformers(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg):
+    def _attn_xformers(self, batch_size, q_len, q_states, k_states, v_states, attn_params, cfg, causal = True):
 
         # assert not self.sliding_window, \
         #     "Sliding window not currently supported for xformers"
@@ -950,7 +951,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             q_states,
             k_states,
             v_states,
-            attn_bias = LowerTriangularFromBottomRightMask(),
+            attn_bias = LowerTriangularFromBottomRightMask() if causal else None,
             scale = self.scaling
         )
         attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
@@ -1378,8 +1379,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             position_offsets = none_tensor
 
         if self.archparams.rope_style != RopeStyle.NONE:
-            ext_c.rope_(query_states, constants.sin, constants.cos, past_len, num_attention_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
-            ext_c.rope_(key_states, constants.sin, constants.cos, past_len, num_key_value_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
+            alt_cs = kwargs.get("alt_rope_embedding")
+            cos, sin = alt_cs if alt_cs else (constants.cos, constants.sin)
+            ext_c.rope_(query_states, sin, cos, past_len, num_attention_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
+            ext_c.rope_(key_states, sin, cos, past_len, num_key_value_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
 
         # Add keys and values to cache
 
@@ -1410,7 +1413,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Attention
 
-        attn_output = attn_func(batch_size, q_len, query_states, key_states, value_states, attn_params, cfg)
+        attn_output = attn_func(
+            batch_size,
+            q_len,
+            query_states,
+            key_states,
+            value_states,
+            attn_params,
+            cfg,
+            not attn_params.non_causal_attn
+        )
 
         # Update 8-bit/Q4 cache
 
