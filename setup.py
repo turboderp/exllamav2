@@ -134,6 +134,7 @@ setup(
         "regex",
         "numpy",
         "rich",
+        "pillow>=9.1.0"
     ],
     include_package_data=True,
     package_data={

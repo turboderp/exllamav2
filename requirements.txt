@@ -12,3 +12,4 @@ regex
 numpy~=1.26.4
 tokenizers
 rich
+pillow>=9.1.0
