@@ -124,13 +124,18 @@ class ExLlamaV2Config:
     yarn_rope_original_max_position_embeddings: int | None
     checkpoint_fused_mlp: bool
     checkpoint_offset_qzeros: bool
+
     vision_model_type: str | None
     vision_head_dim: int | None
+    vision_num_attention_heads: int | None
+    vision_num_key_value_heads: int | None
+    vision_num_key_value_groups: int | None
     vision_hidden_size: int | None
+    vision_intermediate_size: int | None
     vision_hidden_act: int | None
-    vision_patch_size: int | None
     vision_rope_theta: float | None
     vision_feature_layer: int | None
+    vision_patch_size: dict | None
 
     # Deprecated fields, kept for compatibiltiy
 

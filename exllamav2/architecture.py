@@ -134,7 +134,11 @@ class ExLlamaV2ArchParams:
                 "norm_2_post": None,
                 "fused_mlp_12": None,
                 "fused_mlp_3": None,
-                "learned_pos_emb": None
+                "learned_pos_emb": None,
+                "attn_q": ".self_attn.q_proj",
+                "attn_k": ".self_attn.k_proj",
+                "attn_v": ".self_attn.v_proj",
+                "attn_o": ".self_attn.o_proj",
             })
 
             # Compute logit scale from `dim_model_base` key in config.json (MiniCPM quirk)
@@ -263,6 +267,7 @@ class ExLlamaV2ArchParams:
             read_config["vision_config"].get("model_type") == "pixtral"
         ):
             arch_recognized = True
+            self.lm_prefix = "language_model."
             self.lm.layer_keys += \
                 layer_keys_llama_norms + \
                 layer_keys_llama_attn + \
@@ -452,7 +457,7 @@ class ExLlamaV2ArchParams:
                 "mlp_down": ".block_sparse_moe.experts.*.w2",
                 "mlp_expert_gate": ".block_sparse_moe.gate",
                 "lm_head": "model.embed_tokens",
-                "fused_qkv": "Wqkv",
+                "fused_qkv": ".self_attn.Wqkv",
             })
             self.lm.is_moe = True
 
@@ -467,7 +472,7 @@ class ExLlamaV2ArchParams:
             self.lm.expect_keys += \
                 expect_keys_llama
             self.lm.keys.update({
-                "fused_qkv": "qkv_proj",
+                "fused_qkv": ".self_attn.qkv_proj",
                 "fused_mlp_12": "gate_up_proj",
             })
 
@@ -490,7 +495,7 @@ class ExLlamaV2ArchParams:
                 "lm_head": "model.embed_tokens",
                 "norm_1": ".ln_1",
                 "norm_2": ".ln_2",
-                "fused_qkv": "c_attn",
+                "fused_qkv": ".self_attn.c_attn",
                 "learned_pos_emb": "model.wpe",
             })
             self.lm.mlp_act_func = "gelu"
@@ -521,7 +526,7 @@ class ExLlamaV2ArchParams:
                 "lm_head": "model.embed_tokens",
                 "norm_1": ".ln_1",
                 "norm_2": ".ln_2",
-                "fused_qkv": "c_attn",
+                "fused_qkv": ".self_attn.c_attn",
                 "learned_pos_emb": "model.wpe",
             })
             self.lm.mlp_act_func = "gelu"
@@ -563,7 +568,7 @@ class ExLlamaV2ArchParams:
                 "mlp_down": ".feed_forward.w2",
                 "norm_1": ".attention_norm",
                 "norm_2": ".ffn_norm",
-                "fused_qkv": "wqkv",
+                "fused_qkv": ".self_attn.wqkv",
             })
             self.lm.fused_qkv_altpack = True
 

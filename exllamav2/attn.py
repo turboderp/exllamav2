@@ -153,7 +153,20 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         self.q_handle = None
         self.temp_lora_size = 0
 
-        hidden_size = cfg.hidden_size
+        if ap.is_vision:
+            self.num_attention_heads = cfg.vision_num_attention_heads
+            self.num_key_value_heads = cfg.vision_num_key_value_heads
+            self.num_key_value_groups = cfg.vision_num_key_value_groups
+            self.head_dim = cfg.vision_head_dim
+            self.hidden_size = cfg.vision_hidden_size
+        else:
+            self.num_attention_heads = cfg.num_attention_heads
+            self.num_key_value_heads = cfg.num_key_value_heads
+            self.num_key_value_groups = cfg.num_key_value_groups
+            self.head_dim = cfg.head_dim
+            self.hidden_size = cfg.hidden_size
+
+        hidden_size = self.hidden_size
 
         if self.has_norm and (km["norm_1"] or km["norm_1_post"]):
             if ap.norm == "layernorm":
@@ -168,19 +181,19 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.has_norm = False
 
         f_a = 0
-        f_b = cfg.num_attention_heads * cfg.head_dim
-        f_c = f_b + cfg.num_key_value_heads * cfg.head_dim
-        f_d = f_c + cfg.num_key_value_heads * cfg.head_dim
-        f_key = (key + ".self_attn." + km["fused_qkv"]) if km["fused_qkv"] else None
+        f_b = self.num_attention_heads * self.head_dim
+        f_c = f_b + self.num_key_value_heads * self.head_dim
+        f_d = f_c + self.num_key_value_heads * self.head_dim
+        f_key = (key + km["fused_qkv"]) if km["fused_qkv"] else None
 
-        self.q_proj = ExLlamaV2Linear(model, key + ".self_attn.q_proj", hidden_size, cfg.num_attention_heads * cfg.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = ap.fused_qkv_altpack)
-        self.k_proj = ExLlamaV2Linear(model, key + ".self_attn.k_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = ap.fused_qkv_altpack)
-        self.v_proj = ExLlamaV2Linear(model, key + ".self_attn.v_proj", hidden_size, cfg.num_key_value_heads * cfg.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = ap.fused_qkv_altpack)
-        self.o_proj = ExLlamaV2Linear(model, key + ".self_attn.o_proj", cfg.num_attention_heads * cfg.head_dim, hidden_size, ap.attention_bias_o, prescale = cfg.scale_depth)
+        self.q_proj = ExLlamaV2Linear(model, key + km["attn_q"], hidden_size, self.num_attention_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = ap.fused_qkv_altpack)
+        self.k_proj = ExLlamaV2Linear(model, key + km["attn_k"], hidden_size, self.num_key_value_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = ap.fused_qkv_altpack)
+        self.v_proj = ExLlamaV2Linear(model, key + km["attn_v"], hidden_size, self.num_key_value_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = ap.fused_qkv_altpack)
+        self.o_proj = ExLlamaV2Linear(model, key + km["attn_o"], self.num_attention_heads * self.head_dim, hidden_size, ap.attention_bias_o, prescale = cfg.scale_depth)
 
         if cfg.use_qk_norm:
-            self.q_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.q_norm", cfg.num_attention_heads, cfg.head_dim)
-            self.k_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.k_norm", cfg.num_key_value_heads, cfg.head_dim)
+            self.q_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.q_norm", self.num_attention_heads, self.head_dim)
+            self.k_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.k_norm", self.num_key_value_heads, self.head_dim)
         else:
             self.q_norm = None
             self.k_norm = None
@@ -201,7 +214,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cfg.query_pre_attn_scalar:
             self.scaling = cfg.query_pre_attn_scalar ** (-0.5)
         else:
-            self.scaling = 1 / math.sqrt(cfg.head_dim)
+            self.scaling = 1 / math.sqrt(self.head_dim)
 
         self.sliding_window = sliding_window
 
@@ -247,7 +260,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 # self.temp_k = device_context.get_scratch_slice(self.temp_k_size())
                 # self.temp_v = device_context.get_scratch_slice(self.temp_v_size())
                 self.temp_dq = device_context.get_scratch_slice(self.temp_dq_size())
-                # self.temp_kv = device_context.get_scratch_slice(self.temp_kv_size()) if cfg.num_attention_heads != cfg.num_key_value_heads else None
+                # self.temp_kv = device_context.get_scratch_slice(self.temp_kv_size()) if self.num_attention_heads != self.num_key_value_heads else None
             else:
                 self.temp_state = none_tensor
                 self.temp_dq = none_tensor
@@ -295,10 +308,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 # self.temp_v,
                 self.temp_dq,
                 cfg.max_input_len * cfg.max_batch_size,
-                cfg.hidden_size,
-                cfg.num_attention_heads,
-                cfg.num_key_value_heads,
-                cfg.head_dim,
+                self.hidden_size,
+                self.num_attention_heads,
+                self.num_key_value_heads,
+                self.head_dim,
                 cfg.max_seq_len,
                 self.has_residual,
                 self.archparams.rope_style.value,
@@ -368,25 +381,25 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def temp_state_size(self):
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * max(cfg.num_attention_heads * cfg.head_dim, cfg.hidden_size) * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * max(self.num_attention_heads * self.head_dim, self.hidden_size) * 2 + 128
 
 
     def temp_q_size(self):
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * self.num_attention_heads * self.head_dim * 2 + 128
 
 
     def temp_k_size(self):
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.num_key_value_heads * cfg.head_dim * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * self.num_key_value_heads * self.head_dim * 2 + 128
 
 
     def temp_v_size(self):
 
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * cfg.num_key_value_heads * cfg.head_dim * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * self.num_key_value_heads * self.head_dim * 2 + 128
 
 
     def temp_dq_size(self):
@@ -400,8 +413,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
     def temp_kv_size(self):
 
         cfg = self.model.config
-        if cfg.num_key_value_heads == cfg.num_attention_heads: return 0
-        return 2 * cfg.max_seq_len * cfg.max_batch_size * cfg.num_attention_heads * cfg.head_dim * 2 + 128
+        if self.num_key_value_heads == self.num_attention_heads: return 0
+        return 2 * cfg.max_seq_len * cfg.max_batch_size * self.num_attention_heads * self.head_dim * 2 + 128
 
 
     def temp_attn_size(self):
@@ -417,7 +430,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             eff = cfg.max_attention_size ** 0.5 / 190  # based on supposed memory savings listed in flash-attn repo + some fudging
             att_max //= eff
 
-        return 2 * att_max * cfg.num_attention_heads * 2 + 128
+        return 2 * att_max * self.num_attention_heads * 2 + 128
 
 
     def set_device_idx(self, idx: int | None):
@@ -486,14 +499,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         v_cache = v_cache_f.view(v_cache_f.shape[1] // page_size, page_size, v_cache_f.shape[2], v_cache_f.shape[3])
 
         if is_q:
-            q = torch.empty((batch_size, q_len, cfg.num_attention_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+            q = torch.empty((batch_size, q_len, self.num_attention_heads, self.head_dim), device = hidden_states.device, dtype = torch.half)
             if attn_params.is_sequential:
                 assert batch_size == 1
                 k = k_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
                 v = v_cache_f[:, attn_params.first_index : attn_params.first_index + q_len, :, :]
             else:
-                k = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
-                v = torch.empty((batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim), device = hidden_states.device, dtype = torch.half)
+                k = torch.empty((batch_size, q_len, self.num_key_value_heads, self.head_dim), device = hidden_states.device, dtype = torch.half)
+                v = torch.empty((batch_size, q_len, self.num_key_value_heads, self.head_dim), device = hidden_states.device, dtype = torch.half)
 
             if loras is None or self.temp_lora_size == 0:
                 pass_loras = []
@@ -523,21 +536,21 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             q = self.q_proj.forward(hidden_states, loras = loras)
             k = self.k_proj.forward(hidden_states, loras = loras)
             v = self.v_proj.forward(hidden_states, loras = loras)
-            q = q.view(batch_size, q_len, cfg.num_attention_heads, cfg.head_dim)
-            k = k.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
-            v = v.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            q = q.view(batch_size, q_len, self.num_attention_heads, self.head_dim)
+            k = k.view(batch_size, q_len, self.num_key_value_heads, self.head_dim)
+            v = v.view(batch_size, q_len, self.num_key_value_heads, self.head_dim)
             if cfg.use_qk_norm:
                 q = self.q_norm.forward(q)
                 k = self.k_norm.forward(k)
             if self.archparams.rope_style != RopeStyle.NONE:
-                for t, heads in [(q, cfg.num_attention_heads), (k, cfg.num_key_value_heads)]:
+                for t, heads in [(q, self.num_attention_heads), (k, self.num_key_value_heads)]:
                     ext_c.rope_(
                         t,
                         constants.sin,
                         constants.cos,
                         0,
                         heads,
-                        cfg.head_dim,
+                        self.head_dim,
                         cache_seqlens,
                         self.archparams.rope_style == RopeStyle.NEOX
                     )
@@ -582,7 +595,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             **flash_kwargs
         )
 
-        attn_output = attn_output.view((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+        attn_output = attn_output.view((batch_size, q_len, self.num_attention_heads * self.head_dim))
 
         cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, page_size, cache_seqlens, block_table)
 
@@ -629,7 +642,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         batch_size, q_len, _ = hidden_states.shape
         rows = batch_size * q_len
-        hidden_states = hidden_states.view(-1, cfg.hidden_size)
+        hidden_states = hidden_states.view(-1, self.hidden_size)
         dtype = hidden_states.dtype
 
         k_cache_f, v_cache_f = cache.get_kv_state(
@@ -665,7 +678,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.k_proj.q_handle,
             self.v_proj.q_handle,
             self.o_proj.q_handle,
-            cfg.head_dim,
+            self.head_dim,
             int(self.archparams.rope_style),
             batch_size,
             q_len,
@@ -686,7 +699,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_params.block_index_tp
         )
 
-        return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
+        return ctx.get_pinned(0, batch_size, q_len, self.hidden_size)
 
 
     # @profile
@@ -720,17 +733,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in k_cache_f]
         v_cache = [x.view(x.shape[1] // page_size, page_size, x.shape[2], x.shape[3]) for x in v_cache_f]
 
-        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = self.head_dim)
 
         residual = hidden_states
 
         post_norm = self.pre_layernorm.forward_tp(hidden_states, output_split = True) if self.has_norm else hidden_states
-        q = self.q_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
-        k = self.k_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
-        v = self.v_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
-        q = [q_.view(batch_size, q_len, q_.shape[1] // cfg.head_dim, cfg.head_dim) for q_ in q]
-        k = [k_.view(batch_size, q_len, k_.shape[1] // cfg.head_dim, cfg.head_dim) for k_ in k]
-        v = [v_.view(batch_size, q_len, v_.shape[1] // cfg.head_dim, cfg.head_dim) for v_ in v]
+        q = self.q_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = self.head_dim)
+        k = self.k_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = self.head_dim)
+        v = self.v_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = self.head_dim)
+        q = [q_.view(batch_size, q_len, q_.shape[1] // self.head_dim, self.head_dim) for q_ in q]
+        k = [k_.view(batch_size, q_len, k_.shape[1] // self.head_dim, self.head_dim) for k_ in k]
+        v = [v_.view(batch_size, q_len, v_.shape[1] // self.head_dim, self.head_dim) for v_ in v]
         if cfg.use_qk_norm:
             assert False, "TP not implemented for QK norm"  # TODO: ...
             # q = self.q_norm.forward(q)
@@ -739,14 +752,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             for idx, (dev, a, b) in enumerate(split):
                 context = self.model.get_device_context(dev)
                 torch.cuda.set_stream(context.stream)
-                for t, heads in [(q[idx], cfg.num_key_value_groups), (k[idx], 1)]:
+                for t, heads in [(q[idx], self.num_key_value_groups), (k[idx], 1)]:
                     ext_c.rope_(
                         t,
                         context.sin,
                         context.cos,
                         0,
                         (b - a) * heads,
-                        cfg.head_dim,
+                        self.head_dim,
                         attn_params.cache_seqlens_tp[idx],
                         self.archparams.rope_style == RopeStyle.NEOX
                     )
@@ -805,7 +818,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 softmax_scale = self.scaling,
                 **flash_kwargs
             )
-            attn_output = attn_output.view(batch_size * q_len, (b - a) * cfg.head_dim * cfg.num_key_value_groups)
+            attn_output = attn_output.view(batch_size * q_len, (b - a) * self.head_dim * self.num_key_value_groups)
             attn_outputs.append(attn_output)
 
         cache.store_kv_state(
@@ -820,14 +833,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_outputs = self.model.tp_context.allgather(1, attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = cfg.head_dim)
+        attn_outputs = self.model.tp_context.allgather(1, attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = self.head_dim)
 
-        hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = cfg.head_dim, output_split = True)
+        hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = self.head_dim, output_split = True)
 
         if self.has_residual:
-            self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = cfg.head_dim)
+            self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = self.head_dim)
 
-        hidden_states = self.model.tp_context.gather(0, hidden_states, BROADCAST_Q, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.gather(0, hidden_states, BROADCAST_Q, dim = self.head_dim)
 
         # if self.post_layernorm:  # TODO: ...
         #     hidden_states = self.post_layernorm.forward(hidden_states)
@@ -849,8 +862,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if has_lower_right_sdpa and not cfg.no_sdpa and not cfg.attn_logit_softcapping:
 
-            k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
-            v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
+            k_states = self.repeat_kv(k_states, self.num_key_value_groups)
+            v_states = self.repeat_kv(v_states, self.num_key_value_groups)
 
             if self.sliding_window and k_states.shape[2] >= self.sliding_window:
                 k_states = k_states[:, :, -self.sliding_window:, :]
@@ -872,7 +885,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         else:
 
-            k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
+            k_states = self.repeat_kv(k_states, self.num_key_value_groups)
             k_states = k_states.transpose(-1, -2)
 
             attn_weights = torch.matmul(q_states, k_states)
@@ -891,7 +904,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
             attn_weights = nn.functional.softmax(attn_weights, dim = -1, dtype = torch.float16)
 
-            v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
+            v_states = self.repeat_kv(v_states, self.num_key_value_groups)
             attn_output = torch.matmul(attn_weights, v_states)
 
         attn_output = attn_output.transpose(1, 2)
@@ -921,7 +934,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             softmax_scale = self.scaling,
             **flash_kwargs
         )
-        attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+        attn_output = attn_output.reshape((batch_size, q_len, self.num_attention_heads * self.head_dim))
         return attn_output
 
 
@@ -941,8 +954,8 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_states = k_states.transpose(1, 2)
         v_states = v_states.transpose(1, 2)
 
-        k_states = self.repeat_kv(k_states, cfg.num_key_value_groups)
-        v_states = self.repeat_kv(v_states, cfg.num_key_value_groups)
+        k_states = self.repeat_kv(k_states, self.num_key_value_groups)
+        v_states = self.repeat_kv(v_states, self.num_key_value_groups)
 
         k_states = k_states.transpose(1, 2)
         v_states = v_states.transpose(1, 2)
@@ -954,20 +967,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_bias = LowerTriangularFromBottomRightMask() if causal else None,
             scale = self.scaling
         )
-        attn_output = attn_output.reshape((batch_size, q_len, cfg.num_attention_heads * cfg.head_dim))
+        attn_output = attn_output.reshape((batch_size, q_len, self.num_attention_heads * self.head_dim))
 
         return attn_output
 
 
     # @profile
-    def forward(self,
-                hidden_states: torch.Tensor,
-                cache: ExLlamaV2CacheBase | None = None,
-                attn_params: ExLlamaV2Attention.Params | None = None,
-                past_len: int | None = None,
-                intermediates: bool = False,
-                loras: list[ExLlamaV2Lora] | None = None,
-                **kwargs) -> torch.Tensor | dict[str: torch.Tensor]:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        past_len: int | None = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict[str: torch.Tensor]:
 
         cfg = self.model.config
         global has_flash_attn
@@ -1083,9 +1098,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if cache is None:
 
-            q_states = q_states.view(batch_size, q_len, cfg.num_attention_heads, cfg.head_dim)
-            k_states = k_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
-            v_states = v_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            q_states = q_states.view(batch_size, q_len, self.num_attention_heads, self.head_dim)
+            k_states = k_states.view(batch_size, q_len, self.num_key_value_heads, self.head_dim)
+            v_states = v_states.view(batch_size, q_len, self.num_key_value_heads, self.head_dim)
 
             attn_output = attn_func(batch_size, q_len, q_states, k_states, v_states, attn_params, cfg)
 
@@ -1093,9 +1108,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         elif isinstance(cache, ExLlamaV2CacheBase):
 
-            q_states = q_states.view(batch_size, q_len, cfg.num_attention_heads, cfg.head_dim)
-            k_states = k_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
-            v_states = v_states.view(batch_size, q_len, cfg.num_key_value_heads, cfg.head_dim)
+            q_states = q_states.view(batch_size, q_len, self.num_attention_heads, self.head_dim)
+            k_states = k_states.view(batch_size, q_len, self.num_key_value_heads, self.head_dim)
+            v_states = v_states.view(batch_size, q_len, self.num_key_value_heads, self.head_dim)
 
             if not direct:
                 batch_keys, batch_values = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
@@ -1148,7 +1163,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         attn_params.prep_tp(self.model)
 
         batch_size, q_len, _ = hidden_states.shape
-        hidden_states = hidden_states.view(-1, cfg.hidden_size)
+        hidden_states = hidden_states.view(-1, self.hidden_size)
         past_len = 0 if cache is None else cache.current_seq_len
 
         k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len) if cache else ([], [])
@@ -1173,7 +1188,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.k_proj.q_handle,
             self.v_proj.q_handle,
             self.o_proj.q_handle,
-            cfg.head_dim,
+            self.head_dim,
             int(self.archparams.rope_style),
             batch_size,
             q_len,
@@ -1186,7 +1201,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cache is not None:
             cache.store_kv_state(self.layer_idx, batch_size, past_len, q_len)
 
-        return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
+        return ctx.get_pinned(0, batch_size, q_len, self.hidden_size)
 
 
     def forward_tp_old(
@@ -1213,18 +1228,18 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 "TP attention without flash-attn must use Torch SDPA with lower-right attention mask " \
                 "(use PyTorch 2.4.0+) and does not support logit softcapping."
 
-        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.broadcast(0, hidden_states, BROADCAST_KV, dim = self.head_dim)
 
         residual = hidden_states
 
         post_norm = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
-        q = self.q_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
-        k = self.k_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
-        v = self.v_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = cfg.head_dim)
+        q = self.q_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = self.head_dim)
+        k = self.k_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = self.head_dim)
+        v = self.v_proj.forward_tp(post_norm, loras = loras, output_split = True, dim = self.head_dim)
 
-        q = [q_.view(batch_size, q_len, q_.shape[1] // cfg.head_dim, cfg.head_dim) for q_ in q]
-        k = [k_.view(batch_size, q_len, k_.shape[1] // cfg.head_dim, cfg.head_dim) for k_ in k]
-        v = [v_.view(batch_size, q_len, v_.shape[1] // cfg.head_dim, cfg.head_dim) for v_ in v]
+        q = [q_.view(batch_size, q_len, q_.shape[1] // self.head_dim, self.head_dim) for q_ in q]
+        k = [k_.view(batch_size, q_len, k_.shape[1] // self.head_dim, self.head_dim) for k_ in k]
+        v = [v_.view(batch_size, q_len, v_.shape[1] // self.head_dim, self.head_dim) for v_ in v]
 
         if cache:
             k_cache, v_cache = cache.get_kv_state(self.layer_idx, batch_size, 0, past_len)
@@ -1235,14 +1250,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             for idx, (dev, a, b) in enumerate(split):
                 context = self.model.get_device_context(dev)
                 torch.cuda.set_stream(context.stream)
-                for t, heads in [(q[idx], cfg.num_key_value_groups), (k[idx], 1)]:
+                for t, heads in [(q[idx], self.num_key_value_groups), (k[idx], 1)]:
                     ext_c.rope_(
                         t,
                         context.sin,
                         context.cos,
                         past_len,
                         (b - a) * heads,
-                        cfg.head_dim,
+                        self.head_dim,
                         attn_params.position_offsets_tp[idx] if attn_params.position_offsets is not None else none_tensor,
                         self.archparams.rope_style == RopeStyle.NEOX
                     )
@@ -1299,7 +1314,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                         cfg
                     )
 
-            attn_output = attn_output.view(batch_size * q_len, (b - a) * cfg.head_dim * cfg.num_key_value_groups)
+            attn_output = attn_output.view(batch_size * q_len, (b - a) * self.head_dim * self.num_key_value_groups)
             attn_outputs.append(attn_output)
 
         if cache is not None:
@@ -1307,14 +1322,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         # Output projection
 
-        attn_outputs = self.model.tp_context.allgather(1, attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = cfg.head_dim)
+        attn_outputs = self.model.tp_context.allgather(1, attn_outputs, BROADCAST_Q, BROADCAST_Q, dim = self.head_dim)
 
-        hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = cfg.head_dim, output_split = True)
+        hidden_states = self.o_proj.forward_tp(attn_outputs, loras = loras, dim = self.head_dim, output_split = True)
 
         if self.has_residual:
-            self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = cfg.head_dim)
+            self.model.tp_context.add_residual(hidden_states, residual, BROADCAST_Q, dim = self.head_dim)
 
-        hidden_states = self.model.tp_context.gather(0, hidden_states, BROADCAST_Q, dim = cfg.head_dim)
+        hidden_states = self.model.tp_context.gather(0, hidden_states, BROADCAST_Q, dim = self.head_dim)
 
         # if self.post_layernorm:  # TODO: ...
         #     hidden_states = self.post_layernorm.forward(hidden_states)
@@ -1338,11 +1353,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         global has_xformers
 
         cfg = self.model.config
-        num_attention_heads = cfg.num_attention_heads
-        num_key_value_heads = cfg.num_key_value_heads
-        num_key_value_groups = cfg.num_key_value_groups
-        head_dim = cfg.head_dim
-        hidden_size = cfg.hidden_size
+        num_attention_heads = self.num_attention_heads
+        num_key_value_heads = self.num_key_value_heads
+        head_dim = self.head_dim
 
         batch_size, q_len, _ = hidden_states.size()
 
@@ -1470,15 +1483,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         o_proj_lora_a = { id(k): v for k, v in self.o_proj.lora_a_tensors.items() }
         o_proj_lora_b = { id(k): v for k, v in self.o_proj.lora_b_tensors.items() }
 
-        temp_lora_size = ext_c.q_attn_set_loras(self.q_handle,
-                                                q_proj_lora_a,
-                                                q_proj_lora_b,
-                                                k_proj_lora_a,
-                                                k_proj_lora_b,
-                                                v_proj_lora_a,
-                                                v_proj_lora_b,
-                                                o_proj_lora_a,
-                                                o_proj_lora_b)
+        temp_lora_size = ext_c.q_attn_set_loras(
+            self.q_handle,
+            q_proj_lora_a,
+            q_proj_lora_b,
+            k_proj_lora_a,
+            k_proj_lora_b,
+            v_proj_lora_a,
+            v_proj_lora_b,
+            o_proj_lora_a,
+            o_proj_lora_b
+        )
 
         self.temp_lora_size = temp_lora_size * cfg.max_batch_size * cfg.max_input_len
 
@@ -1497,23 +1512,23 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if self.post_layernorm is not None:
             self.post_layernorm.tp_split(BROADCAST_KV)
 
-        self.q_proj.tp_split(BROADCAST_Q, dim = cfg.head_dim)
-        self.k_proj.tp_split(BROADCAST_KV, dim = cfg.head_dim)
-        self.v_proj.tp_split(BROADCAST_KV, dim = cfg.head_dim)
-        self.o_proj.tp_split(BROADCAST_Q, dim = cfg.head_dim)
+        self.q_proj.tp_split(BROADCAST_Q, dim = self.head_dim)
+        self.k_proj.tp_split(BROADCAST_KV, dim = self.head_dim)
+        self.v_proj.tp_split(BROADCAST_KV, dim = self.head_dim)
+        self.o_proj.tp_split(BROADCAST_Q, dim = self.head_dim)
 
         maxrows = cfg.max_batch_size * cfg.max_input_len
         dtype = torch.half
 
         ctx.begin_scratch_alloc_tp()
         ctx.reserve_scratch(self.tp_dq_size)
-        self.temp_bc0 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        self.temp_bc1 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        self.temp_bc2 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        self.temp_q = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
-        self.temp_k = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_KV, dim = cfg.head_dim)
-        self.temp_v = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_KV, dim = cfg.head_dim)
-        self.temp_o = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_Q, dim = cfg.head_dim)
+        self.temp_bc0 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = self.head_dim)
+        self.temp_bc1 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = self.head_dim)
+        self.temp_bc2 = ctx.get_scratch_slice_tp_bc(maxrows, dtype, BROADCAST_Q, dim = self.head_dim)
+        self.temp_q = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_Q, dim = self.head_dim)
+        self.temp_k = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_KV, dim = self.head_dim)
+        self.temp_v = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_KV, dim = self.head_dim)
+        self.temp_o = ctx.get_scratch_slice_tp(maxrows, dtype, BROADCAST_Q, dim = self.head_dim)
 
         self.is_tp = True
         self.set_device_idx(None)
@@ -1534,20 +1549,20 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             for i, s in enumerate(res):
                 scratch[i] = max(scratch[i], s)
 
-        amax(self.q_proj.scratch_space_tp(BROADCAST_Q, cfg.head_dim))
-        amax(self.k_proj.scratch_space_tp(BROADCAST_KV, cfg.head_dim))
-        amax(self.v_proj.scratch_space_tp(BROADCAST_KV, cfg.head_dim))
-        amax(self.o_proj.scratch_space_tp(BROADCAST_Q, cfg.head_dim))
+        amax(self.q_proj.scratch_space_tp(BROADCAST_Q, self.head_dim))
+        amax(self.k_proj.scratch_space_tp(BROADCAST_KV, self.head_dim))
+        amax(self.v_proj.scratch_space_tp(BROADCAST_KV, self.head_dim))
+        amax(self.o_proj.scratch_space_tp(BROADCAST_Q, self.head_dim))
         self.tp_dq_size = [s for s in scratch]
 
         maxrows = cfg.max_batch_size * cfg.max_input_len
 
-        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
-        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
-        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
-        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
-        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_KV, dim = cfg.head_dim))
-        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_KV, dim = cfg.head_dim))
-        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_Q, dim = cfg.head_dim))
+        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = self.head_dim))
+        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = self.head_dim))
+        add(ctx.get_temp_tensors_bc_s(maxrows, 2, BROADCAST_Q, dim = self.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_Q, dim = self.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_KV, dim = self.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_KV, dim = self.head_dim))
+        add(ctx.get_temp_tensors_s(maxrows, 2, BROADCAST_Q, dim = self.head_dim))
 
         return scratch

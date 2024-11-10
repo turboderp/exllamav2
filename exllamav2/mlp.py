@@ -55,9 +55,16 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         ap = self.archparams
         km = self.archparams.keys
 
-        if in_features is None: in_features = cfg.hidden_size
-        if out_features is None: out_features = cfg.hidden_size
-        if interm_features is None: interm_features = cfg.intermediate_size
+        if ap.is_vision:
+            self.hidden_size = cfg.vision_hidden_size
+            self.intermediate_size = cfg.vision_intermediate_size
+        else:
+            self.hidden_size = cfg.hidden_size
+            self.intermediate_size = cfg.intermediate_size
+
+        if in_features is None: in_features = self.hidden_size
+        if out_features is None: out_features = self.hidden_size
+        if interm_features is None: interm_features = self.intermediate_size
         self.in_features = in_features
         self.out_features = out_features
         self.interm_features = interm_features
@@ -355,7 +362,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         ctx = self.model.tp_context
 
         batch_size, q_len, _ = hidden_states.shape
-        hidden_states = hidden_states.view(-1, cfg.hidden_size)
+        hidden_states = hidden_states.view(-1, self.hidden_size)
 
         ext_c.tp_mlp_forward_(
             self.model.tp_context.ext_tp_context,
@@ -374,7 +381,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.archparams.mlp_act_func == "gelu"
         )
 
-        return ctx.get_pinned(0, batch_size, q_len, cfg.hidden_size)
+        return ctx.get_pinned(0, batch_size, q_len, self.hidden_size)
 
 
     def forward_tp_old(
