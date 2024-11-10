@@ -117,7 +117,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         numel = self.up_proj.numel() + \
                 self.down_proj.numel()
 
-        if self.archparams.arch.mlp_gate:
+        if self.archparams.mlp_gate:
             numel += self.gate_proj.numel()
 
         if self.pre_layernorm is not None:

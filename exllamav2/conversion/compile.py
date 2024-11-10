@@ -59,86 +59,106 @@ def get_q_module(job, module):
 @torch.inference_mode()
 def compile_model(job, save_fn, model):
 
+    cfg = model.config
     out_dict = {}
     current_size = 0
     file_index = 1
     index = 0
     shard_bytes = job["shard_size"] * 1024 ** 2
 
-    while index < len(model.modules):
+    extra_tensors = []
+    if cfg.arch.mmp_prefix:
+        extra_tensors += [k for k in cfg.tensor_file_map.keys() if k.startswith(cfg.arch.mmp_prefix)]
+    if cfg.arch.vt_prefix:
+        extra_tensors += [k for k in cfg.tensor_file_map.keys() if k.startswith(cfg.arch.vt_prefix)]
+    extra_tensors_size = 0
 
-        module = model.modules[index]
+    while index < len(model.modules) or len(extra_tensors):
 
-        if isinstance(module, ExLlamaV2Embedding):
+        if index < len(model.modules):
 
-            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
+            module = model.modules[index]
 
-        if isinstance(module, ExLlamaV2PosEmbedding):
+            if isinstance(module, ExLlamaV2Embedding):
 
-            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2Attention):
+            if isinstance(module, ExLlamaV2PosEmbedding):
 
-            d = get_f_module(job, module.pre_layernorm)
-            if d: out_dict.update(d); current_size += _dsize(d)
-            d = get_f_module(job, module.post_layernorm)
-            if d: out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.q_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.k_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.v_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.o_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2MLP):
+            if isinstance(module, ExLlamaV2Attention):
 
-            has_gate = model.config.arch.lm.mlp_gate
-            d = get_f_module(job, module.pre_layernorm)
-            if d: out_dict.update(d); current_size += _dsize(d)
-            d = get_f_module(job, module.post_layernorm)
-            if d: out_dict.update(d); current_size += _dsize(d)
-            if has_gate: d = get_q_module(job, module.gate_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.up_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.down_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module.pre_layernorm)
+                if d: out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module.post_layernorm)
+                if d: out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.q_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.k_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.v_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.o_proj); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2MoEMLP):
+            if isinstance(module, ExLlamaV2MLP):
 
-            d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
-            d = get_f_module(job, module.gate); out_dict.update(d); current_size += _dsize(d)
-            for i in range(model.config.num_experts):
-                d = get_q_module(job, module.w1[i]); out_dict.update(d); current_size += _dsize(d)
-                d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
-                d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
+                has_gate = model.config.arch.lm.mlp_gate
+                d = get_f_module(job, module.pre_layernorm)
+                if d: out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module.post_layernorm)
+                if d: out_dict.update(d); current_size += _dsize(d)
+                if has_gate: d = get_q_module(job, module.gate_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.up_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.down_proj); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2ParallelDecoder):
+            if isinstance(module, ExLlamaV2MoEMLP):
 
-            has_gate = model.config.arch.lm.mlp_gate
-            has_qk_norm = model.config.use_qk_norm
-            d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.attn.q_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.attn.k_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.attn.v_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.attn.o_proj); out_dict.update(d); current_size += _dsize(d)
-            if has_qk_norm:
-                d = get_f_module(job, module.attn.q_norm); out_dict.update(d); current_size += _dsize(d)
-                d = get_f_module(job, module.attn.k_norm); out_dict.update(d); current_size += _dsize(d)
-            if has_gate:
-                d = get_q_module(job, module.mlp.gate_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.mlp.up_proj); out_dict.update(d); current_size += _dsize(d)
-            d = get_q_module(job, module.mlp.down_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module.post_attention_layernorm); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module.gate); out_dict.update(d); current_size += _dsize(d)
+                for i in range(model.config.num_experts):
+                    d = get_q_module(job, module.w1[i]); out_dict.update(d); current_size += _dsize(d)
+                    d = get_q_module(job, module.w3[i]); out_dict.update(d); current_size += _dsize(d)
+                    d = get_q_module(job, module.w2[i]); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
+            if isinstance(module, ExLlamaV2ParallelDecoder):
 
-            d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
+                has_gate = model.config.arch.lm.mlp_gate
+                has_qk_norm = model.config.use_qk_norm
+                d = get_f_module(job, module.input_layernorm); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.attn.q_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.attn.k_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.attn.v_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.attn.o_proj); out_dict.update(d); current_size += _dsize(d)
+                if has_qk_norm:
+                    d = get_f_module(job, module.attn.q_norm); out_dict.update(d); current_size += _dsize(d)
+                    d = get_f_module(job, module.attn.k_norm); out_dict.update(d); current_size += _dsize(d)
+                if has_gate:
+                    d = get_q_module(job, module.mlp.gate_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.mlp.up_proj); out_dict.update(d); current_size += _dsize(d)
+                d = get_q_module(job, module.mlp.down_proj); out_dict.update(d); current_size += _dsize(d)
 
-        if isinstance(module, ExLlamaV2Linear):
+            if isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):
 
-            assert module.key == "lm_head"
-            d = get_q_module(job, module); out_dict.update(d); current_size += _dsize(d)
+                d = get_f_module(job, module); out_dict.update(d); current_size += _dsize(d)
 
-        index += 1
+            if isinstance(module, ExLlamaV2Linear):
+
+                assert module.key == cfg.arch.lm_prefix + "lm_head"
+                d = get_q_module(job, module); out_dict.update(d); current_size += _dsize(d)
+
+            index += 1
+
+        else:
+
+            key = extra_tensors[0]
+            extra_tensors = extra_tensors[1:]
+            file = cfg.tensor_file_map[key]
+            with safe_open(file, framework = "pt") as f:
+                tensor = f.get_tensor(key)
+            out_dict.update({key: tensor})
+            extra_tensors_size += _tsize(tensor)
 
         # Save shard
 
-        if current_size > shard_bytes or index == len(model.modules):
+        if current_size > shard_bytes or (index == len(model.modules) and len(extra_tensors) == 0):
 
             print_stage(job, "Compiling", index, len(model.modules))
 
@@ -175,7 +195,7 @@ def compile_model(job, save_fn, model):
 
                 out_dict = dont_save_dict
 
-                if index == len(model.modules) and len(out_dict) > 0:
+                if index == len(model.modules) and len(extra_tensors) == 0 and len(out_dict) > 0:
                     save_dict = dont_save_dict
                     dont_save_dict = {}
                     continue
@@ -202,6 +222,9 @@ def compile_model(job, save_fn, model):
 
             filesize = os.path.getsize(final_filename) // (1024 ** 2)
             print(f" --   {final_filename} ({filesize:,} MB)")
+
+    if extra_tensors_size:
+        print(f" -- Tensors copied (MM components): {extra_tensors_size // (1024 ** 2):,} MB")
 
     # Copy all non-tensor files from the model's directory if compiling a full model
 

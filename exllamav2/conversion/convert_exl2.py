@@ -149,7 +149,7 @@ else:
         sys.exit()
 
     if job["progress"] == "finished":
-        print(" !! Job is already finished")
+        print(f" !! Job is already finished. Clear the working directory, or run this script with -nr/--no_resume to clear it automatically.")
         sys.exit()
 
 # Feedback

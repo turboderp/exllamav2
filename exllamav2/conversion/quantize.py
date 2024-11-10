@@ -326,7 +326,7 @@ def quant(job, save_fn, model):
 
         elif isinstance(module, ExLlamaV2Linear):
             mode = "linear"
-            assert module.key == "lm_head"
+            assert module.key == model.config.arch.lm_prefix + "lm_head"
             quantizers["lm_head"] = AdaptiveGPTQ(module.linear)
 
         elif isinstance(module, ExLlamaV2RMSNorm) or isinstance(module, ExLlamaV2LayerNorm):

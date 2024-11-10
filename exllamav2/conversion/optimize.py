@@ -8,11 +8,12 @@ from exllamav2.conversion.bot_status import print_stage
 def optimize(job, save_fn, model):
 
     cfg = model.config
+    km = cfg.arch.lm.keys
 
     has_gate = cfg.arch.lm.mlp_gate
-    if has_gate: mlp_key_gate = cfg.arch.mlp_key_gate
-    mlp_key_up = cfg.arch.mlp_key_up
-    mlp_key_down = cfg.arch.mlp_key_down
+    if has_gate: mlp_key_gate = km["mlp_gate"]
+    mlp_key_up = km["mlp_up"]
+    mlp_key_down = km["mlp_down"]
 
     norm_interval = (1.5, 3.5)
     norm_2ndstage = 0.15
@@ -24,7 +25,7 @@ def optimize(job, save_fn, model):
     anneal_stages = 3
 
     first_q_layer = 0
-    while not model.modules[first_q_layer].key.startswith("model.layers"):
+    while not model.modules[first_q_layer].key.startswith(cfg.arch.lm_prefix + "model.layers"):
         first_q_layer += 1
 
     # max_step_size = 2
@@ -32,11 +33,11 @@ def optimize(job, save_fn, model):
     # bias_layers = 2
     # bias_iter = 0
 
-    key = "model.layers.0"
-    key_q = key + ".self_attn.q_proj"
-    key_k = key + ".self_attn.k_proj"
-    key_v = key + ".self_attn.v_proj"
-    key_o = key + ".self_attn.o_proj"
+    key = cfg.arch.lm_prefix + "model.layers.0"
+    key_q = key + km["attn_q"]
+    key_k = key + km["attn_k"]
+    key_v = key + km["attn_v"]
+    key_o = key + km["attn_o"]
 
     if not cfg.arch.lm.is_moe:
         if has_gate: key_g = key + mlp_key_gate
@@ -84,11 +85,11 @@ def optimize(job, save_fn, model):
 
     for i in range(num_layers):
         if cfg.arch.lm.parallel_decoder_blocks:
-            m1 = measurement["model.layers." + str(i) + ".parallel_decoder"]["attn"]
-            m2 = measurement["model.layers." + str(i) + ".parallel_decoder"]["mlp"]
+            m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".parallel_decoder"]["attn"]
+            m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".parallel_decoder"]["mlp"]
         else:
-            m1 = measurement["model.layers." + str(i) + ".self_attn"]
-            m2 = measurement["model.layers." + str(i) + "." + mlp_mode]
+            m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".self_attn"]
+            m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
         for m in [m1, m2]:
             slot = []
             param = []
@@ -154,8 +155,8 @@ def optimize(job, save_fn, model):
     job["strategy"] = {}
     for layer_ in range(num_layers):
 
-        k1 = "model.layers." + str(layer_) + ".self_attn"
-        k2 = "model.layers." + str(layer_) + "." + mlp_mode
+        k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".self_attn"
+        k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
         p1 = params[layer_ * 2][solution_idx[layer_ * 2]]
         p2 = params[layer_ * 2 + 1][solution_idx[layer_ * 2 + 1]]
 

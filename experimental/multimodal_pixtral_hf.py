@@ -23,7 +23,7 @@ import requests
 #
 # https://huggingface.co/mistral-community/pixtral-12b/
 
-model_directory = "/mnt/str/models/pixtral-12b"
+model_directory = "/mnt/str/models/pixtral-12b-exl2/5.0bpw"
 config = ExLlamaV2Config(model_directory)
 config.max_seq_len = 16384  # default is 1M
 
