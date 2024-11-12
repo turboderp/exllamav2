@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build_wheels:
-    name: ${{ matrix.os }} Python=${{ matrix.pyver }} CUDA=${{ matrix.cuda }} ROCm=${{ matrix.rocm }} Torch=${{ matrix.torch }}
+    name: ${{ matrix.os }} P${{ matrix.pyver }} C${{ matrix.cuda }} R${{ matrix.rocm }} T${{ matrix.torch }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -162,6 +162,8 @@ jobs:
 
          # Extra wheel for HF spaces
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.10', cuda: '12.1.0', rocm:    '', torch: '2.2.2', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+
+      fail-fast: false
 
     defaults:
       run:
