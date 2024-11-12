@@ -655,7 +655,7 @@ class ExLlamaV2DynamicGenerator:
                 assert False, "Unexpected type in prompt"
 
             if gen_settings is None:
-                p_settings = ExLlamaV2Sampler.Settings()
+                p_settings = None
             elif isinstance(gen_settings, ExLlamaV2Sampler.Settings):
                 p_settings = gen_settings
             elif isinstance(gen_settings, list):
@@ -1536,7 +1536,7 @@ class ExLlamaV2DynamicJob:
         max_new_tokens: int,
         min_new_tokens: int = 0,
         max_skips: int | None = 4,
-        gen_settings: ExLlamaV2Sampler.Settings = ExLlamaV2Sampler.Settings(),
+        gen_settings: ExLlamaV2Sampler.Settings | None = None,
         seed: int = None,
         stop_conditions: list | tuple | set = None,
         decode_special_tokens: bool = False,
@@ -1628,6 +1628,9 @@ class ExLlamaV2DynamicJob:
 
         self.max_skips = max_skips
         self.allocated_pages = None
+
+        if gen_settings is None:
+            gen_settings = ExLlamaV2Sampler.Settings()
 
         # Prepare sequences
 
