@@ -23,7 +23,7 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
 
     in_channels: int
     out_channels: int
-    kernel_size: tuple[int]
+    kernel_size: tuple[int, int]
     has_bias: bool
 
     conv2d: nn.Conv2d | None
@@ -34,7 +34,7 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
         key: str,
         in_channels: int,
         out_channels: int,
-        kernel_size: tuple,
+        kernel_size: tuple[int, int],
         has_bias: bool,
         archparams = None
     ):
@@ -101,7 +101,7 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
     def unload(self):
 
         if self.conv2d is not None:
-            del self.linear
+            del self.conv2d
             self.conv2d = None
 
 
@@ -113,7 +113,7 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
     def get_bias_tensor(self) -> torch.Tensor:
 
         if self.conv2d is not None:
-            return self.linear.bias.data
+            return self.conv2d.bias.data
         else:
             raise ValueError(f"Layer {self.key} has no data")
 
