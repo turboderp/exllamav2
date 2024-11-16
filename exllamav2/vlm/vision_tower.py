@@ -5,7 +5,7 @@ import threading
 
 import torch
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer
-from exllamav2.conv2d import ExLlamaV2Conv2D
+from exllamav2.conv import ExLlamaV2Conv
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.mlp import ExLlamaV2MLP
@@ -64,10 +64,21 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         # Patch embeddings
 
-        patch_size = tuple(config.vision_patch_size[x] for x in ["height", "width"])
-        patch_conv = ExLlamaV2Conv2D(
+        if cfg.arch.vt.vision_conv3d:
+            patch_size = (
+                config.vision_temporal_patch_size,
+                config.vision_patch_size["height"],
+                config.vision_patch_size["width"],
+            )
+        else:
+            patch_size = (
+                config.vision_patch_size["height"],
+                config.vision_patch_size["width"],
+            )
+
+        patch_conv = ExLlamaV2Conv(
             model = self,
-            key = cfg.arch.vt_prefix + "patch_conv",
+            key = cfg.arch.vt_prefix + km["patch_conv"],
             in_channels = self.config.vision_num_channels,
             out_channels = self.config.vision_hidden_size,
             kernel_size = patch_size,

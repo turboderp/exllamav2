@@ -456,6 +456,8 @@ class ExLlamaV2Config:
             with open(self.model_config, encoding = "utf8") as f:
                 read_prep_config = json.load(f)
 
+        # TODO: Cleanup & refactor
+
         if self.vision_model_type is None:
             pass
 

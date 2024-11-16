@@ -139,6 +139,7 @@ class ExLlamaV2ArchParams:
                 "attn_k": ".self_attn.k_proj",
                 "attn_v": ".self_attn.v_proj",
                 "attn_o": ".self_attn.o_proj",
+                "patch_conv": "patch_conv",
             })
 
             # Compute logit scale from `dim_model_base` key in config.json (MiniCPM quirk)
@@ -211,6 +212,7 @@ class ExLlamaV2ArchParams:
             # Vision stuff
             patch_conv_bias: bool = False
             is_vision: bool = False
+            vision_conv3d: bool = False
 
         # Component models
         self.lm_prefix = ""

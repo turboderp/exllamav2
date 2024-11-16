@@ -17,16 +17,16 @@ if TYPE_CHECKING:
     from exllamav2.lora import ExLlamaV2Lora
     from exllamav2.model import ExLlamaV2
 
-class ExLlamaV2Conv2D(ExLlamaV2Module):
+class ExLlamaV2Conv(ExLlamaV2Module):
 
     name: str = "Convolution"
 
     in_channels: int
     out_channels: int
-    kernel_size: tuple[int, int]
+    kernel_size: tuple
     has_bias: bool
 
-    conv2d: nn.Conv2d | None
+    conv: nn.Conv2d | nn.Conv3d | None
 
     def __init__(
         self,
@@ -34,7 +34,7 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
         key: str,
         in_channels: int,
         out_channels: int,
-        kernel_size: tuple[int, int],
+        kernel_size: tuple,
         has_bias: bool,
         archparams = None
     ):
@@ -47,7 +47,7 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
         self.kernel_size = kernel_size
         self.has_bias = has_bias
 
-        self.conv2d = None
+        self.conv = None
         self.assumed_footprint = self.numel() * 2
 
     @torch.inference_mode
@@ -63,34 +63,38 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
         if w is None: w = self.load_weight(cpu = False)
 
         assert not isinstance(w, dict), \
-            "Quantized Conv2D layer is not implemented."
+            "Quantized Conv layer is not implemented."
 
-        # Load FP16 linear layer without bias, optionally quantize to Q4
+        bias = isinstance(w, tuple)
+        if len(self.kernel_size) == 2:
+            self.conv = nn.Conv2d(
+                in_channels = self.in_channels,
+                out_channels = self.out_channels,
+                kernel_size = (self.kernel_size[0], self.kernel_size[1]),
+                stride = (self.kernel_size[0], self.kernel_size[1]),
+                bias = bias)
+        elif len(self.kernel_size) == 3:
+            self.conv = nn.Conv3d(
+                in_channels = self.in_channels,
+                out_channels = self.out_channels,
+                kernel_size = (self.kernel_size[0], self.kernel_size[1], self.kernel_size[2]),
+                stride = (self.kernel_size[0], self.kernel_size[1], self.kernel_size[2]),
+                bias = bias)
+        else:
+            raise ValueError("Only 2D and 3D convolutions allowed")
+
+        # Load FP16 convolution layer without bias, optionally quantize to Q4
 
         if isinstance(w, nn.Parameter):
             assert not self.has_bias, self.key + " has no bias tensor but bias is expected"
-            self.conv2d = nn.Conv2d(
-                in_channels = self.in_channels,
-                out_channels = self.out_channels,
-                kernel_size = self.kernel_size,
-                stride = self.kernel_size,
-                bias = False)
-            self.conv2d.weight = w
+            self.conv.weight = w
 
-        # Load FP16 linear layer with bias, optionally quantize to Q4
+        # Load FP16 convolution layer with bias, optionally quantize to Q4
 
         elif isinstance(w, tuple):
             assert self.has_bias, self.key + " has bias tensor but bias is not expected"
-            ww = w[0]
-            wb = w[1]
-            self.conv2d = nn.Conv2d(
-                in_channels = self.in_channels,
-                out_channels = self.out_channels,
-                kernel_size = self.kernel_size,
-                stride = self.kernel_size,
-                bias = False)
-            self.conv2d.weight = ww
-            self.conv2d.bias = wb
+            self.conv.weight = w[0]
+            self.conv.bias = w[1]
 
 
     def numel(self) -> int:
@@ -100,20 +104,20 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
 
     def unload(self):
 
-        if self.conv2d is not None:
-            del self.conv2d
-            self.conv2d = None
+        if self.conv is not None:
+            del self.conv
+            self.conv = None
 
 
     def get_weight(self) -> torch.Tensor:
 
-        return self.conv2d.weight.data
+        return self.conv.weight.data
 
 
     def get_bias_tensor(self) -> torch.Tensor:
 
-        if self.conv2d is not None:
-            return self.conv2d.bias.data
+        if self.conv is not None:
+            return self.conv.bias.data
         else:
             raise ValueError(f"Layer {self.key} has no data")
 
@@ -154,8 +158,16 @@ class ExLlamaV2Conv2D(ExLlamaV2Module):
         **kwargs
     ) -> torch.Tensor | dict[str: torch.Tensor]:
 
-        hidden_states = self.conv2d.forward(hidden_states)
-        hidden_states = hidden_states.flatten(2).permute(0, 2, 1).contiguous()
+        if len(self.kernel_size) == 2:
+            hidden_states = self.conv.forward(hidden_states)
+            hidden_states = hidden_states.flatten(2).permute(0, 2, 1).contiguous()
+
+        elif len(self.kernel_size) == 3:
+            hidden_states = hidden_states.view(
+                -1, self.in_channels, self.kernel_size[0], self.kernel_size[1], self.kernel_size[2]
+            )
+            hidden_states = self.conv.forward(hidden_states)
+            hidden_states = hidden_states.view(-1, self.out_channels).unsqueeze(0)
 
         if intermediates:
             return {"hidden_states": hidden_states}
