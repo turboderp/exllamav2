@@ -139,6 +139,7 @@ class ExLlamaV2ArchParams:
                 "attn_k": ".self_attn.k_proj",
                 "attn_v": ".self_attn.v_proj",
                 "attn_o": ".self_attn.o_proj",
+                "layers": "layers",
                 "patch_conv": "patch_conv",
             })
 
@@ -212,6 +213,7 @@ class ExLlamaV2ArchParams:
             # Vision stuff
             patch_conv_bias: bool = False
             is_vision: bool = False
+            vision_input_norm: bool = True
             vision_conv3d: bool = False
 
         # Component models
@@ -294,6 +296,7 @@ class ExLlamaV2ArchParams:
                 "mlp_down": ".feed_forward.down_proj",
                 "norm_1": ".attention_norm",
                 "norm_2": ".ffn_norm",
+                "layers": "transformer.layers",
             })
 
             self.mmp_prefix = "multi_modal_projector."

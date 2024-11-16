@@ -17,7 +17,8 @@ from exllamav2.generator import ExLlamaV2MMEmbedding
 from typing import Callable
 
 from PIL.Image import Image
-from exllamav2.vlm.util import position_ids_in_meshgrid
+
+import math
 
 class ExLlamaV2VisionTower(ExLlamaV2):
 
@@ -32,6 +33,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         self.config = config
         cfg = self.config
         self.archparams = cfg.arch.vt
+        km = self.archparams.keys
         self.modules = []
 
         # Preprocessor
@@ -44,23 +46,26 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         # Position embeddings
 
-        self.p_maxedge = cfg.vision_size["longest_edge"] // cfg.vision_patch_size["width"]
-        freqs = 1.0 / (cfg.vision_rope_theta ** (torch.arange(0, cfg.vision_head_dim, 2).float() / cfg.vision_head_dim))
-        h = torch.arange(self.p_maxedge, device=freqs.device)
-        w = torch.arange(self.p_maxedge, device=freqs.device)
-        freqs_h = torch.outer(h, freqs[::2]).float()
-        freqs_w = torch.outer(w, freqs[1::2]).float()
-        inv_freq = torch.cat(
-            [
-                freqs_h[:, None, :].repeat(1, self.p_maxedge, 1),
-                freqs_w[None, :, :].repeat(self.p_maxedge, 1, 1),
-            ],
-            dim=-1,
-        ).reshape(-1, cfg.vision_head_dim // 2)
-        inv_freq = torch.cat((inv_freq, inv_freq), dim = -1)
+        if cfg.vision_model_type == "pixtral":
+            self.p_maxedge = cfg.vision_size["longest_edge"] // cfg.vision_patch_size["width"]
+            freqs = 1.0 / (cfg.vision_rope_theta ** (torch.arange(0, cfg.vision_head_dim, 2).float() / cfg.vision_head_dim))
+            h = torch.arange(self.p_maxedge, device = freqs.device)
+            w = torch.arange(self.p_maxedge, device = freqs.device)
+            freqs_h = torch.outer(h, freqs[::2]).float()
+            freqs_w = torch.outer(w, freqs[1::2]).float()
+            inv_freq = torch.cat(
+                [
+                    freqs_h[:, None, :].repeat(1, self.p_maxedge, 1),
+                    freqs_w[None, :, :].repeat(self.p_maxedge, 1, 1),
+                ],
+                dim = -1,
+            ).reshape(-1, cfg.vision_head_dim // 2)
+            inv_freq = torch.cat((inv_freq, inv_freq), dim = -1)
 
-        self.rope_cos = inv_freq.cos().half()
-        self.rope_sin = inv_freq.sin().half()
+            self.rope_cos = inv_freq.cos().half()
+            self.rope_sin = inv_freq.sin().half()
+
+            self.position_emb_func = pixtral.position_embeddings
 
         # Patch embeddings
 
@@ -89,17 +94,18 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         # Input norm
 
-        norm = ExLlamaV2RMSNorm(
-            model = self,
-            key = cfg.arch.vt_prefix + "ln_pre",
-            archparams = self.archparams,
-        )
-        self.modules += [norm]
+        if self.archparams.vision_input_norm:
+            norm = ExLlamaV2RMSNorm(
+                model = self,
+                key = cfg.arch.vt_prefix + "ln_pre",
+                archparams = self.archparams,
+            )
+            self.modules += [norm]
 
         # Decoder layers
 
         for layer_idx in range(self.config.vision_num_layers):
-            layer_key = cfg.arch.vt_prefix + f"transformer.layers.{layer_idx}"
+            layer_key = cfg.arch.vt_prefix + km["layers"] + f".{layer_idx}"
             attn = ExLlamaV2Attention(self, layer_key, layer_idx, archparams = self.archparams)
             mlp = ExLlamaV2MLP(self, layer_key, layer_idx, archparams = self.archparams)
             self.modules += [attn, mlp]
@@ -137,22 +143,34 @@ class ExLlamaV2VisionTower(ExLlamaV2):
     def process(
         self,
         hidden_states: torch.Tensor,
+        patches_size = None,
         abort_event: threading.Event | None = None,
         **kwargs
     ):
         cfg = self.config
 
+        if len(hidden_states.shape) == 2:
+            hidden_states = hidden_states.unsqueeze(0)
         if len(hidden_states.shape) == 3:
             hidden_states = hidden_states.unsqueeze(0)
 
         bsz, channels, height, width = hidden_states.shape
 
-        p_height = height // cfg.vision_patch_size["height"]
-        p_width = width // cfg.vision_patch_size["width"]
-        position_ids = position_ids_in_meshgrid(p_height, p_width, self.p_maxedge)
+        if patches_size is None:
+            p_height = height // cfg.vision_patch_size["height"]
+            p_width = width // cfg.vision_patch_size["width"]
+        else:
+            p_height, p_width = patches_size
 
-        cos = self.rope_cos[position_ids]
-        sin = self.rope_sin[position_ids]
+        sin, cos = self.position_emb_func(
+            self.config,
+            p_height,
+            p_width,
+            self.p_maxedge,
+            self.rope_sin,
+            self.rope_cos
+        )
+
         attn_params = ExLlamaV2Attention.Params(non_causal_attn = True)
 
         device = self.modules[0].device_idx
@@ -211,13 +229,18 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         width, height = image.size
         original_size = (height, width)
 
-        image_tensor = self.preprocess_func(self.config, image)
-        image_size = tuple(image_tensor.shape[1:])
+        maxsize = self.config.vision_max_size
+        assert all(s <= maxsize for s in original_size), \
+            f"Image exceeds maximum size of {maxsize} x {maxsize}"
 
-        embedding_tensor = self.process(image_tensor)
+        image_tensor, prep_image_size = self.preprocess_func(self.config, image)
+        features_x = prep_image_size[0] // self.config.vision_patch_size["width"]
+        features_y = prep_image_size[1] // self.config.vision_patch_size["height"]
 
-        features_y = image_size[0] // 16
-        features_x = image_size[1] // 16
+        embedding_tensor = self.process(
+            image_tensor,
+            (features_y, features_x)
+        )
 
         embedding_tensor = self.postprocess_func(
             model,
@@ -235,7 +258,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         mme.metadata.update({
             "original_size": original_size,
-            "preprocessed_size": image_size,
+            "preprocessed_size": prep_image_size,
             "patches_size": (features_y, features_x),
         })
 

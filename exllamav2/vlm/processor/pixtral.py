@@ -12,7 +12,7 @@ from exllamav2.vlm.util import (
 def preprocess(
     config: ExLlamaV2Config,
     image: Image
-) -> torch.Tensor:
+) -> (torch.Tensor, tuple):
 
     assert "longest_edge" in config.vision_size, \
         "preprocessing size must specify longest_edge"
@@ -42,7 +42,7 @@ def preprocess(
 
     image = image.transpose(2, 0, 1)
     image = torch.from_numpy(image).half()
-    return image
+    return image, new_size
 
 def postprocess(
     model: ExLlamaV2,
@@ -71,3 +71,26 @@ def postprocess(
     embeddings = torch.cat((embeddings, img_end), dim = 0)
 
     return embeddings
+
+
+def position_embeddings(
+    config: ExLlamaV2Config,
+    height: int,
+    width: int,
+    max_width: int,
+    rope_sin: torch.Tensor,
+    rope_cos: torch.Tensor,
+):
+    """
+    Create flat position IDs tensor for grid of patches: id(row, col) = row * max_width + col
+    """
+
+    row_indices = torch.arange(height).unsqueeze(1) * max_width
+    col_indices = torch.arange(width).unsqueeze(0)
+    ids = row_indices + col_indices
+    ids = ids.flatten().unsqueeze(0)
+
+    cos = rope_cos[ids]
+    sin = rope_sin[ids]
+    return sin, cos
+
