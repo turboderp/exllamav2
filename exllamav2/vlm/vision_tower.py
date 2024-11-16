@@ -11,10 +11,10 @@ from exllamav2.attn import ExLlamaV2Attention
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.config import ExLlamaV2Config
 from exllamav2.module import ExLlamaV2Module
-from exllamav2.vlm.processor import pixtral
 from exllamav2.compat import safe_move_tensor
 from exllamav2.generator import ExLlamaV2MMEmbedding
-from typing import Callable
+
+from exllamav2.vlm.processor import pixtral, qwen2
 
 from PIL.Image import Image
 
@@ -41,6 +41,10 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         if cfg.vision_model_type == "pixtral":
             self.preprocess_func = pixtral.preprocess
             self.postprocess_func = pixtral.postprocess
+        if cfg.vision_model_type == "qwen2":
+            self.preprocess_func = qwen2.preprocess
+            self.postprocess_func = qwen2.postprocess
+
         else:
             raise ValueError(f"Unknown vision model type: {cfg.vision_model_type}")
 
@@ -66,6 +70,20 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             self.rope_sin = inv_freq.sin().half()
 
             self.position_emb_func = pixtral.position_embeddings
+
+        elif cfg.vision_model_type == "qwen2":
+            self.p_maxedge = cfg.vision_max_size
+            dim = cfg.vision_head_dim // 2
+            max_seqlen = int(math.ceil(cfg.vision_max_size / cfg.vision_spatial_patch_size))
+            inv_freq = 1.0 / (cfg.vision_rope_theta ** (torch.arange(0, dim, 2).float() / dim)).half()
+            s = torch.arange(max_seqlen, dtype = inv_freq.dtype).half()
+            inv_freq = torch.outer(s, inv_freq)
+            # inv_freq = torch.cat((inv_freq, inv_freq), dim = -1)
+
+            self.rope_cos = inv_freq.cos().half()
+            self.rope_sin = inv_freq.sin().half()
+
+            self.position_emb_func = qwen2.position_embeddings
 
         # Patch embeddings
 
@@ -112,16 +130,18 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         # Multimodal projection
 
+        merge = cfg.vision_spatial_merge_size ** 2
         mmp = ExLlamaV2MLP(
             self,
             cfg.arch.mmp_prefix,
             0,
             archparams = cfg.arch.mmp,
-            in_features = cfg.vision_hidden_size,
+            in_features = cfg.vision_hidden_size * merge,
             out_features = cfg.hidden_size,
-            interm_features = cfg.hidden_size,
-            has_norm = False,
-            has_residual = False
+            interm_features = cfg.vision_hidden_size * merge,
+            has_norm = True,
+            has_residual = False,
+            merge = merge,
         )
         self.modules += [mmp]
 
