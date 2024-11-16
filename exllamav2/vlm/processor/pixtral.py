@@ -60,8 +60,8 @@ def postprocess(
 
     id_break = tokenizer.single_id("[IMG_BREAK]")
     id_end = tokenizer.single_id("[IMG_END]")
-    img_break = model.modules[0].forward(torch.tensor([id_break], dtype=torch.long)).to("cuda:0")
-    img_end = model.modules[0].forward(torch.tensor([id_end], dtype=torch.long)).to("cuda:0")
+    img_break = model.modules[0].forward(torch.tensor([id_break], dtype=torch.long)).to(embeddings.device)
+    img_end = model.modules[0].forward(torch.tensor([id_end], dtype=torch.long)).to(embeddings.device)
 
     dim = embeddings.shape[-1]
     embeddings = embeddings.view((features_y, features_x, dim))
