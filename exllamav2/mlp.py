@@ -475,6 +475,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
                 y = F.silu(up)
             elif self.archparams.mlp_act_func == "gelu":
                 y = F.gelu(up, approximate = "tanh")
+            elif self.archparams.mlp_act_func == "quickgelu":
+                y = up * torch.sigmoid(1.702 * up)
 
         down = self.down_proj.forward(y, loras = loras)
         if self.post_layernorm:
