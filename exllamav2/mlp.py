@@ -36,6 +36,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     is_tp: bool
     tp_dq_size: list[int] | None
+    merge: int | None
 
 
     def __init__(
@@ -49,6 +50,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         in_features: int | None = None,
         out_features: int | None = None,
         interm_features: int | None = None,
+        merge: int | None = None,
     ):
         super().__init__(model, key, archparams)
         cfg = self.model.config
@@ -68,6 +70,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.in_features = in_features
         self.out_features = out_features
         self.interm_features = interm_features
+        self.merge = merge
 
         self.is_tp = False
         self.tp_dq_size = None
@@ -451,6 +454,11 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         residual = hidden_states
         post_norm = self.pre_layernorm.forward(hidden_states) \
             if self.pre_layernorm else hidden_states
+
+        if self.merge:
+            bd = post_norm.shape[:-2]
+            l, d = post_norm.shape[-2:]
+            post_norm = post_norm.view(*bd, l // self.merge, d * self.merge)
 
         if self.gate_proj is not None:
             gate = self.gate_proj.forward(post_norm, loras = loras)
