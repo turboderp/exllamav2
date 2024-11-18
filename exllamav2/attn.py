@@ -498,6 +498,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         k_cache = k_cache_f.view(k_cache_f.shape[1] // page_size, page_size, k_cache_f.shape[2], k_cache_f.shape[3])
         v_cache = v_cache_f.view(v_cache_f.shape[1] // page_size, page_size, v_cache_f.shape[2], v_cache_f.shape[3])
 
+        sc = attn_params.get_alt_rope_embed(self.device_idx)
+        if not sc:
+            sin, cos = constants.sin, constants.cos
+        else:
+            sin, cos = sc
+
+        cache_seqlens_rope = cache_seqlens
+        offsets = attn_params.get_rope_offsets(self.device_idx)
+        if offsets is not None:
+            cache_seqlens_rope = cache_seqlens_rope + offsets
+
         if is_q:
             q = torch.empty((batch_size, q_len, self.num_attention_heads, self.head_dim), device = hidden_states.device, dtype = torch.half)
             if attn_params.is_sequential:
@@ -521,12 +532,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 batch_size,
                 q_len,
                 0,
-                cache_seqlens,
+                cache_seqlens_rope,
                 q,
                 k,
                 v,
-                constants.sin,
-                constants.cos,
+                sin,
+                cos,
                 pass_loras,
                 pass_lora_temp
             )
@@ -546,12 +557,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 for t, heads in [(q, self.num_attention_heads), (k, self.num_key_value_heads)]:
                     ext_c.rope_(
                         t,
-                        constants.sin,
-                        constants.cos,
+                        sin,
+                        cos,
                         0,
                         heads,
                         self.head_dim,
-                        cache_seqlens,
+                        cache_seqlens_rope,
                         self.archparams.rope_style == RopeStyle.NEOX
                     )
             if attn_params.is_sequential:
@@ -1065,9 +1076,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if attn_params.position_offsets is not None:
             pass_past_len_1 = past_len
             pass_past_len_2 = attn_params.get_position_offsets(hidden_states.device)
+            if pass_past_len_1 == 0:
+                offsets = attn_params.get_rope_offsets(self.device_idx)
+                if offsets is not None:
+                    pass_past_len_2 = pass_past_len_2 + offsets
         else:
             pass_past_len_1 = past_len
             pass_past_len_2 = none_tensor
+            if attn_params.rope_offsets is not None:
+                offset = attn_params.rope_offsets.cpu().item()
+                pass_past_len_1 += offset
 
         ext_c.q_attn_forward_1(
             self.q_handle,
@@ -1394,8 +1412,22 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if self.archparams.rope_style != RopeStyle.NONE:
             alt_cs = kwargs.get("alt_rope_embedding")
             cos, sin = alt_cs if alt_cs else (constants.cos, constants.sin)
-            ext_c.rope_(query_states, sin, cos, past_len, num_attention_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
-            ext_c.rope_(key_states, sin, cos, past_len, num_key_value_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
+
+            sc = attn_params.get_alt_rope_embed(self.device_idx)
+            if sc: sin, cos = sc
+
+            past_len_rope = past_len
+            if attn_params.position_offsets is None:
+                if attn_params.rope_offsets is not None:
+                    offset = attn_params.rope_offsets.cpu().item()
+                    past_len_rope += offset
+            else:
+                offsets = attn_params.get_rope_offsets(self.device_idx)
+                if offsets is not None:
+                    position_offsets = position_offsets + offsets
+
+            ext_c.rope_(query_states, sin, cos, past_len_rope, num_attention_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
+            ext_c.rope_(key_states, sin, cos, past_len_rope, num_key_value_heads, head_dim, position_offsets, self.archparams.rope_style == RopeStyle.NEOX)
 
         # Add keys and values to cache
 

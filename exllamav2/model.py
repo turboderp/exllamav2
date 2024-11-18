@@ -938,7 +938,7 @@ class ExLlamaV2:
         return_last_state: bool = False,
         position_offsets: torch.Tensor | None = None,
         abort_event: threading.Event | None = None,
-        attn_params: ExLlamaV2Attention.Params | None = None,
+        attn_params: ExLlamaV2Attention.Params | ExLlamaV2Attention.PagedParams | None = None,
         extract_state_indices: list[int] | None = None,
         **kwargs
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
@@ -953,6 +953,12 @@ class ExLlamaV2:
             last_id_only or \
             seq_len <= self.config.max_output_len, \
             "seq_len exceeds max_output_len"
+
+        if self.config.arch.lm.mrope and "indexed_embeddings" in kwargs:
+            assert attn_params is not None and (
+                attn_params.rope_offsets is not None or
+                attn_params.get_alt_rope_embed("cpu") is not None
+            ), "MRoPE model requires precomputed RoPE when using indexed embeddings."
 
         # Ensure streams are always set in the current thread
 

@@ -215,6 +215,7 @@ class ExLlamaV2ArchParams:
             is_vision: bool = False
             vision_input_norm: bool = True
             vision_conv3d: bool = False
+            mrope: bool = False
             rope_freq_half: bool = False
 
         # Component models
@@ -361,6 +362,7 @@ class ExLlamaV2ArchParams:
             self.lm.expect_keys += \
                 expect_keys_llama
             self.lm.attention_bias_qkv = True
+            self.lm.mrope = True
             self.lm.rope_freq_half = True
 
             read_config["vision_config"].update({"model_type": "qwen2"})

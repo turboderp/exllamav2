@@ -115,9 +115,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     m.def("head_norm", &head_norm, "head_norm");
     m.def("head_norm_", &head_norm_, "head_norm_");
 
-    // rope
+    // rope/mrope
 
     m.def("rope_", &rope_, "rope_");
+    m.def("gen_mrope_pos_ids", &gen_mrope_pos_ids, "gen_mrope_pos_ids");
 
     // element
 

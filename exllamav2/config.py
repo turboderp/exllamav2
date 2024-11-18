@@ -124,6 +124,7 @@ class ExLlamaV2Config:
     yarn_rope_original_max_position_embeddings: int | None
     checkpoint_fused_mlp: bool
     checkpoint_offset_qzeros: bool
+    mrope_section: list | None
 
     vision_model_type: str | None
     vision_head_dim: int | None
@@ -374,6 +375,9 @@ class ExLlamaV2Config:
                 self.l3_rope_low_freq_factor = rs["low_freq_factor"]
                 self.l3_rope_high_freq_factor = rs["high_freq_factor"]
                 self.l3_rope_original_max_position_embeddings = rs["original_max_position_embeddings"]
+            if scaling_type == "mrope":
+                self.mrope_section = rs["mrope_section"]
+
 
         # Checkpoint format (for GPTQ models)
 

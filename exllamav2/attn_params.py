@@ -18,6 +18,8 @@ class Params:
     past_lens_tensor: torch.Tensor | None
     paged: bool
     alt_rope_embed: tuple[torch.Tensor, torch.Tensor] | None
+    alt_rope_embed_dict: dict | None
+    rope_offsets: torch.Tensor | None
     non_causal_attn: bool
 
     def __init__(
@@ -28,8 +30,9 @@ class Params:
         input_mask: torch.Tensor | None = None,
         position_offsets: torch.Tensor | None = None,
         paged = False,
-        alt_rope_embed: tuple[torch.Tensor, torch.Tensor] | None = None,
+        alt_rope_embed: tuple[torch.Tensor, torch.Tensor] | dict | None = None,
         non_causal_attn: bool = False,
+        rope_offsets: torch.Tensor | None = None
     ):
 
         self.batch_size = batch_size
@@ -37,7 +40,10 @@ class Params:
 
         if paged: return
 
-        self.alt_rope_embed = alt_rope_embed
+        self.alt_rope_embed = alt_rope_embed if isinstance(alt_rope_embed, tuple) else None
+        self.alt_rope_embed_dict = alt_rope_embed if isinstance(alt_rope_embed, dict) else None
+        self.rope_offsets = rope_offsets
+
         self.non_causal_attn = non_causal_attn
 
         self.seq_len = seq_len
@@ -136,6 +142,29 @@ class Params:
             else:
                 self.past_len_tp.append(safe_move_tensor(pl, dev, non_blocking = True))
 
+    def get_alt_rope_embed(self, device):
+        if not self.alt_rope_embed_dict:
+            return None
+        emb = self.alt_rope_embed_dict.get(device)
+        if not emb:
+            emb_cpu = self.alt_rope_embed_dict.get("cpu")
+            if not emb_cpu:
+                return None
+            emb = (
+                safe_move_tensor(emb_cpu[0], device, non_blocking = True),
+                safe_move_tensor(emb_cpu[1], device, non_blocking = True)
+            )
+            self.alt_rope_embed_dict[device] = emb
+        return emb
+
+    def get_rope_offsets(self, device_idx: int) -> torch.Tensor | None:
+        if self.rope_offsets is None:
+            return None
+        if self.rope_offsets.device.index != device_idx:
+            self.rope_offsets = safe_move_tensor(self.rope_offsets, device_idx, non_blocking = True)
+        return self.rope_offsets
+
+
 
 class PagedParams(Params):
 
@@ -145,6 +174,8 @@ class PagedParams(Params):
     cache_seqlens_tp: torch.Tensor | None
     cache_seqlens_after: torch.Tensor
     cache_seqlens_after_tp: torch.Tensor | None
+    alt_rope_embed: dict | None
+    rope_offsets: torch.Tensor | None
     max_cache_seqlen: int
     page_size: int
     is_sequential: bool
@@ -157,7 +188,9 @@ class PagedParams(Params):
         cache_seqlens: torch.Tensor,
         max_cache_seqlen: int,
         page_size: int,
-        q_len: int = 0
+        q_len: int = 0,
+        alt_rope_embed: dict | None = None,
+        rope_offsets: torch.Tensor | None = None
     ):
         super().__init__(
             batch_size = batch_size,
@@ -168,10 +201,13 @@ class PagedParams(Params):
         self.cache_seqlens = cache_seqlens
         self.max_cache_seqlen = max_cache_seqlen
         self.page_size = page_size
+        self.alt_rope_embed = alt_rope_embed or {}
+        self.rope_offsets = rope_offsets
 
         self.is_sequential = False
         assert self.block_index.device.type == "cpu"
         assert self.cache_seqlens.device.type == "cpu"
+        assert self.rope_offsets is None or self.rope_offsets.device.type == "cpu"
         assert q_len > 0
         if self.block_index.shape[0] == 1:
             vi0 = self.cache_seqlens[0].item()
@@ -208,6 +244,13 @@ class PagedParams(Params):
             self.cache_seqlens_after = safe_move_tensor(self.cache_seqlens_after, device_idx, non_blocking = True)
         return self.cache_seqlens_after
 
+    def get_rope_offsets(self, device_idx: int) -> torch.Tensor | None:
+        if self.rope_offsets is None:
+            return None
+        if self.rope_offsets.device.index != device_idx:
+            self.rope_offsets = safe_move_tensor(self.rope_offsets, device_idx, non_blocking = True)
+        return self.rope_offsets
+
     def prep_tp(self, model):
         if self.block_index_tp is not None:
             return
@@ -223,3 +266,18 @@ class PagedParams(Params):
             self.cache_seqlens_tp.append(safe_move_tensor(self.cache_seqlens, dev, non_blocking = True))
             if self.is_sequential:
                 self.cache_seqlens_after_tp.append(safe_move_tensor(self.cache_seqlens_after, dev, non_blocking = True))
+
+    def get_alt_rope_embed(self, device):
+        if not self.alt_rope_embed:
+            return None
+        emb = self.alt_rope_embed.get(device)
+        if not emb:
+            emb_cpu = self.alt_rope_embed.get("cpu")
+            if not emb_cpu:
+                return None
+            emb = (
+                safe_move_tensor(emb_cpu[0], device, non_blocking = True),
+                safe_move_tensor(emb_cpu[1], device, non_blocking = True)
+            )
+            self.alt_rope_embed[device] = emb
+        return emb

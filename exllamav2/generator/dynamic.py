@@ -8,6 +8,7 @@ from exllamav2.cache import ExLlamaV2CacheBase, ExLlamaV2Cache_8bit
 from exllamav2.attn import ExLlamaV2Attention, assert_paged_attn
 from exllamav2.ext import exllamav2_ext as ext_c, none_tensor
 from exllamav2.util import cuda_sync_active, timed
+from exllamav2 import mrope
 from concurrent.futures import ThreadPoolExecutor
 
 from exllamav2.compat import pairwise
@@ -857,7 +858,18 @@ class ExLlamaV2DynamicGenerator:
         self.validate_cache()
 
 
-    def get_paged_params(self, batch_size: int, block_index: torch.Tensor, cache_seqlens: torch.Tensor, q_len: int):
+    def get_paged_params(
+        self,
+        batch_size: int,
+        block_index: torch.Tensor,
+        cache_seqlens: torch.Tensor,
+        q_len: int,
+        alt_rope_embed: dict | None = None,
+        rope_offsets: torch.Tensor | None = None
+    ):
+
+        assert batch_size == 1 or not alt_rope_embed, \
+            "Can't use alt_rope_embed if fwd batch_size > 1"
 
         # assert all(
         #     cache_seqlens[i].item() + q_len <= block_index.shape[-1] * self.page_size
@@ -865,7 +877,6 @@ class ExLlamaV2DynamicGenerator:
         # )
 
         if self.paged:
-
             return ExLlamaV2Attention.PagedParams(
                 batch_size = batch_size,
                 block_index = block_index,
@@ -873,13 +884,17 @@ class ExLlamaV2DynamicGenerator:
                 max_cache_seqlen = cache_seqlens.max().item(),
                 page_size = self.page_size,
                 q_len = q_len,
+                alt_rope_embed = alt_rope_embed,
+                rope_offsets = rope_offsets,
             )
         else:
             assert cache_seqlens.shape[0] == 1
             return ExLlamaV2Attention.Params(
                 batch_size = 1,
                 seq_len = q_len,
-                past_len = cache_seqlens[0].item()
+                past_len = cache_seqlens[0].item(),
+                alt_rope_embed = alt_rope_embed,
+                rope_offsets = rope_offsets,
             )
 
     @torch.inference_mode
@@ -1141,6 +1156,7 @@ class ExLlamaV2DynamicGenerator:
         input_ids_list = []
         active_embeddings = []
         logit_mapping = []
+        rope_offsets_list = [] if self.model.config.arch.lm.mrope else None
         for job in self.active_jobs:
             logit_mapping.append(len(input_ids_list))
             if not job.is_prefill_done(): continue
@@ -1153,6 +1169,8 @@ class ExLlamaV2DynamicGenerator:
                 job_ids = job.get_input_ids_list(draft_tokens, len(input_ids_list), add_to_cache = True)
             input_ids_list += job_ids
             active_embeddings += job.embeddings
+            if rope_offsets_list is not None:
+                rope_offsets_list += [job.alt_rope_offset] * len(job_ids)
 
         logit_mapping.append(len(input_ids_list))
 
@@ -1160,7 +1178,13 @@ class ExLlamaV2DynamicGenerator:
 
         # Get logit batch from model
 
-        attn_params = self.get_paged_params(batch_size, block_index, cache_seqlens, batch_ids.shape[-1])
+        attn_params = self.get_paged_params(
+            batch_size,
+            block_index,
+            cache_seqlens,
+            batch_ids.shape[-1],
+            rope_offsets = torch.tensor(rope_offsets_list, dtype = torch.int) if rope_offsets_list is not None else None
+        )
 
         device_logits = self.model.forward_chunk(
             input_ids = batch_ids,
@@ -1528,6 +1552,8 @@ class ExLlamaV2DynamicJob:
     # Hold reference to embeddings
 
     embeddings: list[ExLlamaV2MMEmbedding]
+    alt_rope_embed: dict
+    alt_rope_offset: int
 
 
     def __init__(
@@ -1735,6 +1761,8 @@ class ExLlamaV2DynamicJob:
         # Embeddings
 
         self.embeddings = embeddings or []
+        self.alt_rope_embed = {}
+        self.alt_rope_offset = 0
 
 
     def __repr__(self):
@@ -2228,6 +2256,21 @@ class ExLlamaV2DynamicJob:
 
         self.full_completion = ""
 
+        # Prepare MRoPE embeddings
+
+        if self.embeddings and generator.model.config.arch.lm.mrope:
+            ids = self.sequences[0].sequence_ids.torch()
+            e, offset = mrope.gen_mrope_embed(
+                generator.model.config,
+                ids,
+                self.embeddings,
+                ids.shape[-1],  # + self.max_new_tokens
+            )
+            self.alt_rope_embed = {"cpu": e}
+            self.alt_rope_offset = offset - ids.shape[-1]
+        else:
+            self.alt_rope_embed = {}
+            self.alt_rope_offset = 0
 
     def current_new_pages_required(self):
         new_pages = 0
@@ -2361,7 +2404,8 @@ class ExLlamaV2DynamicJob:
                     1,
                     self.get_block_index(seq, prefill_end).unsqueeze(0),
                     torch.tensor([prefill_start], dtype = torch.int32),
-                    prefill_ids.shape[-1]
+                    prefill_ids.shape[-1],
+                    alt_rope_embed = self.alt_rope_embed,
                 )
 
                 if self.generator.draft_model:
