@@ -479,7 +479,7 @@ class ExLlamaV2Config:
             self.vision_rope_theta = read(read_config, int, ["vision_config->rope_theta"], no_default)
             self.vision_feature_layer = read(read_config, int, ["vision_feature_layer"], no_default)
             self.vision_num_layers = 24
-            self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], self.vision_hidden_size * 4)
+            self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], self.hidden_size)
 
             image_processor_type = read(read_prep_config, str, ["image_processor_type"], no_default)
             assert image_processor_type == "PixtralImageProcessor", \
@@ -493,6 +493,8 @@ class ExLlamaV2Config:
             self.vision_rescale_factor = read(read_prep_config, float, ["rescale_factor"], no_default)
             self.vision_size = read(read_prep_config, dict, ["size"], no_default)
             self.vision_num_channels = 3
+            self.vision_spatial_merge_size = 1
+            self.vision_max_size = 16384
 
         elif self.vision_model_type == "qwen2":
             self.vision_num_attention_heads = read(read_config, int, ["vision_config->num_heads"], no_default)

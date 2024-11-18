@@ -41,7 +41,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         if cfg.vision_model_type == "pixtral":
             self.preprocess_func = pixtral.preprocess
             self.postprocess_func = pixtral.postprocess
-        if cfg.vision_model_type == "qwen2":
+        elif cfg.vision_model_type == "qwen2":
             self.preprocess_func = qwen2.preprocess
             self.postprocess_func = qwen2.postprocess
 
@@ -138,7 +138,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             archparams = cfg.arch.mmp,
             in_features = cfg.vision_hidden_size * merge,
             out_features = cfg.hidden_size,
-            interm_features = cfg.vision_hidden_size * merge,
+            interm_features = cfg.vision_intermediate_size,
             has_norm = True,
             has_residual = False,
             merge = merge,
@@ -258,7 +258,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         maxsize = self.config.vision_max_size
         assert all(s <= maxsize for s in original_size), \
-            f"Image exceeds maximum size of {maxsize} x {maxsize}"
+            f"Input image exceeds maximum size of {maxsize} x {maxsize}"
 
         image_tensor, prep_image_size = self.preprocess_func(self.config, image)
         features_x = prep_image_size[0] // self.config.vision_patch_size["width"]

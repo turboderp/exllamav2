@@ -72,6 +72,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.interm_features = interm_features
         self.merge = merge
 
+        assert self.interm_features >= self.in_features and self.interm_features >= self.out_features
+
         self.is_tp = False
         self.tp_dq_size = None
 
@@ -256,7 +258,6 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def scratch_space(self) -> int:
 
-        assert self.interm_features >= self.in_features and self.interm_features >= self.out_features
         return (
             self.temp_state_size() +
             self.temp_a_size() +
