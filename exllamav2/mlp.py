@@ -72,8 +72,6 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         self.interm_features = interm_features
         self.merge = merge
 
-        assert self.interm_features >= self.in_features and self.interm_features >= self.out_features
-
         self.is_tp = False
         self.tp_dq_size = None
 
@@ -274,14 +272,16 @@ class ExLlamaV2MLP(ExLlamaV2Module):
 
     def temp_a_size(self) -> int:
 
+        temp = max(self.in_features, self.interm_features, self.out_features)
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * self.interm_features * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * temp * 2 + 128
 
 
     def temp_b_size(self) -> int:
 
+        temp = max(self.in_features, self.interm_features, self.out_features)
         cfg = self.model.config
-        return cfg.max_input_len * cfg.max_batch_size * self.interm_features * 2 + 128
+        return cfg.max_input_len * cfg.max_batch_size * temp * 2 + 128
 
 
     def temp_dq_size(self) -> int:
