@@ -39,10 +39,10 @@ elif mode == "qwen2":
     model_directory = "/mnt/str/models/qwen2-vl-7b-instruct-exl2/6.0bpw"
 
 images = [
-    # {"file": "test_image_1.jpg"},
-    # {"file": "test_image_2.jpg"},
+    {"file": "test_image_1.jpg"},
+    {"file": "test_image_2.jpg"},
     # {"url": "https://media.istockphoto.com/id/1212540739/photo/mom-cat-with-kitten.jpg?s=612x612&w=0&k=20&c=RwoWm5-6iY0np7FuKWn8FTSieWxIoO917FF47LfcBKE="},
-    {"url": "https://i.dailymail.co.uk/1s/2023/07/10/21/73050285-12283411-Which_way_should_I_go_One_lady_from_the_US_shared_this_incredibl-a-4_1689019614007.jpg"},
+    # {"url": "https://i.dailymail.co.uk/1s/2023/07/10/21/73050285-12283411-Which_way_should_I_go_One_lady_from_the_US_shared_this_incredibl-a-4_1689019614007.jpg"},
     # {"url": "https://images.fineartamerica.com/images-medium-large-5/metal-household-objects-trevor-clifford-photography.jpg"}
 ]
 
