@@ -34,6 +34,9 @@ class ExLlamaV2MMEmbedding:
     embeddings: torch.Tensor
     first_index: int
     length: int
+    thw_grid: tuple[int, int, int]
+    pre_tokens: int
+    post_tokens: int
 
     metadata: dict
 
@@ -41,7 +44,10 @@ class ExLlamaV2MMEmbedding:
         self,
         model: ExLlamaV2,
         embeddings: torch.Tensor,
-        text_alias: str | None = None
+        text_alias: str | None = None,
+        thw_grid: tuple[int, int, int] | None = None,
+        pre_tokens: int = 0,
+        post_tokens: int = 0,
     ):
         """
         :param model:
@@ -56,9 +62,13 @@ class ExLlamaV2MMEmbedding:
 
         global global_allocator
 
+        self.model = model
         self.embeddings = embeddings
         self.text_alias = text_alias
-        self.model = model
+        self.thw_grid = thw_grid
+        self.pre_tokens = pre_tokens
+        self.post_tokens = post_tokens
+
         self.metadata = {}
 
         self.length = embeddings.shape[0]
@@ -86,3 +96,6 @@ class ExLlamaV2MMEmbedding:
             self.first_index,
             self.first_index + self.length
         ))
+
+    def get_vision_token_range(self):
+        return self.first_index + self.pre_tokens, self.first_index + self.length - self.post_tokens

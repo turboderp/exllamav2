@@ -227,7 +227,8 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         model: ExLlamaV2,
         tokenizer: ExLlamaV2Tokenizer,
         image: Image,
-        text_alias: str,
+        text_alias: str | None = None,
+        embeddings_cpu: bool = True
     ) -> ExLlamaV2MMEmbedding:
         """
         :param model:
@@ -241,6 +242,12 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
         :param text_alias:
             Text string to represent this embedding for tokenizing
+
+        :param embeddings_cpu:
+            Move embeddings to CPU. This can be skipped for simple jobs, but ideally embeddings should be cached
+            when used with the dynamic generator, and it is not ideal to keep some large cache of data in VRAM. The
+            overhead of copying them back to VRAM is relatively low. If this argument is False, embeddings will
+            reside on whatever device the vision tower is loaded on.
 
         :return:
             ExLlamaV2MMEmbedding
@@ -262,7 +269,10 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             (features_y, features_x)
         )
 
-        embedding_tensor = self.postprocess_func(
+        if embeddings_cpu:
+            embedding_tensor = embedding_tensor.cpu()
+
+        embedding_tensor, pre_tokens, post_tokens = self.postprocess_func(
             model,
             tokenizer,
             embedding_tensor[0],
@@ -273,7 +283,10 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         mme = ExLlamaV2MMEmbedding(
             model = model,
             embeddings = embedding_tensor,
-            text_alias = text_alias
+            text_alias = text_alias,
+            thw_grid = (1, features_y, features_x),
+            pre_tokens = pre_tokens,
+            post_tokens = post_tokens
         )
 
         mme.metadata.update({

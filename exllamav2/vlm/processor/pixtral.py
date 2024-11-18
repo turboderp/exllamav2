@@ -70,7 +70,7 @@ def postprocess(
     embeddings = embeddings.view((features_y * (features_x + 1)), dim)
     embeddings = torch.cat((embeddings, img_end), dim = 0)
 
-    return embeddings
+    return embeddings, 0, 0
 
 
 def position_embeddings(

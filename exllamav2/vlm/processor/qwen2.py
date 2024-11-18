@@ -84,7 +84,7 @@ def postprocess(
     img_end = model.modules[0].forward(torch.tensor([id_end], dtype = torch.long)).to(embeddings.device)
 
     embeddings = torch.cat((img_start, embeddings, img_end), dim = 0)
-    return embeddings
+    return embeddings, 1, 1
 
 
 def position_embeddings(
