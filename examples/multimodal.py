@@ -18,14 +18,42 @@ from exllamav2.generator import (
 from PIL import Image
 import requests
 
-# Model used:
+# Models used:
 #
-# Quantized: https://huggingface.co/turboderp/pixtral-12b-exl2
-# Unquantized: https://huggingface.co/mistral-community/pixtral-12b/
+# Pixtral:
+#   https://huggingface.co/mistral-community/pixtral-12b/
+#   https://huggingface.co/turboderp/pixtral-12b-exl2
+# Qwen2-VL:
+#   https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct
+#   https://huggingface.co/turboderp/Qwen2-VL-7B-Instruct-exl2
 
-model_directory = "/mnt/str/models/pixtral-12b-exl2/6.0bpw"
+# mode = "pixtral"
+mode = "qwen2"
+
+streaming = True
+greedy = True
+
+if mode == "pixtral":
+    model_directory = "/mnt/str/models/pixtral-12b-exl2/6.0bpw"
+elif mode == "qwen2":
+    model_directory = "/mnt/str/models/qwen2-vl-7b-instruct-exl2/6.0bpw"
+
+images = [
+    # {"file": "test_image_1.jpg"},
+    # {"file": "test_image_2.jpg"},
+    # {"url": "https://media.istockphoto.com/id/1212540739/photo/mom-cat-with-kitten.jpg?s=612x612&w=0&k=20&c=RwoWm5-6iY0np7FuKWn8FTSieWxIoO917FF47LfcBKE="},
+    {"url": "https://i.dailymail.co.uk/1s/2023/07/10/21/73050285-12283411-Which_way_should_I_go_One_lady_from_the_US_shared_this_incredibl-a-4_1689019614007.jpg"},
+    # {"url": "https://images.fineartamerica.com/images-medium-large-5/metal-household-objects-trevor-clifford-photography.jpg"}
+]
+
+instruction = "Compare and contrast the two experiments."
+# instruction = "Describe the image."
+# instruction = "Find the alarm clock."  # Qwen2 seems to support this but unsure of how to prompt correctly
+
+# Initialize model
+
 config = ExLlamaV2Config(model_directory)
-config.max_seq_len = 16384  # default is 1M
+config.max_seq_len = 16384  # Pixtral default is 1M
 
 # Load vision model and multimodal projector and initialize preprocessor
 
@@ -44,7 +72,7 @@ tokenizer = ExLlamaV2Tokenizer(config)
 generator = ExLlamaV2DynamicGenerator(
     model = model,
     cache = cache,
-    tokenizer = tokenizer
+    tokenizer = tokenizer,
 )
 
 # Util function to get a PIL image from a URL or from a file in the script's directory
@@ -58,21 +86,19 @@ def get_image(file = None, url = None):
     elif url:
         return Image.open(requests.get(url, stream = True).raw)
 
-# Convert image(s) to embeddings
+# Convert image(s) to embeddings. Aliases can be given explicitly with the text_alias argument, but here we
+# use automatically assigned unique identifiers, then concatenate them into a string
 
 image_embeddings = [
     vision_model.get_image_embeddings(
         model = model,
         tokenizer = tokenizer,
-        image = img,
-        text_alias = alias,
+        image = get_image(**img_args),
     )
-    for (alias, img) in [
-        ("{{IMAGE_1}}", get_image(file = "test_image_1.jpg")),
-        ("{{IMAGE_2}}", get_image(file = "test_image_2.jpg")),
-        # ("{{IMAGE_3}}", get_image(url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRSERy82bn3jpYKr1cNxMLXTyEsVvSt2wZOIQ&s")),
-    ]
+    for img_args in images
 ]
+
+placeholders = "\n".join([ie.text_alias for ie in image_embeddings]) + "\n"
 
 # Define a prompt using the aliases above as placeholders for image tokens. The tokenizer will replace each alias
 # with a range of temporary token IDs, and the model will embed those temporary IDs from their respective sources
@@ -86,13 +112,26 @@ image_embeddings = [
 # Image token IDs are assigned sequentially, however, so two ExLlamaV2Embedding objects created from the same
 # source image will not be recognized as the same image for purposes of prompt caching etc.
 
-prompt = "[INST]{{IMAGE_1}}{{IMAGE_2}}\n" + \
-         "What are the similarities and differences between these two experiments?[/INST]"
+if mode == "pixtral":
+    prompt = (
+        "[INST]" +
+        placeholders +
+        instruction +
+        "[/INST]"
+    )
+
+elif mode == "qwen2":
+    prompt = (
+        "<|im_start|>system\n" +
+        "You are a helpful assistant.<|im_end|>\n" +
+        "<|im_start|>user\n" +
+        placeholders +
+        instruction +
+        "\n" +
+        "<|im_start|>assistant\n"
+    )
 
 # Generate
-
-streaming = True
-greedy = True
 
 if streaming:
 
