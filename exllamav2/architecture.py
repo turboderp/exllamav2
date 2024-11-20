@@ -241,6 +241,9 @@ class ExLlamaV2ArchParams:
         # Tensors are transposed in original model weights
         self.orig_weights_transposed = False
 
+        # Add noise rows to calibration while quantizing
+        self.standard_calib_noise = None
+
         # Mistral
 
         if arch_string == "MistralForCausalLM":

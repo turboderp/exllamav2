@@ -109,9 +109,10 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
 
         cfg = self.model.config
 
-        # If input IDs contain negative values, assume they are padding tokens from a model with not pad_token_id
-        # defined
+        # If input IDs contain negative values, assume they are padding tokens from a model with no pad_token_id
+        # defined or noise values for quantizing
 
+        input_ids = hidden_states
         hidden_states = hidden_states.clamp(min = 0)
 
         # Apply indexed embeddings
@@ -184,6 +185,17 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
                 hidden_states = hidden_states.float()
             if self.archparams.normalize_embeddings:
                 hidden_states *= cfg.hidden_size ** 0.5
+
+        # Negative tokens during quantization are noise tokens
+
+        if kwargs.get("negative_ids_noise"):
+            mask = (input_ids < 0).unsqueeze(-1)
+            unmasked_values = hidden_states[~mask.expand_as(hidden_states)].float()
+            mean, std = unmasked_values.mean(), unmasked_values.std()
+            noise = torch.randn_like(hidden_states, dtype = torch.float)
+            noise = noise * std + mean
+            noise = noise.half()
+            hidden_states = torch.where(mask, noise, hidden_states)
 
         # Move to pinned temp buffer for TP
 

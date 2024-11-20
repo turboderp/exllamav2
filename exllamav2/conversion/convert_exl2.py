@@ -240,7 +240,8 @@ while True:
         else:
 
             print(f" -- Tokenizing samples (measurement)...")
-            tokenize(job, save_job, tokenizer, measure = True)
+            noise_rows = config.arch.standard_calib_noise
+            tokenize(job, save_job, tokenizer, measure = True, noise_rows = noise_rows)
             job["progress"] = "initial_embeddings"
             save_job()
 
@@ -285,7 +286,8 @@ while True:
     if progress == "tokens_cal":
 
         print(f" -- Tokenizing samples...")
-        tokenize(job, save_job, tokenizer)
+        noise_rows = config.arch.standard_calib_noise
+        tokenize(job, save_job, tokenizer, noise_rows = noise_rows)
         job["progress"] = "embeddings"
         save_job()
 

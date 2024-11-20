@@ -36,7 +36,7 @@ def get_tokens(num_rows, length, filename, tokenizer):
     return all_tokens
 
 
-def tokenize(job, save_fn, tokenizer, measure = False):
+def tokenize(job, save_fn, tokenizer, measure = False, noise_rows = None):
 
     print_stage(job, "Tokenizing (1)" if measure else "Tokenizing (2)", 0, 1)
 
@@ -47,7 +47,7 @@ def tokenize(job, save_fn, tokenizer, measure = False):
         length = job["measurement_length"] if measure else job["length"]
         cal_tokens = get_tokens(rows, length, cal_ds, tokenizer)
     else:
-        cal_tokens = get_standard_calibration(job, measure, tokenizer)
+        cal_tokens = get_standard_calibration(job, measure, tokenizer, noise_rows)
         if measure:
             job["measurement_rows"] = cal_tokens.shape[0]
         else:
@@ -61,7 +61,7 @@ def tokenize(job, save_fn, tokenizer, measure = False):
     print_stage(job, "Tokenizing (1)" if measure else "Tokenizing (2)", 1, 1)
 
 
-def get_standard_calibration(job, measure, tokenizer):
+def get_standard_calibration(job, measure, tokenizer, noise_rows = None):
 
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "standard_cal_data")
     file_c4 =os.path.join(data_dir, "c4.utf8")
@@ -80,6 +80,10 @@ def get_standard_calibration(job, measure, tokenizer):
     rows_multilingual_s = 1 if measure else 5
     rows_technical = 2 if measure else 10
     rows_random = 2
+    if noise_rows is not None:
+        rows_noise = noise_rows[0] if measure else noise_rows[1]
+    else:
+        rows_noise = 0
 
     ctx = min(2048, job["measurement_length"] if measure else job["length"])
 
@@ -188,6 +192,11 @@ def get_standard_calibration(job, measure, tokenizer):
 
     for i in range(rows_technical):
         rows.append(tokenized_rows[i:i+1])
+
+    # Noise: 30 rows
+
+    for i in range(rows_noise):
+        rows.append(torch.neg(torch.ones_like(rows[-1])))
 
     # for idx, r in enumerate(rows):
     #     print("------------------------------------------------------------------------------")

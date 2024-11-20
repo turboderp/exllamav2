@@ -80,7 +80,7 @@ def embeddings(job, save_fn, model, measure = False):
 
     module.load()
     input_ids[input_ids >= module.native_vocab_size] = 0
-    hidden_state = module.forward(input_ids)
+    hidden_state = module.forward(input_ids, negative_ids_noise = True)
     module.unload()
 
     embeddings_dict = { f"row.{i:05}": hidden_state[i:i+1, :, :].contiguous() for i in range(hidden_state.shape[0]) }
