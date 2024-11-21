@@ -171,7 +171,7 @@ std::vector<float> sample_basic
 
         if (logit_temp_threshold > 0.0f)
         {
-            num_candidates = logit_threshold_temperature(logit_temp_threshold, logit_high_temp, maxlogit, vocab_size, logits_ptr + i * vocab_size, exponent, temp_probs, temp_indices);
+            logit_threshold_temperature(num_candidates, logit_temp_threshold, logit_high_temp, maxlogit, logits_ptr + i * vocab_size, exponent, temp_probs);
             normalize_cpu(num_candidates, temp_probs);
         }
 

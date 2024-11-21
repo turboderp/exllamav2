@@ -2002,7 +2002,7 @@ class ExLlamaV2DynamicJob:
         # End on stop tokens
 
         if next_token.item() in self.stop_tokens:
-            return emit(results, emit_eos = True, eos_reason = "stop_token", stop_token = next_token.item())
+            return emit(results, emit_eos = True, emit_held = True, eos_reason = "stop_token", stop_token = next_token.item())
 
         # Stop if we reach max_new_tokens
         # TODO: Auto-extend option
