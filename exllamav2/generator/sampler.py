@@ -216,7 +216,7 @@ class ExLlamaV2Sampler:
             node = settings.ngram_trie
             for j in range(i, min(i + settings.dry_max_ngram, seq_len)):
                 t = sequence_list[j]
-                if t in settings.dry_sequence_breakers:
+                if t in settings.dry_sequence_breakers or t >= tokenizer.actual_vocab_size:
                     break
                 if t not in node.children:
                     node.children[t] = NgramNode(0, {})
@@ -236,7 +236,7 @@ class ExLlamaV2Sampler:
                 node = settings.ngram_trie
                 for j in range(i, i + settings.dry_max_ngram):
                     t = sequence_list[j]
-                    if t in settings.dry_sequence_breakers:
+                    if t in settings.dry_sequence_breakers or t >= tokenizer.actual_vocab_size:
                         break
                     assert t in node.children
                     node.children[t].value -= 1
