@@ -131,7 +131,8 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
         x = x.cuda()
         xref = xref.cuda()
         xtest = module.forward(x, cache, attn_params)
-        xtest.clamp_(-65504, 65504)
+        if not module.model.config.arch.lm.residual_stream_fp32:
+            xtest.clamp_(-65504, 65504)
         xtest = xtest[0].float()
         xref = xref[0].float()
         rfn_sum += torch.linalg.norm(xtest - xref, 'fro') / torch.linalg.norm(xref, 'fro')
