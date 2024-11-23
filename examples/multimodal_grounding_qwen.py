@@ -14,9 +14,17 @@ from PyQt5.QtWidgets import (
     QWidget,
     QMessageBox,
 )
-from PyQt5.QtGui import QPixmap, QImage, QTextCursor, QPainter, QPen
+from PyQt5.QtGui import (
+    QPixmap,
+    QImage,
+    QTextCursor,
+    QPainter,
+    QPen,
+    QFont,
+    QColor,
+    QRegion,
+)
 from PyQt5.QtCore import Qt, pyqtSignal, QRect, QBuffer
-from PyQt5.QtWidgets import QLabel
 
 from PIL import Image
 import requests
@@ -37,10 +45,6 @@ from exllamav2.generator import (
     ExLlamaV2DynamicJob,
     ExLlamaV2Sampler,
 )
-
-# Qwen2-VL 7B:
-#   https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct
-#   https://huggingface.co/turboderp/Qwen2-VL-7B-Instruct-exl2
 
 class Model:
 
@@ -188,7 +192,7 @@ class Model:
         )
         bb_string = "(" + bb_string
 
-        print(f"Model returned bounding box string: {bb_string}")
+        print(f"Generation: {bb_string}")
         pprint.pprint(res, indent = 4)
 
         # BB string is in the format "(x0,y0),(x1,y1)" with integer coordinates normalized to a range of 1000x1000
@@ -279,10 +283,20 @@ class GroundingDemo(QMainWindow):
         def paintEvent(self, event):
             """Override paintEvent to draw the bounding box."""
             super().paintEvent(event)
+
             if self.bounding_box:
                 painter = QPainter(self)
-                pen = QPen(Qt.red, 3)  # Red bounding box with a width of 3
+                overlay_color = QColor(64, 64, 64, 150)
+                painter.setBrush(overlay_color)
+                painter.setPen(Qt.NoPen)
+                full_region = QRegion(self.rect())
+                exclude_region = QRegion(self.bounding_box)
+                clip_region = full_region.subtracted(exclude_region)
+                painter.setClipRegion(clip_region)
+                painter.drawRect(self.rect())
+                pen = QPen(Qt.white, 2)
                 painter.setPen(pen)
+                painter.setBrush(overlay_color)
                 painter.drawRect(self.bounding_box)
 
         def dragEnterEvent(self, event):
@@ -305,13 +319,16 @@ class GroundingDemo(QMainWindow):
             else:
                 event.ignore()
 
-    def __init__(self, model: Model):
+    def __init__(self, model: Model, title: str):
         super().__init__()
         self.model = model
         self.no_events_plz = False
 
-        self.setWindowTitle("Grounding Demo")
-        self.setGeometry(100, 100, 900, 800)
+        self.setWindowTitle(f"Grounding Demo - {title}")
+        self.setGeometry(100, 100, 1000, 1000)
+
+        font = QFont()
+        font.setPointSize(11)  # Set the font size to 16 points
 
         # Main layout
         self.central_widget = QWidget()
@@ -322,8 +339,9 @@ class GroundingDemo(QMainWindow):
         self.image_label = self.CustomQLabel(self, self.load_dropped_image)
         self.image_label.setText("Image goes here")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setStyleSheet("background-color: #4E4E4E; color: white;")
-        main_layout.addWidget(self.image_label, stretch = 6)
+        self.image_label.setStyleSheet("background-color: #404040; color: white;")
+        self.image_label.setFont(font)
+        main_layout.addWidget(self.image_label, stretch = 5)
 
         # Button row
         button_layout = QHBoxLayout()
@@ -331,26 +349,29 @@ class GroundingDemo(QMainWindow):
 
         self.paste_button = QPushButton("Paste Image")
         self.paste_button.clicked.connect(self.paste_image)
+        self.paste_button.setFont(font)
         button_layout.addWidget(self.paste_button)
 
         self.load_button = QPushButton("Load Image")
         self.load_button.clicked.connect(self.load_image)
+        self.load_button.setFont(font)
         button_layout.addWidget(self.load_button)
 
         self.inference_button = QPushButton("Inference")
         self.inference_button.clicked.connect(self.run_inference)
+        self.inference_button.setFont(font)
         button_layout.addWidget(self.inference_button)
 
         # Model output
         self.output_label = QLabel("Model Output:", self)
         self.output_label.setStyleSheet("color: white;")
+        self.output_label.setFont(font)
         main_layout.addWidget(self.output_label)
 
         self.output_text = self.CustomTextEdit(self)
         self.output_text.setReadOnly(True)
-        self.output_text.setStyleSheet(
-            "background-color: #3C3C3C; color: white;"
-        )
+        self.output_text.setStyleSheet("background-color: #3C3C3C; color: white;")
+        self.output_text.setFont(font)
         main_layout.addWidget(self.output_text, stretch = 2)
 
         self.output_text.selection_complete.connect(self.on_selection_made)
@@ -454,11 +475,17 @@ class GroundingDemo(QMainWindow):
         a, b = self.model.get_grounding_bb(start, end)
         self.image_label.set_bounding_box(a, b)
 
+
+# Qwen2-VL 7B:
+#   https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct
+#   https://huggingface.co/turboderp/Qwen2-VL-7B-Instruct-exl2
+
 def main():
+    model_dir = "/mnt/str/models/qwen2-vl-7b-instruct-exl2/6.0bpw"
     app = QApplication(sys.argv)
-    model = Model("/mnt/str/models/qwen2-vl-7b-instruct-exl2/5.0bpw")
+    model = Model(model_dir)
     model.load()
-    window = GroundingDemo(model)
+    window = GroundingDemo(model, model_dir)
     window.show()
     sys.exit(app.exec_())
 
