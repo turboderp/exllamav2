@@ -12,7 +12,7 @@ class PromptFormat:
     def default_system_prompt(self):
         raise NotImplementedError
 
-    def first_prompt(self):
+    def first_prompt(self, sysprompt: bool):
         raise NotImplementedError
 
     def subs_prompt(self):
@@ -44,9 +44,11 @@ class PromptFormat_raw(PromptFormat):
             f"""This is a conversation between a helpful AI assistant named {self.botname} and a """ + \
             (f"""user named {self.username}.""" if self.username != "User" else """user.""")
 
-    def first_prompt(self):
-        return \
-            f"""<|system_prompt|>\n{self.username}: <|user_prompt|>\n{self.botname}:"""
+    def first_prompt(self, sysprompt):
+        if sysprompt:
+            return f"""<|system_prompt|>\n{self.username}: <|user_prompt|>\n{self.botname}:"""
+        else:
+            return f"""{self.username}: <|user_prompt|>\n{self.botname}:"""
 
     def subs_prompt(self):
         return \
@@ -61,7 +63,7 @@ class PromptFormat_raw(PromptFormat):
              tokenizer.eos_token_id]
 
     def encoding_options(self):
-        return False, False, False
+        return True, False, False
 
     def print_bot_name(self):
         return True
@@ -81,9 +83,11 @@ class PromptFormat_llama(PromptFormat):
             """Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. """ + \
             """Please ensure that your responses are socially unbiased and positive in nature."""
 
-    def first_prompt(self):
-        return \
-            """[INST] <<SYS>>\n<|system_prompt|>\n<</SYS>>\n\n<|user_prompt|> [/INST]"""
+    def first_prompt(self, sysprompt):
+        if sysprompt:
+            return """[INST] <<SYS>>\n<|system_prompt|>\n<</SYS>>\n\n<|user_prompt|> [/INST]"""
+        else:
+            return """[INST] <|user_prompt|> [/INST]"""
 
     def subs_prompt(self):
         return \
@@ -115,19 +119,23 @@ class PromptFormat_llama3(PromptFormat):
             """to find the answer or suggest where to find it. Keep responses concise and relevant. Follow ethical """ + \
             """guidelines and promote a safe and respectful interaction."""
 
-    def first_prompt(self):
-        return \
-            """<|start_header_id|>system<|end_header_id|>\n\n""" + \
-            """<|system_prompt|><|eot_id|>""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += \
+                """<|start_header_id|>system<|end_header_id|>\n\n""" + \
+                """<|system_prompt|><|eot_id|>"""
+        r += \
             """<|start_header_id|>user<|end_header_id|>\n\n""" + \
             """<|user_prompt|><|eot_id|>""" + \
-            """<|start_header_id|>assistant<|end_header_id|>"""
+            """<|start_header_id|>assistant<|end_header_id|>\n\n"""
+        return r
 
     def subs_prompt(self):
         return \
             """<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n""" + \
             """<|user_prompt|><|eot_id|>""" + \
-            """<|start_header_id|>assistant<|end_header_id|>"""
+            """<|start_header_id|>assistant<|end_header_id|>\n\n"""
 
     def stop_conditions(self, tokenizer):
         return \
@@ -136,7 +144,7 @@ class PromptFormat_llama3(PromptFormat):
              tokenizer.single_id("<|start_header_id|>")]
 
     def encoding_options(self):
-        return False, False, True
+        return True, False, True
 
     def print_extra_newline(self):
         return True
@@ -154,14 +162,18 @@ class PromptFormat_phi3(PromptFormat):
         return \
             """You are a helpful AI assistant."""
 
-    def first_prompt(self):
-        return \
-            """<s><|system|>\n""" + \
-            """<|system_prompt|>""" + \
-            """<|end|>\n""" + \
+    def first_prompt(self, sysprompt):
+        r = """<s>"""
+        if sysprompt:
+            r += \
+                """<|system|>\n""" + \
+                """<|system_prompt|>""" + \
+                """<|end|>\n"""
+        r += \
             """<|user|>\n""" + \
             """<|user_prompt|><|end|>\n""" + \
             """<|assistant|>\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -210,14 +222,18 @@ class PromptFormat_chatml(PromptFormat):
         return \
             f"""You are {self.botname}, a large language model. Answer as concisely as possible."""
 
-    def first_prompt(self):
-        return \
-            """<|im_start|>system\n""" + \
-            """<|system_prompt|>\n""" + \
-            """<|im_end|>\n""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += \
+                """<|im_start|>system\n""" + \
+                """<|system_prompt|>\n""" + \
+                """<|im_end|>\n"""
+        r += \
             """<|im_start|>user\n""" + \
             """<|user_prompt|><|im_end|>\n""" + \
             """<|im_start|>assistant\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -259,14 +275,18 @@ class PromptFormat_zephyr(PromptFormat):
         return \
             f"""You are {self.botname}, a large language model. Answer as concisely as possible."""
 
-    def first_prompt(self):
-        return \
-            """<|system|>\n""" + \
-            """<|system_prompt|>\n""" + \
-            """</s>\n""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += \
+                """<|system|>\n""" + \
+                """<|system_prompt|>\n""" + \
+                """</s>\n"""
+        r += \
             """<|user|>\n""" + \
             """<|user_prompt|></s>\n""" + \
             """<|assistant|>\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -299,12 +319,15 @@ class PromptFormat_deepseek(PromptFormat):
         return \
             f"""You are an AI programming assistant, utilizing the Deepseek Coder model, developed by Deepseek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."""
 
-    def first_prompt(self):
-        return \
-            """<|system_prompt|>\n""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += """<|system_prompt|>\n"""
+        r += \
             """### Instruction:\n""" + \
             """<|user_prompt|>\n""" + \
             """### Response:\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -335,13 +358,17 @@ class PromptFormat_solar(PromptFormat):
         return \
             f"""You are an AI assistant."""
 
-    def first_prompt(self):
-        return \
-            """### System\n""" + \
-            """<|system_prompt|>\n\n""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += \
+                """### System\n""" + \
+                """<|system_prompt|>\n\n"""
+        r += \
             """### User:\n""" + \
             """<|user_prompt|>\n\n""" + \
             """### Assistant:\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -374,9 +401,13 @@ class PromptFormat_openchat(PromptFormat):
         return \
             f"""You are an AI assistant."""
 
-    def first_prompt(self):
-        return \
-            """<|system_prompt|><|end_of_turn|>GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
+    def first_prompt(self, sysprompt):
+        if sysprompt:
+            return \
+                """<|system_prompt|><|end_of_turn|>GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
+        else:
+            return \
+                """GPT4 Correct User:<|user_prompt|><|end_of_turn|>GPT4 Correct Assistant:"""
 
     def subs_prompt(self):
         return \
@@ -408,12 +439,15 @@ class PromptFormat_nous(PromptFormat):
         return \
             f"""Perform the task to the best of your ability."""
 
-    def first_prompt(self):
-        return \
-            """<|system_prompt|>\n\n""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += """<|system_prompt|>\n\n"""
+        r += \
             """USER:\n""" + \
             """<|user_prompt|>\n\n""" + \
             """ASSISTANT:\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -444,7 +478,7 @@ class PromptFormat_gemma(PromptFormat):
     def default_system_prompt(self):
         return ""
 
-    def first_prompt(self):
+    def first_prompt(self, sysprompt):
         return \
             """<bos><start_of_turn>user\n""" + \
             """<|user_prompt|><end_of_turn>\n""" + \
@@ -481,13 +515,17 @@ class PromptFormat_granite(PromptFormat):
     def default_system_prompt(self):
         return "You are an AI coding assistant."
 
-    def first_prompt(self):
-        return \
-            """System:\n""" + \
-            """<|system_prompt|>\n\n""" + \
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += \
+                """System:\n""" + \
+                """<|system_prompt|>\n\n"""
+        r += \
             """Question:\n""" + \
             """<|user_prompt|>\n\n""" + \
             """Answer:\n"""
+        return r
 
     def subs_prompt(self):
         return \
@@ -520,16 +558,19 @@ class PromptFormat_cohere(PromptFormat):
         return \
             f"""You are a helpful AI assistant."""
 
-    def first_prompt(self):
-        return \
-            """<BOS_TOKEN>""" + \
-            """<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>""" + \
-            """<|system_prompt|>""" + \
-            """<|END_OF_TURN_TOKEN|>""" + \
+    def first_prompt(self, sysprompt):
+        r = """<BOS_TOKEN>"""
+        if sysprompt:
+            r += \
+                """<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>""" + \
+                """<|system_prompt|>""" + \
+                """<|END_OF_TURN_TOKEN|>"""
+        r += \
             """<|START_OF_TURN_TOKEN|><|USER_TOKEN|>""" + \
             """<|user_prompt|>""" + \
             """<|END_OF_TURN_TOKEN|>""" + \
             """<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""
+        return r
 
     def subs_prompt(self):
         return \

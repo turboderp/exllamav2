@@ -40,6 +40,7 @@ parser.add_argument("-mode", "--mode", choices = prompt_formats_list, help = "Ch
 parser.add_argument("-un", "--username", type = str, default = "User", help = "Username when using raw chat mode")
 parser.add_argument("-bn", "--botname", type = str, default = "Chatbort", help = "Bot name when using raw chat mode")
 parser.add_argument("-sp", "--system_prompt", type = str, help = "Use custom system prompt")
+parser.add_argument("-nsp", "--no_system_prompt", action = "store_true", help = "Do not use any system prompt")
 
 parser.add_argument("-temp", "--temperature", type = float, default = 0.95, help = "Sampler temperature, default = 0.95 (1 to disable)")
 parser.add_argument("-smooth", "--smoothing_factor", type = float, default = 0.0, help = "Smoothing Factor, default = 0.0 (0 to disable")
@@ -90,6 +91,8 @@ if args.modes:
 username = args.username
 botname = args.botname
 system_prompt = args.system_prompt
+if args.no_system_prompt:
+    system_prompt = ""
 
 if args.mode is None:
     print(" ## Error: No mode specified.")
@@ -185,7 +188,7 @@ def format_prompt(user_prompt, first):
     global system_prompt, prompt_format
 
     if first:
-        return prompt_format.first_prompt() \
+        return prompt_format.first_prompt(not system_prompt) \
             .replace("<|system_prompt|>", system_prompt) \
             .replace("<|user_prompt|>", user_prompt)
     else:
@@ -288,9 +291,10 @@ amnesia = args.amnesia
 # Main loop
 
 print(f" -- Prompt format: {args.mode}")
-print(f" -- System prompt:")
-print()
-print(col_sysprompt + system_prompt.strip() + col_default)
+if system_prompt:
+    print(f" -- System prompt:")
+    print()
+    print(col_sysprompt + system_prompt.strip() + col_default)
 
 while True:
 
