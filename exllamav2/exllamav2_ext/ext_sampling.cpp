@@ -109,6 +109,8 @@ std::vector<float> sample_basic
     float max_temp = 0.0f,
     float temp_exponent = 1.0f,
     float smoothing_factor = 0.0f,
+    float logit_temp_threshold = 0.0f,
+    float logit_high_temp = 0.0f,
     float skew = 0.0f
 )
 {
@@ -138,8 +140,11 @@ std::vector<float> sample_basic
 
     if (temperature < 0.01)
     {
-        temperature = 1.0f;
-        top_k = 1;
+        if (logit_temp_threshold == 0.0f)
+        {
+            temperature = 1.0f;
+            top_k = 1;
+        }
     }
 
     for (int i = 0; i < bsz; i++)
@@ -164,7 +169,13 @@ std::vector<float> sample_basic
         for (int j = 0; j < vocab_size; j++) temp_indices[j] = j;
         int num_candidates = vocab_size;
 
-        if (top_k > 0 && top_k < vocab_size)
+        if (logit_temp_threshold > 0.0f)
+        {
+            logit_threshold_temperature(num_candidates, logit_temp_threshold, logit_high_temp, maxlogit, logits_ptr + i * vocab_size, exponent, temp_probs);
+            normalize_cpu(num_candidates, temp_probs);
+        }
+
+        if (num_candidates > top_k && top_k > 0 && top_k < vocab_size)
         {
             num_candidates = top_k_cpu(num_candidates, temp_probs, temp_indices, top_k, maxlogit);
             normalize_cpu(num_candidates, temp_probs);

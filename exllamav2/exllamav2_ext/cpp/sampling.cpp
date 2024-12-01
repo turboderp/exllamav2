@@ -440,6 +440,66 @@ int sort_descending
 }
 
 AVX2_TARGET_OPTIONAL
+void logit_threshold_temperature
+(
+    const int num_candidates,
+    float logit_temp_threshold,
+    float logit_high_temp,
+    const int maxlogit,
+    const float* logits,
+    const float exponent,
+    float* temp_probs
+)
+{
+    profile_start("logit_threshold_temperature");
+
+    float esum = 0.0f;
+    float static_pmass = 0.0f;
+    float itemp = 1.0f / std::max(logit_high_temp, 0.01f);
+    float maxl = logits[maxlogit];
+    std::vector<int> above_threshold_indices;
+
+    for (int i = 0; i < num_candidates; i++)
+    {
+        float target_logit = logits[i];
+
+        float l = target_logit - maxl;
+        if (exponent == 2.0f)
+            l *= -l;
+        else if (exponent != 1.0f)
+            l = -powf(fabs(l), exponent);
+
+        float e = expf(l * itemp);
+        esum += e;
+
+        if (target_logit >= logit_temp_threshold)
+        {
+            temp_probs[i] = e;
+            above_threshold_indices.push_back(i);
+        }
+        else static_pmass += temp_probs[i];
+    }
+
+    float isum = (esum >= 0.0f) ? (1.0f / esum) : 1024.0f;
+    float temp_pmass = 0.0f;
+
+    for (int i : above_threshold_indices)
+    {
+        temp_probs[i] *= isum;
+        temp_pmass += temp_probs[i];
+    }
+
+    float adjfactor = (temp_pmass >= 0.0f) ? ((1.0f - static_pmass) / temp_pmass) : 1024.0f;
+
+    for (int i : above_threshold_indices)
+    {
+        temp_probs[i] *= adjfactor;
+    }
+
+    profile_stop();
+}
+
+AVX2_TARGET_OPTIONAL
 int top_k_cpu
 (
     const int num_candidates,

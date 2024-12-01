@@ -55,6 +55,17 @@ int sort_descending
     int max_index
 );
 
+void logit_threshold_temperature
+(
+    const int num_candidates,
+    float logit_temp_threshold,
+    float logit_high_temp,
+    const int maxlogit,
+    const float* logits,
+    const float exponent,
+    float* temp_probs
+);
+
 int top_k_cpu
 (
     const int num_candidates,
