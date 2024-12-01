@@ -2589,8 +2589,9 @@ class ExLlamaV2DynamicJob:
             self.generator.all_pages[0].backup()
 
         for seq in self.sequences:
-            for page in seq.allocated_pages:
-                page.sub_ref()
-            seq.allocated_pages = []
+            if seq.allocated_pages is not None:
+                for page in seq.allocated_pages:
+                    page.sub_ref()
+                seq.allocated_pages = []
 
         self.generator.validate_cache()
