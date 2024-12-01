@@ -126,7 +126,7 @@ class Model:
 
         job = ExLlamaV2DynamicJob(
             input_ids = input_ids,
-            max_new_tokens = 500,
+            max_new_tokens = 1000,
             decode_special_tokens = True,
             stop_conditions = [self.tokenizer.eos_token_id],
             gen_settings = ExLlamaV2Sampler.Settings.greedy(),
@@ -162,18 +162,18 @@ class Model:
         enclosed in the special tokens that Qwen would emit when prompted for grounding. Qwen is then strongly biased
         towards completing the bounding box.
 
-        Since we're using the same description as the model original generated, all keys/values for the system prompt,
-        image and generated description up to the selection will be reused from the cache.
+        Since we're using the same description as the model originally generated, all keys/values for the system
+        prompt, image and generated description up to the selection will be reused from the cache.
         """
 
         if start >= end:
-            return
+            return None, None
 
         # Including leading space
         if start > 0 and self.current_description[start - 1] == " ":
             start -= 1
 
-        # Repeat the same
+        # Repeat the same prompt up to the selection, with grounding tokens added
         prompt = self.get_prompt()
         prompt += self.current_description[:start]
         prompt += "<|object_ref_start|>"
