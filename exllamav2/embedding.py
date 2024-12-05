@@ -186,16 +186,40 @@ class ExLlamaV2Embedding(ExLlamaV2Module):
             if self.archparams.normalize_embeddings:
                 hidden_states *= cfg.hidden_size ** 0.5
 
-        # Negative tokens during quantization are noise tokens
+        # Rows with negative tokens during quantization are noise tokens
 
         if kwargs.get("negative_ids_noise"):
-            mask = (input_ids < 0).unsqueeze(-1)
-            unmasked_values = hidden_states[~mask.expand_as(hidden_states)].float()
-            mean, std = unmasked_values.mean(), unmasked_values.std()
-            noise = torch.randn_like(hidden_states, dtype = torch.float)
-            noise = noise * std + mean
-            noise = noise.half()
-            hidden_states = torch.where(mask, noise, hidden_states)
+
+            n = 0
+            mean = torch.tensor([0.0], dtype = torch.float, device = hidden_states.device)
+            M2 = torch.tensor([0.0], dtype = torch.float, device = hidden_states.device)
+
+            for i in range(input_ids.shape[0]):
+                if input_ids[i][0] < 0:
+                    continue
+
+                er = hidden_states[i].float()
+                n += er.numel()
+                delta = er - mean
+                mean += delta.sum() / n
+                delta2 = er - mean
+                M2 += (delta * delta2).sum()
+                del er
+                del delta
+                del delta2
+
+            if n > 1:
+                std = torch.sqrt(M2 / (n - 1))
+
+            for i in range(input_ids.shape[0]):
+                if input_ids[i][0] >= 0:
+                    continue
+
+                er = hidden_states[i]
+                noise = torch.randn(er.size(), dtype = torch.float, device = hidden_states.device) * std + mean
+                er.copy_(noise.half())
+                del er
+                del noise
 
         # Move to pinned temp buffer for TP
 
