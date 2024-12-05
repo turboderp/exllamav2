@@ -36,7 +36,7 @@ def gen_mrope_embed(
 
     # Create 3D position IDs
 
-    ids = input_ids.squeeze(0)
+    ids = input_ids.squeeze(0).contiguous()
     mrope_pos_ids = torch.zeros((3, max_length), dtype = torch.long).contiguous()
     merge_size = 1 if not embeddings else embeddings[0].model.config.vision_spatial_merge_size
     spans = []
