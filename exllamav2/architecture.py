@@ -402,6 +402,8 @@ class ExLlamaV2ArchParams:
             self.mmp.mlp_bias = True
             self.mmp.norm = "layernorm"
 
+            self.standard_calib_noise = (5, 30)
+
         # Gemma
 
         if arch_string == "GemmaForCausalLM":
