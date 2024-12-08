@@ -23,6 +23,7 @@ def get_rope_params_su(
         scaling_factor = math.sqrt(1 + math.log(a / b) / math.log(b))
     else:
         ext_factors = torch.tensor(cfg.scale_short_factor, dtype = torch.float32, device = device)
+        scaling_factor = 1.0
 
     inv_freq = 1.0 / (ext_factors * base ** (torch.arange(0, head_dim, 2, device = device).float() / head_dim))
     return inv_freq, scaling_factor
@@ -133,6 +134,7 @@ def get_rope_params_yarn(
         )
     else:
         inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
+        scaling_factor = 1.0
 
     return inv_freq, scaling_factor
 
