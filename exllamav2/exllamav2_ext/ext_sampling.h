@@ -40,6 +40,8 @@ std::vector<float> sample_basic
     float max_temp,
     float temp_exponent,
     float smoothing_factor,
+    float logit_temp_threshold,
+    float logit_high_temp,
     float skew
 );
 

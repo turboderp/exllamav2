@@ -73,6 +73,14 @@ class ExLlamaV2Sampler:
 
         temperature_last: bool = False
 
+        logit_temp_threshold: float = 0.0
+        logit_high_temp: float = 0.0
+
+        confidence_breaker: int = 0
+        confidence_breaker_debug: bool = False
+        cb_mid_threshold: float = 0.0
+        cb_high_threshold: float = 0.0
+
         mirostat: bool = False
         mirostat_tau: float = 1.5
         mirostat_eta: float = 0.1
@@ -420,6 +428,7 @@ class ExLlamaV2Sampler:
         # Temporarily ban individual tokens
 
         if blocked_tokens:
+            saved_logits = logits[:, :, blocked_tokens].clone()
             logits[:, :, blocked_tokens] = -1e30
 
         # Token bias
@@ -561,8 +570,32 @@ class ExLlamaV2Sampler:
             settings.max_temp,
             settings.temp_exponent,
             settings.smoothing_factor,
+            settings.logit_temp_threshold,
+            settings.logit_high_temp,
             settings.skew
         )
+
+        if settings.confidence_breaker > 0:
+            if blocked_tokens and 'saved_logits' in locals():
+                # Restore the saved logits values for the blocked tokens
+                logits[:, :, blocked_tokens] = saved_logits
+                
+            squeezed_logits = logits.squeeze(0).squeeze(0)
+            probs = F.softmax(squeezed_logits, dim=-1)
+            token_prob = probs[output_tokens]
+            token_logit = squeezed_logits[output_tokens]
+            if settings.cb_mid_threshold <= 1.0:
+                confidence_flag = (token_prob >= settings.cb_mid_threshold).item()
+            else:
+                confidence_flag = (token_logit >= settings.cb_mid_threshold).item()
+            if settings.cb_high_threshold <= 1.0:
+                if (token_prob > settings.cb_high_threshold).item():
+                    confidence_flag = None
+            else:
+                if (token_logit > settings.cb_high_threshold).item():
+                    confidence_flag = None
+        else:
+            confidence_flag = None
 
         if settings.mirostat: settings.mirostat_mu = m
 
@@ -572,4 +605,4 @@ class ExLlamaV2Sampler:
         if len(filters) > 0 and end_tokens is not None and output_tokens[0].item() in end_tokens:
             end_filter = True
 
-        return output_tokens, output_ktokens, output_kprobs, output_probs, end_filter
+        return output_tokens, output_ktokens, output_kprobs, output_probs, end_filter, confidence_flag
