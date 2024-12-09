@@ -99,3 +99,6 @@ class ExLlamaV2MMEmbedding:
 
     def get_vision_token_range(self):
         return self.first_index + self.pre_tokens, self.first_index + self.length - self.post_tokens
+
+    def get_size_in_bytes(self):
+        return self.embeddings.element_size() * self.embeddings.numel()
