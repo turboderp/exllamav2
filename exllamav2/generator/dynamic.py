@@ -233,9 +233,9 @@ class ExLlamaV2DynamicGenerator:
 
     max_sampling_threads: int
     min_sampling_threads: int
-    sampling_pool: ThreadPoolExecutor
-    filter_pool: ThreadPoolExecutor
-    filter_queue: list
+    sampling_pool: ThreadPoolExecutor | None
+    filter_pool: ThreadPoolExecutor | None
+    filter_queue: list | None
 
 
     def __init__(
@@ -255,6 +255,7 @@ class ExLlamaV2DynamicGenerator:
         max_sampling_threads: int = 16,
         min_sampling_threads: int = 3,
         paged: bool = True,
+        filter_background_eval: bool = True,
         **kwargs
     ):
         """
@@ -315,6 +316,10 @@ class ExLlamaV2DynamicGenerator:
             Enable paged mode, defaults to True. If this is False, the generator uses a fallback unpaged mode which
             does not require paged attention support, but in which the max supported batch size is 1. CFG also will
             not work in this mode.
+
+        :param filter_background_eval:
+            Try to overlap filter evaluation with model forward pass. This should generally have no downside since
+            filters are evaluated by the CPU which will otherwise be busywaiting after CUDA workload is scheduled.
 
         :param kwargs:
         """
@@ -449,8 +454,12 @@ class ExLlamaV2DynamicGenerator:
 
         # Filter threads
 
-        self.filter_pool = ThreadPoolExecutor(max_workers = 16)
-        self.filter_queue = []
+        if filter_background_eval:
+            self.filter_pool = ThreadPoolExecutor(max_workers = 16)
+            self.filter_queue = []
+        else:
+            self.filter_pool = None
+            self.filter_queue = None
 
         # Temp buffers for defrag
 
@@ -1243,7 +1252,8 @@ class ExLlamaV2DynamicGenerator:
                     next_k_probs,
                     next_prob,
                     filter_eos,
-                    results
+                    results,
+                    i == 0
                 )
 
                 if eos:
@@ -1867,7 +1877,8 @@ class ExLlamaV2DynamicJob:
             next_k_probs: torch.Tensor | None,
             next_prob: torch.Tensor | None,
             filter_eos: bool | None,
-            results: list
+            results: list,
+            first_sample_in_sd_batch: bool = True
     ):
         page_size = self.generator.page_size
 
@@ -1879,15 +1890,16 @@ class ExLlamaV2DynamicJob:
                 f.feed(next_token)
                 if not f.can_mask_logits() or not f.use_background_worker():
                     all_mask = False
-            if all_mask:
-                # Using logit mask(s)
-                for f in self.filters:
-                    self.generator.filter_queue.append((f, True))
-            else:
-                # Using allowed token list(s)
-                for f in self.filters:
-                    if f.use_background_worker():
-                        self.generator.filter_queue.append((f, False))
+            if first_sample_in_sd_batch and self.generator.filter_queue is not None:
+                if all_mask:
+                    # Using logit mask(s)
+                    for f in self.filters:
+                        self.generator.filter_queue.append((f, True))
+                else:
+                    # Using allowed token list(s)
+                    for f in self.filters:
+                        if f.use_background_worker():
+                            self.generator.filter_queue.append((f, False))
 
         # Accept token
 

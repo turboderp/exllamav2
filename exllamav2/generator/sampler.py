@@ -442,6 +442,9 @@ class ExLlamaV2Sampler:
                     "Attempting to use precomputed logit mask, but filter is not precomputing mask"
                 flat_logits = logits[0][0]
                 logits = f.mask_logits(flat_logits).view(1, 1, -1)
+                # not_inf_indices = torch.nonzero(logits != -float('inf'), as_tuple = True)
+                # txt = [tokenizer.get_id_to_piece_list()[i] for i in not_inf_indices[2].tolist()]
+                # print(txt)
             end_tokens = None
 
         elif len(filters) > 0:
