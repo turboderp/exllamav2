@@ -127,7 +127,7 @@ elif mode == "qwen2":
         "<|im_start|>user\n" +
         placeholders +
         instruction +
-        "\n" +
+        "<|im_end|>\n" +
         "<|im_start|>assistant\n"
     )
 
