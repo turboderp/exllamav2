@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 import numpy as np
 from PIL import Image
@@ -11,7 +13,7 @@ from exllamav2.vlm.util import (
 
 def preprocess(
     config: ExLlamaV2Config,
-    image: Image
+    images: Image | list[Image]
 ) -> (torch.Tensor, tuple):
 
     resample = Image.Resampling(config.vision_resample)
@@ -19,30 +21,48 @@ def preprocess(
     image_std = tuple(config.vision_image_std)
     rescale_factor = config.vision_rescale_factor
 
+    # Make list and truncate to whole number of spatial patches
+
+    if not isinstance(images, list):
+        mode = "image"
+        images = [images]
+    else:
+        mode = "video"
+        g = config.vision_temporal_patch_size
+        frames = len(images)
+        if frames > 1:
+            frames = frames // g * g
+            images = images[:frames]
+
     # Convert to RGB and resize as necessary
 
-    image = convert_to_rgb(image)
-    old_size = image.size
+    images = [convert_to_rgb(image) for image in images]
+
+    old_size = images[0].size
+    assert all(old_size == frame.size for frame in images), \
+        "All frames in video must have same dimensions"
+
     new_size = smart_resize(
-        image.size,
+        old_size,
         config.vision_spatial_patch_size * config.vision_spatial_merge_size,
         config.vision_min_pixels,
         config.vision_max_pixels,
     )
     if old_size != new_size:
-        image = image.resize(new_size, resample = resample)
+        images = [image.resize(new_size, resample = resample) for image in images]
 
     # Convert to numpy array and normalize
 
-    image = np.array(image).astype(np.float32)
-    image = image * rescale_factor
-    image = normalize_image(image, image_mean, image_std)
+    images = [np.array(image).astype(np.float32) for image in images]
+    images = [image * rescale_factor for image in images]
+    images = [normalize_image(image, image_mean, image_std) for image in images]
 
     # Reshape and convert to tensor
 
-    image = image.transpose(2, 0, 1)
-    patches = np.array([image])
-    patches = np.tile(patches, (config.vision_temporal_patch_size, 1, 1, 1))
+    patches = np.array(images)
+    patches = patches.transpose(0, 3, 1, 2)
+    if patches.shape[0] == 1:
+        patches = np.tile(patches, (config.vision_temporal_patch_size, 1, 1, 1))
     channels = patches.shape[1]
     grid_t = patches.shape[0] // config.vision_temporal_patch_size
     grid_h = new_size[1] // config.vision_spatial_patch_size
@@ -64,8 +84,12 @@ def preprocess(
         channels * config.vision_temporal_patch_size * config.vision_spatial_patch_size ** 2
     )
 
-    image = torch.from_numpy(flatten_patches).half()
-    return image, new_size
+    if mode == "image":
+        image = torch.from_numpy(flatten_patches).half()
+        return image, new_size
+    else:
+        video = torch.from_numpy(flatten_patches).half()
+        return video, new_size, (grid_t, grid_h, grid_w), config.vision_spatial_patch_size ** 2
 
 def postprocess(
     model: ExLlamaV2,
@@ -94,13 +118,17 @@ def position_embeddings(
     max_width: int,
     rope_sin: torch.Tensor,
     rope_cos: torch.Tensor,
+    thw_grid: tuple | None = None,
 ):
     """
     Create position IDs for Qwen2 grid
     """
 
-    t = 1  # TODO: t dimension
-    h, w = height, width
+    if thw_grid is not None:
+        t, h, w = thw_grid
+    else:
+        h, w = height, width
+
     spm = config.vision_spatial_merge_size
 
     hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -112,7 +140,9 @@ def position_embeddings(
     wpos_ids = wpos_ids.reshape(h // spm, spm, w // spm, spm)
     wpos_ids = wpos_ids.permute(0, 2, 1, 3)
     wpos_ids = wpos_ids.flatten()
-    ids = torch.stack([hpos_ids, wpos_ids], dim = -1).repeat(t, 1)
+
+    # ids = torch.stack([hpos_ids, wpos_ids], dim = -1).repeat(t, 1)
+    ids = torch.stack([hpos_ids, wpos_ids], dim = -1)
 
     cos = rope_cos[ids].flatten(1)
     sin = rope_sin[ids].flatten(1)

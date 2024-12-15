@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 import numpy as np
 from PIL import Image
@@ -80,10 +82,14 @@ def position_embeddings(
     max_width: int,
     rope_sin: torch.Tensor,
     rope_cos: torch.Tensor,
+    thw_grid: tuple | None = None,
 ):
     """
     Create flat position IDs tensor for grid of patches: id(row, col) = row * max_width + col
     """
+
+    assert thw_grid is None, \
+        "Video not supported for Pixtral"
 
     row_indices = torch.arange(height).unsqueeze(1) * max_width
     col_indices = torch.arange(width).unsqueeze(0)
@@ -93,4 +99,3 @@ def position_embeddings(
     cos = rope_cos[ids]
     sin = rope_sin[ids]
     return sin, cos
-

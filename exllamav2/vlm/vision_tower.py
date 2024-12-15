@@ -15,6 +15,7 @@ from exllamav2.compat import safe_move_tensor
 from exllamav2.generator import ExLlamaV2MMEmbedding
 
 from exllamav2.vlm.processor import pixtral, qwen2
+from exllamav2.vlm.util import convert_to_rgb
 
 from PIL.Image import Image
 
@@ -41,9 +42,13 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         if cfg.vision_model_type == "pixtral":
             self.preprocess_func = pixtral.preprocess
             self.postprocess_func = pixtral.postprocess
+            self.video_preprocess_func = None
+            self.video_postprocess_func = None
         elif cfg.vision_model_type == "qwen2":
             self.preprocess_func = qwen2.preprocess
             self.postprocess_func = qwen2.postprocess
+            self.video_preprocess_func = qwen2.preprocess
+            self.video_postprocess_func = qwen2.postprocess
 
         else:
             raise ValueError(f"Unknown vision model type: {cfg.vision_model_type}")
@@ -165,6 +170,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         hidden_states: torch.Tensor,
         patches_size = None,
         abort_event: threading.Event | None = None,
+        thw_grid: tuple | None = None,
         **kwargs
     ):
         cfg = self.config
@@ -188,7 +194,8 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             p_width,
             self.p_maxedge,
             self.rope_sin,
-            self.rope_cos
+            self.rope_cos,
+            thw_grid
         )
 
         attn_params = ExLlamaV2Attention.Params(non_causal_attn = True)
@@ -211,6 +218,14 @@ class ExLlamaV2VisionTower(ExLlamaV2):
                 cos = safe_move_tensor(cos, hidden_states.device)
                 sin = safe_move_tensor(sin, hidden_states.device)
 
+            if thw_grid is not None and isinstance(module, ExLlamaV2Attention):
+                pa_shape = hidden_states.shape
+                hidden_states = hidden_states.view(
+                    thw_grid[0],
+                    hidden_states.shape[1] // thw_grid[0],
+                    hidden_states.shape[2]
+                )
+
             hidden_states = module.forward(
                 hidden_states,
                 attn_params = attn_params,
@@ -218,6 +233,9 @@ class ExLlamaV2VisionTower(ExLlamaV2):
                     "alt_rope_embedding": (cos, sin)
                 }
             )
+
+            if thw_grid is not None and isinstance(module, ExLlamaV2Attention):
+                hidden_states = hidden_states.view(pa_shape)
 
         return hidden_states
 
@@ -285,6 +303,82 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             embeddings = embedding_tensor,
             text_alias = text_alias,
             thw_grid = (1, features_y, features_x),
+            pre_tokens = pre_tokens,
+            post_tokens = post_tokens
+        )
+
+        mme.metadata.update({
+            "original_size": original_size,
+            "preprocessed_size": prep_image_size,
+            "patches_size": (features_y, features_x),
+        })
+
+        return mme
+
+
+    def get_video_embeddings(
+        self,
+        model: ExLlamaV2,
+        tokenizer: ExLlamaV2Tokenizer,
+        video: list[Image],
+        text_alias: str | None = None,
+        embeddings_cpu: bool = True
+    ) -> ExLlamaV2MMEmbedding:
+        """
+        :param model:
+            Text model for which to produce embeddings
+
+        :param tokenizer:
+            Tokenizer
+
+        :param video:
+            Video as list of PIL images, one per frame
+
+        :param text_alias:
+            Text string to represent this embedding for tokenizing
+
+        :param embeddings_cpu:
+            Move embeddings to CPU. This can be skipped for simple jobs, but ideally embeddings should be cached
+            when used with the dynamic generator, and it is not ideal to keep some large cache of data in VRAM. The
+            overhead of copying them back to VRAM is relatively low. If this argument is False, embeddings will
+            reside on whatever device the vision tower is loaded on.
+
+        :return:
+            ExLlamaV2MMEmbedding
+        """
+
+        width, height = video[0].size
+        assert all((width, height) == frame.size for frame in video), \
+            "All video frames must have same dimensions"
+
+        original_size = (height, width)
+
+        video_tensor, prep_image_size, video_grid_thw, merge = self.preprocess_func(self.config, video)
+        features_x = prep_image_size[0] // self.config.vision_patch_size["width"]
+        features_y = prep_image_size[1] // self.config.vision_patch_size["height"]
+
+        embedding_tensor = self.process(
+            video_tensor,
+            (features_y, features_x),
+            thw_grid = video_grid_thw,
+        )
+
+        if embeddings_cpu:
+            embedding_tensor = embedding_tensor.cpu()
+
+        embedding_tensor, pre_tokens, post_tokens = self.postprocess_func(
+            model,
+            tokenizer,
+            embedding_tensor[0],
+            features_y,
+            features_x,
+        )
+
+        mme = ExLlamaV2MMEmbedding(
+            model = model,
+            embeddings = embedding_tensor,
+            text_alias = text_alias,
+            thw_grid = video_grid_thw,
             pre_tokens = pre_tokens,
             post_tokens = post_tokens
         )
