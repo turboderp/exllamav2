@@ -312,7 +312,7 @@ class ExLlamaV2ArchParams:
             })
             self.mmp.mlp_gate = False
             self.mmp.mlp_act_func = "gelu"
-            self.mmp.mlp_bias = True
+            self.mmp.mlp_bias = read_config["multimodal_projector_bias"]
 
         # Yi
 
