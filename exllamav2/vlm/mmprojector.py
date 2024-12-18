@@ -27,6 +27,7 @@ class ExLlamaV2MultimodalProjector(ExLlamaV2):
                 in_features = cfg.vision_hidden_size,
                 out_features = cfg.hidden_size,
                 interm_features = cfg.hidden_size,
+                has_bias=cfg.multimodal_projector_bias,
                 has_norm = False,
                 has_residual = False,
             )
