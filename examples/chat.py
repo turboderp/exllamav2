@@ -188,7 +188,7 @@ def format_prompt(user_prompt, first):
     global system_prompt, prompt_format
 
     if first:
-        return prompt_format.first_prompt(not system_prompt) \
+        return prompt_format.first_prompt(bool(system_prompt)) \
             .replace("<|system_prompt|>", system_prompt) \
             .replace("<|user_prompt|>", user_prompt)
     else:
