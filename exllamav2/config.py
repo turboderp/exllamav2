@@ -482,7 +482,7 @@ class ExLlamaV2Config:
             patch_size = read(read_config, int, ["vision_config->patch_size"], no_default)
             self.vision_rope_theta = read(read_config, int, ["vision_config->rope_theta"], no_default)
             self.vision_feature_layer = read(read_config, int, ["vision_feature_layer"], no_default)
-            self.vision_num_layers = 24
+            self.vision_num_layers = read(read_config, int, ["vision_config->num_hidden_layers"], 24)
             self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], self.hidden_size)
 
             image_processor_type = read(read_prep_config, str, ["image_processor_type"], no_default)

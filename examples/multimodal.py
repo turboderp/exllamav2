@@ -18,6 +18,9 @@ from exllamav2.generator import (
 from PIL import Image
 import requests
 
+import torch
+torch.set_printoptions(precision = 5, sci_mode = False, linewidth=200)
+
 # Models used:
 #
 # Pixtral:
