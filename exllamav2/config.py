@@ -476,9 +476,10 @@ class ExLlamaV2Config:
             self.vision_num_attention_heads = read(read_config, int, ["vision_config->num_attention_heads"], no_default)
             self.vision_num_key_value_heads = read(read_config, int, ["vision_config->num_key_value_heads"], self.vision_num_attention_heads)
             self.vision_num_key_value_groups = self.vision_num_attention_heads // self.vision_num_key_value_heads
+            self.multimodal_projector_bias = read(read_config, bool, ["multimodal_projector_bias"], True)
 
             self.vision_hidden_act = read(read_config, str, ["vision_config->hidden_act"], no_default)
-            self.vision_hidden_size = read(read_config, int, ["vision_config->image_size"], no_default)
+            self.vision_hidden_size = read(read_config, int, ["vision_config->hidden_size"], 1024)
             patch_size = read(read_config, int, ["vision_config->patch_size"], no_default)
             self.vision_rope_theta = read(read_config, int, ["vision_config->rope_theta"], no_default)
             self.vision_feature_layer = read(read_config, int, ["vision_feature_layer"], no_default)
