@@ -115,6 +115,7 @@ class ExLlamaV2Config:
     final_logit_softcapping: float | None
     attn_logit_softcapping: float | None
     sliding_window: int
+    sliding_window_pattern: int
     norm_head: int | None
     l3_rope_factor: float | None
     l3_rope_low_freq_factor: float | None
@@ -347,6 +348,7 @@ class ExLlamaV2Config:
         self.original_max_seq_len = self.max_seq_len
 
         self.sliding_window = read(read_config, int, ["sliding_window", "sliding_window_size"], 0, opt_subkey = "text_config")
+        self.sliding_window_pattern = read(read_config, int, ["sliding_window_pattern"], 1)
 
         rs = read(read_config, dict, "rope_scaling", None)
         if rs:

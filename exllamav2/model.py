@@ -106,16 +106,18 @@ class ExLlamaV2:
         for layer_idx in range(cfg.num_hidden_layers):
 
             layer_key = cfg.arch.lm_prefix + f"model.layers.{layer_idx}"
+
+            if cfg.arch.lm.alternating_swa:
+                swa = cfg.sliding_window if (layer_idx + 1) % cfg.sliding_window_pattern != 0 else 0
+            elif cfg.arch.lm.swa:
+                swa = cfg.sliding_window
+            else:
+                swa = 0
+
             if cfg.arch.lm.parallel_decoder_blocks:
-                pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx)
+                pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx, sliding_window = swa)
                 self.modules += [pd]
             else:
-                if cfg.arch.lm.alternating_swa:
-                    swa = cfg.sliding_window if not bool(layer_idx % 2) else 0
-                elif cfg.arch.lm.swa:
-                    swa = cfg.sliding_window
-                else:
-                    swa = 0
                 attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
                 if cfg.arch.lm.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)
                 else: mlp = ExLlamaV2MLP(self, layer_key, layer_idx)

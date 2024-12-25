@@ -515,6 +515,28 @@ class ExLlamaV2ArchParams:
             self.lm.parallel_decoder_blocks = True
             self.lm.requires_bos = True
 
+        # Cohere 2
+
+        if arch_string == "Cohere2ForCausalLM":
+            arch_recognized = True
+            self.lm.layer_keys += \
+                layer_keys_cohere_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.lm.expect_keys += \
+                expect_keys_gemma
+            self.lm.keys.update({
+                "norm_eps": "layer_norm_eps",
+                "lm_head": "model.embed_tokens",
+                "norm_1": ".input_layernorm",
+                "norm_2": None,
+            })
+            self.lm.norm = "layernorm"
+            self.lm.rope_style = RopeStyle.GPTJ
+            self.lm.parallel_decoder_blocks = True
+            self.lm.requires_bos = True
+            self.lm.alternating_swa = True
+
         # DBRX
 
         if arch_string == "DbrxForCausalLM":

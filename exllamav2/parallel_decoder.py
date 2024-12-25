@@ -29,6 +29,7 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         model: ExLlamaV2,
         key: str,
         layer_idx: int,
+        sliding_window: int = 0,
         archparams = None
     ):
         super().__init__(model, key, archparams)
@@ -42,8 +43,21 @@ class ExLlamaV2ParallelDecoder(ExLlamaV2Module):
         elif self.archparams.norm == "rmsnorm":
             self.input_layernorm = ExLlamaV2RMSNorm(model, key + self.archparams.keys["norm_1"])
 
-        self.attn = ExLlamaV2Attention(model, key, layer_idx, has_norm = False, has_residual = False)
-        self.mlp = ExLlamaV2MLP(model, key, layer_idx, has_norm = False, has_residual = False)
+        self.attn = ExLlamaV2Attention(
+            model,
+            key,
+            layer_idx,
+            has_norm = False,
+            has_residual = False,
+            sliding_window = sliding_window
+        )
+        self.mlp = ExLlamaV2MLP(
+            model,
+            key,
+            layer_idx,
+            has_norm = False,
+            has_residual = False
+        )
 
         self.submodules = self.attn.submodules + self.mlp.submodules
 
