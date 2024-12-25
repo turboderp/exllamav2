@@ -123,20 +123,13 @@ class ExLlamaV2DeviceContext:
             self.cos = self.sin
             return
 
-        base = cfg.rotary_embedding_base
-        alpha = cfg.scale_alpha_value or 1.0
-        scale = cfg.scale_pos_emb or 1.0
-
-        # Alpha scaling for any rope_scaling type
-
-        if alpha != 1.0: base *= alpha ** (cfg.head_dim / (cfg.head_dim - 2))
-
         # RoPE params
 
         inv_freq, scaling_factor = rope.get_rope_params(device, cfg)
 
         # Common
 
+        scale = cfg.scale_pos_emb or 1.0
         t = torch.arange(cfg.max_seq_len, device = device, dtype = torch.float32)
         if scale != 1.0: t /= scale
 
