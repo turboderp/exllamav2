@@ -547,6 +547,42 @@ class PromptFormat_granite(PromptFormat):
         return True
 
 
+class PromptFormat_granite3(PromptFormat):
+    description = "Granite 3"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return "You are Granite, developed by IBM. You are a helpful AI assistant."
+
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += """<|start_of_role|>system<|end_of_role|>|system_prompt|><|end_of_text|>"""
+        r += """<|start_of_role|>user<|end_of_role|><|user_prompt|><|end_of_text|>"""
+        r += """<|start_of_role|>assistant<|end_of_role|>"""
+        return r
+
+    def subs_prompt(self):
+        r = ""
+        r += """<|start_of_role|>user<|end_of_role|><|user_prompt|><|end_of_text|>"""
+        r += """<|start_of_role|>assistant<|end_of_role|>"""
+        return r
+
+    def stop_conditions(self, tokenizer):
+        return [
+            tokenizer.eos_token_id,
+        ]
+
+    def encoding_options(self):
+        return True, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 class PromptFormat_cohere(PromptFormat):
     description = "Cohere"
 
@@ -610,4 +646,5 @@ prompt_formats = \
     "cohere": PromptFormat_cohere,
     "phi3": PromptFormat_phi3,
     "granite": PromptFormat_granite,
+    "granite3": PromptFormat_granite3,
 }
