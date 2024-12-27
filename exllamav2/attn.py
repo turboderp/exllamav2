@@ -211,7 +211,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         if cfg.use_qk_norm:
             self.submodules += [self.q_norm, self.k_norm]
 
-        if cfg.query_pre_attn_scalar:
+        if cfg.attention_multiplier:
+            self.scaling = cfg.attention_multiplier
+        elif cfg.query_pre_attn_scalar:
             self.scaling = cfg.query_pre_attn_scalar ** (-0.5)
         else:
             self.scaling = 1 / math.sqrt(self.head_dim)

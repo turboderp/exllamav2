@@ -126,6 +126,7 @@ class ExLlamaV2Config:
     checkpoint_fused_mlp: bool
     checkpoint_offset_qzeros: bool
     mrope_section: list | None
+    attention_multiplier: float | None
 
     vision_model_type: str | None
     vision_head_dim: int | None
@@ -289,6 +290,7 @@ class ExLlamaV2Config:
         self.use_qk_norm = read(read_config, bool, ["use_qk_norm"], False)
 
         self.query_pre_attn_scalar = read(read_config, float, "query_pre_attn_scalar", None)
+        self.attention_multiplier = read(read_config, float, "attention_multiplier", None)
 
         # MLP params
 
@@ -309,16 +311,18 @@ class ExLlamaV2Config:
 
         # Logit/embedding/residual scale
 
-        self.logit_scale = read(read_config, float, "logit_scale", 1)
+        self.logit_scale = read(read_config, float, ["logit_scale", "logits_scaling"], 1)
         if self.arch.lm.logit_scale_basedim:
             dim_model_base = read(read_config, int, "dim_model_base", self.hidden_size)
             self.logit_scale /= (self.hidden_size / dim_model_base)
 
-        self.scale_emb = read(read_config, float, "scale_emb", 1)
+        self.scale_emb = read(read_config, float, ["scale_emb", "embedding_multiplier"], 1)
+        residual_multiplier = read(read_config, float, "residual_multiplier", None)
         scale_depth = read(read_config, float, "scale_depth", None)
-        if scale_depth is None:
-            self.scale_depth = 1
-        else:
+        self.scale_depth = 1
+        if residual_multiplier:
+            self.scale_depth = residual_multiplier
+        elif scale_depth:
             self.scale_depth = scale_depth / math.sqrt(self.num_hidden_layers)
 
         self.attn_logit_softcapping = read(read_config, float, "attn_logit_softcapping", None)

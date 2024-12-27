@@ -681,6 +681,17 @@ class ExLlamaV2ArchParams:
             self.lm.expect_keys += \
                 expect_keys_llama
 
+        # Granite (v3)
+
+        if arch_string == "GraniteForCausalLM":
+            arch_recognized = True
+            self.lm.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.lm.expect_keys += \
+                expect_keys_llama
+
         # Llama (default + fallback)
 
         if arch_string != "LlamaForCausalLM" and not arch_recognized:
