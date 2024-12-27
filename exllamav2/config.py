@@ -311,10 +311,14 @@ class ExLlamaV2Config:
 
         # Logit/embedding/residual scale
 
-        self.logit_scale = read(read_config, float, ["logit_scale", "logits_scaling"], 1)
+        self.logit_scale = read(read_config, float, "logit_scale", 1)
         if self.arch.lm.logit_scale_basedim:
             dim_model_base = read(read_config, int, "dim_model_base", self.hidden_size)
             self.logit_scale /= (self.hidden_size / dim_model_base)
+
+        logit_scaling = read(read_config, float, "logits_scaling", None)  # Granite is backwards
+        if logit_scaling:
+            self.logit_scale = 1.0 / logit_scaling
 
         self.scale_emb = read(read_config, float, ["scale_emb", "embedding_multiplier"], 1)
         residual_multiplier = read(read_config, float, "residual_multiplier", None)
