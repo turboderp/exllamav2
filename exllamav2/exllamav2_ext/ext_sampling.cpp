@@ -8,14 +8,22 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#ifdef __linux__
-#include <mm_malloc.h>
+#include "config.h"
+
+#ifdef USE_AVX2
+    #ifdef __linux__
+        #include <mm_malloc.h>
+    #else
+        #define _mm_malloc(a, b) _aligned_malloc(a, b)
+        #define _mm_free(a) _aligned_free(a)
+    #endif
 #else
-#define _mm_malloc(a, b) _aligned_malloc(a, b)
-#define _mm_free(a) _aligned_free(a)
+    // aarch64-linux apparently has no mm_malloc, but it would only be needed for AVX2 anyway, which is also not
+    // available on aarch64
+    #define _mm_malloc(a, b) malloc(a)
+    #define _mm_free(a) free(a)
 #endif
 
-#include "config.h"
 #include "ext_sampling.h"
 
 #include "cpp/generator.h"

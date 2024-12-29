@@ -12,8 +12,7 @@
 #include "profiling.h"
 
 #ifdef USE_AVX2
-    #include "avx_mathfun.h"
-#endif
+#include "avx_mathfun.h"
 
 AVX2_TARGET
 int softmax_cpu_avx2
@@ -26,10 +25,6 @@ int softmax_cpu_avx2
     float* output
 )
 {
-    #ifndef USE_AVX2
-    return 0;
-    #else
-
     profile_start("softmax_cpu (AVX2)");
 
     int vocab_size_aligned = ((vocab_size + 31) / 32) * 32;
@@ -148,5 +143,24 @@ int softmax_cpu_avx2
 //    }
 //    printf("sum: %f\n\n", summ);
     return maxi;
-    #endif
+
 }
+
+#else
+
+// Dummy function to avoid compilation errors on aarch64
+
+int softmax_cpu_avx2
+(
+    const int vocab_size,
+    const float temperature,
+    const float* logits,
+    const bool* logits_filter,
+    const float exponent,
+    float* output
+)
+{
+    return 0;
+}
+
+#endif
