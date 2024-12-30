@@ -31,10 +31,11 @@ streaming = True
 greedy = True
 
 model_directory = "/mnt/str/models/qwen2-vl-7b-instruct-exl2/6.0bpw"
+images_mask = os.path.join(os.path.dirname(os.path.abspath(__file__)), "media/test_video_*.png")
 
 frames = [
     {"file": f}
-    for f in sorted(glob.glob("media/test_video_*.png"))
+    for f in sorted(glob.glob(images_mask))
 ]
 
 instruction = "Describe this video."
