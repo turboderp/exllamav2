@@ -43,7 +43,7 @@ class NgramCache:
     # Ingest context to cache
 
     def update(self, sequence):
-        for i in range(1 + self.min_len, len(sequence)):
+        for i in range(1 + self.min_len, len(sequence) + 1):
             a = max(i - self.max_len, 0)
             b = i
             substr = sequence[a:b]
