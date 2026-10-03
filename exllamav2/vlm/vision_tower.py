@@ -98,8 +98,8 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             self.p_maxedge = cfg.vision_max_size
             dim = cfg.vision_head_dim // 2
             max_seqlen = int(math.ceil(cfg.vision_max_size / cfg.vision_spatial_patch_size))
-            inv_freq = 1.0 / (cfg.vision_rope_theta ** (torch.arange(0, dim, 2).float() / dim)).half()
-            s = torch.arange(max_seqlen, dtype = inv_freq.dtype).half()
+            inv_freq = 1.0 / (cfg.vision_rope_theta ** (torch.arange(0, dim, 2).float() / dim))
+            s = torch.arange(max_seqlen, dtype = torch.float32)
             inv_freq = torch.outer(s, inv_freq)
             # inv_freq = torch.cat((inv_freq, inv_freq), dim = -1)
 
